@@ -8,7 +8,7 @@ const statusText = { healthy: 'Sehat', degraded: 'Perlu perhatian', unhealthy: '
 function StatusIcon({ status }: { status: Health['status'] }) { return status === 'healthy' ? <CheckCircle2 /> : status === 'degraded' ? <TriangleAlert /> : <XCircle />; }
 
 export function HealthPage() {
-  const query = useQuery({ queryKey: ['health'], queryFn: () => apiRequest<{ data: Health }>('/api/v1/system/health'), refetchInterval: 60_000 });
+  const query = useQuery({ queryKey: ['health'], queryFn: () => apiRequest<{ data: Health }>('/api/v1/system/health', { acceptedStatuses: [503] }), refetchInterval: 60_000 });
   const health = query.data?.data;
   return <div className="page"><header className="pageHeader"><div><h1>Kesehatan sistem</h1><p>Status dependency yang dibutuhkan aplikasi untuk beroperasi.</p></div><button className="secondaryButton" onClick={() => query.refetch()} disabled={query.isFetching}><RefreshCw /> Periksa ulang</button></header>
     {query.isError ? <div className="errorState">Status sistem belum dapat diperiksa.</div> : health && <>

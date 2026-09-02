@@ -33,20 +33,23 @@ export class ApiError extends Error {
   }
 }
 
-export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const method = (init.method ?? 'GET').toUpperCase();
-  const headers = new Headers(init.headers);
-  if (init.body) headers.set('Content-Type', 'application/json');
+type ApiRequestInit = RequestInit & { acceptedStatuses?: number[] };
+
+export async function apiRequest<T>(path: string, init: ApiRequestInit = {}): Promise<T> {
+  const { acceptedStatuses = [], ...requestInit } = init;
+  const method = (requestInit.method ?? 'GET').toUpperCase();
+  const headers = new Headers(requestInit.headers);
+  if (requestInit.body) headers.set('Content-Type', 'application/json');
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && csrfToken) {
     headers.set('X-CSRF-Token', csrfToken);
   }
 
-  const response = await fetch(path, { ...init, headers, credentials: 'same-origin' });
+  const response = await fetch(path, { ...requestInit, headers, credentials: 'same-origin' });
   if (response.status === 401) {
     window.location.assign('/login');
     throw new ApiError(401, 'unauthorized', 'Sesi login telah berakhir');
   }
-  if (!response.ok) {
+  if (!response.ok && !acceptedStatuses.includes(response.status)) {
     const payload = await response.json().catch(() => ({})) as ErrorResponse;
     throw new ApiError(
       response.status,
