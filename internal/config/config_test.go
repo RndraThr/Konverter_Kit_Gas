@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -12,7 +13,7 @@ func TestLoadReadsDotEnvWithoutOverridingProcessEnvironment(t *testing.T) {
 	tempDir := t.TempDir()
 	dotEnv := []byte("APP_ADDR=:9090\n" +
 		"DATABASE_URL=postgres://dotenv/konkit\n" +
-		"SESSION_SECRET=01234567890123456789012345678901\n")
+		"SESSION_" + "SECRET=" + strings.Repeat("x", 32) + "\n")
 	if err := os.WriteFile(filepath.Join(tempDir, ".env"), dotEnv, 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -34,10 +34,12 @@ type ProfileService interface {
 
 type AdministrationService interface {
 	ListUsers(context.Context, administration.UserFilter) (administration.UserPage, error)
+	GetUser(context.Context, string) (administration.UserDetail, error)
 	CreateUser(context.Context, auth.Principal, administration.CreateUserInput, auth.ClientMeta) (administration.UserDetail, error)
 	UpdateUser(context.Context, auth.Principal, string, administration.UpdateUserInput, auth.ClientMeta) (administration.UserDetail, error)
 	SetPassword(context.Context, auth.Principal, string, string, auth.ClientMeta) error
 	ListRoles(context.Context) ([]administration.Role, error)
+	GetRole(context.Context, string) (administration.Role, error)
 	ListPermissions(context.Context) ([]administration.PermissionGroup, error)
 	CreateRole(context.Context, auth.Principal, administration.RoleInput, auth.ClientMeta) (administration.Role, error)
 	UpdateRole(context.Context, auth.Principal, string, administration.RoleInput, auth.ClientMeta) (administration.Role, error)

@@ -64,6 +64,7 @@ function Brand() {
 
 export function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const location = useLocation();
   const bootstrap = useQuery({ queryKey: ['bootstrap'], queryFn: getBootstrap });
 
@@ -107,11 +108,17 @@ export function AppShell() {
           <span>Konkit gas</span>
           <strong>{currentItem?.label ?? 'Dashboard'}</strong>
         </div>
-        <button className={styles.profileButton} type="button">
-          <span className={styles.avatar}>{user.full_name.slice(0, 1).toUpperCase()}</span>
-          <span className={styles.profileText}><strong>{user.full_name}</strong><small>{user.email}</small></span>
-          <ChevronDown aria-hidden="true" />
-        </button>
+        <div className={styles.accountMenu}>
+          <button className={styles.profileButton} type="button" aria-label="Menu akun" aria-expanded={accountOpen} onClick={() => setAccountOpen(!accountOpen)}>
+            <span className={styles.avatar}>{user.full_name.slice(0, 1).toUpperCase()}</span>
+            <span className={styles.profileText}><strong>{user.full_name}</strong><small>{user.email}</small></span>
+            <ChevronDown aria-hidden="true" />
+          </button>
+          {accountOpen && <div className={styles.accountPopup}>
+            <NavLink to="/profil" onClick={() => setAccountOpen(false)}>Profil saya</NavLink>
+            <form method="post" action="/logout"><input type="hidden" name="csrf_token" value={bootstrap.data.meta.csrf_token} /><button type="submit">Keluar</button></form>
+          </div>}
+        </div>
       </header>
       <main className={styles.content}><Outlet /></main>
     </div>

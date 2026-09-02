@@ -73,6 +73,10 @@ func (r *Repository) ListUsers(ctx context.Context, filter UserFilter) (UserPage
 	return UserPage{Items: items, Page: filter.Page, PageSize: filter.PageSize, Total: total}, nil
 }
 
+func (r *Repository) GetUser(ctx context.Context, userID string) (UserDetail, error) {
+	return r.userByID(ctx, userID)
+}
+
 func (r *Repository) CreateUser(ctx context.Context, actor auth.Principal, input CreateUserInput, passwordHash string, meta auth.ClientMeta) (UserDetail, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -258,6 +262,10 @@ func (r *Repository) ListRoles(ctx context.Context) ([]Role, error) {
 		result[index].Permissions = permissions
 	}
 	return result, nil
+}
+
+func (r *Repository) GetRole(ctx context.Context, roleID string) (Role, error) {
+	return r.roleByID(ctx, roleID)
 }
 
 func (r *Repository) CreateRole(ctx context.Context, actor auth.Principal, input RoleInput, meta auth.ClientMeta) (Role, error) {

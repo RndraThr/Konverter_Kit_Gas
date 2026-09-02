@@ -85,6 +85,9 @@ type fakeRepository struct {
 func (f *fakeRepository) ListUsers(context.Context, UserFilter) (UserPage, error) {
 	return UserPage{}, nil
 }
+func (f *fakeRepository) GetUser(context.Context, string) (UserDetail, error) {
+	return UserDetail{}, nil
+}
 
 func (f *fakeRepository) CreateUser(_ context.Context, _ auth.Principal, input CreateUserInput, passwordHash string, _ auth.ClientMeta) (UserDetail, error) {
 	f.created = input
@@ -103,6 +106,7 @@ func (f *fakeRepository) SetPassword(_ context.Context, _ auth.Principal, _ stri
 }
 
 func (f *fakeRepository) ListRoles(context.Context) ([]Role, error)             { return nil, nil }
+func (f *fakeRepository) GetRole(context.Context, string) (Role, error)         { return Role{}, nil }
 func (f *fakeRepository) ListPermissions(context.Context) ([]Permission, error) { return nil, nil }
 func (f *fakeRepository) CreateRole(_ context.Context, _ auth.Principal, input RoleInput, _ auth.ClientMeta) (Role, error) {
 	return Role{Code: input.Code, Name: input.Name}, nil

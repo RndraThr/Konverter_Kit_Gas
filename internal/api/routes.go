@@ -137,8 +137,20 @@ func (h *Handler) handleUser(w http.ResponseWriter, r *http.Request, rc requestC
 		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
 		return
 	}
+	if r.Method == http.MethodGet {
+		if !h.authorize(w, r, rc.principal, "users.view") {
+			return
+		}
+		result, err := h.deps.Administration.GetUser(r.Context(), parts[0])
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeData(w, http.StatusOK, result)
+		return
+	}
 	if r.Method != http.MethodPatch {
-		methodNotAllowed(w, http.MethodPatch)
+		methodNotAllowed(w, http.MethodGet+", "+http.MethodPatch)
 		return
 	}
 	if !h.authorize(w, r, rc.principal, "users.manage") {
@@ -196,6 +208,18 @@ func (h *Handler) handleRole(w http.ResponseWriter, r *http.Request, rc requestC
 		writeUnavailable(w)
 		return
 	}
+	if r.Method == http.MethodGet {
+		if !h.authorize(w, r, rc.principal, "roles.view") {
+			return
+		}
+		result, err := h.deps.Administration.GetRole(r.Context(), id)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeData(w, http.StatusOK, result)
+		return
+	}
 	if !h.authorize(w, r, rc.principal, "roles.manage") {
 		return
 	}
@@ -218,7 +242,7 @@ func (h *Handler) handleRole(w http.ResponseWriter, r *http.Request, rc requestC
 		}
 		w.WriteHeader(http.StatusNoContent)
 	default:
-		methodNotAllowed(w, http.MethodPatch+", "+http.MethodDelete)
+		methodNotAllowed(w, http.MethodGet+", "+http.MethodPatch+", "+http.MethodDelete)
 	}
 }
 

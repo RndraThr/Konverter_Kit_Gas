@@ -22,6 +22,10 @@
 .pageIdentity strong { font-size: 17px; }
 .profileButton { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 6px; border: 0; background: transparent; color: inherit; cursor: pointer; text-align: left; }
 .profileButton > svg { width: 16px; color: var(--dashboard-muted); }
+.accountMenu { position: relative; }
+.accountPopup { position: absolute; top: calc(100% + 8px); right: 0; width: 190px; padding: 6px; border: 1px solid var(--dashboard-line); border-radius: 7px; background: white; box-shadow: 0 14px 32px rgba(17,43,27,.16); }
+.accountPopup a, .accountPopup button { width: 100%; min-height: 38px; padding: 0 10px; display: flex; align-items: center; border: 0; border-radius: 5px; background: transparent; color: var(--dashboard-ink); font: inherit; font-size: 13px; font-weight: 650; text-decoration: none; cursor: pointer; }
+.accountPopup a:hover, .accountPopup button:hover { background: #f0f5f0; }
 .avatar { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; background: var(--dashboard-green-dark); color: white; font-size: 13px; font-weight: 800; }
 .profileText { display: grid; gap: 1px; min-width: 150px; }
 .profileText strong { font-size: 13px; }

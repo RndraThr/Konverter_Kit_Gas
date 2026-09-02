@@ -18,10 +18,12 @@ var (
 
 type repository interface {
 	ListUsers(context.Context, UserFilter) (UserPage, error)
+	GetUser(context.Context, string) (UserDetail, error)
 	CreateUser(context.Context, auth.Principal, CreateUserInput, string, auth.ClientMeta) (UserDetail, error)
 	UpdateUser(context.Context, auth.Principal, string, UpdateUserInput, auth.ClientMeta) (UserDetail, error)
 	SetPassword(context.Context, auth.Principal, string, string, auth.ClientMeta) error
 	ListRoles(context.Context) ([]Role, error)
+	GetRole(context.Context, string) (Role, error)
 	ListPermissions(context.Context) ([]Permission, error)
 	CreateRole(context.Context, auth.Principal, RoleInput, auth.ClientMeta) (Role, error)
 	UpdateRole(context.Context, auth.Principal, string, RoleInput, auth.ClientMeta) (Role, error)
@@ -49,6 +51,14 @@ func (s *Service) ListUsers(ctx context.Context, filter UserFilter) (UserPage, e
 	filter.Search = strings.TrimSpace(filter.Search)
 	filter.RoleCode = strings.TrimSpace(filter.RoleCode)
 	return s.repository.ListUsers(ctx, filter)
+}
+
+func (s *Service) GetUser(ctx context.Context, userID string) (UserDetail, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return UserDetail{}, ErrNotFound
+	}
+	return s.repository.GetUser(ctx, userID)
 }
 
 func (s *Service) CreateUser(ctx context.Context, actor auth.Principal, input CreateUserInput, meta auth.ClientMeta) (UserDetail, error) {
@@ -102,6 +112,14 @@ func (s *Service) SetPassword(ctx context.Context, actor auth.Principal, userID,
 
 func (s *Service) ListRoles(ctx context.Context) ([]Role, error) {
 	return s.repository.ListRoles(ctx)
+}
+
+func (s *Service) GetRole(ctx context.Context, roleID string) (Role, error) {
+	roleID = strings.TrimSpace(roleID)
+	if roleID == "" {
+		return Role{}, ErrNotFound
+	}
+	return s.repository.GetRole(ctx, roleID)
 }
 
 func (s *Service) ListPermissions(ctx context.Context) ([]PermissionGroup, error) {
