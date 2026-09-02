@@ -139,6 +139,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleMe(w, r, rc)
 	case path == "me/password":
 		h.handleMyPassword(w, r, rc)
+	case path == "dashboard/summary":
+		h.handleDashboardSummary(w, r, rc)
 	case path == "admin/users":
 		h.handleUsers(w, r, rc)
 	case strings.HasPrefix(path, "admin/users/"):
@@ -171,6 +173,21 @@ func (h *Handler) authorize(w http.ResponseWriter, r *http.Request, principal au
 		return false
 	}
 	return true
+}
+
+func (h *Handler) authorizeAny(w http.ResponseWriter, r *http.Request, principal auth.Principal, permissions ...string) bool {
+	for _, permission := range permissions {
+		allowed, err := h.deps.Auth.Can(r.Context(), principal, permission)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "Tidak dapat memeriksa akses")
+			return false
+		}
+		if allowed {
+			return true
+		}
+	}
+	writeError(w, http.StatusForbidden, "forbidden", "Anda tidak memiliki akses")
+	return false
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
@@ -230,6 +247,10 @@ func writeData(w http.ResponseWriter, status int, data any) {
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, map[string]any{"error": errorBody{Code: code, Message: message}})
+}
+
+func writeFieldError(w http.ResponseWriter, status int, code, message string, fields map[string]string) {
+	writeJSON(w, status, map[string]any{"error": errorBody{Code: code, Message: message, Fields: fields}})
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

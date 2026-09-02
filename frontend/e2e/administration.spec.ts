@@ -41,8 +41,9 @@ test('administration foundation journey', async ({ page }, testInfo) => {
   await expect(page.getByText(displayName)).toBeVisible();
   await page.getByRole('button', { name: `Edit ${displayName}` }).click();
   await page.getByRole('checkbox', { name: 'Pengguna aktif' }).uncheck();
+  page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: 'Simpan pengguna' }).click();
-  await expect(page.getByText('Nonaktif')).toBeVisible();
+  await expect(page.getByRole('row').filter({ hasText: displayName }).getByText('Nonaktif')).toBeVisible();
 
   if (testInfo.project.name === 'mobile') await page.getByRole('button', { name: 'Buka navigasi' }).click();
   await page.getByRole('link', { name: 'Riwayat aktivitas' }).click();

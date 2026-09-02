@@ -5,6 +5,10 @@ export type BootstrapUser = {
   email: string;
   roles: string[];
   permissions: string[];
+  is_active?: boolean;
+  last_login_at?: string;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type BootstrapResponse = {

@@ -14,6 +14,7 @@ export function ProfilePage() {
   });
   const submit = (event: FormEvent) => { event.preventDefault(); mutation.mutate(); };
   return <div className="page"><header className="pageHeader"><div><h1>Profil saya</h1><p>Identitas ini digunakan pada aktivitas dan dokumen sistem.</p></div></header>
+    {bootstrap.data && <div className="toolbar" aria-label="Informasi akun"><span><strong>Status:</strong> {bootstrap.data.data.is_active === false ? 'Nonaktif' : 'Aktif'}</span><span><strong>Role:</strong> {bootstrap.data.data.roles.join(', ') || '-'}</span><span><strong>Login terakhir:</strong> {bootstrap.data.data.last_login_at ? new Date(bootstrap.data.data.last_login_at).toLocaleString('id-ID') : 'Belum tersedia'}</span></div>}
     <form className="dialogBody" onSubmit={submit} style={{ maxWidth: 720, padding: 0 }}>
       <FormField className="fullField" label="Nama lengkap" name="full_name" required value={values.full_name} onChange={(e) => setValues({ ...values, full_name: e.target.value })} />
       <FormField label="Username" name="username" required value={values.username} onChange={(e) => setValues({ ...values, username: e.target.value })} />

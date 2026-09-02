@@ -129,7 +129,7 @@ func (f *fakeStore) PasswordHash(context.Context, string) (string, error) {
 	return f.passwordHash, nil
 }
 
-func (f *fakeStore) ChangePassword(_ context.Context, _ auth.Principal, passwordHash string, keepSessionHash []byte, _ auth.ClientMeta) error {
+func (f *fakeStore) ChangePassword(_ context.Context, _ auth.Principal, _ string, passwordHash string, keepSessionHash []byte, _ auth.ClientMeta) error {
 	f.newPasswordHash = passwordHash
 	f.keptSessionHash = append([]byte(nil), keepSessionHash...)
 	return nil

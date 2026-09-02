@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"konkit/internal/auth"
+	"konkit/internal/health"
+	"konkit/internal/profile"
 )
 
 func TestHealthReturnsJSON(t *testing.T) {
@@ -90,6 +92,20 @@ func TestMeReturnsPrincipalPermissionsAndCSRFToken(t *testing.T) {
 	}
 }
 
+func TestMeIncludesCurrentProfileState(t *testing.T) {
+	service := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, permissions: []string{"dashboard.view"}}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+	profiles := fakeProfileService{profile: profile.Profile{ID: "user-1", FullName: "Admin Program", Username: "admin", Email: "admin@konkit.test", Roles: []string{"operator"}, IsActive: true}}
+
+	NewHandler(Dependencies{Auth: service, Profile: profiles, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"is_active":true`) || !strings.Contains(rec.Body.String(), `"roles":["operator"]`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestMutationRejectsMissingCSRFBeforeCallingService(t *testing.T) {
 	service := &fakeAuthService{
 		principal:   auth.Principal{UserID: "user-1", Roles: []string{"super_admin"}},
@@ -122,21 +138,97 @@ func TestAdministrationRoutesUseDocumentedPrefixes(t *testing.T) {
 	}
 }
 
+func TestProtectedReadinessReturnsServiceUnavailableWhenDegraded(t *testing.T) {
+	service := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowed: true}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/health", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: service, Health: fakeHealthService{status: "degraded"}}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestValidationErrorsUseBadRequestAndFieldDetails(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeServiceError(rec, profile.ErrEmailInvalid)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"fields":{"email":`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAuthorizeAnyAcceptsUsersManagerForRoleListing(t *testing.T) {
+	service := &fakeAuthService{allowedPermissions: map[string]bool{"users.manage": true}}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/roles", nil)
+	if !(&Handler{deps: Dependencies{Auth: service}}).authorizeAny(rec, req, auth.Principal{}, "roles.view", "users.manage") {
+		t.Fatalf("authorization rejected: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAuthorizeRejectsMissingPermission(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/users", nil)
+	if (&Handler{deps: Dependencies{Auth: &fakeAuthService{}}}).authorize(rec, req, auth.Principal{}, "users.view") {
+		t.Fatal("authorization unexpectedly succeeded")
+	}
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), `"code":"forbidden"`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDecodeJSONRequiresApplicationJSON(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"name":"test"}`))
+	var target map[string]string
+	if decodeJSON(rec, req, &target) || rec.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDecodeJSONRejectsBodiesLargerThanOneMiB(t *testing.T) {
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"data":"`+strings.Repeat("x", maxRequestBody)+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	var target map[string]string
+	if decodeJSON(rec, req, &target) || rec.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 const validSessionToken = "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio"
 
 type fakeAuthService struct {
-	principal       auth.Principal
-	authenticateErr error
-	permissions     []string
-	allowed         bool
+	principal          auth.Principal
+	authenticateErr    error
+	permissions        []string
+	allowed            bool
+	allowedPermissions map[string]bool
+}
+
+type fakeHealthService struct{ status string }
+type fakeProfileService struct{ profile profile.Profile }
+
+func (f fakeProfileService) Get(context.Context, string) (profile.Profile, error) {
+	return f.profile, nil
+}
+func (f fakeProfileService) Update(context.Context, auth.Principal, profile.UpdateInput, auth.ClientMeta) (profile.Profile, error) {
+	return f.profile, nil
+}
+func (f fakeProfileService) ChangePassword(context.Context, auth.Principal, string, profile.PasswordInput, auth.ClientMeta) error {
+	return nil
+}
+
+func (f fakeHealthService) Check(context.Context) health.Report {
+	return health.Report{Status: f.status}
 }
 
 func (f *fakeAuthService) Authenticate(context.Context, string) (auth.Principal, error) {
 	return f.principal, f.authenticateErr
 }
 
-func (f *fakeAuthService) Can(context.Context, auth.Principal, string) (bool, error) {
-	return f.allowed, nil
+func (f *fakeAuthService) Can(_ context.Context, _ auth.Principal, permission string) (bool, error) {
+	return f.allowed || f.allowedPermissions[permission], nil
 }
 
 func (f *fakeAuthService) Permissions(context.Context, auth.Principal) ([]string, error) {

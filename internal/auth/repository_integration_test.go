@@ -31,15 +31,11 @@ func TestIntegrationRepositoryCreatesAndFindsSuperAdmin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, "UPDATE users SET full_name = 'Repository Administrator' WHERE lower(email) = lower($1)", email); err != nil {
-		t.Fatal(err)
-	}
-
 	user, err := repository.FindUserByIdentity(ctx, "REPOSITORY.ADMIN")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if user.FullName != "Repository Administrator" || user.Username != "repository.admin" || user.Email != email || !user.IsActive {
+	if user.FullName != "repository.admin" || user.Username != "repository.admin" || user.Email != email || !user.IsActive {
 		t.Fatalf("unexpected user: %+v", user)
 	}
 
@@ -50,7 +46,7 @@ func TestIntegrationRepositoryCreatesAndFindsSuperAdmin(t *testing.T) {
 	if !principal.IsSuperAdmin() {
 		t.Fatalf("expected super_admin role, got %v", principal.Roles)
 	}
-	if principal.FullName != "Repository Administrator" {
+	if principal.FullName != "repository.admin" {
 		t.Fatalf("expected principal full name, got %q", principal.FullName)
 	}
 

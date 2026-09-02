@@ -134,6 +134,7 @@ func (r *Repository) PasswordHash(ctx context.Context, userID string) (string, e
 func (r *Repository) ChangePassword(
 	ctx context.Context,
 	actor auth.Principal,
+	expectedPasswordHash string,
 	passwordHash string,
 	keepSessionHash []byte,
 	meta auth.ClientMeta,
@@ -143,6 +144,17 @@ func (r *Repository) ChangePassword(
 		return fmt.Errorf("begin password change: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	var storedPasswordHash string
+	err = tx.QueryRow(ctx, "SELECT password_hash FROM users WHERE id = $1 AND is_active = true FOR UPDATE", actor.UserID).Scan(&storedPasswordHash)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("lock profile password: %w", err)
+	}
+	if storedPasswordHash != expectedPasswordHash {
+		return ErrCurrentPassword
+	}
 
 	tag, err := tx.Exec(ctx, `
 		UPDATE users

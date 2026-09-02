@@ -3,18 +3,14 @@ import { ShieldCheck, UsersRound } from 'lucide-react';
 import { apiRequest } from '../../lib/api';
 import styles from './DashboardPage.module.css';
 
-type UsersResponse = { data: { total: number } };
-type RolesResponse = { data: unknown[] };
+type SummaryResponse = { data: { users: number; roles: number } };
 
 export function DashboardPage() {
   const summary = useQuery({
     queryKey: ['dashboard-summary'],
     queryFn: async () => {
-      const [users, roles] = await Promise.all([
-        apiRequest<UsersResponse>('/api/v1/admin/users?page=1&page_size=1'),
-        apiRequest<RolesResponse>('/api/v1/admin/roles'),
-      ]);
-      return { users: users.data.total, roles: roles.data.length };
+      const summary = await apiRequest<SummaryResponse>('/api/v1/dashboard/summary');
+      return summary.data;
     },
   });
   return <div className="page">

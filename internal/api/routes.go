@@ -8,6 +8,7 @@ import (
 	"konkit/internal/administration"
 	"konkit/internal/audit"
 	"konkit/internal/auth"
+	apphealth "konkit/internal/health"
 	"konkit/internal/profile"
 	"konkit/internal/settings"
 )
@@ -20,12 +21,23 @@ func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request, rc requestCon
 			writeServiceError(w, err)
 			return
 		}
+		data := map[string]any{
+			"id": rc.principal.UserID, "full_name": rc.principal.FullName,
+			"username": rc.principal.Username, "email": rc.principal.Email,
+			"roles": rc.principal.Roles, "permissions": permissions,
+		}
+		if h.deps.Profile != nil {
+			result, profileErr := h.deps.Profile.Get(r.Context(), rc.principal.UserID)
+			if profileErr != nil {
+				writeServiceError(w, profileErr)
+				return
+			}
+			data["full_name"], data["username"], data["email"] = result.FullName, result.Username, result.Email
+			data["roles"], data["is_active"], data["last_login_at"] = result.Roles, result.IsActive, result.LastLoginAt
+			data["created_at"], data["updated_at"] = result.CreatedAt, result.UpdatedAt
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"data": map[string]any{
-				"id": rc.principal.UserID, "full_name": rc.principal.FullName,
-				"username": rc.principal.Username, "email": rc.principal.Email,
-				"roles": rc.principal.Roles, "permissions": permissions,
-			},
+			"data": data,
 			"meta": map[string]string{"csrf_token": csrfToken(h, rc.token)},
 		})
 	case http.MethodPatch:
@@ -106,6 +118,31 @@ func (h *Handler) handleUsers(w http.ResponseWriter, r *http.Request, rc request
 	}
 }
 
+func (h *Handler) handleDashboardSummary(w http.ResponseWriter, r *http.Request, rc requestContext) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if h.deps.Administration == nil {
+		writeUnavailable(w)
+		return
+	}
+	if !h.authorize(w, r, rc.principal, "dashboard.view") {
+		return
+	}
+	users, err := h.deps.Administration.ListUsers(r.Context(), administration.UserFilter{Page: 1, PageSize: 1})
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	roles, err := h.deps.Administration.ListRoles(r.Context())
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, map[string]any{"users": users.Total, "roles": len(roles)})
+}
+
 func (h *Handler) handleUser(w http.ResponseWriter, r *http.Request, rc requestContext, suffix string) {
 	if h.deps.Administration == nil {
 		writeUnavailable(w)
@@ -175,7 +212,7 @@ func (h *Handler) handleRoles(w http.ResponseWriter, r *http.Request, rc request
 	}
 	switch r.Method {
 	case http.MethodGet:
-		if !h.authorize(w, r, rc.principal, "roles.view") {
+		if !h.authorizeAny(w, r, rc.principal, "roles.view", "users.manage") {
 			return
 		}
 		result, err := h.deps.Administration.ListRoles(r.Context())
@@ -315,7 +352,12 @@ func (h *Handler) handleSystemHealth(w http.ResponseWriter, r *http.Request, rc 
 	if !h.authorize(w, r, rc.principal, "health.view") {
 		return
 	}
-	writeData(w, http.StatusOK, h.deps.Health.Check(r.Context()))
+	report := h.deps.Health.Check(r.Context())
+	status := http.StatusOK
+	if report.Status != apphealth.StatusHealthy {
+		status = http.StatusServiceUnavailable
+	}
+	writeData(w, status, report)
 }
 
 func (h *Handler) handleAudit(w http.ResponseWriter, r *http.Request, rc requestContext) {
@@ -366,8 +408,33 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		errors.Is(err, profile.ErrCurrentPassword), errors.Is(err, profile.ErrPasswordTooShort), errors.Is(err, profile.ErrPasswordUnchanged),
 		errors.Is(err, administration.ErrInvalidInput), errors.Is(err, administration.ErrPasswordTooShort), errors.Is(err, administration.ErrRoleNotFound),
 		errors.Is(err, administration.ErrPermissionNotFound), errors.Is(err, administration.ErrRoleCodeInvalid), errors.Is(err, settings.ErrInvalidSetting):
-		writeError(w, http.StatusUnprocessableEntity, "validation_failed", err.Error())
+		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), validationFields(err))
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Terjadi kesalahan pada server")
+	}
+}
+
+func validationFields(err error) map[string]string {
+	switch {
+	case errors.Is(err, profile.ErrFullNameInvalid):
+		return map[string]string{"full_name": err.Error()}
+	case errors.Is(err, profile.ErrUsernameInvalid):
+		return map[string]string{"username": err.Error()}
+	case errors.Is(err, profile.ErrEmailInvalid):
+		return map[string]string{"email": err.Error()}
+	case errors.Is(err, profile.ErrCurrentPassword):
+		return map[string]string{"current_password": err.Error()}
+	case errors.Is(err, profile.ErrPasswordTooShort), errors.Is(err, profile.ErrPasswordUnchanged), errors.Is(err, administration.ErrPasswordTooShort):
+		return map[string]string{"password": err.Error()}
+	case errors.Is(err, administration.ErrRoleCodeInvalid):
+		return map[string]string{"code": err.Error()}
+	case errors.Is(err, administration.ErrRoleNotFound):
+		return map[string]string{"role_ids": err.Error()}
+	case errors.Is(err, administration.ErrPermissionNotFound):
+		return map[string]string{"permission_codes": err.Error()}
+	case errors.Is(err, settings.ErrInvalidSetting):
+		return map[string]string{"values": err.Error()}
+	default:
+		return map[string]string{"request": err.Error()}
 	}
 }

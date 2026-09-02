@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"errors"
 	"os"
 	"testing"
 
@@ -42,7 +43,8 @@ func TestIntegrationProfileUpdateAndPasswordChangeAreAudited(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), "DELETE FROM users WHERE id = $1", userID)
 	})
 
-	service := NewService(NewRepository(pool))
+	repository := NewRepository(pool)
+	service := NewService(repository)
 	actor := auth.Principal{UserID: userID, Username: "profile.integration"}
 	updated, err := service.Update(ctx, actor, UpdateInput{
 		FullName: "Profile Updated",
@@ -93,6 +95,14 @@ func TestIntegrationProfileUpdateAndPasswordChangeAreAudited(t *testing.T) {
 	}
 	if auditCount != 2 {
 		t.Fatalf("expected two safe profile audit events, got %d", auditCount)
+	}
+
+	staleHash, err := auth.HashPassword("stale-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.ChangePassword(ctx, actor, staleHash, staleHash, currentTokenHash, auth.ClientMeta{}); !errors.Is(err, ErrCurrentPassword) {
+		t.Fatalf("expected stale verified password to be rejected, got %v", err)
 	}
 }
 

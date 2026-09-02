@@ -53,8 +53,8 @@ func (r *Repository) CreateSuperAdmin(ctx context.Context, username, email, pass
 
 	var userID string
 	err = tx.QueryRow(ctx, `
-		INSERT INTO users (username, email, password_hash)
-		VALUES ($1, $2, $3)
+		INSERT INTO users (full_name, username, email, password_hash)
+		VALUES ($1, $1, $2, $3)
 		RETURNING id::text
 	`, normalizeIdentity(username), normalizeIdentity(email), passwordHash).Scan(&userID)
 	if isUniqueViolation(err) {

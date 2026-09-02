@@ -16,7 +16,7 @@ type store interface {
 	Get(context.Context, string) (Profile, error)
 	Update(context.Context, auth.Principal, UpdateInput, auth.ClientMeta) (Profile, error)
 	PasswordHash(context.Context, string) (string, error)
-	ChangePassword(context.Context, auth.Principal, string, []byte, auth.ClientMeta) error
+	ChangePassword(context.Context, auth.Principal, string, string, []byte, auth.ClientMeta) error
 }
 
 type Service struct {
@@ -87,5 +87,5 @@ func (s *Service) ChangePassword(
 	if err != nil {
 		return err
 	}
-	return s.store.ChangePassword(ctx, actor, newHash, keepSessionHash, meta)
+	return s.store.ChangePassword(ctx, actor, currentHash, newHash, keepSessionHash, meta)
 }

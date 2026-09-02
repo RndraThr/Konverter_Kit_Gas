@@ -7,6 +7,7 @@ import {
 import { ReactNode, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { getBootstrap } from '../lib/api';
+import { PermissionsProvider } from '../lib/permissions';
 import styles from './AppShell.module.css';
 
 type NavItem = { label: string; to: string; permission?: string; icon: ReactNode };
@@ -120,7 +121,7 @@ export function AppShell() {
           </div>}
         </div>
       </header>
-      <main className={styles.content}><Outlet /></main>
+      <main className={styles.content}><PermissionsProvider permissions={user.permissions}><Outlet /></PermissionsProvider></main>
     </div>
   </div>;
 }
