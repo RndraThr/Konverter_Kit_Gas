@@ -96,6 +96,12 @@ func TestLogoutHashesAndDeletesSessionToken(t *testing.T) {
 	}
 }
 
+func TestSessionTokenHashRejectsMalformedToken(t *testing.T) {
+	if _, err := SessionTokenHash("not-a-session-token"); !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("expected ErrSessionNotFound, got %v", err)
+	}
+}
+
 type fakeSessionStore struct {
 	user        User
 	findErr     error

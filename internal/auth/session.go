@@ -118,3 +118,7 @@ func hashSessionToken(rawToken string) ([]byte, error) {
 	hash := sha256.Sum256(rawBytes)
 	return hash[:], nil
 }
+
+func SessionTokenHash(rawToken string) ([]byte, error) {
+	return hashSessionToken(rawToken)
+}
