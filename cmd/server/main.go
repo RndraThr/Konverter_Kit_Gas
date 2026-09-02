@@ -11,10 +11,15 @@ import (
 	"syscall"
 	"time"
 
+	"konkit/internal/administration"
 	apihttp "konkit/internal/api"
+	"konkit/internal/audit"
 	"konkit/internal/auth"
 	"konkit/internal/config"
 	"konkit/internal/database"
+	"konkit/internal/health"
+	"konkit/internal/profile"
+	"konkit/internal/settings"
 	"konkit/internal/web"
 )
 
@@ -40,9 +45,18 @@ func run(ctx context.Context, cfg config.Config) error {
 
 	repository := auth.NewRepository(pool)
 	authService := auth.NewService(repository, cfg.SessionTTL, cfg.RememberTTL)
+	apiHandler := apihttp.NewHandler(apihttp.Dependencies{
+		Auth:           authService,
+		Profile:        profile.NewService(profile.NewRepository(pool)),
+		Administration: administration.NewService(administration.NewRepository(pool)),
+		Settings:       settings.NewService(settings.NewRepository(pool)),
+		Health:         health.NewService(health.NewPostgresProbe(pool), cfg.Env, "dev", time.Now()),
+		Audit:          audit.NewRepository(pool),
+		SessionSecret:  cfg.SessionSecret,
+	})
 	handler := web.NewHandler(web.Dependencies{
 		Auth:                authService,
-		API:                 apihttp.NewHandler(),
+		API:                 apiHandler,
 		SessionSecret:       cfg.SessionSecret,
 		SessionCookieSecure: cfg.SessionCookieSecure,
 		SessionTTL:          cfg.SessionTTL,

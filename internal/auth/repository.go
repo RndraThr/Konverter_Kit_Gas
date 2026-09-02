@@ -141,6 +141,38 @@ func (r *Repository) HasPermission(ctx context.Context, principal Principal, per
 	return allowed, nil
 }
 
+func (r *Repository) PermissionsForPrincipal(ctx context.Context, principal Principal) ([]string, error) {
+	if principal.IsSuperAdmin() {
+		return []string{"*"}, nil
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT permissions.code
+		FROM user_roles
+		JOIN role_permissions ON role_permissions.role_id = user_roles.role_id
+		JOIN permissions ON permissions.id = role_permissions.permission_id
+		WHERE user_roles.user_id = $1
+		ORDER BY permissions.code
+	`, principal.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("list principal permissions: %w", err)
+	}
+	defer rows.Close()
+
+	permissions := make([]string, 0)
+	for rows.Next() {
+		var code string
+		if err := rows.Scan(&code); err != nil {
+			return nil, fmt.Errorf("scan principal permission: %w", err)
+		}
+		permissions = append(permissions, code)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate principal permissions: %w", err)
+	}
+	return permissions, nil
+}
+
 func (r *Repository) CreateSession(
 	ctx context.Context,
 	userID string,

@@ -19,6 +19,7 @@ type sessionStore interface {
 	PrincipalForSession(ctx context.Context, tokenHash []byte, now time.Time) (Principal, error)
 	DeleteSession(ctx context.Context, tokenHash []byte) error
 	HasPermission(ctx context.Context, principal Principal, permission string) (bool, error)
+	PermissionsForPrincipal(ctx context.Context, principal Principal) ([]string, error)
 }
 
 type Service struct {
@@ -96,6 +97,10 @@ func (s *Service) Logout(ctx context.Context, rawToken string) error {
 
 func (s *Service) Can(ctx context.Context, principal Principal, permission string) (bool, error) {
 	return s.store.HasPermission(ctx, principal, permission)
+}
+
+func (s *Service) Permissions(ctx context.Context, principal Principal) ([]string, error) {
+	return s.store.PermissionsForPrincipal(ctx, principal)
 }
 
 func (s *Service) newToken() (sessionToken, error) {

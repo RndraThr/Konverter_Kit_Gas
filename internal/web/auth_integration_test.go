@@ -54,7 +54,7 @@ func TestIntegrationLoginDashboardAndLogout(t *testing.T) {
 	secret := []byte("01234567890123456789012345678901")
 	handler := NewHandler(Dependencies{
 		Auth:                auth.NewService(repository, 12*time.Hour, 30*24*time.Hour),
-		API:                 apihttp.NewHandler(),
+		API:                 apihttp.NewHandler(apihttp.Dependencies{}),
 		SessionSecret:       secret,
 		SessionCookieSecure: false,
 		SessionTTL:          12 * time.Hour,

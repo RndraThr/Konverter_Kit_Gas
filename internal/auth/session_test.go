@@ -102,6 +102,17 @@ func TestSessionTokenHashRejectsMalformedToken(t *testing.T) {
 	}
 }
 
+func TestPermissionsReturnsStorePermissions(t *testing.T) {
+	store := &fakeSessionStore{permissions: []string{"dashboard.view", "users.view"}}
+	got, err := NewService(store, time.Hour, 24*time.Hour).Permissions(context.Background(), Principal{UserID: "user-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[1] != "users.view" {
+		t.Fatalf("unexpected permissions: %v", got)
+	}
+}
+
 type fakeSessionStore struct {
 	user        User
 	findErr     error
@@ -109,6 +120,7 @@ type fakeSessionStore struct {
 	createdHash []byte
 	deletedHash []byte
 	expiresAt   time.Time
+	permissions []string
 }
 
 func (f *fakeSessionStore) FindUserByIdentity(context.Context, string) (User, error) {
@@ -135,4 +147,8 @@ func (f *fakeSessionStore) DeleteSession(_ context.Context, tokenHash []byte) er
 
 func (f *fakeSessionStore) HasPermission(context.Context, Principal, string) (bool, error) {
 	return true, nil
+}
+
+func (f *fakeSessionStore) PermissionsForPrincipal(context.Context, Principal) ([]string, error) {
+	return f.permissions, nil
 }

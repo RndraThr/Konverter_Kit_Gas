@@ -12,8 +12,6 @@ import (
 	"konkit/internal/auth"
 )
 
-const sessionCookieName = "konkit_session"
-
 type AuthService interface {
 	Login(context.Context, string, string, bool, auth.ClientMeta) (string, error)
 	Authenticate(context.Context, string) (auth.Principal, error)
@@ -50,7 +48,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
-	if cookie, err := r.Cookie(sessionCookieName); err == nil {
+	if cookie, err := r.Cookie(auth.SessionCookieName); err == nil {
 		if _, err := s.deps.Auth.Authenticate(r.Context(), cookie.Value); err == nil {
 			http.Redirect(w, r, "/dashboard", http.StatusFound)
 			return
@@ -108,7 +106,7 @@ func (s *Server) loginPost(w http.ResponseWriter, r *http.Request) {
 		ttl = s.deps.RememberTTL
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
+		Name:     auth.SessionCookieName,
 		Value:    rawToken,
 		Path:     "/",
 		MaxAge:   int(ttl.Seconds()),
@@ -140,7 +138,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
+		Name:     auth.SessionCookieName,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
@@ -153,7 +151,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie(sessionCookieName)
+		cookie, err := r.Cookie(auth.SessionCookieName)
 		if err != nil {
 			http.Redirect(w, r, "/login", http.StatusFound)
 			return
