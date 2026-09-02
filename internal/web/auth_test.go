@@ -149,7 +149,7 @@ func TestDashboardRedirectsAnonymousUserToLogin(t *testing.T) {
 	}
 }
 
-func TestDashboardRendersAuthenticatedUserAndCSRFToken(t *testing.T) {
+func TestDashboardRendersAuthenticatedReactShell(t *testing.T) {
 	fake := &fakeAuthService{principal: auth.Principal{UserID: "user-1", Username: "admin"}}
 	deps := testDependencies(fake, false)
 	req := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
@@ -164,13 +164,26 @@ func TestDashboardRendersAuthenticatedUserAndCSRFToken(t *testing.T) {
 	body := rec.Body.String()
 	for _, expected := range []string{
 		"Dashboard Konkit",
-		"Selamat datang, admin",
-		`method="post" action="/logout"`,
-		`name="csrf_token" value="` + auth.CSRFToken(deps.SessionSecret, "valid-token") + `"`,
+		`id="konkit-root"`,
+		`type="module"`,
+		`/static/app/assets/`,
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("dashboard does not contain %q", expected)
 		}
+	}
+}
+
+func TestDashboardDescendantRendersAuthenticatedReactShell(t *testing.T) {
+	fake := &fakeAuthService{principal: auth.Principal{UserID: "user-1", Username: "admin"}}
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/pengguna", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: "valid-token"})
+	rec := httptest.NewRecorder()
+
+	NewHandler(testDependencies(fake, false)).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `id="konkit-root"`) {
+		t.Fatalf("expected dashboard descendant shell, status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
