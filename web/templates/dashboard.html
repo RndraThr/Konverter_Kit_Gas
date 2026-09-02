@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ .Title }}</title>
+  <link rel="icon" href="/favicon.ico">
+  <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand" aria-label="Ergas dan PT Kian Santang Mulitama Tbk">
+        <img src="/static/images/logo-ergas.png" alt="Ergas" class="brand-ergas">
+        <span class="brand-divider" aria-hidden="true"></span>
+        <img src="/static/images/logo-ksm-cropped.png" alt="PT Kian Santang Mulitama Tbk" class="brand-ksm">
+      </div>
+      <div class="account">
+        <span class="account-name">{{ .Username }}</span>
+        <form method="post" action="/logout">
+          <input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">
+          <button type="submit">Keluar</button>
+        </form>
+      </div>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <div class="page-heading">
+      <div>
+        <p>Ringkasan program</p>
+        <h1>Dashboard Konkit</h1>
+      </div>
+      <span class="session-status"><span aria-hidden="true"></span>Sesi aktif</span>
+    </div>
+    <div class="welcome-band">
+      <p>Selamat datang, {{ .Username }}</p>
+    </div>
+  </main>
+</body>
+</html>

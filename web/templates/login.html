@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ .Title }}</title>
+  {{ range .Styles }}
+  <link rel="stylesheet" href="{{ . }}">
+  {{ end }}
+</head>
+<body>
+  <div id="konkit-root"></div>
+  <script type="module" src="{{ .Script }}"></script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-label="Ilustrasi foto lapangan program nelayan">
+  <defs>
+    <linearGradient id="seaSky" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#e5f4da"/>
+      <stop offset="1" stop-color="#d5eee8"/>
+    </linearGradient>
+    <linearGradient id="water" x1="0" x2="1">
+      <stop offset="0" stop-color="#246f69"/>
+      <stop offset="1" stop-color="#59b947"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="900" fill="url(#seaSky)"/>
+  <path d="M0 590 C160 555 270 630 420 594 C620 545 760 620 940 570 C1060 535 1130 552 1200 530 L1200 900 L0 900 Z" fill="url(#water)"/>
+  <path d="M230 485 C380 545 610 550 780 495 L740 570 C585 615 392 600 270 555 Z" fill="#f6fbef"/>
+  <path d="M390 425 L650 425 L730 492 C600 530 410 525 260 480 Z" fill="#59b947"/>
+  <rect x="455" y="356" width="120" height="68" rx="8" fill="#153c2a"/>
+  <path d="M578 356 L662 418" stroke="#153c2a" stroke-width="14" stroke-linecap="round"/>
+  <g opacity=".35" stroke="#ffffff" stroke-width="6" fill="none">
+    <path d="M70 690 C240 650 360 725 540 682 C720 640 820 710 1010 660"/>
+    <path d="M0 775 C220 730 390 805 600 750 C790 700 940 770 1200 710"/>
+  </g>
+</svg>

@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-label="Ilustrasi foto lapangan program petani">
+  <defs>
+    <linearGradient id="sky" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#dcefd1"/>
+      <stop offset="1" stop-color="#f8fbef"/>
+    </linearGradient>
+    <linearGradient id="field" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#4b9d40"/>
+      <stop offset="0.45" stop-color="#7cc65f"/>
+      <stop offset="1" stop-color="#2e7d47"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="900" fill="url(#sky)"/>
+  <path d="M0 520 C220 450 380 570 610 505 C860 435 1020 500 1200 450 L1200 900 L0 900 Z" fill="url(#field)"/>
+  <path d="M0 650 C260 590 510 685 775 610 C955 560 1075 595 1200 560 L1200 900 L0 900 Z" fill="#1f6f39" opacity=".78"/>
+  <g opacity=".85">
+    <rect x="710" y="365" width="238" height="126" rx="12" fill="#eff7e7"/>
+    <rect x="744" y="400" width="96" height="52" rx="10" fill="#59b947"/>
+    <circle cx="760" cy="507" r="38" fill="#153c2a"/>
+    <circle cx="902" cy="507" r="38" fill="#153c2a"/>
+    <path d="M680 492 L996 492" stroke="#153c2a" stroke-width="22" stroke-linecap="round"/>
+  </g>
+  <g opacity=".45" stroke="#f9fff3" stroke-width="5">
+    <path d="M55 720 C300 665 495 742 720 690"/>
+    <path d="M10 800 C250 750 515 812 790 745"/>
+    <path d="M320 885 C540 790 850 825 1130 720"/>
+  </g>
+</svg>

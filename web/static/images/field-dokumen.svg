@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 900" role="img" aria-label="Ilustrasi foto lapangan dokumen BAST">
+  <defs>
+    <linearGradient id="desk" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#eaf6e4"/>
+      <stop offset="1" stop-color="#b9d8ae"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="900" fill="url(#desk)"/>
+  <rect x="225" y="100" width="690" height="720" rx="18" fill="#fbfdf8" transform="rotate(-4 570 460)"/>
+  <rect x="300" y="180" width="520" height="28" rx="14" fill="#153c2a" opacity=".86" transform="rotate(-4 560 194)"/>
+  <rect x="305" y="250" width="410" height="16" rx="8" fill="#59b947" opacity=".82" transform="rotate(-4 510 258)"/>
+  <g fill="#ccdccc" transform="rotate(-4 570 460)">
+    <rect x="315" y="310" width="480" height="12" rx="6"/>
+    <rect x="315" y="348" width="520" height="12" rx="6"/>
+    <rect x="315" y="386" width="440" height="12" rx="6"/>
+    <rect x="315" y="455" width="520" height="150" rx="10"/>
+  </g>
+  <path d="M715 630 C760 590 810 645 850 610 C875 588 895 600 904 618" fill="none" stroke="#27763b" stroke-width="12" stroke-linecap="round"/>
+  <rect x="780" y="582" width="190" height="34" rx="17" fill="#153c2a" transform="rotate(20 875 599)"/>
+  <circle cx="957" cy="630" r="18" fill="#59b947"/>
+</svg>
