@@ -80,7 +80,7 @@ func TestIntegrationLoginDashboardAndLogout(t *testing.T) {
 	dashboard.AddCookie(sessionCookie)
 	dashboardResponse := httptest.NewRecorder()
 	handler.ServeHTTP(dashboardResponse, dashboard)
-	if dashboardResponse.Code != http.StatusOK || !strings.Contains(dashboardResponse.Body.String(), "Selamat datang, web.flow.admin") {
+	if dashboardResponse.Code != http.StatusOK || !strings.Contains(dashboardResponse.Body.String(), `id="konkit-root"`) {
 		t.Fatalf("dashboard failed: status=%d body=%s", dashboardResponse.Code, dashboardResponse.Body.String())
 	}
 

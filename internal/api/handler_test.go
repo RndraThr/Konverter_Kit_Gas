@@ -108,6 +108,20 @@ func TestMutationRejectsMissingCSRFBeforeCallingService(t *testing.T) {
 	}
 }
 
+func TestAdministrationRoutesUseDocumentedPrefixes(t *testing.T) {
+	service := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowed: true}
+	for _, path := range []string{"/api/v1/admin/users", "/api/v1/admin/roles", "/api/v1/admin/permissions", "/api/v1/system/settings", "/api/v1/system/audit-logs"} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+		rec := httptest.NewRecorder()
+
+		NewHandler(Dependencies{Auth: service}).ServeHTTP(rec, req)
+		if rec.Code == http.StatusNotFound {
+			t.Fatalf("documented endpoint %s was not routed", path)
+		}
+	}
+}
+
 const validSessionToken = "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio"
 
 type fakeAuthService struct {

@@ -200,7 +200,7 @@ func (h *Handler) handleRole(w http.ResponseWriter, r *http.Request, rc requestC
 		return
 	}
 	switch r.Method {
-	case http.MethodPut:
+	case http.MethodPatch:
 		var input administration.RoleInput
 		if !decodeJSON(w, r, &input) {
 			return
@@ -218,7 +218,7 @@ func (h *Handler) handleRole(w http.ResponseWriter, r *http.Request, rc requestC
 		}
 		w.WriteHeader(http.StatusNoContent)
 	default:
-		methodNotAllowed(w, http.MethodPut+", "+http.MethodDelete)
+		methodNotAllowed(w, http.MethodPatch+", "+http.MethodDelete)
 	}
 }
 

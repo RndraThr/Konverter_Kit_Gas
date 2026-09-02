@@ -137,21 +137,21 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleMe(w, r, rc)
 	case path == "me/password":
 		h.handleMyPassword(w, r, rc)
-	case path == "users":
+	case path == "admin/users":
 		h.handleUsers(w, r, rc)
-	case strings.HasPrefix(path, "users/"):
-		h.handleUser(w, r, rc, strings.TrimPrefix(path, "users/"))
-	case path == "roles":
+	case strings.HasPrefix(path, "admin/users/"):
+		h.handleUser(w, r, rc, strings.TrimPrefix(path, "admin/users/"))
+	case path == "admin/roles":
 		h.handleRoles(w, r, rc)
-	case strings.HasPrefix(path, "roles/"):
-		h.handleRole(w, r, rc, strings.TrimPrefix(path, "roles/"))
-	case path == "permissions":
+	case strings.HasPrefix(path, "admin/roles/"):
+		h.handleRole(w, r, rc, strings.TrimPrefix(path, "admin/roles/"))
+	case path == "admin/permissions":
 		h.handlePermissions(w, r, rc)
-	case path == "settings":
+	case path == "system/settings":
 		h.handleSettings(w, r, rc)
 	case path == "system/health":
 		h.handleSystemHealth(w, r, rc)
-	case path == "audit-logs":
+	case path == "system/audit-logs":
 		h.handleAudit(w, r, rc)
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
