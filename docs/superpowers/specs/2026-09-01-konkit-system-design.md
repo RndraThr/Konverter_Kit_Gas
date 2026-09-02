@@ -4,6 +4,8 @@ Versi: 0.1
 Tanggal: 2026-09-01  
 Status: Draft awal untuk diskusi dan revisi
 
+Rancangan rinci DCP3, identitas penerima, peralihan, pemeriksaan penerimaan berulang, pendistribusian, dan slot foto dilanjutkan dalam `2026-09-03-dcp3-distribution-documentation-design.md`. Dokumen rinci tersebut menggantikan asumsi awal pada bagian calon penerima, import, dan dokumentasi apabila terdapat perbedaan.
+
 ## 1. Gambaran Umum
 
 Konkit adalah singkatan dari konverter kit gas, yaitu alat tambahan yang dipasang pada mesin kendaraan atau mesin alat kerja agar dapat menggunakan bahan bakar gas seperti LPG atau CNG sebagai pengganti bensin atau solar.
@@ -693,4 +695,3 @@ Hal yang masih perlu dijelaskan pada sesi berikutnya:
 - format Excel yang paling sering diberikan dinas,
 - status proses yang benar sesuai operasional lapangan,
 - kebutuhan role selain Super Admin.
-
