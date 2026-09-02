@@ -22,6 +22,7 @@ export function DashboardPage() {
       <article><ShieldCheck aria-hidden="true" /><div><strong>{summary.data?.roles ?? '-'}</strong><span>Role tersedia</span></div></article>
     </div>}
     <section className={styles.readiness}><div><h2>Status operasional</h2><p>{summary.data?.current_user?.full_name ?? 'Pengguna'}{summary.data?.current_user?.last_login_at ? `, login terakhir ${new Date(summary.data.current_user.last_login_at).toLocaleString('id-ID')}` : ''}</p></div><span>Aplikasi {summary.data?.system?.status ?? '-'} / Database {summary.data?.system?.database.status ?? '-'}</span></section>
-    {summary.data?.recent_activity && summary.data.recent_activity.length > 0 && <section className={styles.activity}><h2>Aktivitas terbaru</h2>{summary.data.recent_activity.map((entry) => <div key={entry.id}><strong>{entry.action}</strong><span>{entry.actor_name || 'Sistem'}, {new Date(entry.created_at).toLocaleString('id-ID')}</span></div>)}</section>}
+    <section className={styles.activity}><h2>Aktivitas terbaru</h2>{summary.data?.recent_activity?.length ? summary.data.recent_activity.map((entry) => <div key={entry.id}><strong>{entry.action}</strong><span>{entry.actor_name || 'Sistem'}, {new Date(entry.created_at).toLocaleString('id-ID')}</span></div>) : <p className="emptyState">Belum ada aktivitas administratif.</p>}</section>
+    <section className={styles.preparation}><h2>Data program</h2><p>Data kabupaten dan calon penerima akan tampil di sini setelah modul operasional disiapkan.</p></section>
   </div>;
 }

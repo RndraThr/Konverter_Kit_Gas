@@ -34,6 +34,7 @@ type ProfileService interface {
 
 type AdministrationService interface {
 	ListUsers(context.Context, administration.UserFilter) (administration.UserPage, error)
+	UserCounts(context.Context) (administration.UserCounts, error)
 	GetUser(context.Context, string) (administration.UserDetail, error)
 	CreateUser(context.Context, auth.Principal, administration.CreateUserInput, auth.ClientMeta) (administration.UserDetail, error)
 	UpdateUser(context.Context, auth.Principal, string, administration.UpdateUserInput, auth.ClientMeta) (administration.UserDetail, error)

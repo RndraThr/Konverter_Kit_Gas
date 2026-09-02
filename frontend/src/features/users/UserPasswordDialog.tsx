@@ -4,8 +4,8 @@ import { X } from 'lucide-react';
 import { FormField } from '../../components/FormField';
 import { UserRecord } from './UserDialog';
 
-export function UserPasswordDialog({ open, onOpenChange, user, pending, error, onSave }: {
-  open: boolean; onOpenChange: (open: boolean) => void; user?: UserRecord; pending?: boolean; error?: string; onSave: (password: string) => void;
+export function UserPasswordDialog({ open, onOpenChange, user, pending, error, fieldError, onSave }: {
+  open: boolean; onOpenChange: (open: boolean) => void; user?: UserRecord; pending?: boolean; error?: string; fieldError?: string; onSave: (password: string) => void;
 }) {
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
@@ -22,7 +22,7 @@ export function UserPasswordDialog({ open, onOpenChange, user, pending, error, o
       <form onSubmit={submit}>
         <header className="dialogHeader"><div><Dialog.Title>Reset password</Dialog.Title><Dialog.Description>Tetapkan password baru untuk {user?.full_name}.</Dialog.Description></div><Dialog.Close className="iconButton" aria-label="Tutup"><X /></Dialog.Close></header>
         <div className="dialogBody">
-          <FormField className="fullField" label="Password baru" name="password" type="password" minLength={12} required value={password} onChange={(e) => setPassword(e.target.value)} />
+          <FormField className="fullField" error={fieldError} label="Password baru" name="password" type="password" minLength={12} required value={password} onChange={(e) => setPassword(e.target.value)} />
           <FormField className="fullField" label="Konfirmasi password" name="password_confirmation" type="password" minLength={12} required value={confirmation} onChange={(e) => { setConfirmation(e.target.value); setMismatch(false); }} />
           {mismatch && <p className="formNotice">Konfirmasi password tidak sama.</p>}
           {error && <p className="formNotice">{error}</p>}

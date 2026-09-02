@@ -53,6 +53,12 @@ type UserPage struct {
 	Total    int64        `json:"total"`
 }
 
+type UserCounts struct {
+	Total    int64 `json:"total"`
+	Active   int64 `json:"active"`
+	Inactive int64 `json:"inactive"`
+}
+
 type CreateUserInput struct {
 	FullName string   `json:"full_name"`
 	Username string   `json:"username"`

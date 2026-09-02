@@ -7,8 +7,10 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"konkit/internal/administration"
+	"konkit/internal/audit"
 	"konkit/internal/auth"
 	"konkit/internal/health"
 	"konkit/internal/profile"
@@ -174,7 +176,9 @@ func TestRoleOptionsReturnsRedactedRolesForUsersViewer(t *testing.T) {
 	rec := httptest.NewRecorder()
 	adminService := &fakeAdministrationService{roles: []administration.Role{{ID: "role-1", Code: "operator", Name: "Operator", Permissions: []administration.Permission{{Code: "secret.permission"}}, UserCount: 9}}}
 
-	NewHandler(Dependencies{Auth: service, Administration: adminService}).ServeHTTP(rec, req)
+	profiles := fakeProfileService{profile: profile.Profile{FullName: "Dashboard User", Email: "private@konkit.test"}}
+	audits := &fakeAuditService{page: audit.Page{Items: []audit.Entry{{ID: "event-1", Action: "user.updated", ActorName: "Admin", IPAddress: "192.0.2.1", UserAgent: "private-agent", Metadata: map[string]any{"private": true}, CreatedAt: time.Now()}}}}
+	NewHandler(Dependencies{Auth: service, Administration: adminService, Profile: profiles, Health: fakeHealthService{status: health.StatusHealthy}, Audit: audits}).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"code":"operator"`) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
@@ -189,12 +193,17 @@ func TestDashboardSummaryUsesOnlyDashboardPermission(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/summary", nil)
 	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
 	rec := httptest.NewRecorder()
-	adminService := &fakeAdministrationService{roles: []administration.Role{{ID: "role-1"}}, userTotals: []int64{5, 4}}
+	adminService := &fakeAdministrationService{roles: []administration.Role{{ID: "role-1"}}, counts: administration.UserCounts{Total: 5, Active: 4, Inactive: 1}}
 
 	NewHandler(Dependencies{Auth: service, Administration: adminService}).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"active_users":4`) || !strings.Contains(rec.Body.String(), `"inactive_users":1`) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	for _, private := range []string{"private@konkit.test", "192.0.2.1", "private-agent", `"metadata"`} {
+		if strings.Contains(rec.Body.String(), private) {
+			t.Fatalf("dashboard summary leaked %q: %s", private, rec.Body.String())
+		}
 	}
 }
 
@@ -250,20 +259,24 @@ type fakeHealthService struct{ status string }
 type fakeProfileService struct{ profile profile.Profile }
 type fakeAdministrationService struct {
 	AdministrationService
-	roles      []administration.Role
-	userTotals []int64
+	roles  []administration.Role
+	counts administration.UserCounts
+}
+type fakeAuditService struct {
+	AuditService
+	page audit.Page
+}
+
+func (f *fakeAuditService) List(context.Context, audit.Filter) (audit.Page, error) {
+	return f.page, nil
 }
 
 func (f *fakeAdministrationService) ListRoles(context.Context) ([]administration.Role, error) {
 	return f.roles, nil
 }
 
-func (f *fakeAdministrationService) ListUsers(context.Context, administration.UserFilter) (administration.UserPage, error) {
-	total := int64(0)
-	if len(f.userTotals) > 0 {
-		total, f.userTotals = f.userTotals[0], f.userTotals[1:]
-	}
-	return administration.UserPage{Total: total}, nil
+func (f *fakeAdministrationService) UserCounts(context.Context) (administration.UserCounts, error) {
+	return f.counts, nil
 }
 
 func (f fakeProfileService) Get(context.Context, string) (profile.Profile, error) {

@@ -18,6 +18,7 @@ var (
 
 type repository interface {
 	ListUsers(context.Context, UserFilter) (UserPage, error)
+	UserCounts(context.Context) (UserCounts, error)
 	GetUser(context.Context, string) (UserDetail, error)
 	CreateUser(context.Context, auth.Principal, CreateUserInput, string, auth.ClientMeta) (UserDetail, error)
 	UpdateUser(context.Context, auth.Principal, string, UpdateUserInput, auth.ClientMeta) (UserDetail, error)
@@ -51,6 +52,10 @@ func (s *Service) ListUsers(ctx context.Context, filter UserFilter) (UserPage, e
 	filter.Search = strings.TrimSpace(filter.Search)
 	filter.RoleCode = strings.TrimSpace(filter.RoleCode)
 	return s.repository.ListUsers(ctx, filter)
+}
+
+func (s *Service) UserCounts(ctx context.Context) (UserCounts, error) {
+	return s.repository.UserCounts(ctx)
 }
 
 func (s *Service) GetUser(ctx context.Context, userID string) (UserDetail, error) {

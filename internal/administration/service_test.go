@@ -82,6 +82,10 @@ type fakeRepository struct {
 	updatedID    string
 }
 
+func (f *fakeRepository) UserCounts(context.Context) (UserCounts, error) {
+	return UserCounts{Total: 3, Active: 2, Inactive: 1}, nil
+}
+
 func (f *fakeRepository) ListUsers(context.Context, UserFilter) (UserPage, error) {
 	return UserPage{}, nil
 }

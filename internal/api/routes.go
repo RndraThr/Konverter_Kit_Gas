@@ -130,7 +130,7 @@ func (h *Handler) handleDashboardSummary(w http.ResponseWriter, r *http.Request,
 	if !h.authorize(w, r, rc.principal, "dashboard.view") {
 		return
 	}
-	users, err := h.deps.Administration.ListUsers(r.Context(), administration.UserFilter{Page: 1, PageSize: 1})
+	counts, err := h.deps.Administration.UserCounts(r.Context())
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -140,24 +140,23 @@ func (h *Handler) handleDashboardSummary(w http.ResponseWriter, r *http.Request,
 		writeServiceError(w, err)
 		return
 	}
-	active := true
-	activeUsers, err := h.deps.Administration.ListUsers(r.Context(), administration.UserFilter{Page: 1, PageSize: 1, Active: &active})
-	if err != nil {
-		writeServiceError(w, err)
-		return
-	}
-	summary := map[string]any{"users": users.Total, "active_users": activeUsers.Total, "inactive_users": users.Total - activeUsers.Total, "roles": len(roles)}
+	summary := map[string]any{"users": counts.Total, "active_users": counts.Active, "inactive_users": counts.Inactive, "roles": len(roles)}
 	if h.deps.Health != nil {
-		summary["system"] = h.deps.Health.Check(r.Context())
+		report := h.deps.Health.Check(r.Context())
+		summary["system"] = map[string]any{"status": report.Status, "database": map[string]any{"status": report.Database.Status}}
 	}
 	if h.deps.Profile != nil {
 		if current, profileErr := h.deps.Profile.Get(r.Context(), rc.principal.UserID); profileErr == nil {
-			summary["current_user"] = current
+			summary["current_user"] = map[string]any{"full_name": current.FullName, "last_login_at": current.LastLoginAt}
 		}
 	}
 	if h.deps.Audit != nil {
 		if recent, auditErr := h.deps.Audit.List(r.Context(), audit.Filter{Page: 1, PageSize: 5}); auditErr == nil {
-			summary["recent_activity"] = recent.Items
+			items := make([]map[string]any, 0, len(recent.Items))
+			for _, entry := range recent.Items {
+				items = append(items, map[string]any{"id": entry.ID, "action": entry.Action, "actor_name": entry.ActorName, "created_at": entry.CreatedAt})
+			}
+			summary["recent_activity"] = items
 		}
 	}
 	writeData(w, http.StatusOK, summary)

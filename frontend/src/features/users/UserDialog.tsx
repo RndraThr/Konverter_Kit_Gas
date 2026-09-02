@@ -7,8 +7,8 @@ export type Role = { id: string; code: string; name: string };
 export type UserRecord = { id: string; full_name: string; username: string; email: string; is_active: boolean; roles: Role[] };
 export type UserValues = { full_name: string; username: string; email: string; password?: string; is_active: boolean; role_ids: string[] };
 
-export function UserDialog({ open, onOpenChange, roles, user, pending, error, onSave }: {
-  open: boolean; onOpenChange: (open: boolean) => void; roles: Role[]; user?: UserRecord; pending?: boolean; error?: string; onSave: (values: UserValues) => void;
+export function UserDialog({ open, onOpenChange, roles, user, pending, error, fields = {}, onSave }: {
+  open: boolean; onOpenChange: (open: boolean) => void; roles: Role[]; user?: UserRecord; pending?: boolean; error?: string; fields?: Record<string, string>; onSave: (values: UserValues) => void;
 }) {
   const empty = { full_name: '', username: '', email: '', password: '', is_active: true, role_ids: [] as string[] };
   const [values, setValues] = useState<UserValues>(empty);
@@ -21,11 +21,11 @@ export function UserDialog({ open, onOpenChange, roles, user, pending, error, on
       <form onSubmit={submit}>
         <header className="dialogHeader"><div><Dialog.Title>{title}</Dialog.Title><Dialog.Description>Atur identitas dan akses pengguna.</Dialog.Description></div><Dialog.Close className="iconButton" aria-label="Tutup"><X /></Dialog.Close></header>
         <div className="dialogBody">
-          <FormField className="fullField" label="Nama lengkap" name="full_name" required value={values.full_name} onChange={(e) => setValues({ ...values, full_name: e.target.value })} />
-          <FormField label="Username" name="username" required value={values.username} onChange={(e) => setValues({ ...values, username: e.target.value })} />
-          <FormField label="Email" name="email" type="email" required value={values.email} onChange={(e) => setValues({ ...values, email: e.target.value })} />
-          {!user && <FormField className="fullField" label="Password awal" name="password" type="password" minLength={12} required value={values.password} onChange={(e) => setValues({ ...values, password: e.target.value })} hint="Minimal 12 karakter" />}
-          <fieldset className="fullField" style={{ border: 0, padding: 0, margin: 0 }}><legend style={{ fontSize: 13, fontWeight: 700, marginBottom: 9 }}>Role</legend>{roles.map((role) => <label className="checkboxField" key={role.id}><input type="checkbox" checked={values.role_ids.includes(role.id)} onChange={() => toggleRole(role.id)} />{role.name}</label>)}</fieldset>
+          <FormField className="fullField" error={fields.full_name} label="Nama lengkap" name="full_name" required value={values.full_name} onChange={(e) => setValues({ ...values, full_name: e.target.value })} />
+          <FormField error={fields.username} label="Username" name="username" required value={values.username} onChange={(e) => setValues({ ...values, username: e.target.value })} />
+          <FormField error={fields.email} label="Email" name="email" type="email" required value={values.email} onChange={(e) => setValues({ ...values, email: e.target.value })} />
+          {!user && <FormField className="fullField" error={fields.password} label="Password awal" name="password" type="password" minLength={12} required value={values.password} onChange={(e) => setValues({ ...values, password: e.target.value })} hint="Minimal 12 karakter" />}
+          <fieldset className="fullField" style={{ border: 0, padding: 0, margin: 0 }}><legend style={{ fontSize: 13, fontWeight: 700, marginBottom: 9 }}>Role</legend>{roles.map((role) => <label className="checkboxField" key={role.id}><input type="checkbox" checked={values.role_ids.includes(role.id)} onChange={() => toggleRole(role.id)} />{role.name}</label>)}{fields.role_ids && <small className="fieldError">{fields.role_ids}</small>}</fieldset>
           <label className="checkboxField fullField"><input type="checkbox" checked={values.is_active} onChange={(e) => setValues({ ...values, is_active: e.target.checked })} />Pengguna aktif</label>
           {error && <p className="formNotice fullField">{error}</p>}
         </div>

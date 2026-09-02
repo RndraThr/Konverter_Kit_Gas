@@ -73,6 +73,18 @@ func (r *Repository) ListUsers(ctx context.Context, filter UserFilter) (UserPage
 	return UserPage{Items: items, Page: filter.Page, PageSize: filter.PageSize, Total: total}, nil
 }
 
+func (r *Repository) UserCounts(ctx context.Context) (UserCounts, error) {
+	var counts UserCounts
+	err := r.pool.QueryRow(ctx, `
+		SELECT count(*), count(*) FILTER (WHERE is_active), count(*) FILTER (WHERE NOT is_active)
+		FROM users
+	`).Scan(&counts.Total, &counts.Active, &counts.Inactive)
+	if err != nil {
+		return UserCounts{}, fmt.Errorf("count users by status: %w", err)
+	}
+	return counts, nil
+}
+
 func (r *Repository) GetUser(ctx context.Context, userID string) (UserDetail, error) {
 	return r.userByID(ctx, userID)
 }
