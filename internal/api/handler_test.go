@@ -163,7 +163,7 @@ func TestValidationErrorsUseBadRequestAndFieldDetails(t *testing.T) {
 func TestAuthorizeAnyAcceptsUsersManagerForRoleOptions(t *testing.T) {
 	service := &fakeAuthService{allowedPermissions: map[string]bool{"users.manage": true}}
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/roles", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/role-options", nil)
 	if !(&Handler{deps: Dependencies{Auth: service}}).authorizeAny(rec, req, auth.Principal{}, "roles.view", "users.manage") {
 		t.Fatalf("authorization rejected: status=%d body=%s", rec.Code, rec.Body.String())
 	}
@@ -176,9 +176,7 @@ func TestRoleOptionsReturnsRedactedRolesForUsersViewer(t *testing.T) {
 	rec := httptest.NewRecorder()
 	adminService := &fakeAdministrationService{roles: []administration.Role{{ID: "role-1", Code: "operator", Name: "Operator", Permissions: []administration.Permission{{Code: "secret.permission"}}, UserCount: 9}}}
 
-	profiles := fakeProfileService{profile: profile.Profile{FullName: "Dashboard User", Email: "private@konkit.test"}}
-	audits := &fakeAuditService{page: audit.Page{Items: []audit.Entry{{ID: "event-1", Action: "user.updated", ActorName: "Admin", IPAddress: "192.0.2.1", UserAgent: "private-agent", Metadata: map[string]any{"private": true}, CreatedAt: time.Now()}}}}
-	NewHandler(Dependencies{Auth: service, Administration: adminService, Profile: profiles, Health: fakeHealthService{status: health.StatusHealthy}, Audit: audits}).ServeHTTP(rec, req)
+	NewHandler(Dependencies{Auth: service, Administration: adminService}).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"code":"operator"`) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
@@ -194,8 +192,10 @@ func TestDashboardSummaryUsesOnlyDashboardPermission(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
 	rec := httptest.NewRecorder()
 	adminService := &fakeAdministrationService{roles: []administration.Role{{ID: "role-1"}}, counts: administration.UserCounts{Total: 5, Active: 4, Inactive: 1}}
+	profiles := fakeProfileService{profile: profile.Profile{FullName: "Dashboard User", Email: "private@konkit.test"}}
+	audits := &fakeAuditService{page: audit.Page{Items: []audit.Entry{{ID: "event-1", Action: "user.updated", ActorName: "Admin", IPAddress: "192.0.2.1", UserAgent: "private-agent", Metadata: map[string]any{"private": true}, CreatedAt: time.Now()}}}}
 
-	NewHandler(Dependencies{Auth: service, Administration: adminService}).ServeHTTP(rec, req)
+	NewHandler(Dependencies{Auth: service, Administration: adminService, Profile: profiles, Health: fakeHealthService{status: health.StatusHealthy}, Audit: audits}).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"active_users":4`) || !strings.Contains(rec.Body.String(), `"inactive_users":1`) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
