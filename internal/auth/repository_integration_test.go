@@ -31,12 +31,15 @@ func TestIntegrationRepositoryCreatesAndFindsSuperAdmin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := pool.Exec(ctx, "UPDATE users SET full_name = 'Repository Administrator' WHERE lower(email) = lower($1)", email); err != nil {
+		t.Fatal(err)
+	}
 
 	user, err := repository.FindUserByIdentity(ctx, "REPOSITORY.ADMIN")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if user.Username != "repository.admin" || user.Email != email || !user.IsActive {
+	if user.FullName != "Repository Administrator" || user.Username != "repository.admin" || user.Email != email || !user.IsActive {
 		t.Fatalf("unexpected user: %+v", user)
 	}
 
@@ -46,6 +49,9 @@ func TestIntegrationRepositoryCreatesAndFindsSuperAdmin(t *testing.T) {
 	}
 	if !principal.IsSuperAdmin() {
 		t.Fatalf("expected super_admin role, got %v", principal.Roles)
+	}
+	if principal.FullName != "Repository Administrator" {
+		t.Fatalf("expected principal full name, got %q", principal.FullName)
 	}
 
 	allowed, err := repository.HasPermission(ctx, principal, "dashboard.view")
@@ -112,6 +118,63 @@ func TestIntegrationRepositoryPersistsExpiresAndDeletesSession(t *testing.T) {
 	}
 	if _, err := repository.PrincipalForSession(ctx, tokenHash, now); !errors.Is(err, ErrSessionNotFound) {
 		t.Fatalf("expected deleted session rejection, got %v", err)
+	}
+}
+
+func TestIntegrationAdministrationMigrationCreatesFoundation(t *testing.T) {
+	pool := integrationPool(t)
+	ctx := context.Background()
+
+	var userColumnCount int
+	if err := pool.QueryRow(ctx, `
+		SELECT count(*)
+		FROM information_schema.columns
+		WHERE table_schema = 'public'
+		  AND table_name = 'users'
+		  AND column_name = ANY($1)
+	`, []string{"full_name", "updated_by"}).Scan(&userColumnCount); err != nil {
+		t.Fatal(err)
+	}
+	if userColumnCount != 2 {
+		t.Fatalf("expected administration user columns, got %d", userColumnCount)
+	}
+
+	for _, table := range []string{"system_settings", "audit_logs"} {
+		var exists bool
+		if err := pool.QueryRow(ctx, "SELECT to_regclass('public.' || $1) IS NOT NULL", table).Scan(&exists); err != nil {
+			t.Fatal(err)
+		}
+		if !exists {
+			t.Fatalf("expected table %s", table)
+		}
+	}
+
+	permissionCodes := []string{
+		"dashboard.view",
+		"users.view",
+		"users.manage",
+		"roles.view",
+		"roles.manage",
+		"settings.view",
+		"settings.manage",
+		"health.view",
+		"audit.view",
+	}
+	var permissionCount int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM permissions WHERE code = ANY($1)", permissionCodes).Scan(&permissionCount); err != nil {
+		t.Fatal(err)
+	}
+	if permissionCount != len(permissionCodes) {
+		t.Fatalf("expected %d administration permissions, got %d", len(permissionCodes), permissionCount)
+	}
+
+	settingKeys := []string{"application_name", "timezone", "date_format", "locale", "organization_name"}
+	var settingCount int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM system_settings WHERE key = ANY($1)", settingKeys).Scan(&settingCount); err != nil {
+		t.Fatal(err)
+	}
+	if settingCount != len(settingKeys) {
+		t.Fatalf("expected %d default settings, got %d", len(settingKeys), settingCount)
 	}
 }
 

@@ -23,12 +23,13 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 func (r *Repository) FindUserByIdentity(ctx context.Context, identity string) (User, error) {
 	var user User
 	err := r.pool.QueryRow(ctx, `
-		SELECT id::text, username, email, password_hash, is_active
+		SELECT id::text, full_name, username, email, password_hash, is_active
 		FROM users
 		WHERE lower(username) = lower($1) OR lower(email) = lower($1)
 		LIMIT 1
 	`, strings.TrimSpace(identity)).Scan(
 		&user.ID,
+		&user.FullName,
 		&user.Username,
 		&user.Email,
 		&user.PasswordHash,
@@ -83,10 +84,10 @@ func (r *Repository) CreateSuperAdmin(ctx context.Context, username, email, pass
 func (r *Repository) PrincipalForUser(ctx context.Context, userID string) (Principal, error) {
 	var principal Principal
 	err := r.pool.QueryRow(ctx, `
-		SELECT id::text, username, email
+		SELECT id::text, full_name, username, email
 		FROM users
 		WHERE id = $1 AND is_active = true
-	`, userID).Scan(&principal.UserID, &principal.Username, &principal.Email)
+	`, userID).Scan(&principal.UserID, &principal.FullName, &principal.Username, &principal.Email)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Principal{}, ErrUserNotFound
 	}

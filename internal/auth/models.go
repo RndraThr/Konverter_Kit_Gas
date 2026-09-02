@@ -14,6 +14,7 @@ var (
 
 type User struct {
 	ID           string
+	FullName     string
 	Username     string
 	Email        string
 	PasswordHash string
@@ -22,6 +23,7 @@ type User struct {
 
 type Principal struct {
 	UserID   string
+	FullName string
 	Username string
 	Email    string
 	Roles    []string
