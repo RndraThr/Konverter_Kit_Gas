@@ -7,8 +7,8 @@ export type Role = { id: string; code: string; name: string };
 export type UserRecord = { id: string; full_name: string; username: string; email: string; is_active: boolean; roles: Role[] };
 export type UserValues = { full_name: string; username: string; email: string; password?: string; is_active: boolean; role_ids: string[] };
 
-export function UserDialog({ open, onOpenChange, roles, user, pending, onSave }: {
-  open: boolean; onOpenChange: (open: boolean) => void; roles: Role[]; user?: UserRecord; pending?: boolean; onSave: (values: UserValues) => void;
+export function UserDialog({ open, onOpenChange, roles, user, pending, error, onSave }: {
+  open: boolean; onOpenChange: (open: boolean) => void; roles: Role[]; user?: UserRecord; pending?: boolean; error?: string; onSave: (values: UserValues) => void;
 }) {
   const empty = { full_name: '', username: '', email: '', password: '', is_active: true, role_ids: [] as string[] };
   const [values, setValues] = useState<UserValues>(empty);
@@ -27,6 +27,7 @@ export function UserDialog({ open, onOpenChange, roles, user, pending, onSave }:
           {!user && <FormField className="fullField" label="Password awal" name="password" type="password" minLength={12} required value={values.password} onChange={(e) => setValues({ ...values, password: e.target.value })} hint="Minimal 12 karakter" />}
           <fieldset className="fullField" style={{ border: 0, padding: 0, margin: 0 }}><legend style={{ fontSize: 13, fontWeight: 700, marginBottom: 9 }}>Role</legend>{roles.map((role) => <label className="checkboxField" key={role.id}><input type="checkbox" checked={values.role_ids.includes(role.id)} onChange={() => toggleRole(role.id)} />{role.name}</label>)}</fieldset>
           <label className="checkboxField fullField"><input type="checkbox" checked={values.is_active} onChange={(e) => setValues({ ...values, is_active: e.target.checked })} />Pengguna aktif</label>
+          {error && <p className="formNotice fullField">{error}</p>}
         </div>
         <footer className="dialogActions"><Dialog.Close className="secondaryButton">Batal</Dialog.Close><button className="primaryButton" disabled={pending} type="submit">Simpan pengguna</button></footer>
       </form>

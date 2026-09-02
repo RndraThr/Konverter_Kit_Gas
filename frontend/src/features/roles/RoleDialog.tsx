@@ -8,7 +8,7 @@ export type PermissionGroup = { resource: string; permissions: Permission[] };
 export type RoleRecord = { id: string; code: string; name: string; description?: string; is_system: boolean; permissions: Permission[]; user_count: number };
 export type RoleValues = { code: string; name: string; description: string; permission_codes: string[] };
 
-export function RoleDialog({ open, onOpenChange, groups, role, pending, onSave }: { open: boolean; onOpenChange: (value: boolean) => void; groups: PermissionGroup[]; role?: RoleRecord; pending?: boolean; onSave: (values: RoleValues) => void }) {
+export function RoleDialog({ open, onOpenChange, groups, role, pending, error, onSave }: { open: boolean; onOpenChange: (value: boolean) => void; groups: PermissionGroup[]; role?: RoleRecord; pending?: boolean; error?: string; onSave: (values: RoleValues) => void }) {
   const empty = { code: '', name: '', description: '', permission_codes: [] as string[] };
   const [values, setValues] = useState<RoleValues>(empty);
   useEffect(() => setValues(role ? { code: role.code, name: role.name, description: role.description ?? '', permission_codes: role.permissions.map((item) => item.code) } : empty), [role, open]);
@@ -18,6 +18,7 @@ export function RoleDialog({ open, onOpenChange, groups, role, pending, onSave }
     <header className="dialogHeader"><div><Dialog.Title>{title}</Dialog.Title><Dialog.Description>Pilih hak akses sesuai tanggung jawab.</Dialog.Description></div><Dialog.Close className="iconButton" aria-label="Tutup"><X /></Dialog.Close></header>
     <div className="dialogBody"><FormField label="Kode role" name="code" required disabled={Boolean(role)} value={values.code} onChange={(e) => setValues({ ...values, code: e.target.value })} /><FormField label="Nama role" name="name" required value={values.name} onChange={(e) => setValues({ ...values, name: e.target.value })} /><FormField className="fullField" label="Deskripsi" name="description" value={values.description} onChange={(e) => setValues({ ...values, description: e.target.value })} />
       {groups.map((group) => <fieldset className="fullField" style={{ border: 0, padding: 0, margin: 0 }} key={group.resource}><legend style={{ fontSize: 13, fontWeight: 750, marginBottom: 8 }}>{group.resource}</legend>{group.permissions.map((permission) => <label className="checkboxField" key={permission.code}><input type="checkbox" checked={values.permission_codes.includes(permission.code)} onChange={() => toggle(permission.code)} />{permission.name}</label>)}</fieldset>)}
+      {error && <p className="formNotice fullField">{error}</p>}
     </div><footer className="dialogActions"><Dialog.Close className="secondaryButton">Batal</Dialog.Close><button className="primaryButton" disabled={pending}>Simpan role</button></footer>
   </form></Dialog.Popup></Dialog.Portal></Dialog.Root>;
 }

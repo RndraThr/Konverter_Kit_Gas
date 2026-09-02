@@ -147,6 +147,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleUser(w, r, rc, strings.TrimPrefix(path, "admin/users/"))
 	case path == "admin/roles":
 		h.handleRoles(w, r, rc)
+	case path == "admin/role-options":
+		h.handleRoleOptions(w, r, rc)
 	case strings.HasPrefix(path, "admin/roles/"):
 		h.handleRole(w, r, rc, strings.TrimPrefix(path, "admin/roles/"))
 	case path == "admin/permissions":

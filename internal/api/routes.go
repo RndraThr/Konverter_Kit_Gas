@@ -140,7 +140,27 @@ func (h *Handler) handleDashboardSummary(w http.ResponseWriter, r *http.Request,
 		writeServiceError(w, err)
 		return
 	}
-	writeData(w, http.StatusOK, map[string]any{"users": users.Total, "roles": len(roles)})
+	active := true
+	activeUsers, err := h.deps.Administration.ListUsers(r.Context(), administration.UserFilter{Page: 1, PageSize: 1, Active: &active})
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	summary := map[string]any{"users": users.Total, "active_users": activeUsers.Total, "inactive_users": users.Total - activeUsers.Total, "roles": len(roles)}
+	if h.deps.Health != nil {
+		summary["system"] = h.deps.Health.Check(r.Context())
+	}
+	if h.deps.Profile != nil {
+		if current, profileErr := h.deps.Profile.Get(r.Context(), rc.principal.UserID); profileErr == nil {
+			summary["current_user"] = current
+		}
+	}
+	if h.deps.Audit != nil {
+		if recent, auditErr := h.deps.Audit.List(r.Context(), audit.Filter{Page: 1, PageSize: 5}); auditErr == nil {
+			summary["recent_activity"] = recent.Items
+		}
+	}
+	writeData(w, http.StatusOK, summary)
 }
 
 func (h *Handler) handleUser(w http.ResponseWriter, r *http.Request, rc requestContext, suffix string) {
@@ -212,7 +232,7 @@ func (h *Handler) handleRoles(w http.ResponseWriter, r *http.Request, rc request
 	}
 	switch r.Method {
 	case http.MethodGet:
-		if !h.authorizeAny(w, r, rc.principal, "roles.view", "users.manage") {
+		if !h.authorize(w, r, rc.principal, "roles.view") {
 			return
 		}
 		result, err := h.deps.Administration.ListRoles(r.Context())
@@ -238,6 +258,30 @@ func (h *Handler) handleRoles(w http.ResponseWriter, r *http.Request, rc request
 	default:
 		methodNotAllowed(w, http.MethodGet+", "+http.MethodPost)
 	}
+}
+
+func (h *Handler) handleRoleOptions(w http.ResponseWriter, r *http.Request, rc requestContext) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if h.deps.Administration == nil {
+		writeUnavailable(w)
+		return
+	}
+	if !h.authorizeAny(w, r, rc.principal, "users.view", "users.manage") {
+		return
+	}
+	roles, err := h.deps.Administration.ListRoles(r.Context())
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	options := make([]administration.RoleRef, 0, len(roles))
+	for _, role := range roles {
+		options = append(options, administration.RoleRef{ID: role.ID, Code: role.Code, Name: role.Name})
+	}
+	writeData(w, http.StatusOK, options)
 }
 
 func (h *Handler) handleRole(w http.ResponseWriter, r *http.Request, rc requestContext, id string) {
@@ -400,8 +444,10 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, profile.ErrNotFound), errors.Is(err, administration.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "Data tidak ditemukan")
-	case errors.Is(err, profile.ErrIdentityInUse), errors.Is(err, administration.ErrIdentityInUse), errors.Is(err, administration.ErrRoleCodeInUse):
-		writeError(w, http.StatusConflict, "conflict", "Data sudah digunakan")
+	case errors.Is(err, profile.ErrIdentityInUse), errors.Is(err, administration.ErrIdentityInUse):
+		writeFieldError(w, http.StatusConflict, "conflict", "Data sudah digunakan", map[string]string{"username": err.Error(), "email": err.Error()})
+	case errors.Is(err, administration.ErrRoleCodeInUse):
+		writeFieldError(w, http.StatusConflict, "conflict", "Data sudah digunakan", map[string]string{"code": err.Error()})
 	case errors.Is(err, administration.ErrLastSuperAdmin), errors.Is(err, administration.ErrSelfDeactivation), errors.Is(err, administration.ErrRoleInUse), errors.Is(err, administration.ErrSystemRole):
 		writeError(w, http.StatusConflict, "operation_rejected", err.Error())
 	case errors.Is(err, profile.ErrFullNameInvalid), errors.Is(err, profile.ErrUsernameInvalid), errors.Is(err, profile.ErrEmailInvalid),
@@ -424,7 +470,9 @@ func validationFields(err error) map[string]string {
 		return map[string]string{"email": err.Error()}
 	case errors.Is(err, profile.ErrCurrentPassword):
 		return map[string]string{"current_password": err.Error()}
-	case errors.Is(err, profile.ErrPasswordTooShort), errors.Is(err, profile.ErrPasswordUnchanged), errors.Is(err, administration.ErrPasswordTooShort):
+	case errors.Is(err, profile.ErrPasswordTooShort), errors.Is(err, profile.ErrPasswordUnchanged):
+		return map[string]string{"new_password": err.Error()}
+	case errors.Is(err, administration.ErrPasswordTooShort):
 		return map[string]string{"password": err.Error()}
 	case errors.Is(err, administration.ErrRoleCodeInvalid):
 		return map[string]string{"code": err.Error()}

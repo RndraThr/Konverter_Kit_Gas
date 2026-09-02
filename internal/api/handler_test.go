@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"konkit/internal/administration"
 	"konkit/internal/auth"
 	"konkit/internal/health"
 	"konkit/internal/profile"
@@ -157,12 +158,51 @@ func TestValidationErrorsUseBadRequestAndFieldDetails(t *testing.T) {
 	}
 }
 
-func TestAuthorizeAnyAcceptsUsersManagerForRoleListing(t *testing.T) {
+func TestAuthorizeAnyAcceptsUsersManagerForRoleOptions(t *testing.T) {
 	service := &fakeAuthService{allowedPermissions: map[string]bool{"users.manage": true}}
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/roles", nil)
 	if !(&Handler{deps: Dependencies{Auth: service}}).authorizeAny(rec, req, auth.Principal{}, "roles.view", "users.manage") {
 		t.Fatalf("authorization rejected: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRoleOptionsReturnsRedactedRolesForUsersViewer(t *testing.T) {
+	service := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"users.view": true}}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/role-options", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+	adminService := &fakeAdministrationService{roles: []administration.Role{{ID: "role-1", Code: "operator", Name: "Operator", Permissions: []administration.Permission{{Code: "secret.permission"}}, UserCount: 9}}}
+
+	NewHandler(Dependencies{Auth: service, Administration: adminService}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"code":"operator"`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "secret.permission") || strings.Contains(rec.Body.String(), "user_count") {
+		t.Fatalf("role options leaked administrative details: %s", rec.Body.String())
+	}
+}
+
+func TestDashboardSummaryUsesOnlyDashboardPermission(t *testing.T) {
+	service := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"dashboard.view": true}}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dashboard/summary", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+	adminService := &fakeAdministrationService{roles: []administration.Role{{ID: "role-1"}}, userTotals: []int64{5, 4}}
+
+	NewHandler(Dependencies{Auth: service, Administration: adminService}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"active_users":4`) || !strings.Contains(rec.Body.String(), `"inactive_users":1`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestConflictErrorsIncludeIdentityFields(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeServiceError(rec, administration.ErrIdentityInUse)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"username":`) || !strings.Contains(rec.Body.String(), `"email":`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -208,6 +248,23 @@ type fakeAuthService struct {
 
 type fakeHealthService struct{ status string }
 type fakeProfileService struct{ profile profile.Profile }
+type fakeAdministrationService struct {
+	AdministrationService
+	roles      []administration.Role
+	userTotals []int64
+}
+
+func (f *fakeAdministrationService) ListRoles(context.Context) ([]administration.Role, error) {
+	return f.roles, nil
+}
+
+func (f *fakeAdministrationService) ListUsers(context.Context, administration.UserFilter) (administration.UserPage, error) {
+	total := int64(0)
+	if len(f.userTotals) > 0 {
+		total, f.userTotals = f.userTotals[0], f.userTotals[1:]
+	}
+	return administration.UserPage{Total: total}, nil
+}
 
 func (f fakeProfileService) Get(context.Context, string) (profile.Profile, error) {
 	return f.profile, nil
