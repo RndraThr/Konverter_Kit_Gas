@@ -2,5 +2,6 @@
 .env
 .cache/
 .tmp/
+.worktrees/
 frontend/node_modules/
 *.exe
