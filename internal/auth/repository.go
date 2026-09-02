@@ -23,12 +23,13 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 func (r *Repository) FindUserByIdentity(ctx context.Context, identity string) (User, error) {
 	var user User
 	err := r.pool.QueryRow(ctx, `
-		SELECT id::text, username, email, password_hash, is_active
+		SELECT id::text, full_name, username, email, password_hash, is_active
 		FROM users
 		WHERE lower(username) = lower($1) OR lower(email) = lower($1)
 		LIMIT 1
 	`, strings.TrimSpace(identity)).Scan(
 		&user.ID,
+		&user.FullName,
 		&user.Username,
 		&user.Email,
 		&user.PasswordHash,
@@ -52,8 +53,8 @@ func (r *Repository) CreateSuperAdmin(ctx context.Context, username, email, pass
 
 	var userID string
 	err = tx.QueryRow(ctx, `
-		INSERT INTO users (username, email, password_hash)
-		VALUES ($1, $2, $3)
+		INSERT INTO users (full_name, username, email, password_hash)
+		VALUES ($1, $1, $2, $3)
 		RETURNING id::text
 	`, normalizeIdentity(username), normalizeIdentity(email), passwordHash).Scan(&userID)
 	if isUniqueViolation(err) {
@@ -83,10 +84,10 @@ func (r *Repository) CreateSuperAdmin(ctx context.Context, username, email, pass
 func (r *Repository) PrincipalForUser(ctx context.Context, userID string) (Principal, error) {
 	var principal Principal
 	err := r.pool.QueryRow(ctx, `
-		SELECT id::text, username, email
+		SELECT id::text, full_name, username, email
 		FROM users
 		WHERE id = $1 AND is_active = true
-	`, userID).Scan(&principal.UserID, &principal.Username, &principal.Email)
+	`, userID).Scan(&principal.UserID, &principal.FullName, &principal.Username, &principal.Email)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Principal{}, ErrUserNotFound
 	}
@@ -138,6 +139,38 @@ func (r *Repository) HasPermission(ctx context.Context, principal Principal, per
 		return false, fmt.Errorf("check permission: %w", err)
 	}
 	return allowed, nil
+}
+
+func (r *Repository) PermissionsForPrincipal(ctx context.Context, principal Principal) ([]string, error) {
+	if principal.IsSuperAdmin() {
+		return []string{"*"}, nil
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT permissions.code
+		FROM user_roles
+		JOIN role_permissions ON role_permissions.role_id = user_roles.role_id
+		JOIN permissions ON permissions.id = role_permissions.permission_id
+		WHERE user_roles.user_id = $1
+		ORDER BY permissions.code
+	`, principal.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("list principal permissions: %w", err)
+	}
+	defer rows.Close()
+
+	permissions := make([]string, 0)
+	for rows.Next() {
+		var code string
+		if err := rows.Scan(&code); err != nil {
+			return nil, fmt.Errorf("scan principal permission: %w", err)
+		}
+		permissions = append(permissions, code)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate principal permissions: %w", err)
+	}
+	return permissions, nil
 }
 
 func (r *Repository) CreateSession(

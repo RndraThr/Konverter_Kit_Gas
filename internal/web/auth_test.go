@@ -32,7 +32,7 @@ func TestLoginPostSetsSecureSessionCookieAndRedirects(t *testing.T) {
 		t.Fatalf("expected one cookie, got %d", len(cookies))
 	}
 	cookie := cookies[0]
-	if cookie.Name != sessionCookieName || cookie.Value != "raw-session-token" || !cookie.HttpOnly || !cookie.Secure {
+	if cookie.Name != auth.SessionCookieName || cookie.Value != "raw-session-token" || !cookie.HttpOnly || !cookie.Secure {
 		t.Fatalf("unexpected cookie: %+v", cookie)
 	}
 	if cookie.SameSite != http.SameSiteLaxMode || cookie.MaxAge != int((30*24*time.Hour).Seconds()) {
@@ -89,7 +89,7 @@ func TestLoginPostThrottlesSixthFailedAttempt(t *testing.T) {
 func TestAuthenticatedUserOpeningLoginRedirectsToDashboard(t *testing.T) {
 	fake := &fakeAuthService{principal: auth.Principal{UserID: "user-1", Username: "admin"}}
 	req := httptest.NewRequest(http.MethodGet, "/login", nil)
-	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "valid-token"})
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: "valid-token"})
 	rec := httptest.NewRecorder()
 
 	NewHandler(testDependencies(fake, false)).ServeHTTP(rec, req)
@@ -102,7 +102,7 @@ func TestAuthenticatedUserOpeningLoginRedirectsToDashboard(t *testing.T) {
 func TestLogoutRejectsInvalidCSRFToken(t *testing.T) {
 	fake := &fakeAuthService{principal: auth.Principal{UserID: "user-1", Username: "admin"}}
 	req := formRequest(http.MethodPost, "/logout", url.Values{"csrf_token": {"wrong"}})
-	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "valid-token"})
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: "valid-token"})
 	rec := httptest.NewRecorder()
 
 	NewHandler(testDependencies(fake, false)).ServeHTTP(rec, req)
@@ -121,7 +121,7 @@ func TestLogoutRevokesSessionAndExpiresCookie(t *testing.T) {
 	req := formRequest(http.MethodPost, "/logout", url.Values{
 		"csrf_token": {auth.CSRFToken(deps.SessionSecret, "valid-token")},
 	})
-	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "valid-token"})
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: "valid-token"})
 	rec := httptest.NewRecorder()
 
 	NewHandler(deps).ServeHTTP(rec, req)
@@ -149,11 +149,11 @@ func TestDashboardRedirectsAnonymousUserToLogin(t *testing.T) {
 	}
 }
 
-func TestDashboardRendersAuthenticatedUserAndCSRFToken(t *testing.T) {
+func TestDashboardRendersAuthenticatedReactShell(t *testing.T) {
 	fake := &fakeAuthService{principal: auth.Principal{UserID: "user-1", Username: "admin"}}
 	deps := testDependencies(fake, false)
 	req := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
-	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "valid-token"})
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: "valid-token"})
 	rec := httptest.NewRecorder()
 
 	NewHandler(deps).ServeHTTP(rec, req)
@@ -164,13 +164,26 @@ func TestDashboardRendersAuthenticatedUserAndCSRFToken(t *testing.T) {
 	body := rec.Body.String()
 	for _, expected := range []string{
 		"Dashboard Konkit",
-		"Selamat datang, admin",
-		`method="post" action="/logout"`,
-		`name="csrf_token" value="` + auth.CSRFToken(deps.SessionSecret, "valid-token") + `"`,
+		`id="konkit-root"`,
+		`type="module"`,
+		`/static/app/assets/`,
 	} {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("dashboard does not contain %q", expected)
 		}
+	}
+}
+
+func TestDashboardDescendantRendersAuthenticatedReactShell(t *testing.T) {
+	fake := &fakeAuthService{principal: auth.Principal{UserID: "user-1", Username: "admin"}}
+	req := httptest.NewRequest(http.MethodGet, "/dashboard/pengguna", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: "valid-token"})
+	rec := httptest.NewRecorder()
+
+	NewHandler(testDependencies(fake, false)).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `id="konkit-root"`) {
+		t.Fatalf("expected dashboard descendant shell, status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -180,7 +193,7 @@ func TestDashboardRejectsUserWithoutPermission(t *testing.T) {
 		deny:      true,
 	}
 	req := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
-	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "valid-token"})
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: "valid-token"})
 	rec := httptest.NewRecorder()
 
 	NewHandler(testDependencies(fake, false)).ServeHTTP(rec, req)
@@ -192,7 +205,7 @@ func TestDashboardRejectsUserWithoutPermission(t *testing.T) {
 
 func TestVersionedAPIIsMountedWithoutHTMLRedirect(t *testing.T) {
 	deps := testDependencies(&fakeAuthService{}, false)
-	deps.API = apihttp.NewHandler()
+	deps.API = apihttp.NewHandler(apihttp.Dependencies{})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/health", nil)
 	rec := httptest.NewRecorder()
 

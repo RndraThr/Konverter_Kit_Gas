@@ -1,15 +1,11 @@
 package web
 
-import (
-	"net/http"
-
-	"konkit/internal/auth"
-)
+import "net/http"
 
 type DashboardPageData struct {
-	Title     string
-	Username  string
-	CSRFToken string
+	Title  string
+	Script string
+	Styles []string
 }
 
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
@@ -19,12 +15,9 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	principal, _ := r.Context().Value(principalContextKey).(auth.Principal)
-	rawToken, _ := r.Context().Value(sessionTokenContextKey).(string)
+	script, styles := loadViteEntry(projectRoot())
 	data := DashboardPageData{
-		Title:     "Dashboard Konkit",
-		Username:  principal.Username,
-		CSRFToken: auth.CSRFToken(s.deps.SessionSecret, rawToken),
+		Title: "Dashboard Konkit", Script: script, Styles: styles,
 	}
 	if err := s.templates.ExecuteTemplate(w, "dashboard.html", data); err != nil {
 		http.Error(w, "Dashboard tidak dapat ditampilkan", http.StatusInternalServerError)

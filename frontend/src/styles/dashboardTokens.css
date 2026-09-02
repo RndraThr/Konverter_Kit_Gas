@@ -1,0 +1,15 @@
+:root {
+  --dashboard-canvas: #f3f5f2;
+  --dashboard-surface: #ffffff;
+  --dashboard-sidebar: #173d2b;
+  --dashboard-sidebar-raised: #205137;
+  --dashboard-sidebar-text: #eef7ef;
+  --dashboard-green: #4fad42;
+  --dashboard-green-dark: #28733a;
+  --dashboard-gold: #c89b39;
+  --dashboard-ink: #18251d;
+  --dashboard-muted: #68756c;
+  --dashboard-line: #dbe3dc;
+  --dashboard-danger: #b43c37;
+  --dashboard-focus: #d5a943;
+}

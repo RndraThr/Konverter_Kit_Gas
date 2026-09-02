@@ -40,6 +40,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/login", s.login)
 	s.mux.Handle("/logout", s.requireAuth(http.HandlerFunc(s.logout)))
 	s.mux.Handle("/dashboard", s.requirePermission("dashboard.view", http.HandlerFunc(s.dashboard)))
+	s.mux.Handle("/dashboard/", s.requirePermission("dashboard.view", http.HandlerFunc(s.dashboard)))
 	if s.deps.API != nil {
 		s.mux.Handle("/api/v1/", s.deps.API)
 	}
