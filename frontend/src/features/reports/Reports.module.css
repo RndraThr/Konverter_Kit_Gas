@@ -1,0 +1,7 @@
+.filters { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem; }
+.filters label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.875rem; }
+.summary { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem; }
+.summary article { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.75rem 1rem; border: 1px solid var(--border-color, #d9d9d9); border-radius: 0.5rem; min-width: 8rem; }
+.summary article strong { font-size: 1.5rem; }
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border-color, #d9d9d9); white-space: nowrap; }
