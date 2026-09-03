@@ -12,7 +12,7 @@ const bootstrap = {
     username: 'admin',
     email: 'admin@konkit.test',
     roles: ['super_admin'],
-    permissions: ['dashboard.view', 'dcp3.view', 'users.view', 'settings.view'],
+    permissions: ['dashboard.view', 'dcp3.view', 'distribution.view', 'users.view', 'settings.view'],
   },
   meta: { csrf_token: 'csrf-token' },
 };
@@ -47,6 +47,7 @@ describe('AppShell', () => {
     expect(screen.getByText('Sistem')).toBeInTheDocument();
     expect(screen.getByText('Akun')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'DCP3' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Pendistribusian' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Pengguna' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Role & akses' })).not.toBeInTheDocument();
   });
