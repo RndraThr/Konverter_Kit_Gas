@@ -12,6 +12,7 @@ import { SettingsPage } from '../features/settings/SettingsPage';
 import { HealthPage } from '../features/health/HealthPage';
 import { AuditPage } from '../features/audit/AuditPage';
 import { ProgramSetupPage } from '../features/programs/ProgramSetupPage';
+import { DCP3ImportPage } from '../features/dcp3/DCP3ImportPage';
 
 function ProtectedPage({ permission, children }: { permission: string; children: ReactNode }) {
   const bootstrap = useQuery({ queryKey: ['bootstrap'], queryFn: getBootstrap });
@@ -26,6 +27,7 @@ export const dashboardRoutes: RouteObject[] = [{
   children: [
     { index: true, element: <DashboardPage /> },
     { path: 'persiapan-program', element: <ProtectedPage permission="programs.view"><ProgramSetupPage /></ProtectedPage> },
+    { path: 'dcp3', element: <ProtectedPage permission="dcp3.view"><DCP3ImportPage /></ProtectedPage> },
     { path: 'pengguna', element: <ProtectedPage permission="users.view"><UsersPage /></ProtectedPage> },
     { path: 'role', element: <ProtectedPage permission="roles.view"><RolesPage /></ProtectedPage> },
     { path: 'pengaturan', element: <ProtectedPage permission="settings.view"><SettingsPage /></ProtectedPage> },
