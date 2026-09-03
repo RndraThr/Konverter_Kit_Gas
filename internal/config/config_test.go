@@ -120,6 +120,21 @@ func TestLoadFromParsesLocalConfiguration(t *testing.T) {
 	if cfg.SessionCookieSecure {
 		t.Fatal("expected secure cookie to be disabled locally")
 	}
+	if cfg.StoragePath != "./storage" {
+		t.Fatalf("unexpected local storage path: %q", cfg.StoragePath)
+	}
+}
+
+func TestLoadFromRequiresAbsoluteStoragePathOutsideLocal(t *testing.T) {
+	_, err := loadFrom(mapLookup(map[string]string{
+		"APP_ENV":        "production",
+		"DATABASE_URL":   "postgres://postgres:secret@127.0.0.1:5432/konkit?sslmode=disable",
+		"SESSION_SECRET": "01234567890123456789012345678901",
+		"STORAGE_PATH":   "./storage",
+	}))
+	if !errors.Is(err, ErrStoragePathAbsolute) {
+		t.Fatalf("expected ErrStoragePathAbsolute, got %v", err)
+	}
 }
 
 func mapLookup(values map[string]string) lookupFunc {

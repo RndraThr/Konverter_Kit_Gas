@@ -86,6 +86,9 @@ type DistributionService interface {
 	Search(context.Context, string, string, int) ([]distribution.SearchResult, error)
 	GetWorkspace(context.Context, string) (distribution.RecipientWorkspace, error)
 	SaveDraft(context.Context, auth.Principal, string, distribution.DraftInput, auth.ClientMeta) (distribution.RecipientWorkspace, error)
+	UploadMedia(context.Context, auth.Principal, distribution.UploadMediaInput, auth.ClientMeta) (distribution.MediaFile, error)
+	DeleteMedia(context.Context, auth.Principal, string, auth.ClientMeta) error
+	OpenMedia(context.Context, string) (distribution.MediaContent, error)
 }
 
 type Dependencies struct {
@@ -201,6 +204,10 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleDCP3Import(w, r, rc)
 	case path == "distribution/search":
 		h.handleDistributionSearch(w, r, rc)
+	case strings.HasPrefix(path, "distribution/slots/"):
+		h.handleDistributionSlot(w, r, rc, strings.TrimPrefix(path, "distribution/slots/"))
+	case strings.HasPrefix(path, "distribution/media/"):
+		h.handleDistributionMedia(w, r, rc, strings.TrimPrefix(path, "distribution/media/"))
 	case strings.HasPrefix(path, "distribution/allocations/"):
 		h.handleDistributionAllocation(w, r, rc, strings.TrimPrefix(path, "distribution/allocations/"))
 	default:

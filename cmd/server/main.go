@@ -20,6 +20,7 @@ import (
 	"konkit/internal/dcp3"
 	"konkit/internal/distribution"
 	"konkit/internal/health"
+	"konkit/internal/media"
 	"konkit/internal/profile"
 	"konkit/internal/programs"
 	"konkit/internal/settings"
@@ -48,6 +49,10 @@ func run(ctx context.Context, cfg config.Config) error {
 
 	repository := auth.NewRepository(pool)
 	authService := auth.NewService(repository, cfg.SessionTTL, cfg.RememberTTL)
+	mediaStorage, err := media.NewLocalStorage(cfg.StoragePath)
+	if err != nil {
+		return err
+	}
 	apiHandler := apihttp.NewHandler(apihttp.Dependencies{
 		Auth:           authService,
 		Profile:        profile.NewService(profile.NewRepository(pool)),
@@ -57,7 +62,7 @@ func run(ctx context.Context, cfg config.Config) error {
 		Audit:          audit.NewRepository(pool),
 		Programs:       programs.NewService(programs.NewRepository(pool)),
 		DCP3:           dcp3.NewImportService(dcp3.NewRepository(pool), dcp3.ParseLimits{MaxBytes: 10 << 20, MaxRows: 5000, MaxColumns: 100}),
-		Distribution:   distribution.NewService(distribution.NewRepository(pool)),
+		Distribution:   distribution.NewService(distribution.NewRepository(pool), mediaStorage),
 		SessionSecret:  cfg.SessionSecret,
 	})
 	handler := web.NewHandler(web.Dependencies{

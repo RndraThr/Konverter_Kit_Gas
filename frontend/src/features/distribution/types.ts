@@ -1,6 +1,7 @@
 import type { Schedule } from '../programs/types';
 
-export type SlotSummary = { id?: string; code: string; label: string; status: string; required?: boolean; min_files?: number; max_files?: number };
+export type MediaFile = { id: string; slot_id: string; original_filename: string; mime_type: string; byte_size: number; source: string; status: string; content_url: string; captured_at?: string };
+export type SlotSummary = { id?: string; code: string; label: string; status: string; required?: boolean; min_files?: number; max_files?: number; input_source?: 'camera' | 'gallery' | 'both'; require_location?: boolean; require_captured_at?: boolean; files?: MediaFile[] };
 export type SearchResult = {
   allocation_id: string; distribution_number: number; full_name: string; masked_nik: string;
   location: string; program_type: 'farmer' | 'fisherman'; eligibility: string;

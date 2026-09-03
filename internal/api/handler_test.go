@@ -304,6 +304,34 @@ func TestDistributionDetailAndDraftUseSeparatePermissions(t *testing.T) {
 	}
 }
 
+func TestDistributionMediaUploadAndContentHeaders(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"documentation.manage": true, "distribution.view": true}}
+	service := &fakeDistributionService{media: distribution.MediaFile{ID: "media-1", MimeType: "image/jpeg", OriginalFilename: "penerima.jpg"}, mediaContent: []byte("jpeg-content")}
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("source", "camera")
+	file, _ := writer.CreateFormFile("file", "penerima.jpg")
+	_, _ = file.Write(append([]byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}, bytes.Repeat([]byte{0}, 32)...))
+	_ = writer.Close()
+	upload := httptest.NewRequest(http.MethodPost, "/api/v1/distribution/slots/slot-1/media", body)
+	upload.Header.Set("Content-Type", writer.FormDataContentType())
+	upload.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	upload.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
+	uploadRecorder := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: authService, Distribution: service, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(uploadRecorder, upload)
+	if uploadRecorder.Code != http.StatusCreated || service.slotID != "slot-1" || service.upload.Source != "camera" {
+		t.Fatalf("upload status=%d slot=%q body=%s", uploadRecorder.Code, service.slotID, uploadRecorder.Body.String())
+	}
+
+	content := httptest.NewRequest(http.MethodGet, "/api/v1/distribution/media/media-1/content", nil)
+	content.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	contentRecorder := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: authService, Distribution: service}).ServeHTTP(contentRecorder, content)
+	if contentRecorder.Code != http.StatusOK || contentRecorder.Header().Get("X-Content-Type-Options") != "nosniff" || !strings.HasPrefix(contentRecorder.Header().Get("Content-Disposition"), "inline") {
+		t.Fatalf("content status=%d headers=%v", contentRecorder.Code, contentRecorder.Header())
+	}
+}
+
 func TestProtectedReadinessReturnsServiceUnavailableWhenDegraded(t *testing.T) {
 	service := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowed: true}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/health", nil)
@@ -453,6 +481,10 @@ type fakeDistributionService struct {
 	query        string
 	limit        int
 	allocationID string
+	media        distribution.MediaFile
+	mediaContent []byte
+	slotID       string
+	upload       distribution.UploadMediaInput
 }
 
 func (f *fakeDistributionService) Search(_ context.Context, scheduleID, query string, limit int) ([]distribution.SearchResult, error) {
@@ -466,6 +498,16 @@ func (f *fakeDistributionService) GetWorkspace(_ context.Context, allocationID s
 func (f *fakeDistributionService) SaveDraft(_ context.Context, _ auth.Principal, allocationID string, _ distribution.DraftInput, _ auth.ClientMeta) (distribution.RecipientWorkspace, error) {
 	f.allocationID = allocationID
 	return f.workspace, nil
+}
+func (f *fakeDistributionService) UploadMedia(_ context.Context, _ auth.Principal, input distribution.UploadMediaInput, _ auth.ClientMeta) (distribution.MediaFile, error) {
+	f.slotID, f.upload = input.SlotID, input
+	return f.media, nil
+}
+func (f *fakeDistributionService) DeleteMedia(context.Context, auth.Principal, string, auth.ClientMeta) error {
+	return nil
+}
+func (f *fakeDistributionService) OpenMedia(context.Context, string) (distribution.MediaContent, error) {
+	return distribution.MediaContent{Reader: io.NopCloser(bytes.NewReader(f.mediaContent)), MimeType: f.media.MimeType, Filename: f.media.OriginalFilename}, nil
 }
 
 func (f *fakeDCP3Service) Preview(_ context.Context, _ auth.Principal, scheduleID, filename string, _ io.Reader, _ auth.ClientMeta) (dcp3.ImportPreview, error) {

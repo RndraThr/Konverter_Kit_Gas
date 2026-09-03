@@ -190,7 +190,7 @@ func (r *Repository) listSlots(ctx context.Context, distributionID string) ([]Sl
 	if distributionID == "" {
 		return []SlotSummary{}, nil
 	}
-	rows, err := r.pool.Query(ctx, `SELECT id::text,slot_code,label_snapshot,status,is_required,min_files,max_files FROM documentation_slots WHERE distribution_id=$1 ORDER BY sort_order,slot_code`, distributionID)
+	rows, err := r.pool.Query(ctx, `SELECT id::text,slot_code,label_snapshot,status,is_required,min_files,max_files,input_source,require_location,require_captured_at FROM documentation_slots WHERE distribution_id=$1 ORDER BY sort_order,slot_code`, distributionID)
 	if err != nil {
 		return nil, fmt.Errorf("list documentation slots: %w", err)
 	}
@@ -198,12 +198,132 @@ func (r *Repository) listSlots(ctx context.Context, distributionID string) ([]Sl
 	result := []SlotSummary{}
 	for rows.Next() {
 		var item SlotSummary
-		if err := rows.Scan(&item.ID, &item.Code, &item.Label, &item.Status, &item.Required, &item.MinFiles, &item.MaxFiles); err != nil {
+		if err := rows.Scan(&item.ID, &item.Code, &item.Label, &item.Status, &item.Required, &item.MinFiles, &item.MaxFiles, &item.InputSource, &item.RequireLocation, &item.RequireCapturedAt); err != nil {
+			return nil, err
+		}
+		item.Files, err = r.listMedia(ctx, item.ID)
+		if err != nil {
 			return nil, err
 		}
 		result = append(result, item)
 	}
 	return result, rows.Err()
+}
+
+func (r *Repository) GetMediaSlot(ctx context.Context, slotID string) (MediaSlot, error) {
+	var result MediaSlot
+	err := r.pool.QueryRow(ctx, `SELECT s.id::text,s.input_source,s.require_location,s.require_captured_at,s.min_files,s.max_files,count(m.id) FILTER(WHERE m.status='accepted') FROM documentation_slots s LEFT JOIN media_files m ON m.documentation_slot_id=s.id WHERE s.id=$1 GROUP BY s.id`, slotID).Scan(&result.ID, &result.InputSource, &result.RequireLocation, &result.RequireCapturedAt, &result.MinFiles, &result.MaxFiles, &result.AcceptedFiles)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return MediaSlot{}, ErrMediaNotFound
+	}
+	if err != nil {
+		return MediaSlot{}, fmt.Errorf("get documentation slot: %w", err)
+	}
+	return result, nil
+}
+
+func (r *Repository) SaveMedia(ctx context.Context, actor auth.Principal, input MediaFileInput, meta auth.ClientMeta) (MediaFile, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return MediaFile{}, fmt.Errorf("begin media metadata: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var result MediaFile
+	err = tx.QueryRow(ctx, `INSERT INTO media_files(documentation_slot_id,storage_key,original_filename,mime_type,byte_size,checksum,source,captured_at,latitude,longitude,uploaded_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,'')::uuid) RETURNING id::text,documentation_slot_id::text,storage_key::text,original_filename,mime_type,byte_size,source,captured_at,latitude::float8,longitude::float8,status,uploaded_at`, input.SlotID, input.StorageKey, input.OriginalFilename, input.MimeType, input.ByteSize, input.Checksum, input.Source, input.CapturedAt, input.Latitude, input.Longitude, actor.UserID).Scan(&result.ID, &result.SlotID, &result.StorageKey, &result.OriginalFilename, &result.MimeType, &result.ByteSize, &result.Source, &result.CapturedAt, &result.Latitude, &result.Longitude, &result.Status, &result.UploadedAt)
+	if err != nil {
+		return MediaFile{}, fmt.Errorf("save media metadata: %w", err)
+	}
+	if err := updateSlotStatus(ctx, tx, input.SlotID); err != nil {
+		return MediaFile{}, err
+	}
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "documentation.media_uploaded", ResourceType: "media_file", ResourceID: result.ID, Metadata: map[string]any{"slot_id": input.SlotID, "mime_type": input.MimeType, "byte_size": input.ByteSize, "source": input.Source}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+		return MediaFile{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return MediaFile{}, fmt.Errorf("commit media metadata: %w", err)
+	}
+	return result, nil
+}
+
+func (r *Repository) GetMedia(ctx context.Context, mediaID string) (MediaFile, error) {
+	var result MediaFile
+	err := r.pool.QueryRow(ctx, `SELECT id::text,documentation_slot_id::text,storage_key::text,original_filename,mime_type,byte_size,source,captured_at,latitude::float8,longitude::float8,status,uploaded_at FROM media_files WHERE id=$1 AND status='accepted'`, mediaID).Scan(&result.ID, &result.SlotID, &result.StorageKey, &result.OriginalFilename, &result.MimeType, &result.ByteSize, &result.Source, &result.CapturedAt, &result.Latitude, &result.Longitude, &result.Status, &result.UploadedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return MediaFile{}, ErrMediaNotFound
+	}
+	if err != nil {
+		return MediaFile{}, fmt.Errorf("get documentation media: %w", err)
+	}
+	result.ContentURL = "/api/v1/distribution/media/" + result.ID + "/content"
+	return result, nil
+}
+
+func (r *Repository) DeleteMedia(ctx context.Context, actor auth.Principal, mediaID string, meta auth.ClientMeta) (MediaFile, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return MediaFile{}, fmt.Errorf("begin media delete: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var result MediaFile
+	err = tx.QueryRow(ctx, `UPDATE media_files SET status='deleted',updated_at=now() WHERE id=$1 AND status='accepted' RETURNING id::text,documentation_slot_id::text,storage_key::text,original_filename,mime_type,byte_size,source,captured_at,latitude::float8,longitude::float8,status,uploaded_at`, mediaID).Scan(&result.ID, &result.SlotID, &result.StorageKey, &result.OriginalFilename, &result.MimeType, &result.ByteSize, &result.Source, &result.CapturedAt, &result.Latitude, &result.Longitude, &result.Status, &result.UploadedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return MediaFile{}, ErrMediaNotFound
+	}
+	if err != nil {
+		return MediaFile{}, fmt.Errorf("mark media deleted: %w", err)
+	}
+	if err := updateSlotStatus(ctx, tx, result.SlotID); err != nil {
+		return MediaFile{}, err
+	}
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "documentation.media_deleted", ResourceType: "media_file", ResourceID: result.ID, Metadata: map[string]any{"slot_id": result.SlotID, "mime_type": result.MimeType, "byte_size": result.ByteSize}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+		return MediaFile{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return MediaFile{}, fmt.Errorf("commit media delete: %w", err)
+	}
+	return result, nil
+}
+
+func (r *Repository) RestoreMedia(ctx context.Context, mediaID string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var slotID string
+	if err := tx.QueryRow(ctx, `UPDATE media_files SET status='accepted',updated_at=now() WHERE id=$1 AND status='deleted' RETURNING documentation_slot_id::text`, mediaID).Scan(&slotID); err != nil {
+		return err
+	}
+	if err := updateSlotStatus(ctx, tx, slotID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (r *Repository) listMedia(ctx context.Context, slotID string) ([]MediaFile, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id::text,documentation_slot_id::text,original_filename,mime_type,byte_size,source,captured_at,latitude::float8,longitude::float8,status,uploaded_at FROM media_files WHERE documentation_slot_id=$1 AND status='accepted' ORDER BY uploaded_at,id`, slotID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []MediaFile{}
+	for rows.Next() {
+		var item MediaFile
+		if err := rows.Scan(&item.ID, &item.SlotID, &item.OriginalFilename, &item.MimeType, &item.ByteSize, &item.Source, &item.CapturedAt, &item.Latitude, &item.Longitude, &item.Status, &item.UploadedAt); err != nil {
+			return nil, err
+		}
+		item.ContentURL = "/api/v1/distribution/media/" + item.ID + "/content"
+		result = append(result, item)
+	}
+	return result, rows.Err()
+}
+
+func updateSlotStatus(ctx context.Context, tx pgx.Tx, slotID string) error {
+	_, err := tx.Exec(ctx, `UPDATE documentation_slots s SET status=CASE WHEN (SELECT count(*) FROM media_files m WHERE m.documentation_slot_id=s.id AND m.status='accepted')>=s.min_files THEN 'complete' ELSE 'missing' END,updated_at=now() WHERE s.id=$1`, slotID)
+	if err != nil {
+		return fmt.Errorf("update documentation slot status: %w", err)
+	}
+	return nil
 }
 
 func (r *Repository) listReceiptHistory(ctx context.Context, currentAllocationID string) ([]ReceiptHistory, error) {

@@ -444,7 +444,7 @@ func writeUnavailable(w http.ResponseWriter) {
 
 func writeServiceError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, profile.ErrNotFound), errors.Is(err, administration.ErrNotFound), errors.Is(err, programs.ErrNotFound), errors.Is(err, dcp3.ErrPreviewNotFound), errors.Is(err, distribution.ErrAllocationNotFound):
+	case errors.Is(err, profile.ErrNotFound), errors.Is(err, administration.ErrNotFound), errors.Is(err, programs.ErrNotFound), errors.Is(err, dcp3.ErrPreviewNotFound), errors.Is(err, distribution.ErrAllocationNotFound), errors.Is(err, distribution.ErrMediaNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "Data tidak ditemukan")
 	case errors.Is(err, profile.ErrIdentityInUse), errors.Is(err, administration.ErrIdentityInUse):
 		writeFieldError(w, http.StatusConflict, "conflict", "Data sudah digunakan", map[string]string{"username": err.Error(), "email": err.Error()})
@@ -460,6 +460,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "identifier_conflict", "NIK atau nomor kartu sudah digunakan penerima lain")
 	case errors.Is(err, dcp3.ErrWorkbookTooLarge):
 		writeError(w, http.StatusRequestEntityTooLarge, "workbook_too_large", err.Error())
+	case errors.Is(err, distribution.ErrMediaTooLarge):
+		writeError(w, http.StatusRequestEntityTooLarge, "media_too_large", err.Error())
 	case errors.Is(err, administration.ErrLastSuperAdmin), errors.Is(err, administration.ErrSelfDeactivation), errors.Is(err, administration.ErrRoleInUse), errors.Is(err, administration.ErrSystemRole):
 		writeError(w, http.StatusConflict, "operation_rejected", err.Error())
 	case errors.Is(err, profile.ErrFullNameInvalid), errors.Is(err, profile.ErrUsernameInvalid), errors.Is(err, profile.ErrEmailInvalid),
@@ -472,6 +474,9 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, distribution.ErrScheduleRequired), errors.Is(err, distribution.ErrQueryRequired), errors.Is(err, distribution.ErrQueryTooShort),
 		errors.Is(err, distribution.ErrNIKInvalid), errors.Is(err, distribution.ErrIdentityChangeReasonRequired):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), validationFields(err))
+	case errors.Is(err, distribution.ErrMediaTypeInvalid), errors.Is(err, distribution.ErrMediaSourceInvalid), errors.Is(err, distribution.ErrMediaLocationRequired),
+		errors.Is(err, distribution.ErrMediaCapturedAtRequired), errors.Is(err, distribution.ErrMediaLimitReached):
+		writeFieldError(w, http.StatusBadRequest, "media_invalid", err.Error(), map[string]string{"file": err.Error()})
 	case errors.Is(err, dcp3.ErrMappingInvalid), errors.Is(err, dcp3.ErrTooManyRows), errors.Is(err, dcp3.ErrTooManyColumns),
 		errors.Is(err, dcp3.ErrHeadersInvalid), errors.Is(err, dcp3.ErrWorkbookInvalid):
 		writeFieldError(w, http.StatusBadRequest, "dcp3_invalid", err.Error(), map[string]string{"file": err.Error()})

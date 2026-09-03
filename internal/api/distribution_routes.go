@@ -1,12 +1,17 @@
 package api
 
 import (
+	"io"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"konkit/internal/distribution"
 )
+
+const maxMediaRequestBody = 11 << 20
 
 func (h *Handler) handleDistributionSearch(w http.ResponseWriter, r *http.Request, rc requestContext) {
 	if r.Method != http.MethodGet {
@@ -82,4 +87,122 @@ func (h *Handler) handleDistributionAllocation(w http.ResponseWriter, r *http.Re
 		return
 	}
 	writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
+}
+
+func (h *Handler) handleDistributionSlot(w http.ResponseWriter, r *http.Request, rc requestContext, path string) {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) != 2 || parts[1] != "media" {
+		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
+		return
+	}
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if h.deps.Distribution == nil {
+		writeUnavailable(w)
+		return
+	}
+	if !h.authorize(w, r, rc.principal, "documentation.manage") {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxMediaRequestBody)
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		writeError(w, http.StatusRequestEntityTooLarge, "media_too_large", "Foto melebihi batas 10 MiB")
+		return
+	}
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeFieldError(w, http.StatusBadRequest, "validation_failed", "Foto wajib dipilih", map[string]string{"file": "Foto wajib dipilih"})
+		return
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, (10<<20)+1))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "media_invalid", "Foto tidak dapat dibaca")
+		return
+	}
+	if len(data) > 10<<20 {
+		writeError(w, http.StatusRequestEntityTooLarge, "media_too_large", "Foto melebihi batas 10 MiB")
+		return
+	}
+	input := distribution.UploadMediaInput{SlotID: parts[0], OriginalFilename: header.Filename, Source: strings.TrimSpace(r.FormValue("source")), Data: data}
+	if raw := strings.TrimSpace(r.FormValue("captured_at")); raw != "" {
+		value, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			writeFieldError(w, http.StatusBadRequest, "validation_failed", "Waktu pengambilan tidak valid", map[string]string{"captured_at": "Gunakan waktu RFC3339"})
+			return
+		}
+		input.CapturedAt = &value
+	}
+	latitude, err := optionalFloat(r.FormValue("latitude"))
+	if err != nil {
+		writeFieldError(w, http.StatusBadRequest, "validation_failed", "Koordinat tidak valid", map[string]string{"latitude": "Latitude tidak valid"})
+		return
+	}
+	input.Latitude = latitude
+	longitude, err := optionalFloat(r.FormValue("longitude"))
+	if err != nil {
+		writeFieldError(w, http.StatusBadRequest, "validation_failed", "Koordinat tidak valid", map[string]string{"longitude": "Longitude tidak valid"})
+		return
+	}
+	input.Longitude = longitude
+	result, err := h.deps.Distribution.UploadMedia(r.Context(), rc.principal, input, clientMeta(r))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusCreated, result)
+}
+
+func (h *Handler) handleDistributionMedia(w http.ResponseWriter, r *http.Request, rc requestContext, path string) {
+	if h.deps.Distribution == nil {
+		writeUnavailable(w)
+		return
+	}
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) == 2 && parts[1] == "content" && r.Method == http.MethodGet {
+		if !h.authorize(w, r, rc.principal, "distribution.view") {
+			return
+		}
+		content, err := h.deps.Distribution.OpenMedia(r.Context(), parts[0])
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		defer content.Reader.Close()
+		w.Header().Set("Content-Type", content.MimeType)
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": content.Filename}))
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.Copy(w, content.Reader)
+		return
+	}
+	if len(parts) == 1 && r.Method == http.MethodDelete {
+		if !h.authorize(w, r, rc.principal, "documentation.manage") {
+			return
+		}
+		if err := h.deps.Distribution.DeleteMedia(r.Context(), rc.principal, parts[0], clientMeta(r)); err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
+}
+
+func optionalFloat(raw string) (*float64, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return nil, err
+	}
+	return &value, nil
 }

@@ -5,6 +5,7 @@ import { apiRequest } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
 import { formatDate } from '../programs/types';
 import type { DataResponse, DraftInput, RecipientWorkspaceData } from './types';
+import { DocumentationSlot } from './DocumentationSlot';
 import styles from './Distribution.module.css';
 
 function draftFrom(data: RecipientWorkspaceData): DraftInput {
@@ -50,6 +51,7 @@ export function RecipientWorkspace({ data, onSaved }: { data: RecipientWorkspace
         {data.receipt_history.length > 0 && <details className={styles.history}><summary>Riwayat penerimaan ({data.receipt_history.length})</summary>{data.receipt_history.map((item) => <div key={`${item.completed_at}-${item.regency}`}><FileText aria-hidden="true" /><span><strong>{item.program}</strong><small>{item.regency} / {formatDate(item.completed_at)}</small>{item.bast_number && <code>{item.bast_number}</code>}</span></div>)}</details>}
       </aside>
     </div>
+    <section className={styles.documentationSection}><div className={styles.sectionTitle}><h3>Dokumentasi pembagian</h3><p>Lengkapi setiap slot sesuai template jadwal.</p></div><div className={styles.documentationList}>{data.documentation.map((slot) => <DocumentationSlot key={slot.code} slot={slot} onChanged={(nextSlot) => onSaved({ ...data, documentation: data.documentation.map((item) => item.code === nextSlot.code ? nextSlot : item) })} />)}</div></section>
     <footer className={styles.completion}><div><strong>Konfirmasi distribusi</strong><span>{blocked ? 'Selesaikan data dan seluruh dokumentasi sebelum konfirmasi.' : 'Semua pemeriksaan awal telah terpenuhi.'}</span></div><button className="primaryButton" disabled={blocked}>Selesaikan distribusi</button></footer>
   </section>;
 }

@@ -1,12 +1,18 @@
 package distribution
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"fmt"
+	"io"
+	"net/http"
 	"regexp"
 	"strings"
 	"unicode"
 
 	"konkit/internal/auth"
+	"konkit/internal/media"
 )
 
 var onlyDigits = regexp.MustCompile(`^[0-9]+$`)
@@ -18,9 +24,28 @@ type repository interface {
 	SaveDraft(context.Context, auth.Principal, string, DraftInput, auth.ClientMeta) (RecipientWorkspace, error)
 }
 
-type Service struct{ repository repository }
+type mediaRepository interface {
+	GetMediaSlot(context.Context, string) (MediaSlot, error)
+	SaveMedia(context.Context, auth.Principal, MediaFileInput, auth.ClientMeta) (MediaFile, error)
+	GetMedia(context.Context, string) (MediaFile, error)
+	DeleteMedia(context.Context, auth.Principal, string, auth.ClientMeta) (MediaFile, error)
+	RestoreMedia(context.Context, string) error
+}
 
-func NewService(repository repository) *Service { return &Service{repository: repository} }
+type Service struct {
+	repository      repository
+	mediaRepository mediaRepository
+	storage         media.Storage
+}
+
+func NewService(repository repository, storage ...media.Storage) *Service {
+	service := &Service{repository: repository}
+	service.mediaRepository, _ = repository.(mediaRepository)
+	if len(storage) > 0 {
+		service.storage = storage[0]
+	}
+	return service
+}
 
 func (s *Service) Search(ctx context.Context, scheduleID, query string, limit int) ([]SearchResult, error) {
 	scheduleID, query = strings.TrimSpace(scheduleID), strings.TrimSpace(query)
@@ -95,4 +120,94 @@ func normalizeIdentifier(value string) string {
 		}
 		return -1
 	}, value)
+}
+
+const maxMediaBytes = 10 << 20
+
+func (s *Service) UploadMedia(ctx context.Context, actor auth.Principal, input UploadMediaInput, meta auth.ClientMeta) (MediaFile, error) {
+	if s.storage == nil || s.mediaRepository == nil {
+		return MediaFile{}, ErrMediaUnavailable
+	}
+	if len(input.Data) == 0 {
+		return MediaFile{}, ErrMediaTypeInvalid
+	}
+	if len(input.Data) > maxMediaBytes {
+		return MediaFile{}, ErrMediaTooLarge
+	}
+	slot, err := s.mediaRepository.GetMediaSlot(ctx, strings.TrimSpace(input.SlotID))
+	if err != nil {
+		return MediaFile{}, err
+	}
+	input.Source = strings.TrimSpace(input.Source)
+	if (slot.InputSource != "both" && slot.InputSource != input.Source) || (input.Source != "camera" && input.Source != "gallery") {
+		return MediaFile{}, ErrMediaSourceInvalid
+	}
+	if slot.AcceptedFiles >= slot.MaxFiles {
+		return MediaFile{}, ErrMediaLimitReached
+	}
+	if slot.RequireLocation && (input.Latitude == nil || input.Longitude == nil) {
+		return MediaFile{}, ErrMediaLocationRequired
+	}
+	if slot.RequireCapturedAt && input.CapturedAt == nil {
+		return MediaFile{}, ErrMediaCapturedAtRequired
+	}
+	mimeType := http.DetectContentType(input.Data[:min(len(input.Data), 512)])
+	if mimeType != "image/jpeg" && mimeType != "image/png" && mimeType != "image/webp" {
+		return MediaFile{}, ErrMediaTypeInvalid
+	}
+	key, err := newStorageKey()
+	if err != nil {
+		return MediaFile{}, err
+	}
+	size, checksum, err := s.storage.Put(ctx, key, bytes.NewReader(input.Data))
+	if err != nil {
+		return MediaFile{}, err
+	}
+	stored, err := s.mediaRepository.SaveMedia(ctx, actor, MediaFileInput{SlotID: slot.ID, StorageKey: key, OriginalFilename: strings.TrimSpace(input.OriginalFilename), MimeType: mimeType, Checksum: checksum, Source: input.Source, ByteSize: size, CapturedAt: input.CapturedAt, Latitude: input.Latitude, Longitude: input.Longitude}, meta)
+	if err != nil {
+		_ = s.storage.Delete(context.Background(), key)
+		return MediaFile{}, err
+	}
+	stored.ContentURL = "/api/v1/distribution/media/" + stored.ID + "/content"
+	return stored, nil
+}
+
+func (s *Service) DeleteMedia(ctx context.Context, actor auth.Principal, mediaID string, meta auth.ClientMeta) error {
+	if s.storage == nil || s.mediaRepository == nil {
+		return ErrMediaUnavailable
+	}
+	item, err := s.mediaRepository.DeleteMedia(ctx, actor, strings.TrimSpace(mediaID), meta)
+	if err != nil {
+		return err
+	}
+	if err := s.storage.Delete(ctx, item.StorageKey); err != nil {
+		_ = s.mediaRepository.RestoreMedia(context.Background(), item.ID)
+		return err
+	}
+	return nil
+}
+
+func (s *Service) OpenMedia(ctx context.Context, mediaID string) (MediaContent, error) {
+	if s.storage == nil || s.mediaRepository == nil {
+		return MediaContent{}, ErrMediaUnavailable
+	}
+	item, err := s.mediaRepository.GetMedia(ctx, strings.TrimSpace(mediaID))
+	if err != nil {
+		return MediaContent{}, err
+	}
+	reader, err := s.storage.Open(ctx, item.StorageKey)
+	if err != nil {
+		return MediaContent{}, err
+	}
+	return MediaContent{Reader: reader, MimeType: item.MimeType, Filename: item.OriginalFilename}, nil
+}
+
+func newStorageKey() (string, error) {
+	value := make([]byte, 16)
+	if _, err := io.ReadFull(rand.Reader, value); err != nil {
+		return "", fmt.Errorf("generate media key: %w", err)
+	}
+	value[6] = (value[6] & 0x0f) | 0x40
+	value[8] = (value[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", value[0:4], value[4:6], value[6:8], value[8:10], value[10:16]), nil
 }
