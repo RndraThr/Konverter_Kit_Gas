@@ -1,7 +1,7 @@
 import { Dialog } from '@base-ui/react/dialog';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Activity, CalendarRange, Camera, ChevronDown, FileClock, FileSpreadsheet, Gauge, KeyRound, Menu, Settings,
+  Activity, CalendarRange, Camera, ChevronDown, FileClock, FileSpreadsheet, FileText, Gauge, KeyRound, Menu, Settings,
   ShieldCheck, UserRound, UsersRound, X,
 } from 'lucide-react';
 import { ReactNode, useState } from 'react';
@@ -21,6 +21,7 @@ const groups: NavGroup[] = [
   ] },
   { label: 'Dokumentasi', items: [
     { label: 'Pendistribusian', to: '/dokumentasi/pendistribusian', permission: 'distribution.view', icon: <Camera /> },
+    { label: 'Laporan', to: '/laporan', permission: 'distribution.view', icon: <FileText /> },
   ] },
   { label: 'Administrasi', items: [
     { label: 'Pengguna', to: '/pengguna', permission: 'users.view', icon: <UsersRound /> },

@@ -20,6 +20,7 @@ import (
 	"konkit/internal/health"
 	"konkit/internal/profile"
 	"konkit/internal/programs"
+	"konkit/internal/reports"
 )
 
 func TestHealthReturnsJSON(t *testing.T) {
@@ -340,6 +341,53 @@ func TestDistributionCompletionRequiresManagePermissionAndReturnsStableConflicts
 	}
 }
 
+func TestReportsEndpointsRequireDistributionViewPermission(t *testing.T) {
+	denied := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{}}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/schedule/schedule-1/summary", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: denied, Reports: &fakeReportsService{}}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestReportsRowsAppliesFilterAndReturnsFullNIK(t *testing.T) {
+	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.view": true}}
+	service := &fakeReportsService{rows: []reports.Row{{DistributionNumber: 7, FullName: "Siti Aminah", NIK: "7306014101900001"}}}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/schedule/schedule-1/rows?allocation_status=ready", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: viewer, Reports: service}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || service.scheduleID != "schedule-1" || service.filter.AllocationStatus != "ready" {
+		t.Fatalf("status=%d schedule=%q filter=%+v body=%s", rec.Code, service.scheduleID, service.filter, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "7306014101900001") {
+		t.Fatalf("expected full NIK in reports body: %s", rec.Body.String())
+	}
+}
+
+func TestReportsExportReturnsAttachmentHeaders(t *testing.T) {
+	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.view": true}}
+	service := &fakeReportsService{exportData: []byte("excel-bytes")}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/schedule/schedule-1/export.xlsx", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: viewer, Reports: service}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || service.exportFormat != "xlsx" {
+		t.Fatalf("status=%d format=%q body=%s", rec.Code, service.exportFormat, rec.Body.String())
+	}
+	if rec.Header().Get("Content-Type") != "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" {
+		t.Fatalf("content-type=%q", rec.Header().Get("Content-Type"))
+	}
+	if !strings.Contains(rec.Header().Get("Content-Disposition"), "attachment") {
+		t.Fatalf("content-disposition=%q", rec.Header().Get("Content-Disposition"))
+	}
+	if rec.Body.String() != "excel-bytes" {
+		t.Fatalf("body=%q", rec.Body.String())
+	}
+}
+
 func TestDistributionMediaUploadAndContentHeaders(t *testing.T) {
 	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"documentation.manage": true, "distribution.view": true}}
 	service := &fakeDistributionService{media: distribution.MediaFile{ID: "media-1", MimeType: "image/jpeg", OriginalFilename: "penerima.jpg"}, mediaContent: []byte("jpeg-content")}
@@ -550,6 +598,33 @@ func (f *fakeDistributionService) DeleteMedia(context.Context, auth.Principal, s
 }
 func (f *fakeDistributionService) OpenMedia(context.Context, string) (distribution.MediaContent, error) {
 	return distribution.MediaContent{Reader: io.NopCloser(bytes.NewReader(f.mediaContent)), MimeType: f.media.MimeType, Filename: f.media.OriginalFilename}, nil
+}
+
+type fakeReportsService struct {
+	ReportsService
+	scheduleID   string
+	filter       reports.Filter
+	summary      reports.Summary
+	rows         []reports.Row
+	exportData   []byte
+	exportFormat string
+}
+
+func (s *fakeReportsService) Summary(_ context.Context, scheduleID string, filter reports.Filter) (reports.Summary, error) {
+	s.scheduleID, s.filter = scheduleID, filter
+	return s.summary, nil
+}
+func (s *fakeReportsService) Rows(_ context.Context, scheduleID string, filter reports.Filter) ([]reports.Row, error) {
+	s.scheduleID, s.filter = scheduleID, filter
+	return s.rows, nil
+}
+func (s *fakeReportsService) ExportExcel(_ context.Context, _ auth.Principal, scheduleID string, filter reports.Filter, _ auth.ClientMeta) ([]byte, error) {
+	s.scheduleID, s.filter, s.exportFormat = scheduleID, filter, "xlsx"
+	return s.exportData, nil
+}
+func (s *fakeReportsService) ExportPDF(_ context.Context, _ auth.Principal, scheduleID string, filter reports.Filter, _ auth.ClientMeta) ([]byte, error) {
+	s.scheduleID, s.filter, s.exportFormat = scheduleID, filter, "pdf"
+	return s.exportData, nil
 }
 
 func (f *fakeDCP3Service) Preview(_ context.Context, _ auth.Principal, scheduleID, filename string, _ io.Reader, _ auth.ClientMeta) (dcp3.ImportPreview, error) {
