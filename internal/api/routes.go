@@ -458,6 +458,14 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "import_state_invalid", "Batch DCP3 tidak dapat diimport pada status saat ini")
 	case errors.Is(err, distribution.ErrIdentifierConflict):
 		writeError(w, http.StatusConflict, "identifier_conflict", "NIK atau nomor kartu sudah digunakan penerima lain")
+	case errors.Is(err, distribution.ErrIdentityIncomplete):
+		writeError(w, http.StatusConflict, "identity_incomplete", "Identitas wajib penerima belum lengkap")
+	case errors.Is(err, distribution.ErrDocumentationIncomplete):
+		writeError(w, http.StatusConflict, "documentation_incomplete", "Dokumentasi wajib belum lengkap")
+	case errors.Is(err, distribution.ErrPreviouslyReceived):
+		writeError(w, http.StatusConflict, "previously_received", "Penerima tercatat sudah menerima paket")
+	case errors.Is(err, distribution.ErrAlreadyCompleted):
+		writeError(w, http.StatusConflict, "already_completed", "Distribusi sudah pernah diselesaikan")
 	case errors.Is(err, dcp3.ErrWorkbookTooLarge):
 		writeError(w, http.StatusRequestEntityTooLarge, "workbook_too_large", err.Error())
 	case errors.Is(err, distribution.ErrMediaTooLarge):

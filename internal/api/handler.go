@@ -86,6 +86,7 @@ type DistributionService interface {
 	Search(context.Context, string, string, int) ([]distribution.SearchResult, error)
 	GetWorkspace(context.Context, string) (distribution.RecipientWorkspace, error)
 	SaveDraft(context.Context, auth.Principal, string, distribution.DraftInput, auth.ClientMeta) (distribution.RecipientWorkspace, error)
+	Complete(context.Context, auth.Principal, string, auth.ClientMeta) (distribution.DistributionRecord, error)
 	UploadMedia(context.Context, auth.Principal, distribution.UploadMediaInput, auth.ClientMeta) (distribution.MediaFile, error)
 	DeleteMedia(context.Context, auth.Principal, string, auth.ClientMeta) error
 	OpenMedia(context.Context, string) (distribution.MediaContent, error)

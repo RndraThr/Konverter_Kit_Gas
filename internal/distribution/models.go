@@ -22,6 +22,10 @@ var (
 	ErrMediaLocationRequired        = errors.New("documentation location is required")
 	ErrMediaCapturedAtRequired      = errors.New("documentation capture time is required")
 	ErrMediaLimitReached            = errors.New("documentation slot has reached its file limit")
+	ErrIdentityIncomplete           = errors.New("recipient identity is incomplete")
+	ErrDocumentationIncomplete      = errors.New("required documentation is incomplete")
+	ErrPreviouslyReceived           = errors.New("recipient has previously received a package")
+	ErrAlreadyCompleted             = errors.New("distribution is already completed")
 )
 
 type SlotSummary struct {
@@ -90,6 +94,7 @@ type RecipientWorkspace struct {
 	Eligibility          string           `json:"eligibility"`
 	EligibilityReasons   []string         `json:"eligibility_reasons"`
 	SourceSnapshot       map[string]any   `json:"source_snapshot"`
+	PackageSnapshot      map[string]any   `json:"package_snapshot"`
 	ReceiptHistory       []ReceiptHistory `json:"receipt_history"`
 	Documentation        []SlotSummary    `json:"documentation"`
 }
@@ -102,6 +107,13 @@ type DraftInput struct {
 	PhoneNumber          string `json:"phone_number"`
 	SectorIdentifier     string `json:"sector_identifier"`
 	IdentityChangeReason string `json:"identity_change_reason"`
+}
+
+type DistributionRecord struct {
+	ID           string    `json:"id"`
+	AllocationID string    `json:"allocation_id"`
+	Status       string    `json:"status"`
+	CompletedAt  time.Time `json:"completed_at"`
 }
 
 type MediaSlot struct {

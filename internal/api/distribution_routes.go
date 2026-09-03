@@ -82,8 +82,24 @@ func (h *Handler) handleDistributionAllocation(w http.ResponseWriter, r *http.Re
 		writeData(w, http.StatusOK, result)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "complete" && r.Method == http.MethodPost {
+		if !h.authorize(w, r, rc.principal, "distribution.manage") {
+			return
+		}
+		result, err := h.deps.Distribution.Complete(r.Context(), rc.principal, parts[0], clientMeta(r))
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeData(w, http.StatusOK, result)
+		return
+	}
 	if len(parts) == 2 && parts[1] == "draft" {
 		methodNotAllowed(w, http.MethodPatch)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "complete" {
+		methodNotAllowed(w, http.MethodPost)
 		return
 	}
 	writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")

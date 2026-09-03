@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -32,19 +33,36 @@ type mediaRepository interface {
 	RestoreMedia(context.Context, string) error
 }
 
+type completionRepository interface {
+	Complete(context.Context, auth.Principal, string, auth.ClientMeta) (DistributionRecord, error)
+}
+
 type Service struct {
 	repository      repository
 	mediaRepository mediaRepository
+	completion      completionRepository
 	storage         media.Storage
 }
 
 func NewService(repository repository, storage ...media.Storage) *Service {
 	service := &Service{repository: repository}
 	service.mediaRepository, _ = repository.(mediaRepository)
+	service.completion, _ = repository.(completionRepository)
 	if len(storage) > 0 {
 		service.storage = storage[0]
 	}
 	return service
+}
+
+func (s *Service) Complete(ctx context.Context, actor auth.Principal, allocationID string, meta auth.ClientMeta) (DistributionRecord, error) {
+	allocationID = strings.TrimSpace(allocationID)
+	if allocationID == "" {
+		return DistributionRecord{}, ErrAllocationNotFound
+	}
+	if s.completion == nil {
+		return DistributionRecord{}, errors.New("distribution completion is unavailable")
+	}
+	return s.completion.Complete(ctx, actor, allocationID, meta)
 }
 
 func (s *Service) Search(ctx context.Context, scheduleID, query string, limit int) ([]SearchResult, error) {

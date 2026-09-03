@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { apiRequest } from '../../lib/api';
 import { RecipientSearch } from './RecipientSearch';
@@ -7,6 +7,7 @@ import type { DataResponse, RecipientWorkspaceData, ScheduleResponse, SearchResu
 import styles from './Distribution.module.css';
 
 export function DistributionPage() {
+	const queryClient = useQueryClient();
   const [scheduleID, setScheduleID] = useState('');
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -36,6 +37,6 @@ export function DistributionPage() {
       <RecipientSearch query={query} disabled={!scheduleID} loading={search.isFetching} results={search.data?.data ?? []} onQueryChange={(value) => { setQuery(value); setAllocationID(''); setWorkspace(null); }} onSelect={setAllocationID} />
     </section>
     {allocationID && detail.isPending && <p className={styles.loading}>Memuat data lengkap penerima...</p>}
-    {workspace && <RecipientWorkspace data={workspace} onSaved={setWorkspace} />}
+	{workspace && <RecipientWorkspace data={workspace} onSaved={(next) => { setWorkspace(next); if (next.distribution_status === 'completed') { void queryClient.invalidateQueries({ queryKey: ['distribution'] }); } }} />}
   </div>;
 }

@@ -14,8 +14,9 @@ export type RecipientWorkspaceData = {
   program_name: string; regency_name: string; full_name: string; nik?: string;
   sector_identifier?: string; sector_identifier_type?: string; address?: string; village?: string;
   district?: string; phone_number?: string; eligibility: string; eligibility_reasons: string[];
-  source_snapshot: Record<string, unknown>; receipt_history: ReceiptHistory[]; documentation: SlotSummary[];
+  source_snapshot: Record<string, unknown>; package_snapshot?: Record<string, unknown>; receipt_history: ReceiptHistory[]; documentation: SlotSummary[];
 };
+export type DistributionRecord = { id: string; allocation_id: string; status: 'completed'; completed_at: string };
 export type DraftInput = { nik: string; sector_identifier: string; address: string; village: string; district: string; phone_number: string; identity_change_reason: string };
 export type DataResponse<T> = { data: T };
 export type ScheduleResponse = DataResponse<Schedule[]>;

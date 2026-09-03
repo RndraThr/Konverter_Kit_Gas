@@ -304,6 +304,42 @@ func TestDistributionDetailAndDraftUseSeparatePermissions(t *testing.T) {
 	}
 }
 
+func TestDistributionCompletionRequiresManagePermissionAndReturnsStableConflicts(t *testing.T) {
+	secret := []byte("01234567890123456789012345678901")
+	service := &fakeDistributionService{completed: distribution.DistributionRecord{ID: "distribution-1", AllocationID: "allocation-1", Status: "completed"}}
+	manager := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.manage": true}}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/distribution/allocations/allocation-1/complete", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: manager, Distribution: service, SessionSecret: secret}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || service.allocationID != "allocation-1" || !strings.Contains(rec.Body.String(), `"status":"completed"`) {
+		t.Fatalf("status=%d allocation=%q body=%s", rec.Code, service.allocationID, rec.Body.String())
+	}
+
+	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.view": true}}
+	denied := httptest.NewRequest(http.MethodPost, "/api/v1/distribution/allocations/allocation-1/complete", nil)
+	denied.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	denied.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+	deniedRecorder := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: viewer, Distribution: service, SessionSecret: secret}).ServeHTTP(deniedRecorder, denied)
+	if deniedRecorder.Code != http.StatusForbidden {
+		t.Fatalf("denied status=%d body=%s", deniedRecorder.Code, deniedRecorder.Body.String())
+	}
+
+	conflicts := []struct {
+		err  error
+		code string
+	}{{distribution.ErrIdentityIncomplete, "identity_incomplete"}, {distribution.ErrDocumentationIncomplete, "documentation_incomplete"}, {distribution.ErrPreviouslyReceived, "previously_received"}, {distribution.ErrAlreadyCompleted, "already_completed"}}
+	for _, item := range conflicts {
+		response := httptest.NewRecorder()
+		writeServiceError(response, item.err)
+		if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), `"code":"`+item.code+`"`) {
+			t.Fatalf("error=%v status=%d body=%s", item.err, response.Code, response.Body.String())
+		}
+	}
+}
+
 func TestDistributionMediaUploadAndContentHeaders(t *testing.T) {
 	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"documentation.manage": true, "distribution.view": true}}
 	service := &fakeDistributionService{media: distribution.MediaFile{ID: "media-1", MimeType: "image/jpeg", OriginalFilename: "penerima.jpg"}, mediaContent: []byte("jpeg-content")}
@@ -485,6 +521,8 @@ type fakeDistributionService struct {
 	mediaContent []byte
 	slotID       string
 	upload       distribution.UploadMediaInput
+	completed    distribution.DistributionRecord
+	completeErr  error
 }
 
 func (f *fakeDistributionService) Search(_ context.Context, scheduleID, query string, limit int) ([]distribution.SearchResult, error) {
@@ -498,6 +536,10 @@ func (f *fakeDistributionService) GetWorkspace(_ context.Context, allocationID s
 func (f *fakeDistributionService) SaveDraft(_ context.Context, _ auth.Principal, allocationID string, _ distribution.DraftInput, _ auth.ClientMeta) (distribution.RecipientWorkspace, error) {
 	f.allocationID = allocationID
 	return f.workspace, nil
+}
+func (f *fakeDistributionService) Complete(_ context.Context, _ auth.Principal, allocationID string, _ auth.ClientMeta) (distribution.DistributionRecord, error) {
+	f.allocationID = allocationID
+	return f.completed, f.completeErr
 }
 func (f *fakeDistributionService) UploadMedia(_ context.Context, _ auth.Principal, input distribution.UploadMediaInput, _ auth.ClientMeta) (distribution.MediaFile, error) {
 	f.slotID, f.upload = input.SlotID, input

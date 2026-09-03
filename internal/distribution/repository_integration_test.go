@@ -3,8 +3,11 @@ package distribution
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +20,98 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 )
+
+func TestCompleteEnforcesFinalDistributionRules(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	fixture := createDistributionFixture(t, pool)
+	service := NewService(NewRepository(pool))
+	ctx := context.Background()
+	actor := auth.Principal{UserID: fixture.userID}
+	meta := auth.ClientMeta{UserAgent: fixture.userAgent}
+
+	if _, err := service.Complete(ctx, actor, fixture.allocationID, meta); !errors.Is(err, ErrPreviouslyReceived) {
+		t.Fatalf("previous receipt err=%v", err)
+	}
+	if _, err := service.Complete(ctx, actor, fixture.historyAllocationID, meta); !errors.Is(err, ErrAlreadyCompleted) {
+		t.Fatalf("already completed err=%v", err)
+	}
+	if _, err := service.Complete(ctx, actor, fixture.secondaryAllocationID, meta); !errors.Is(err, ErrIdentityIncomplete) {
+		t.Fatalf("identity err=%v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO person_sector_identifiers(person_id,identifier_type,normalized_value,display_value) VALUES($1,'farmer_card','KP02','KP 02')`, fixture.secondaryPersonID); err != nil {
+		t.Fatal(err)
+	}
+	var slotID string
+	if err := pool.QueryRow(ctx, `INSERT INTO documentation_slots(distribution_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,status) SELECT id,'recipient_package','Penerima dan paket',true,1,1,'both','missing' FROM distribution_records WHERE allocation_id=$1 RETURNING id::text`, fixture.secondaryAllocationID).Scan(&slotID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Complete(ctx, actor, fixture.secondaryAllocationID, meta); !errors.Is(err, ErrDocumentationIncomplete) {
+		t.Fatalf("documentation err=%v", err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO media_files(documentation_slot_id,storage_key,original_filename,mime_type,byte_size,checksum,source) VALUES($1,gen_random_uuid(),'recipient.jpg','image/jpeg',100,$2,'gallery')`, slotID, fmt.Sprintf("%064d", time.Now().UnixNano())); err != nil {
+		t.Fatal(err)
+	}
+	record, err := service.Complete(ctx, actor, fixture.secondaryAllocationID, meta)
+	if err != nil || record.Status != "completed" || record.CompletedAt.IsZero() {
+		t.Fatalf("record=%+v err=%v", record, err)
+	}
+	var allocationStatus, distributionStatus string
+	var snapshot []byte
+	if err := pool.QueryRow(ctx, `SELECT a.status,d.status,d.verification_snapshot_json FROM package_allocations a JOIN distribution_records d ON d.allocation_id=a.id WHERE a.id=$1`, fixture.secondaryAllocationID).Scan(&allocationStatus, &distributionStatus, &snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if allocationStatus != "distributed" || distributionStatus != "completed" || !strings.Contains(string(snapshot), "KP02") || !strings.Contains(string(snapshot), "recipient_package") {
+		t.Fatalf("allocation=%q distribution=%q snapshot=%s", allocationStatus, distributionStatus, snapshot)
+	}
+	if _, err := service.Complete(ctx, actor, fixture.secondaryAllocationID, meta); !errors.Is(err, ErrAlreadyCompleted) {
+		t.Fatalf("repeat completion err=%v", err)
+	}
+}
+
+func TestCompleteSerializesConcurrentReceiptsForTheSamePerson(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	fixture := createDistributionFixture(t, pool)
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, `INSERT INTO person_sector_identifiers(person_id,identifier_type,normalized_value,display_value) VALUES($1,'farmer_card','KP02','KP 02')`, fixture.secondaryPersonID); err != nil {
+		t.Fatal(err)
+	}
+	secondAllocationID := insertDistributionFixture(t, pool, fixture.scheduleID, fixture.secondaryPersonID, 9, "draft")
+	for _, allocationID := range []string{fixture.secondaryAllocationID, secondAllocationID} {
+		if _, err := pool.Exec(ctx, `INSERT INTO documentation_slots(distribution_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,status) SELECT id,'recipient_package','Penerima dan paket',true,0,1,'both','complete' FROM distribution_records WHERE allocation_id=$1`, allocationID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	service := NewService(NewRepository(pool))
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var wait sync.WaitGroup
+	for _, allocationID := range []string{fixture.secondaryAllocationID, secondAllocationID} {
+		wait.Add(1)
+		go func(id string) {
+			defer wait.Done()
+			<-start
+			_, err := service.Complete(ctx, auth.Principal{}, id, auth.ClientMeta{UserAgent: fixture.userAgent})
+			errs <- err
+		}(allocationID)
+	}
+	close(start)
+	wait.Wait()
+	close(errs)
+	succeeded, blocked := 0, 0
+	for err := range errs {
+		switch {
+		case err == nil:
+			succeeded++
+		case errors.Is(err, ErrPreviouslyReceived):
+			blocked++
+		default:
+			t.Fatalf("unexpected concurrent error: %v", err)
+		}
+	}
+	if succeeded != 1 || blocked != 1 {
+		t.Fatalf("succeeded=%d blocked=%d", succeeded, blocked)
+	}
+}
 
 func TestIntegrationSearchRanksIdentifiersAndShowsCrossScheduleHistory(t *testing.T) {
 	pool := distributionIntegrationPool(t)
@@ -84,7 +179,10 @@ func TestIntegrationSearchRanksIdentifiersAndShowsCrossScheduleHistory(t *testin
 	}
 }
 
-type distributionFixture struct{ scheduleID, allocationID, userID, userAgent string }
+type distributionFixture struct {
+	scheduleID, allocationID, historyAllocationID, secondaryAllocationID string
+	secondaryPersonID, userID, userAgent                                 string
+}
 
 func createDistributionFixture(t *testing.T, pool *pgxpool.Pool) distributionFixture {
 	t.Helper()
@@ -128,7 +226,7 @@ func createDistributionFixture(t *testing.T, pool *pgxpool.Pool) distributionFix
 		t.Fatal(err)
 	}
 	allocationID := insertDistributionFixture(t, pool, scheduleID, sitiID, 7, "draft")
-	_ = insertDistributionFixture(t, pool, scheduleID, sitiNurID, 8, "draft")
+	secondaryAllocationID := insertDistributionFixture(t, pool, scheduleID, sitiNurID, 8, "draft")
 	historyAllocationID := insertDistributionFixture(t, pool, historyScheduleID, sitiID, 1, "completed")
 	if _, err := pool.Exec(ctx, `UPDATE distribution_records SET completed_at='2025-12-10T09:00:00Z',distributed_at='2025-12-10T09:00:00Z' WHERE allocation_id=$1`, historyAllocationID); err != nil {
 		t.Fatal(err)
@@ -154,7 +252,7 @@ func createDistributionFixture(t *testing.T, pool *pgxpool.Pool) distributionFix
 		_, _ = pool.Exec(context.Background(), `DELETE FROM regencies WHERE id IN ($1,$2)`, regencyID, historyRegencyID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM programs WHERE id=$1`, programID)
 	})
-	return distributionFixture{scheduleID: scheduleID, allocationID: allocationID, userAgent: userAgent}
+	return distributionFixture{scheduleID: scheduleID, allocationID: allocationID, historyAllocationID: historyAllocationID, secondaryAllocationID: secondaryAllocationID, secondaryPersonID: sitiNurID, userAgent: userAgent}
 }
 
 func insertDistributionFixture(t *testing.T, pool *pgxpool.Pool, scheduleID, personID string, number int, status string) string {

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"konkit/internal/audit"
 	"konkit/internal/auth"
@@ -72,12 +74,12 @@ func (r *Repository) Search(ctx context.Context, scheduleID, query string, limit
 
 func (r *Repository) GetWorkspace(ctx context.Context, allocationID string) (RecipientWorkspace, error) {
 	var result RecipientWorkspace
-	var sourceJSON []byte
+	var sourceJSON, packageJSON []byte
 	err := r.pool.QueryRow(ctx, `
 		SELECT a.id::text,dr.id::text,a.schedule_id::text,a.distribution_number,a.status,dr.status,
 			pr.program_type,pr.name,rg.name,COALESCE(p.full_name,''),COALESCE(p.nik,''),
 			COALESCE(psi.display_value,''),COALESCE(psi.identifier_type,''),COALESCE(p.address,''),
-			COALESCE(p.village,''),COALESCE(p.district,''),COALESCE(p.phone_number,''),n.source_snapshot_json,
+			COALESCE(p.village,''),COALESCE(p.district,''),COALESCE(p.phone_number,''),n.source_snapshot_json,a.package_snapshot_json,
 			CASE
 				WHEN EXISTS(SELECT 1 FROM distribution_records old WHERE old.recipient_person_id=p.id AND old.status='completed' AND old.allocation_id<>a.id) THEN 'previously_received'
 				WHEN p.id IS NULL OR a.status='needs_review' THEN 'incomplete'
@@ -100,7 +102,7 @@ func (r *Repository) GetWorkspace(ctx context.Context, allocationID string) (Rec
 		&result.AllocationStatus, &result.DistributionStatus, &result.ProgramType, &result.ProgramName,
 		&result.RegencyName, &result.FullName, &result.NIK, &result.SectorIdentifier,
 		&result.SectorIdentifierType, &result.Address, &result.Village, &result.District,
-		&result.PhoneNumber, &sourceJSON, &result.Eligibility,
+		&result.PhoneNumber, &sourceJSON, &packageJSON, &result.Eligibility,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return RecipientWorkspace{}, ErrAllocationNotFound
@@ -111,6 +113,10 @@ func (r *Repository) GetWorkspace(ctx context.Context, allocationID string) (Rec
 	result.SourceSnapshot = map[string]any{}
 	if err := json.Unmarshal(sourceJSON, &result.SourceSnapshot); err != nil {
 		return RecipientWorkspace{}, fmt.Errorf("decode recipient source snapshot: %w", err)
+	}
+	result.PackageSnapshot = map[string]any{}
+	if err := json.Unmarshal(packageJSON, &result.PackageSnapshot); err != nil {
+		return RecipientWorkspace{}, fmt.Errorf("decode package snapshot: %w", err)
 	}
 	result.Documentation, err = r.listSlots(ctx, result.DistributionID)
 	if err != nil {
@@ -184,6 +190,115 @@ func (r *Repository) SaveDraft(ctx context.Context, actor auth.Principal, alloca
 		return RecipientWorkspace{}, fmt.Errorf("commit recipient draft: %w", err)
 	}
 	return r.GetWorkspace(ctx, allocationID)
+}
+
+func (r *Repository) Complete(ctx context.Context, actor auth.Principal, allocationID string, meta auth.ClientMeta) (DistributionRecord, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return DistributionRecord{}, fmt.Errorf("begin distribution completion: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var record DistributionRecord
+	var allocationStatus, personID, fullName, nik, programType, sectorType, sectorIdentifier string
+	var packageJSON []byte
+	err = tx.QueryRow(ctx, `
+		SELECT dr.id::text,dr.status,a.status,p.id::text,p.full_name,COALESCE(p.nik,''),pr.program_type,
+			COALESCE(psi.identifier_type,''),COALESCE(psi.normalized_value,''),a.package_snapshot_json
+		FROM package_allocations a
+		JOIN candidate_nominations n ON n.id=a.nomination_id
+		JOIN distribution_records dr ON dr.allocation_id=a.id
+		JOIN program_schedules ps ON ps.id=a.schedule_id
+		JOIN programs pr ON pr.id=ps.program_id
+		JOIN people p ON p.id=COALESCE(a.actual_recipient_person_id,dr.recipient_person_id,a.intended_person_id,n.person_id)
+		LEFT JOIN LATERAL (
+			SELECT identifier_type,normalized_value FROM person_sector_identifiers
+			WHERE person_id=p.id AND identifier_type=CASE WHEN pr.program_type='farmer' THEN 'farmer_card' ELSE 'kusuka' END LIMIT 1
+		) psi ON true
+		WHERE a.id=$1
+		FOR UPDATE OF a,dr,p
+	`, allocationID).Scan(&record.ID, &record.Status, &allocationStatus, &personID, &fullName, &nik, &programType, &sectorType, &sectorIdentifier, &packageJSON)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return DistributionRecord{}, ErrAllocationNotFound
+	}
+	if err != nil {
+		return DistributionRecord{}, fmt.Errorf("lock distribution completion: %w", err)
+	}
+	if record.Status == "completed" || allocationStatus == "distributed" {
+		return DistributionRecord{}, ErrAlreadyCompleted
+	}
+	if strings.TrimSpace(fullName) == "" || len(stripNonDigits.ReplaceAllString(nik, "")) != 16 || strings.TrimSpace(sectorIdentifier) == "" {
+		return DistributionRecord{}, ErrIdentityIncomplete
+	}
+
+	var previouslyReceived bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM distribution_records WHERE recipient_person_id=$1 AND status='completed' AND allocation_id<>$2)`, personID, allocationID).Scan(&previouslyReceived); err != nil {
+		return DistributionRecord{}, fmt.Errorf("check prior package receipt: %w", err)
+	}
+	if previouslyReceived {
+		return DistributionRecord{}, ErrPreviouslyReceived
+	}
+
+	documentation := []map[string]any{}
+	rows, err := tx.Query(ctx, `
+		SELECT s.slot_code,s.label_snapshot,s.is_required,s.min_files,
+			count(m.id) FILTER(WHERE m.status='accepted')
+		FROM documentation_slots s
+		LEFT JOIN media_files m ON m.documentation_slot_id=s.id
+		WHERE s.distribution_id=$1
+		GROUP BY s.id ORDER BY s.sort_order,s.slot_code
+	`, record.ID)
+	if err != nil {
+		return DistributionRecord{}, fmt.Errorf("check distribution documentation: %w", err)
+	}
+	for rows.Next() {
+		var code, label string
+		var required bool
+		var minimum, accepted int
+		if err := rows.Scan(&code, &label, &required, &minimum, &accepted); err != nil {
+			rows.Close()
+			return DistributionRecord{}, fmt.Errorf("scan distribution documentation: %w", err)
+		}
+		documentation = append(documentation, map[string]any{"code": code, "label": label, "required": required, "min_files": minimum, "accepted_files": accepted})
+		if required && accepted < minimum {
+			rows.Close()
+			return DistributionRecord{}, ErrDocumentationIncomplete
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return DistributionRecord{}, fmt.Errorf("iterate distribution documentation: %w", err)
+	}
+	rows.Close()
+
+	var packageSnapshot any = map[string]any{}
+	if len(packageJSON) > 0 {
+		if err := json.Unmarshal(packageJSON, &packageSnapshot); err != nil {
+			return DistributionRecord{}, fmt.Errorf("decode package snapshot: %w", err)
+		}
+	}
+	snapshot, err := json.Marshal(map[string]any{
+		"identity": map[string]any{"person_id": personID, "full_name": fullName, "nik": nik, "sector_identifier_type": sectorType, "sector_identifier": sectorIdentifier, "program_type": programType},
+		"package":  packageSnapshot, "documentation": documentation,
+	})
+	if err != nil {
+		return DistributionRecord{}, fmt.Errorf("encode verification snapshot: %w", err)
+	}
+	now := time.Now().UTC()
+	if _, err := tx.Exec(ctx, `UPDATE package_allocations SET actual_recipient_person_id=$2,status='distributed',updated_at=$3 WHERE id=$1`, allocationID, personID, now); err != nil {
+		return DistributionRecord{}, fmt.Errorf("complete package allocation: %w", err)
+	}
+	err = tx.QueryRow(ctx, `UPDATE distribution_records SET recipient_person_id=$2,status='completed',verification_snapshot_json=$3,distributed_at=$4,distributed_by=NULLIF($5,'')::uuid,completed_at=$4,updated_at=$4 WHERE id=$1 RETURNING allocation_id::text,status,completed_at`, record.ID, personID, snapshot, now, actor.UserID).Scan(&record.AllocationID, &record.Status, &record.CompletedAt)
+	if err != nil {
+		return DistributionRecord{}, fmt.Errorf("complete distribution record: %w", err)
+	}
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "distribution.completed", ResourceType: "distribution_record", ResourceID: record.ID, Metadata: map[string]any{"allocation_id": allocationID, "person_id": personID, "program_type": programType, "documentation_slots": len(documentation)}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+		return DistributionRecord{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return DistributionRecord{}, fmt.Errorf("commit distribution completion: %w", err)
+	}
+	return record, nil
 }
 
 func (r *Repository) listSlots(ctx context.Context, distributionID string) ([]SlotSummary, error) {
