@@ -18,6 +18,7 @@ import (
 	"konkit/internal/config"
 	"konkit/internal/database"
 	"konkit/internal/dcp3"
+	"konkit/internal/distribution"
 	"konkit/internal/health"
 	"konkit/internal/profile"
 	"konkit/internal/programs"
@@ -56,6 +57,7 @@ func run(ctx context.Context, cfg config.Config) error {
 		Audit:          audit.NewRepository(pool),
 		Programs:       programs.NewService(programs.NewRepository(pool)),
 		DCP3:           dcp3.NewImportService(dcp3.NewRepository(pool), dcp3.ParseLimits{MaxBytes: 10 << 20, MaxRows: 5000, MaxColumns: 100}),
+		Distribution:   distribution.NewService(distribution.NewRepository(pool)),
 		SessionSecret:  cfg.SessionSecret,
 	})
 	handler := web.NewHandler(web.Dependencies{

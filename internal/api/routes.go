@@ -9,6 +9,7 @@ import (
 	"konkit/internal/audit"
 	"konkit/internal/auth"
 	"konkit/internal/dcp3"
+	"konkit/internal/distribution"
 	apphealth "konkit/internal/health"
 	"konkit/internal/profile"
 	"konkit/internal/programs"
@@ -443,7 +444,7 @@ func writeUnavailable(w http.ResponseWriter) {
 
 func writeServiceError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, profile.ErrNotFound), errors.Is(err, administration.ErrNotFound), errors.Is(err, programs.ErrNotFound), errors.Is(err, dcp3.ErrPreviewNotFound):
+	case errors.Is(err, profile.ErrNotFound), errors.Is(err, administration.ErrNotFound), errors.Is(err, programs.ErrNotFound), errors.Is(err, dcp3.ErrPreviewNotFound), errors.Is(err, distribution.ErrAllocationNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "Data tidak ditemukan")
 	case errors.Is(err, profile.ErrIdentityInUse), errors.Is(err, administration.ErrIdentityInUse):
 		writeFieldError(w, http.StatusConflict, "conflict", "Data sudah digunakan", map[string]string{"username": err.Error(), "email": err.Error()})
@@ -455,6 +456,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "duplicate_import", "File DCP3 ini sudah pernah diunggah pada jadwal yang sama")
 	case errors.Is(err, dcp3.ErrImportState):
 		writeError(w, http.StatusConflict, "import_state_invalid", "Batch DCP3 tidak dapat diimport pada status saat ini")
+	case errors.Is(err, distribution.ErrIdentifierConflict):
+		writeError(w, http.StatusConflict, "identifier_conflict", "NIK atau nomor kartu sudah digunakan penerima lain")
 	case errors.Is(err, dcp3.ErrWorkbookTooLarge):
 		writeError(w, http.StatusRequestEntityTooLarge, "workbook_too_large", err.Error())
 	case errors.Is(err, administration.ErrLastSuperAdmin), errors.Is(err, administration.ErrSelfDeactivation), errors.Is(err, administration.ErrRoleInUse), errors.Is(err, administration.ErrSystemRole):
@@ -465,6 +468,9 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		errors.Is(err, administration.ErrPermissionNotFound), errors.Is(err, administration.ErrRoleCodeInvalid), errors.Is(err, settings.ErrInvalidSetting),
 		errors.Is(err, programs.ErrInvalidInput), errors.Is(err, programs.ErrDocumentCodeInvalid), errors.Is(err, programs.ErrProgramTypeInvalid),
 		errors.Is(err, programs.ErrScheduleDatesInvalid), errors.Is(err, programs.ErrTemplateSlotInvalid):
+		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), validationFields(err))
+	case errors.Is(err, distribution.ErrScheduleRequired), errors.Is(err, distribution.ErrQueryRequired), errors.Is(err, distribution.ErrQueryTooShort),
+		errors.Is(err, distribution.ErrNIKInvalid), errors.Is(err, distribution.ErrIdentityChangeReasonRequired):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), validationFields(err))
 	case errors.Is(err, dcp3.ErrMappingInvalid), errors.Is(err, dcp3.ErrTooManyRows), errors.Is(err, dcp3.ErrTooManyColumns),
 		errors.Is(err, dcp3.ErrHeadersInvalid), errors.Is(err, dcp3.ErrWorkbookInvalid):

@@ -14,6 +14,7 @@ import (
 	"konkit/internal/audit"
 	"konkit/internal/auth"
 	"konkit/internal/dcp3"
+	"konkit/internal/distribution"
 	apphealth "konkit/internal/health"
 	"konkit/internal/profile"
 	"konkit/internal/programs"
@@ -81,6 +82,12 @@ type DCP3Service interface {
 	Commit(context.Context, auth.Principal, string, dcp3.Mapping, auth.ClientMeta) (dcp3.ImportResult, error)
 }
 
+type DistributionService interface {
+	Search(context.Context, string, string, int) ([]distribution.SearchResult, error)
+	GetWorkspace(context.Context, string) (distribution.RecipientWorkspace, error)
+	SaveDraft(context.Context, auth.Principal, string, distribution.DraftInput, auth.ClientMeta) (distribution.RecipientWorkspace, error)
+}
+
 type Dependencies struct {
 	Auth           AuthService
 	Profile        ProfileService
@@ -90,6 +97,7 @@ type Dependencies struct {
 	Audit          AuditService
 	Programs       ProgramSetupService
 	DCP3           DCP3Service
+	Distribution   DistributionService
 	SessionSecret  []byte
 }
 
@@ -191,6 +199,10 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleDCP3Preview(w, r, rc, strings.TrimPrefix(path, "dcp3/previews/"))
 	case path == "dcp3/imports":
 		h.handleDCP3Import(w, r, rc)
+	case path == "distribution/search":
+		h.handleDistributionSearch(w, r, rc)
+	case strings.HasPrefix(path, "distribution/allocations/"):
+		h.handleDistributionAllocation(w, r, rc, strings.TrimPrefix(path, "distribution/allocations/"))
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
 	}

@@ -16,6 +16,7 @@ import (
 	"konkit/internal/audit"
 	"konkit/internal/auth"
 	"konkit/internal/dcp3"
+	"konkit/internal/distribution"
 	"konkit/internal/health"
 	"konkit/internal/profile"
 	"konkit/internal/programs"
@@ -258,6 +259,51 @@ func TestDCP3ImportPassesMapping(t *testing.T) {
 	}
 }
 
+func TestDistributionSearchRequiresScheduleAndReturnsOnlyMaskedIdentity(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.view": true}}
+	distributionService := &fakeDistributionService{results: []distribution.SearchResult{{AllocationID: "allocation-1", FullName: "Siti Aminah", MaskedNIK: "7306********0001"}}}
+	missing := httptest.NewRequest(http.MethodGet, "/api/v1/distribution/search?q=Siti", nil)
+	missing.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	missingRecorder := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: authService, Distribution: distributionService}).ServeHTTP(missingRecorder, missing)
+	if missingRecorder.Code != http.StatusBadRequest {
+		t.Fatalf("missing schedule status=%d body=%s", missingRecorder.Code, missingRecorder.Body.String())
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/distribution/search?schedule_id=schedule-1&q=Siti&limit=7", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: authService, Distribution: distributionService}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || distributionService.scheduleID != "schedule-1" || distributionService.limit != 7 {
+		t.Fatalf("status=%d schedule=%q limit=%d body=%s", rec.Code, distributionService.scheduleID, distributionService.limit, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "7306014101900001") || !strings.Contains(rec.Body.String(), "7306********0001") {
+		t.Fatalf("search identity leak: %s", rec.Body.String())
+	}
+}
+
+func TestDistributionDetailAndDraftUseSeparatePermissions(t *testing.T) {
+	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.view": true}}
+	service := &fakeDistributionService{workspace: distribution.RecipientWorkspace{AllocationID: "allocation-1", FullName: "Siti Aminah"}}
+	getRequest := httptest.NewRequest(http.MethodGet, "/api/v1/distribution/allocations/allocation-1", nil)
+	getRequest.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	getRecorder := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: viewer, Distribution: service}).ServeHTTP(getRecorder, getRequest)
+	if getRecorder.Code != http.StatusOK || service.allocationID != "allocation-1" {
+		t.Fatalf("detail status=%d body=%s", getRecorder.Code, getRecorder.Body.String())
+	}
+
+	patchRequest := httptest.NewRequest(http.MethodPatch, "/api/v1/distribution/allocations/allocation-1/draft", strings.NewReader(`{"nik":"7306014101900001"}`))
+	patchRequest.Header.Set("Content-Type", "application/json")
+	patchRequest.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	patchRequest.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
+	patchRecorder := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: viewer, Distribution: service, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(patchRecorder, patchRequest)
+	if patchRecorder.Code != http.StatusForbidden {
+		t.Fatalf("draft status=%d body=%s", patchRecorder.Code, patchRecorder.Body.String())
+	}
+}
+
 func TestProtectedReadinessReturnsServiceUnavailableWhenDegraded(t *testing.T) {
 	service := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowed: true}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/health", nil)
@@ -397,6 +443,29 @@ type fakeDCP3Service struct {
 	filename   string
 	batchID    string
 	mapping    dcp3.Mapping
+}
+
+type fakeDistributionService struct {
+	DistributionService
+	results      []distribution.SearchResult
+	workspace    distribution.RecipientWorkspace
+	scheduleID   string
+	query        string
+	limit        int
+	allocationID string
+}
+
+func (f *fakeDistributionService) Search(_ context.Context, scheduleID, query string, limit int) ([]distribution.SearchResult, error) {
+	f.scheduleID, f.query, f.limit = scheduleID, query, limit
+	return f.results, nil
+}
+func (f *fakeDistributionService) GetWorkspace(_ context.Context, allocationID string) (distribution.RecipientWorkspace, error) {
+	f.allocationID = allocationID
+	return f.workspace, nil
+}
+func (f *fakeDistributionService) SaveDraft(_ context.Context, _ auth.Principal, allocationID string, _ distribution.DraftInput, _ auth.ClientMeta) (distribution.RecipientWorkspace, error) {
+	f.allocationID = allocationID
+	return f.workspace, nil
 }
 
 func (f *fakeDCP3Service) Preview(_ context.Context, _ auth.Principal, scheduleID, filename string, _ io.Reader, _ auth.ClientMeta) (dcp3.ImportPreview, error) {
