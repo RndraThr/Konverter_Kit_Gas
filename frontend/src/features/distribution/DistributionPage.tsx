@@ -34,7 +34,7 @@ export function DistributionPage() {
     <header className="pageHeader"><div><h1>Pendistribusian</h1><p>Cari penerima, periksa data, dan lengkapi dokumentasi pembagian.</p></div>{selectedSchedule && <span className={styles.context}><strong>{selectedSchedule.regency?.document_code}</strong>{selectedSchedule.name}</span>}</header>
     <section className={styles.lookup}>
       <label className={styles.scheduleField}><span>Jadwal distribusi</span><select value={scheduleID} onChange={(event) => setScheduleID(event.target.value)}><option value="">Pilih kabupaten dan jadwal</option>{schedules.data?.data.filter((schedule) => schedule.status === 'active').map((schedule) => <option value={schedule.id} key={schedule.id}>{schedule.regency?.name} / {schedule.name}</option>)}</select></label>
-      <RecipientSearch query={query} disabled={!scheduleID} loading={search.isFetching} results={search.data?.data ?? []} onQueryChange={(value) => { setQuery(value); setAllocationID(''); setWorkspace(null); }} onSelect={setAllocationID} />
+		<RecipientSearch query={query} disabled={!scheduleID} loading={search.isFetching} results={search.data?.data ?? []} onQueryChange={(value) => { setQuery(value); setAllocationID(''); setWorkspace(null); }} onSelect={(id) => { setAllocationID(id); setQuery(''); setDebouncedQuery(''); }} />
     </section>
     {allocationID && detail.isPending && <p className={styles.loading}>Memuat data lengkap penerima...</p>}
 	{workspace && <RecipientWorkspace data={workspace} onSaved={(next) => { setWorkspace(next); if (next.distribution_status === 'completed') { void queryClient.invalidateQueries({ queryKey: ['distribution'] }); } }} />}

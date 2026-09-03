@@ -14,6 +14,7 @@ DATABASE_URL=<URL_DATABASE_POSTGRESQL>
 SESSION_SECRET=<RAHASIA_ACAK>
 SESSION_COOKIE_SECURE=false
 SESSION_TTL=12h
+STORAGE_PATH=./storage
 ```
 
 Nilai environment dari sistem atau Docker tidak akan ditimpa oleh `.env`. File `.env` berisi rahasia lokal dan sudah dikecualikan melalui `.gitignore`; jangan memasukkannya ke repository atau Docker image. FlyEnv tetap dapat menyediakan runtime Go dan PostgreSQL tanpa menyimpan rahasia aplikasi di Project Environment.
@@ -76,6 +77,14 @@ Dashboard awal menyediakan:
 
 Browser memakai cookie sesi `HttpOnly`. Mutation API memerlukan token CSRF dari bootstrap `GET /api/v1/me`. Session token dan rahasia tidak disimpan di browser storage.
 
+## Alur DCP3 Dan Pendistribusian
+
+Fondasi operasional saat ini mencakup persiapan kabupaten/program/jadwal, template paket dan dokumentasi berversi, import DCP3 `.xlsx`, pencarian penerima, verifikasi identitas, riwayat penerimaan lintas kabupaten, dokumentasi foto, serta finalisasi distribusi transaksional.
+
+Data DCP3 diproses melalui halaman `DCP3`: pilih jadwal aktif, unggah workbook, cocokkan nama kolom, periksa hasil, lalu import. Penerima yang sudah pernah menerima tetap dibuat sebagai alokasi berstatus perlu ditinjau dan ditampilkan dengan label blokir pada halaman `Pendistribusian`. Finalisasi hanya dapat dilakukan bila nama, NIK 16 digit, Kartu Petani/KUSUKA, dan seluruh slot dokumentasi wajib telah lengkap.
+
+Foto disimpan di `STORAGE_PATH`. Nilai relatif seperti `./storage` diperbolehkan untuk `APP_ENV=local`; gunakan path absolut di environment test, staging, dan production. Input `Buka kamera` bergantung pada dukungan browser/perangkat, sedangkan `Pilih galeri` dapat digunakan pada desktop maupun mobile.
+
 ## Pengujian
 
 ```powershell
@@ -88,14 +97,24 @@ npm.cmd --prefix frontend run build
 
 Integration test repository memerlukan database terpisah bernama `konkit_test` melalui `TEST_DATABASE_URL`. Test akan dilewati bila variable tersebut tidak tersedia dan menolak database dengan nama selain `konkit_test`.
 
-Pengujian end-to-end otomatis menurunkan `DATABASE_URL` lokal menjadi database `konkit_test`, menjalankan migration, dan membuat akun uji sementara:
+Pengujian end-to-end otomatis menurunkan `DATABASE_URL` lokal menjadi database `konkit_test`, menjalankan migration, membuat akun/jadwal/riwayat uji sementara, serta menghasilkan workbook DCP3 desktop dan mobile di `.cache/e2e`:
 
 ```powershell
-frontend\node_modules\.bin\playwright.cmd install chromium
 npm.cmd --prefix frontend run e2e
 ```
 
-Seeder E2E hanya dapat berjalan saat `APP_ENV=test` dan nama database persis `konkit_test`. Jangan menjalankan `cmd/e2eseed` terhadap database operasional.
+Konfigurasi Playwright memakai instalasi Google Chrome lokal dan menjalankan skenario pada viewport desktop `1366x768` serta mobile `375x812`. Untuk menyiapkan fixture secara manual:
+
+```powershell
+$env:APP_ENV="test"
+$env:DATABASE_URL="postgres://USER:PASSWORD@127.0.0.1:5432/konkit_test?sslmode=disable"
+$env:STORAGE_PATH="$PWD/.cache/e2e-storage"
+go run ./cmd/migrate up
+go run ./cmd/e2eseed -fixture-dir .cache/e2e
+go run ./cmd/server
+```
+
+File yang dihasilkan adalah `.cache/e2e/dcp3-desktop.xlsx` dan `.cache/e2e/dcp3-mobile.xlsx`. Hapus seluruh fixture E2E dengan `go run ./cmd/e2eseed cleanup -fixture-dir .cache/e2e`. Seeder hanya dapat berjalan saat `APP_ENV=test` dan nama database persis `konkit_test`; jangan menjalankannya terhadap database operasional.
 
 ## Alur Git Dan Deployment
 

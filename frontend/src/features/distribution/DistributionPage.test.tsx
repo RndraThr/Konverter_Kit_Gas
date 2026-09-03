@@ -67,6 +67,7 @@ test('debounces recipient search and opens a masked eligibility result', async (
 
   fireEvent.click(result);
   await act(() => vi.runOnlyPendingTimersAsync());
+	expect(screen.queryByRole('listbox', { name: 'Hasil pencarian penerima' })).not.toBeInTheDocument();
   expect(screen.getByDisplayValue('7306014101900001')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Selesaikan distribusi' })).toBeDisabled();
   fireEvent.click(screen.getByText('Riwayat penerimaan (1)'));
