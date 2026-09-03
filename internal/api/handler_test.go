@@ -1,8 +1,11 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +15,7 @@ import (
 	"konkit/internal/administration"
 	"konkit/internal/audit"
 	"konkit/internal/auth"
+	"konkit/internal/dcp3"
 	"konkit/internal/health"
 	"konkit/internal/profile"
 	"konkit/internal/programs"
@@ -194,6 +198,66 @@ func TestProgramSetupPatchPassesResourceID(t *testing.T) {
 	}
 }
 
+func TestDCP3PreviewAcceptsMultipartWorkbook(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"dcp3.import": true}}
+	dcp3Service := &fakeDCP3Service{preview: dcp3.ImportPreview{ID: "batch-1"}}
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("schedule_id", "schedule-1")
+	file, err := writer.CreateFormFile("file", "calon-penerima.xlsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = file.Write([]byte("PK\x03\x04workbook"))
+	_ = writer.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/dcp3/previews", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
+	rec := httptest.NewRecorder()
+
+	NewHandler(Dependencies{Auth: authService, DCP3: dcp3Service, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated || dcp3Service.scheduleID != "schedule-1" || dcp3Service.filename != "calon-penerima.xlsx" {
+		t.Fatalf("status=%d schedule=%q filename=%q body=%s", rec.Code, dcp3Service.scheduleID, dcp3Service.filename, rec.Body.String())
+	}
+}
+
+func TestDCP3PreviewRejectsNonWorkbook(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"dcp3.import": true}}
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("schedule_id", "schedule-1")
+	file, _ := writer.CreateFormFile("file", "calon-penerima.txt")
+	_, _ = file.Write([]byte("plain text"))
+	_ = writer.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/dcp3/previews", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
+	rec := httptest.NewRecorder()
+
+	NewHandler(Dependencies{Auth: authService, DCP3: &fakeDCP3Service{}, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnsupportedMediaType {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDCP3ImportPassesMapping(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"dcp3.import": true}}
+	dcp3Service := &fakeDCP3Service{result: dcp3.ImportResult{BatchID: "batch-1", TotalRows: 2}}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/dcp3/imports", strings.NewReader(`{"batch_id":"batch-1","mapping":{"source_sequence":"No","full_name":"Nama"}}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
+	rec := httptest.NewRecorder()
+
+	NewHandler(Dependencies{Auth: authService, DCP3: dcp3Service, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated || dcp3Service.batchID != "batch-1" || dcp3Service.mapping.FullName != "Nama" {
+		t.Fatalf("status=%d batch=%q mapping=%+v body=%s", rec.Code, dcp3Service.batchID, dcp3Service.mapping, rec.Body.String())
+	}
+}
+
 func TestProtectedReadinessReturnsServiceUnavailableWhenDegraded(t *testing.T) {
 	service := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowed: true}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/health", nil)
@@ -323,6 +387,28 @@ type fakeAuditService struct {
 type fakeProgramSetupService struct {
 	ProgramSetupService
 	regencyInput programs.RegencyInput
+}
+
+type fakeDCP3Service struct {
+	DCP3Service
+	preview    dcp3.ImportPreview
+	result     dcp3.ImportResult
+	scheduleID string
+	filename   string
+	batchID    string
+	mapping    dcp3.Mapping
+}
+
+func (f *fakeDCP3Service) Preview(_ context.Context, _ auth.Principal, scheduleID, filename string, _ io.Reader, _ auth.ClientMeta) (dcp3.ImportPreview, error) {
+	f.scheduleID, f.filename = scheduleID, filename
+	return f.preview, nil
+}
+func (f *fakeDCP3Service) GetPreview(context.Context, string) (dcp3.ImportPreview, error) {
+	return f.preview, nil
+}
+func (f *fakeDCP3Service) Commit(_ context.Context, _ auth.Principal, batchID string, mapping dcp3.Mapping, _ auth.ClientMeta) (dcp3.ImportResult, error) {
+	f.batchID, f.mapping = batchID, mapping
+	return f.result, nil
 }
 
 func (f *fakeProgramSetupService) ListRegencies(context.Context) ([]programs.Regency, error) {

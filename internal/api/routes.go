@@ -8,6 +8,7 @@ import (
 	"konkit/internal/administration"
 	"konkit/internal/audit"
 	"konkit/internal/auth"
+	"konkit/internal/dcp3"
 	apphealth "konkit/internal/health"
 	"konkit/internal/profile"
 	"konkit/internal/programs"
@@ -442,7 +443,7 @@ func writeUnavailable(w http.ResponseWriter) {
 
 func writeServiceError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, profile.ErrNotFound), errors.Is(err, administration.ErrNotFound), errors.Is(err, programs.ErrNotFound):
+	case errors.Is(err, profile.ErrNotFound), errors.Is(err, administration.ErrNotFound), errors.Is(err, programs.ErrNotFound), errors.Is(err, dcp3.ErrPreviewNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "Data tidak ditemukan")
 	case errors.Is(err, profile.ErrIdentityInUse), errors.Is(err, administration.ErrIdentityInUse):
 		writeFieldError(w, http.StatusConflict, "conflict", "Data sudah digunakan", map[string]string{"username": err.Error(), "email": err.Error()})
@@ -450,6 +451,12 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeFieldError(w, http.StatusConflict, "conflict", "Data sudah digunakan", map[string]string{"code": err.Error()})
 	case errors.Is(err, programs.ErrDocumentCodeInUse), errors.Is(err, programs.ErrCodeInUse):
 		writeFieldError(w, http.StatusConflict, "conflict", "Kode sudah digunakan", map[string]string{"code": err.Error()})
+	case errors.Is(err, dcp3.ErrDuplicateImport):
+		writeError(w, http.StatusConflict, "duplicate_import", "File DCP3 ini sudah pernah diunggah pada jadwal yang sama")
+	case errors.Is(err, dcp3.ErrImportState):
+		writeError(w, http.StatusConflict, "import_state_invalid", "Batch DCP3 tidak dapat diimport pada status saat ini")
+	case errors.Is(err, dcp3.ErrWorkbookTooLarge):
+		writeError(w, http.StatusRequestEntityTooLarge, "workbook_too_large", err.Error())
 	case errors.Is(err, administration.ErrLastSuperAdmin), errors.Is(err, administration.ErrSelfDeactivation), errors.Is(err, administration.ErrRoleInUse), errors.Is(err, administration.ErrSystemRole):
 		writeError(w, http.StatusConflict, "operation_rejected", err.Error())
 	case errors.Is(err, profile.ErrFullNameInvalid), errors.Is(err, profile.ErrUsernameInvalid), errors.Is(err, profile.ErrEmailInvalid),
@@ -459,6 +466,9 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		errors.Is(err, programs.ErrInvalidInput), errors.Is(err, programs.ErrDocumentCodeInvalid), errors.Is(err, programs.ErrProgramTypeInvalid),
 		errors.Is(err, programs.ErrScheduleDatesInvalid), errors.Is(err, programs.ErrTemplateSlotInvalid):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), validationFields(err))
+	case errors.Is(err, dcp3.ErrMappingInvalid), errors.Is(err, dcp3.ErrTooManyRows), errors.Is(err, dcp3.ErrTooManyColumns),
+		errors.Is(err, dcp3.ErrHeadersInvalid), errors.Is(err, dcp3.ErrWorkbookInvalid):
+		writeFieldError(w, http.StatusBadRequest, "dcp3_invalid", err.Error(), map[string]string{"file": err.Error()})
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Terjadi kesalahan pada server")
 	}

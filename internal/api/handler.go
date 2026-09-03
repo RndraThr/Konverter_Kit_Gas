@@ -13,6 +13,7 @@ import (
 	"konkit/internal/administration"
 	"konkit/internal/audit"
 	"konkit/internal/auth"
+	"konkit/internal/dcp3"
 	apphealth "konkit/internal/health"
 	"konkit/internal/profile"
 	"konkit/internal/programs"
@@ -74,6 +75,12 @@ type ProgramSetupService interface {
 	SaveDocumentationTemplate(context.Context, auth.Principal, programs.DocumentationTemplateInput, auth.ClientMeta) (programs.DocumentationTemplate, error)
 }
 
+type DCP3Service interface {
+	Preview(context.Context, auth.Principal, string, string, io.Reader, auth.ClientMeta) (dcp3.ImportPreview, error)
+	GetPreview(context.Context, string) (dcp3.ImportPreview, error)
+	Commit(context.Context, auth.Principal, string, dcp3.Mapping, auth.ClientMeta) (dcp3.ImportResult, error)
+}
+
 type Dependencies struct {
 	Auth           AuthService
 	Profile        ProfileService
@@ -82,6 +89,7 @@ type Dependencies struct {
 	Health         HealthService
 	Audit          AuditService
 	Programs       ProgramSetupService
+	DCP3           DCP3Service
 	SessionSecret  []byte
 }
 
@@ -177,6 +185,12 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleAudit(w, r, rc)
 	case strings.HasPrefix(path, "program-setup/"):
 		h.handleProgramSetup(w, r, rc, strings.TrimPrefix(path, "program-setup/"))
+	case path == "dcp3/previews":
+		h.handleDCP3PreviewCreate(w, r, rc)
+	case strings.HasPrefix(path, "dcp3/previews/"):
+		h.handleDCP3Preview(w, r, rc, strings.TrimPrefix(path, "dcp3/previews/"))
+	case path == "dcp3/imports":
+		h.handleDCP3Import(w, r, rc)
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
 	}
