@@ -13,6 +13,7 @@ import (
 	apphealth "konkit/internal/health"
 	"konkit/internal/profile"
 	"konkit/internal/programs"
+	"konkit/internal/reports"
 	"konkit/internal/settings"
 )
 
@@ -482,6 +483,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, distribution.ErrScheduleRequired), errors.Is(err, distribution.ErrQueryRequired), errors.Is(err, distribution.ErrQueryTooShort),
 		errors.Is(err, distribution.ErrNIKInvalid), errors.Is(err, distribution.ErrIdentityChangeReasonRequired):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), validationFields(err))
+	case errors.Is(err, reports.ErrScheduleRequired), errors.Is(err, reports.ErrFilterInvalid):
+		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), map[string]string{"request": err.Error()})
 	case errors.Is(err, distribution.ErrMediaTypeInvalid), errors.Is(err, distribution.ErrMediaSourceInvalid), errors.Is(err, distribution.ErrMediaLocationRequired),
 		errors.Is(err, distribution.ErrMediaCapturedAtRequired), errors.Is(err, distribution.ErrMediaLimitReached):
 		writeFieldError(w, http.StatusBadRequest, "media_invalid", err.Error(), map[string]string{"file": err.Error()})
