@@ -115,6 +115,23 @@ func TestSaveScheduleDefaultsDistributionNumberPadding(t *testing.T) {
 	}
 }
 
+func TestSaveScheduleNormalizesNameToUppercase(t *testing.T) {
+	repository := &repositoryStub{}
+	service := NewService(repository)
+	_, err := service.SaveSchedule(context.Background(), auth.Principal{}, ScheduleInput{
+		ProgramID: "program", RegencyID: "regency", PackageTemplateVersionID: "package",
+		DocumentationTemplateVersionID: "documentation", Name: "  Wajo tahap 1  ",
+		StartDate: time.Date(2026, 9, 9, 0, 0, 0, 0, time.UTC),
+		EndDate:   time.Date(2026, 9, 10, 0, 0, 0, 0, time.UTC), Status: "active",
+	}, auth.ClientMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repository.scheduleInput.Name != "WAJO TAHAP 1" {
+		t.Fatalf("schedule name=%q", repository.scheduleInput.Name)
+	}
+}
+
 func TestSaveDocumentationTemplateRejectsDuplicateSlotCodes(t *testing.T) {
 	service := NewService(&repositoryStub{})
 	_, err := service.SaveDocumentationTemplate(context.Background(), auth.Principal{}, DocumentationTemplateInput{

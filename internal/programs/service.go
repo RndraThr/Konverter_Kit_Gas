@@ -79,7 +79,7 @@ func (s *Service) SaveSchedule(ctx context.Context, actor auth.Principal, input 
 	input.RegencyID = strings.TrimSpace(input.RegencyID)
 	input.PackageTemplateVersionID = strings.TrimSpace(input.PackageTemplateVersionID)
 	input.DocumentationTemplateVersionID = strings.TrimSpace(input.DocumentationTemplateVersionID)
-	input.Name = strings.TrimSpace(input.Name)
+	input.Name = strings.ToUpper(strings.TrimSpace(input.Name))
 	input.Notes = strings.TrimSpace(input.Notes)
 	if input.EndDate.Before(input.StartDate) {
 		return Schedule{}, ErrScheduleDatesInvalid

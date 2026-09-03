@@ -49,3 +49,14 @@ test('keeps data readable without mutation controls', async () => {
   expect(await screen.findByText('Program Petani 2026')).toBeVisible();
   expect(screen.queryByRole('button', { name: /Tambah program/i })).not.toBeInTheDocument();
 });
+
+test('normalizes the schedule name to uppercase while typing', async () => {
+  renderPage(['programs.view', 'programs.manage']);
+  await userEvent.click(await screen.findByRole('tab', { name: 'Jadwal' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Tambah jadwal' }));
+
+  const name = screen.getByRole('textbox', { name: 'Nama jadwal' });
+  await userEvent.type(name, 'Wajo tahap 1');
+
+  expect(name).toHaveValue('WAJO TAHAP 1');
+});
