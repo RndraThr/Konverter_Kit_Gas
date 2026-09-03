@@ -54,3 +54,16 @@ test('applies status filters to the rows request', async () => {
   const call = vi.mocked(apiRequest).mock.calls.find(([path]) => typeof path === 'string' && path.startsWith('/api/v1/reports/schedule/schedule-1/rows') && path.includes('allocation_status=distributed'));
   expect(call).toBeTruthy();
 });
+
+test('renders export links scoped to the selected schedule and active filters', async () => {
+  renderPage();
+  await screen.findByRole('option', { name: /Wajo Tahap 1/ });
+  fireEvent.change(screen.getByLabelText('Jadwal'), { target: { value: 'schedule-1' } });
+  await screen.findByText('Siti Aminah');
+  fireEvent.change(screen.getByLabelText('Status alokasi'), { target: { value: 'distributed' } });
+
+  const excelLink = screen.getByRole('link', { name: 'Export Excel' });
+  const pdfLink = screen.getByRole('link', { name: 'Export PDF' });
+  expect(excelLink.getAttribute('href')).toBe('/api/v1/reports/schedule/schedule-1/export.xlsx?allocation_status=distributed&distribution_status=&documentation_status=');
+  expect(pdfLink.getAttribute('href')).toBe('/api/v1/reports/schedule/schedule-1/export.pdf?allocation_status=distributed&distribution_status=&documentation_status=');
+});

@@ -58,6 +58,11 @@ export function ReportsPage() {
         <article><strong>{summary.data?.data.documentation_incomplete ?? '-'}</strong><span>Dokumentasi belum lengkap</span></article>
       </section>
 
+      <section className={styles.exportBar}>
+        <a className={styles.exportButton} href={`/api/v1/reports/schedule/${encodeURIComponent(scheduleID)}/export.xlsx?${queryString}`}>Export Excel</a>
+        <a className={styles.exportButton} href={`/api/v1/reports/schedule/${encodeURIComponent(scheduleID)}/export.pdf?${queryString}`}>Export PDF</a>
+      </section>
+
       <table className={styles.table}>
         <thead><tr>
           <th>No. Pembagian</th><th>Nama</th><th>NIK</th><th>No. Kartu/KUSUKA</th><th>Desa/Kecamatan</th>
