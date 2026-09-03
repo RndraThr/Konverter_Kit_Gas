@@ -14,6 +14,7 @@ import (
 	"konkit/internal/auth"
 	"konkit/internal/health"
 	"konkit/internal/profile"
+	"konkit/internal/programs"
 )
 
 func TestHealthReturnsJSON(t *testing.T) {
@@ -141,6 +142,58 @@ func TestAdministrationRoutesUseDocumentedPrefixes(t *testing.T) {
 	}
 }
 
+func TestProgramSetupRoutesUseDocumentedPrefixes(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowed: true}
+	programService := &fakeProgramSetupService{}
+	for _, path := range []string{
+		"/api/v1/program-setup/regencies",
+		"/api/v1/program-setup/programs",
+		"/api/v1/program-setup/schedules",
+		"/api/v1/program-setup/package-templates",
+		"/api/v1/program-setup/documentation-templates",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+		rec := httptest.NewRecorder()
+
+		NewHandler(Dependencies{Auth: authService, Programs: programService}).ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("endpoint %s: status=%d body=%s", path, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+func TestProgramSetupMutationRequiresManagePermission(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"programs.view": true}}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/program-setup/regencies", strings.NewReader(`{"province_name":"Sulawesi Selatan","name":"Wajo","document_code":"WJO","is_active":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
+	rec := httptest.NewRecorder()
+
+	NewHandler(Dependencies{Auth: authService, Programs: &fakeProgramSetupService{}, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestProgramSetupPatchPassesResourceID(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"programs.manage": true}}
+	programService := &fakeProgramSetupService{}
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/program-setup/regencies/regency-1", strings.NewReader(`{"province_name":"Sulawesi Selatan","name":"Wajo","document_code":"WJO","is_active":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
+	rec := httptest.NewRecorder()
+
+	NewHandler(Dependencies{Auth: authService, Programs: programService, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || programService.regencyInput.ID != "regency-1" {
+		t.Fatalf("status=%d id=%q body=%s", rec.Code, programService.regencyInput.ID, rec.Body.String())
+	}
+}
+
 func TestProtectedReadinessReturnsServiceUnavailableWhenDegraded(t *testing.T) {
 	service := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowed: true}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/health", nil)
@@ -265,6 +318,31 @@ type fakeAdministrationService struct {
 type fakeAuditService struct {
 	AuditService
 	page audit.Page
+}
+
+type fakeProgramSetupService struct {
+	ProgramSetupService
+	regencyInput programs.RegencyInput
+}
+
+func (f *fakeProgramSetupService) ListRegencies(context.Context) ([]programs.Regency, error) {
+	return []programs.Regency{}, nil
+}
+func (f *fakeProgramSetupService) SaveRegency(_ context.Context, _ auth.Principal, input programs.RegencyInput, _ auth.ClientMeta) (programs.Regency, error) {
+	f.regencyInput = input
+	return programs.Regency{ID: input.ID, Name: input.Name}, nil
+}
+func (f *fakeProgramSetupService) ListPrograms(context.Context) ([]programs.Program, error) {
+	return []programs.Program{}, nil
+}
+func (f *fakeProgramSetupService) ListSchedules(context.Context) ([]programs.Schedule, error) {
+	return []programs.Schedule{}, nil
+}
+func (f *fakeProgramSetupService) ListPackageTemplates(context.Context) ([]programs.PackageTemplate, error) {
+	return []programs.PackageTemplate{}, nil
+}
+func (f *fakeProgramSetupService) ListDocumentationTemplates(context.Context) ([]programs.DocumentationTemplate, error) {
+	return []programs.DocumentationTemplate{}, nil
 }
 
 func (f *fakeAuditService) List(context.Context, audit.Filter) (audit.Page, error) {

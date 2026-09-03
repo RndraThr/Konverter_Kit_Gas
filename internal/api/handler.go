@@ -15,6 +15,7 @@ import (
 	"konkit/internal/auth"
 	apphealth "konkit/internal/health"
 	"konkit/internal/profile"
+	"konkit/internal/programs"
 	"konkit/internal/settings"
 )
 
@@ -60,6 +61,19 @@ type AuditService interface {
 	List(context.Context, audit.Filter) (audit.Page, error)
 }
 
+type ProgramSetupService interface {
+	ListRegencies(context.Context) ([]programs.Regency, error)
+	SaveRegency(context.Context, auth.Principal, programs.RegencyInput, auth.ClientMeta) (programs.Regency, error)
+	ListPrograms(context.Context) ([]programs.Program, error)
+	SaveProgram(context.Context, auth.Principal, programs.ProgramInput, auth.ClientMeta) (programs.Program, error)
+	ListSchedules(context.Context) ([]programs.Schedule, error)
+	SaveSchedule(context.Context, auth.Principal, programs.ScheduleInput, auth.ClientMeta) (programs.Schedule, error)
+	ListPackageTemplates(context.Context) ([]programs.PackageTemplate, error)
+	SavePackageTemplate(context.Context, auth.Principal, programs.PackageTemplateInput, auth.ClientMeta) (programs.PackageTemplate, error)
+	ListDocumentationTemplates(context.Context) ([]programs.DocumentationTemplate, error)
+	SaveDocumentationTemplate(context.Context, auth.Principal, programs.DocumentationTemplateInput, auth.ClientMeta) (programs.DocumentationTemplate, error)
+}
+
 type Dependencies struct {
 	Auth           AuthService
 	Profile        ProfileService
@@ -67,6 +81,7 @@ type Dependencies struct {
 	Settings       SettingsService
 	Health         HealthService
 	Audit          AuditService
+	Programs       ProgramSetupService
 	SessionSecret  []byte
 }
 
@@ -160,6 +175,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleSystemHealth(w, r, rc)
 	case path == "system/audit-logs":
 		h.handleAudit(w, r, rc)
+	case strings.HasPrefix(path, "program-setup/"):
+		h.handleProgramSetup(w, r, rc, strings.TrimPrefix(path, "program-setup/"))
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
 	}
