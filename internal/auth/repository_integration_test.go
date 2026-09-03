@@ -174,6 +174,70 @@ func TestIntegrationAdministrationMigrationCreatesFoundation(t *testing.T) {
 	}
 }
 
+func TestIntegrationOperationalMigrationCreatesFoundation(t *testing.T) {
+	pool := integrationPool(t)
+	ctx := context.Background()
+
+	tables := []string{
+		"regencies",
+		"programs",
+		"package_template_versions",
+		"documentation_template_versions",
+		"documentation_template_slots",
+		"program_schedules",
+		"dcp3_import_batches",
+		"dcp3_import_rows",
+		"people",
+		"person_sector_identifiers",
+		"candidate_nominations",
+		"package_allocations",
+		"distribution_records",
+		"eligibility_checks",
+		"documentation_slots",
+		"media_files",
+	}
+	for _, table := range tables {
+		var exists bool
+		if err := pool.QueryRow(ctx, "SELECT to_regclass('public.' || $1) IS NOT NULL", table).Scan(&exists); err != nil {
+			t.Fatal(err)
+		}
+		if !exists {
+			t.Fatalf("expected operational table %s", table)
+		}
+	}
+
+	permissionCodes := []string{
+		"programs.view",
+		"programs.manage",
+		"dcp3.view",
+		"dcp3.import",
+		"distribution.view",
+		"distribution.manage",
+		"documentation.manage",
+	}
+	var permissionCount int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM permissions WHERE code = ANY($1)", permissionCodes).Scan(&permissionCount); err != nil {
+		t.Fatal(err)
+	}
+	if permissionCount != len(permissionCodes) {
+		t.Fatalf("expected %d operational permissions, got %d", len(permissionCodes), permissionCount)
+	}
+
+	var packageTemplateCount, documentationSlotCount int
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM package_template_versions WHERE status = 'published'").Scan(&packageTemplateCount); err != nil {
+		t.Fatal(err)
+	}
+	if packageTemplateCount != 2 {
+		t.Fatalf("expected 2 published package templates, got %d", packageTemplateCount)
+	}
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM documentation_template_slots").Scan(&documentationSlotCount); err != nil {
+		t.Fatal(err)
+	}
+	if documentationSlotCount != 8 {
+		t.Fatalf("expected 8 seeded documentation slots, got %d", documentationSlotCount)
+	}
+}
+
 func integrationPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	databaseURL := os.Getenv("TEST_DATABASE_URL")

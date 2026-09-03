@@ -39,7 +39,9 @@ export async function apiRequest<T>(path: string, init: ApiRequestInit = {}): Pr
   const { acceptedStatuses = [], ...requestInit } = init;
   const method = (requestInit.method ?? 'GET').toUpperCase();
   const headers = new Headers(requestInit.headers);
-  if (requestInit.body) headers.set('Content-Type', 'application/json');
+  if (requestInit.body && !(requestInit.body instanceof FormData)) {
+    headers.set('Content-Type', 'application/json');
+  }
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && csrfToken) {
     headers.set('X-CSRF-Token', csrfToken);
   }

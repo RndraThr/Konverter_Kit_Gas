@@ -13,8 +13,11 @@ import (
 	"konkit/internal/administration"
 	"konkit/internal/audit"
 	"konkit/internal/auth"
+	"konkit/internal/dcp3"
+	"konkit/internal/distribution"
 	apphealth "konkit/internal/health"
 	"konkit/internal/profile"
+	"konkit/internal/programs"
 	"konkit/internal/settings"
 )
 
@@ -60,6 +63,35 @@ type AuditService interface {
 	List(context.Context, audit.Filter) (audit.Page, error)
 }
 
+type ProgramSetupService interface {
+	ListRegencies(context.Context) ([]programs.Regency, error)
+	SaveRegency(context.Context, auth.Principal, programs.RegencyInput, auth.ClientMeta) (programs.Regency, error)
+	ListPrograms(context.Context) ([]programs.Program, error)
+	SaveProgram(context.Context, auth.Principal, programs.ProgramInput, auth.ClientMeta) (programs.Program, error)
+	ListSchedules(context.Context) ([]programs.Schedule, error)
+	SaveSchedule(context.Context, auth.Principal, programs.ScheduleInput, auth.ClientMeta) (programs.Schedule, error)
+	ListPackageTemplates(context.Context) ([]programs.PackageTemplate, error)
+	SavePackageTemplate(context.Context, auth.Principal, programs.PackageTemplateInput, auth.ClientMeta) (programs.PackageTemplate, error)
+	ListDocumentationTemplates(context.Context) ([]programs.DocumentationTemplate, error)
+	SaveDocumentationTemplate(context.Context, auth.Principal, programs.DocumentationTemplateInput, auth.ClientMeta) (programs.DocumentationTemplate, error)
+}
+
+type DCP3Service interface {
+	Preview(context.Context, auth.Principal, string, string, io.Reader, auth.ClientMeta) (dcp3.ImportPreview, error)
+	GetPreview(context.Context, string) (dcp3.ImportPreview, error)
+	Commit(context.Context, auth.Principal, string, dcp3.Mapping, auth.ClientMeta) (dcp3.ImportResult, error)
+}
+
+type DistributionService interface {
+	Search(context.Context, string, string, int) ([]distribution.SearchResult, error)
+	GetWorkspace(context.Context, string) (distribution.RecipientWorkspace, error)
+	SaveDraft(context.Context, auth.Principal, string, distribution.DraftInput, auth.ClientMeta) (distribution.RecipientWorkspace, error)
+	Complete(context.Context, auth.Principal, string, auth.ClientMeta) (distribution.DistributionRecord, error)
+	UploadMedia(context.Context, auth.Principal, distribution.UploadMediaInput, auth.ClientMeta) (distribution.MediaFile, error)
+	DeleteMedia(context.Context, auth.Principal, string, auth.ClientMeta) error
+	OpenMedia(context.Context, string) (distribution.MediaContent, error)
+}
+
 type Dependencies struct {
 	Auth           AuthService
 	Profile        ProfileService
@@ -67,6 +99,9 @@ type Dependencies struct {
 	Settings       SettingsService
 	Health         HealthService
 	Audit          AuditService
+	Programs       ProgramSetupService
+	DCP3           DCP3Service
+	Distribution   DistributionService
 	SessionSecret  []byte
 }
 
@@ -160,6 +195,22 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleSystemHealth(w, r, rc)
 	case path == "system/audit-logs":
 		h.handleAudit(w, r, rc)
+	case strings.HasPrefix(path, "program-setup/"):
+		h.handleProgramSetup(w, r, rc, strings.TrimPrefix(path, "program-setup/"))
+	case path == "dcp3/previews":
+		h.handleDCP3PreviewCreate(w, r, rc)
+	case strings.HasPrefix(path, "dcp3/previews/"):
+		h.handleDCP3Preview(w, r, rc, strings.TrimPrefix(path, "dcp3/previews/"))
+	case path == "dcp3/imports":
+		h.handleDCP3Import(w, r, rc)
+	case path == "distribution/search":
+		h.handleDistributionSearch(w, r, rc)
+	case strings.HasPrefix(path, "distribution/slots/"):
+		h.handleDistributionSlot(w, r, rc, strings.TrimPrefix(path, "distribution/slots/"))
+	case strings.HasPrefix(path, "distribution/media/"):
+		h.handleDistributionMedia(w, r, rc, strings.TrimPrefix(path, "distribution/media/"))
+	case strings.HasPrefix(path, "distribution/allocations/"):
+		h.handleDistributionAllocation(w, r, rc, strings.TrimPrefix(path, "distribution/allocations/"))
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
 	}

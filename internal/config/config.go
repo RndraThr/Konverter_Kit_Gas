@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -17,6 +18,7 @@ var (
 	ErrCookieSecureInvalid   = errors.New("SESSION_COOKIE_SECURE must be true or false")
 	ErrSessionTTLInvalid     = errors.New("SESSION_TTL must be a positive duration")
 	ErrBaseURLInvalid        = errors.New("APP_BASE_URL must be an absolute HTTP or HTTPS URL")
+	ErrStoragePathAbsolute   = errors.New("STORAGE_PATH must be absolute outside local environment")
 )
 
 type Config struct {
@@ -28,6 +30,7 @@ type Config struct {
 	SessionCookieSecure bool
 	SessionTTL          time.Duration
 	RememberTTL         time.Duration
+	StoragePath         string
 }
 
 type lookupFunc func(string) (string, bool)
@@ -48,10 +51,14 @@ func loadFrom(lookup lookupFunc) (Config, error) {
 		DatabaseURL: valueOrDefault(lookup, "DATABASE_URL", ""),
 		SessionTTL:  12 * time.Hour,
 		RememberTTL: 30 * 24 * time.Hour,
+		StoragePath: valueOrDefault(lookup, "STORAGE_PATH", "./storage"),
 	}
 
 	if cfg.DatabaseURL == "" {
 		return Config{}, ErrDatabaseURLRequired
+	}
+	if cfg.Env != "local" && !filepath.IsAbs(cfg.StoragePath) {
+		return Config{}, ErrStoragePathAbsolute
 	}
 
 	secret, _ := lookup("SESSION_SECRET")

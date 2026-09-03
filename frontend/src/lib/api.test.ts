@@ -13,3 +13,19 @@ test('can parse explicitly accepted non-success statuses', async () => {
 
   expect(result.data.status).toBe('degraded');
 });
+
+test('lets the browser set the multipart boundary for FormData', async () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response('{"data":{"id":"preview-1"}}', {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  }));
+  vi.stubGlobal('fetch', fetchMock);
+  const body = new FormData();
+  body.set('schedule_id', 'schedule-1');
+  body.set('file', new File(['workbook'], 'dcp3.xlsx'));
+
+  await apiRequest('/api/v1/dcp3/previews', { method: 'POST', body });
+
+  const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+  expect(new Headers(request.headers).has('Content-Type')).toBe(false);
+});

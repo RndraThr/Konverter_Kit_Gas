@@ -8,8 +8,11 @@ import (
 	"konkit/internal/administration"
 	"konkit/internal/audit"
 	"konkit/internal/auth"
+	"konkit/internal/dcp3"
+	"konkit/internal/distribution"
 	apphealth "konkit/internal/health"
 	"konkit/internal/profile"
+	"konkit/internal/programs"
 	"konkit/internal/settings"
 )
 
@@ -441,19 +444,50 @@ func writeUnavailable(w http.ResponseWriter) {
 
 func writeServiceError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, profile.ErrNotFound), errors.Is(err, administration.ErrNotFound):
+	case errors.Is(err, profile.ErrNotFound), errors.Is(err, administration.ErrNotFound), errors.Is(err, programs.ErrNotFound), errors.Is(err, dcp3.ErrPreviewNotFound), errors.Is(err, distribution.ErrAllocationNotFound), errors.Is(err, distribution.ErrMediaNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "Data tidak ditemukan")
 	case errors.Is(err, profile.ErrIdentityInUse), errors.Is(err, administration.ErrIdentityInUse):
 		writeFieldError(w, http.StatusConflict, "conflict", "Data sudah digunakan", map[string]string{"username": err.Error(), "email": err.Error()})
 	case errors.Is(err, administration.ErrRoleCodeInUse):
 		writeFieldError(w, http.StatusConflict, "conflict", "Data sudah digunakan", map[string]string{"code": err.Error()})
+	case errors.Is(err, programs.ErrDocumentCodeInUse), errors.Is(err, programs.ErrCodeInUse):
+		writeFieldError(w, http.StatusConflict, "conflict", "Kode sudah digunakan", map[string]string{"code": err.Error()})
+	case errors.Is(err, dcp3.ErrDuplicateImport):
+		writeError(w, http.StatusConflict, "duplicate_import", "File DCP3 ini sudah pernah diunggah pada jadwal yang sama")
+	case errors.Is(err, dcp3.ErrImportState):
+		writeError(w, http.StatusConflict, "import_state_invalid", "Batch DCP3 tidak dapat diimport pada status saat ini")
+	case errors.Is(err, distribution.ErrIdentifierConflict):
+		writeError(w, http.StatusConflict, "identifier_conflict", "NIK atau nomor kartu sudah digunakan penerima lain")
+	case errors.Is(err, distribution.ErrIdentityIncomplete):
+		writeError(w, http.StatusConflict, "identity_incomplete", "Identitas wajib penerima belum lengkap")
+	case errors.Is(err, distribution.ErrDocumentationIncomplete):
+		writeError(w, http.StatusConflict, "documentation_incomplete", "Dokumentasi wajib belum lengkap")
+	case errors.Is(err, distribution.ErrPreviouslyReceived):
+		writeError(w, http.StatusConflict, "previously_received", "Penerima tercatat sudah menerima paket")
+	case errors.Is(err, distribution.ErrAlreadyCompleted):
+		writeError(w, http.StatusConflict, "already_completed", "Distribusi sudah pernah diselesaikan")
+	case errors.Is(err, dcp3.ErrWorkbookTooLarge):
+		writeError(w, http.StatusRequestEntityTooLarge, "workbook_too_large", err.Error())
+	case errors.Is(err, distribution.ErrMediaTooLarge):
+		writeError(w, http.StatusRequestEntityTooLarge, "media_too_large", err.Error())
 	case errors.Is(err, administration.ErrLastSuperAdmin), errors.Is(err, administration.ErrSelfDeactivation), errors.Is(err, administration.ErrRoleInUse), errors.Is(err, administration.ErrSystemRole):
 		writeError(w, http.StatusConflict, "operation_rejected", err.Error())
 	case errors.Is(err, profile.ErrFullNameInvalid), errors.Is(err, profile.ErrUsernameInvalid), errors.Is(err, profile.ErrEmailInvalid),
 		errors.Is(err, profile.ErrCurrentPassword), errors.Is(err, profile.ErrPasswordTooShort), errors.Is(err, profile.ErrPasswordUnchanged),
 		errors.Is(err, administration.ErrInvalidInput), errors.Is(err, administration.ErrPasswordTooShort), errors.Is(err, administration.ErrRoleNotFound),
-		errors.Is(err, administration.ErrPermissionNotFound), errors.Is(err, administration.ErrRoleCodeInvalid), errors.Is(err, settings.ErrInvalidSetting):
+		errors.Is(err, administration.ErrPermissionNotFound), errors.Is(err, administration.ErrRoleCodeInvalid), errors.Is(err, settings.ErrInvalidSetting),
+		errors.Is(err, programs.ErrInvalidInput), errors.Is(err, programs.ErrDocumentCodeInvalid), errors.Is(err, programs.ErrProgramTypeInvalid),
+		errors.Is(err, programs.ErrScheduleDatesInvalid), errors.Is(err, programs.ErrTemplateSlotInvalid):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), validationFields(err))
+	case errors.Is(err, distribution.ErrScheduleRequired), errors.Is(err, distribution.ErrQueryRequired), errors.Is(err, distribution.ErrQueryTooShort),
+		errors.Is(err, distribution.ErrNIKInvalid), errors.Is(err, distribution.ErrIdentityChangeReasonRequired):
+		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), validationFields(err))
+	case errors.Is(err, distribution.ErrMediaTypeInvalid), errors.Is(err, distribution.ErrMediaSourceInvalid), errors.Is(err, distribution.ErrMediaLocationRequired),
+		errors.Is(err, distribution.ErrMediaCapturedAtRequired), errors.Is(err, distribution.ErrMediaLimitReached):
+		writeFieldError(w, http.StatusBadRequest, "media_invalid", err.Error(), map[string]string{"file": err.Error()})
+	case errors.Is(err, dcp3.ErrMappingInvalid), errors.Is(err, dcp3.ErrTooManyRows), errors.Is(err, dcp3.ErrTooManyColumns),
+		errors.Is(err, dcp3.ErrHeadersInvalid), errors.Is(err, dcp3.ErrWorkbookInvalid):
+		writeFieldError(w, http.StatusBadRequest, "dcp3_invalid", err.Error(), map[string]string{"file": err.Error()})
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Terjadi kesalahan pada server")
 	}
