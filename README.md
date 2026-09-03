@@ -85,6 +85,8 @@ Data DCP3 diproses melalui halaman `DCP3`: pilih jadwal aktif, unggah workbook, 
 
 Foto disimpan di `STORAGE_PATH`. Nilai relatif seperti `./storage` diperbolehkan untuk `APP_ENV=local`; gunakan path absolut di environment test, staging, dan production. Input `Buka kamera` bergantung pada dukungan browser/perangkat, sedangkan `Pilih galeri` dapat digunakan pada desktop maupun mobile.
 
+Halaman `Laporan` menampilkan ringkasan dan tabel alokasi/distribusi/dokumentasi untuk satu jadwal terpilih, dengan export Excel dan PDF, memakai permission `distribution.view` yang sama dengan Pendistribusian.
+
 ## Pengujian
 
 ```powershell

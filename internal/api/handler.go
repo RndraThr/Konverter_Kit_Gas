@@ -18,6 +18,7 @@ import (
 	apphealth "konkit/internal/health"
 	"konkit/internal/profile"
 	"konkit/internal/programs"
+	"konkit/internal/reports"
 	"konkit/internal/settings"
 )
 
@@ -92,6 +93,13 @@ type DistributionService interface {
 	OpenMedia(context.Context, string) (distribution.MediaContent, error)
 }
 
+type ReportsService interface {
+	Summary(context.Context, string, reports.Filter) (reports.Summary, error)
+	Rows(context.Context, string, reports.Filter) ([]reports.Row, error)
+	ExportExcel(context.Context, auth.Principal, string, reports.Filter, auth.ClientMeta) ([]byte, error)
+	ExportPDF(context.Context, auth.Principal, string, reports.Filter, auth.ClientMeta) ([]byte, error)
+}
+
 type Dependencies struct {
 	Auth           AuthService
 	Profile        ProfileService
@@ -102,6 +110,7 @@ type Dependencies struct {
 	Programs       ProgramSetupService
 	DCP3           DCP3Service
 	Distribution   DistributionService
+	Reports        ReportsService
 	SessionSecret  []byte
 }
 
@@ -211,6 +220,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleDistributionMedia(w, r, rc, strings.TrimPrefix(path, "distribution/media/"))
 	case strings.HasPrefix(path, "distribution/allocations/"):
 		h.handleDistributionAllocation(w, r, rc, strings.TrimPrefix(path, "distribution/allocations/"))
+	case strings.HasPrefix(path, "reports/schedule/"):
+		h.handleReportsSchedule(w, r, rc, strings.TrimPrefix(path, "reports/schedule/"))
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
 	}

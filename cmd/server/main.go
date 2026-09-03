@@ -23,6 +23,7 @@ import (
 	"konkit/internal/media"
 	"konkit/internal/profile"
 	"konkit/internal/programs"
+	"konkit/internal/reports"
 	"konkit/internal/settings"
 	"konkit/internal/web"
 )
@@ -63,6 +64,7 @@ func run(ctx context.Context, cfg config.Config) error {
 		Programs:       programs.NewService(programs.NewRepository(pool)),
 		DCP3:           dcp3.NewImportService(dcp3.NewRepository(pool), dcp3.ParseLimits{MaxBytes: 10 << 20, MaxRows: 5000, MaxColumns: 100}),
 		Distribution:   distribution.NewService(distribution.NewRepository(pool), mediaStorage),
+		Reports:        reports.NewService(reports.NewRepository(pool)),
 		SessionSecret:  cfg.SessionSecret,
 	})
 	handler := web.NewHandler(web.Dependencies{
