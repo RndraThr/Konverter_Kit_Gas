@@ -3,11 +3,14 @@ package reports
 import (
 	"context"
 	"strings"
+
+	"konkit/internal/auth"
 )
 
 type repository interface {
 	Summary(ctx context.Context, scheduleID string, filter Filter) (Summary, error)
 	Rows(ctx context.Context, scheduleID string, filter Filter) ([]Row, error)
+	RecordExport(ctx context.Context, actor auth.Principal, scheduleID, format string, filter Filter, meta auth.ClientMeta) error
 }
 
 type Service struct {
@@ -38,4 +41,38 @@ func (s *Service) Rows(ctx context.Context, scheduleID string, filter Filter) ([
 		return nil, err
 	}
 	return s.repository.Rows(ctx, scheduleID, filter)
+}
+
+func (s *Service) ExportExcel(ctx context.Context, actor auth.Principal, scheduleID string, filter Filter, meta auth.ClientMeta) ([]byte, error) {
+	rows, err := s.Rows(ctx, scheduleID, filter)
+	if err != nil {
+		return nil, err
+	}
+	data, err := buildExcel(rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repository.RecordExport(ctx, actor, strings.TrimSpace(scheduleID), "xlsx", filter, meta); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func (s *Service) ExportPDF(ctx context.Context, actor auth.Principal, scheduleID string, filter Filter, meta auth.ClientMeta) ([]byte, error) {
+	summary, err := s.Summary(ctx, scheduleID, filter)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.Rows(ctx, scheduleID, filter)
+	if err != nil {
+		return nil, err
+	}
+	data, err := buildPDF(summary, rows)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repository.RecordExport(ctx, actor, strings.TrimSpace(scheduleID), "pdf", filter, meta); err != nil {
+		return nil, err
+	}
+	return data, nil
 }

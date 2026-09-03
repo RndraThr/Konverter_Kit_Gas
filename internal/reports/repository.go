@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"konkit/internal/audit"
+	"konkit/internal/auth"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -104,4 +107,21 @@ ORDER BY distribution_number
 		result = append(result, item)
 	}
 	return result, rows.Err()
+}
+
+func (r *Repository) RecordExport(ctx context.Context, actor auth.Principal, scheduleID, format string, filter Filter, meta auth.ClientMeta) error {
+	return audit.Record(ctx, r.pool, audit.Event{
+		ActorUserID:  actor.UserID,
+		Action:       "reports.exported",
+		ResourceType: "program_schedule",
+		ResourceID:   scheduleID,
+		Metadata: map[string]any{
+			"format":                format,
+			"allocation_status":    filter.AllocationStatus,
+			"distribution_status":  filter.DistributionStatus,
+			"documentation_status": filter.DocumentationStatus,
+		},
+		IPAddress: meta.IPAddress,
+		UserAgent: meta.UserAgent,
+	})
 }

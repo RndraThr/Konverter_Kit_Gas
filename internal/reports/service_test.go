@@ -4,13 +4,17 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"konkit/internal/auth"
 )
 
 type repositoryStub struct {
-	summary    Summary
-	rows       []Row
-	scheduleID string
-	filter     Filter
+	summary        Summary
+	rows           []Row
+	scheduleID     string
+	filter         Filter
+	recordedActor  auth.Principal
+	recordedFormat string
 }
 
 func (r *repositoryStub) Summary(_ context.Context, scheduleID string, filter Filter) (Summary, error) {
@@ -21,6 +25,11 @@ func (r *repositoryStub) Summary(_ context.Context, scheduleID string, filter Fi
 func (r *repositoryStub) Rows(_ context.Context, scheduleID string, filter Filter) ([]Row, error) {
 	r.scheduleID, r.filter = scheduleID, filter
 	return r.rows, nil
+}
+
+func (r *repositoryStub) RecordExport(_ context.Context, actor auth.Principal, scheduleID, format string, filter Filter, _ auth.ClientMeta) error {
+	r.recordedActor, r.recordedFormat, r.scheduleID, r.filter = actor, format, scheduleID, filter
+	return nil
 }
 
 func TestSummaryRequiresScheduleAndValidatesFilter(t *testing.T) {
@@ -75,5 +84,37 @@ func TestSummaryPassesTrimmedScheduleAndFilterToRepository(t *testing.T) {
 	}
 	if summary.TotalAllocations != 3 {
 		t.Fatalf("summary=%+v", summary)
+	}
+}
+
+func TestExportExcelRecordsAuditEventAfterBuildingFile(t *testing.T) {
+	repository := &repositoryStub{rows: []Row{{DistributionNumber: 7, FullName: "Siti Aminah"}}}
+	service := NewService(repository)
+
+	data, err := service.ExportExcel(context.Background(), auth.Principal{UserID: "user-1"}, "schedule-1", Filter{AllocationStatus: "ready"}, auth.ClientMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) == 0 {
+		t.Fatal("expected non-empty excel bytes")
+	}
+	if repository.recordedFormat != "xlsx" || repository.recordedActor.UserID != "user-1" || repository.filter.AllocationStatus != "ready" {
+		t.Fatalf("repository=%+v", repository)
+	}
+}
+
+func TestExportPDFRecordsAuditEventAfterBuildingFile(t *testing.T) {
+	repository := &repositoryStub{summary: Summary{TotalAllocations: 1}, rows: []Row{{DistributionNumber: 7, FullName: "Siti Aminah"}}}
+	service := NewService(repository)
+
+	data, err := service.ExportPDF(context.Background(), auth.Principal{UserID: "user-1"}, "schedule-1", Filter{}, auth.ClientMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) == 0 {
+		t.Fatal("expected non-empty pdf bytes")
+	}
+	if repository.recordedFormat != "pdf" {
+		t.Fatalf("repository=%+v", repository)
 	}
 }

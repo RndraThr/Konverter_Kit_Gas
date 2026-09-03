@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
+	"konkit/internal/auth"
 	"konkit/internal/database"
 	"konkit/internal/database/migrations"
 
@@ -62,6 +64,34 @@ func TestIntegrationSummaryAndRowsReflectAllocationsAndFilters(t *testing.T) {
 	if len(byAllocation) != 1 || byAllocation[0].DistributionNumber != 3 {
 		t.Fatalf("allocation-filtered rows=%+v", byAllocation)
 	}
+}
+
+func TestIntegrationRecordExportWritesAuditEvent(t *testing.T) {
+	pool := reportsIntegrationPool(t)
+	fixture := createReportsFixture(t, pool)
+	repository := NewRepository(pool)
+	ctx := context.Background()
+
+	err := repository.RecordExport(ctx, auth.Principal{UserID: ""}, fixture.scheduleID, "xlsx", Filter{AllocationStatus: "ready"}, auth.ClientMeta{UserAgent: "reports-integration"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var action, metadata string
+	if err := pool.QueryRow(ctx, `SELECT action,metadata::text FROM audit_logs WHERE resource_id=$1 AND user_agent='reports-integration'`, fixture.scheduleID).Scan(&action, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if action != "reports.exported" || !containsAll(metadata, `"format": "xlsx"`, `"allocation_status": "ready"`) {
+		t.Fatalf("action=%q metadata=%q", action, metadata)
+	}
+}
+
+func containsAll(haystack string, needles ...string) bool {
+	for _, needle := range needles {
+		if !strings.Contains(haystack, needle) {
+			return false
+		}
+	}
+	return true
 }
 
 type reportsFixture struct {
