@@ -63,7 +63,12 @@ func TestIntegrationRepositoryPersistsProgramSetupAndVersionsPublishedTemplate(t
 
 	template, err := service.SavePackageTemplate(ctx, actor, PackageTemplateInput{
 		TemplateCode: templateCode, Name: "Template Awal", ProgramType: ProgramFarmer,
-		Values: map[string]any{"converter_brand": "ERGAS"}, Status: "published",
+		Values: map[string]any{
+			"converter_brand": "ERGAS",
+			"machine_options": []any{map[string]any{"code": "shark-spwp8030", "brand": "SHARK", "type": "SPWP 80-30/3\""}},
+			"hose_options":    []any{map[string]any{"code": "triliunhose", "brand": "TRILIUNHOSE", "spec": "6m/10m"}},
+		},
+		Status: "published",
 	}, meta)
 	if err != nil {
 		t.Fatal(err)
@@ -105,6 +110,20 @@ func TestIntegrationRepositoryPersistsProgramSetupAndVersionsPublishedTemplate(t
 	}
 	if schedule.Program == nil || schedule.Program.Code != programCode || schedule.Regency == nil || schedule.Regency.DocumentCode != regencyCode {
 		t.Fatalf("schedule context missing: %+v", schedule)
+	}
+
+	scheduleWithSupervisor, err := service.SaveSchedule(ctx, actor, ScheduleInput{
+		ID: schedule.ID, ProgramID: program.ID, RegencyID: regency.ID, PackageTemplateVersionID: template.ID,
+		DocumentationTemplateVersionID: documentationTemplateID, Name: "Tahap 1",
+		StartDate: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
+		EndDate:   time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC), Status: "active",
+		SupervisorName: "  Andi Amrullah  ",
+	}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scheduleWithSupervisor.SupervisorName != "Andi Amrullah" {
+		t.Fatalf("supervisor name=%q", scheduleWithSupervisor.SupervisorName)
 	}
 
 	var auditCount int
