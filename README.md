@@ -87,6 +87,8 @@ Foto disimpan di `STORAGE_PATH`. Nilai relatif seperti `./storage` diperbolehkan
 
 Halaman `Laporan` menampilkan ringkasan dan tabel alokasi/distribusi/dokumentasi untuk satu jadwal terpilih, dengan export Excel dan PDF, memakai permission `distribution.view` yang sama dengan Pendistribusian.
 
+Template paket kini mendefinisikan daftar opsi merk/tipe mesin (`machine_options`) dan merk/spesifikasi selang (`hose_options`) yang wajib diisi minimal satu sebelum template dipublikasikan; jadwal dapat mencatat nama Konsultan Pengawas opsional; dan halaman Pendistribusian menangkap serial number mesin, selang, serta konkit/reducer per penerima sebagai bagian dari draft yang sudah ada, sebagai fondasi data untuk modul BAST Generator berikutnya.
+
 ## Pengujian
 
 ```powershell
