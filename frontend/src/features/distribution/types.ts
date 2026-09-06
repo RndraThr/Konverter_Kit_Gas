@@ -13,10 +13,16 @@ export type RecipientWorkspaceData = {
   allocation_status: string; distribution_status: string; program_type: 'farmer' | 'fisherman';
   program_name: string; regency_name: string; full_name: string; nik?: string;
   sector_identifier?: string; sector_identifier_type?: string; address?: string; village?: string;
-  district?: string; phone_number?: string; eligibility: string; eligibility_reasons: string[];
+  district?: string; phone_number?: string;
+  machine_option_code?: string; machine_serial_number?: string; hose_option_code?: string; hose_serial_number?: string; converter_serial_number?: string;
+  eligibility: string; eligibility_reasons: string[];
   source_snapshot: Record<string, unknown>; package_snapshot?: Record<string, unknown>; receipt_history: ReceiptHistory[]; documentation: SlotSummary[];
 };
+export type EquipmentOption = { code: string; brand: string; type?: string; spec?: string };
 export type DistributionRecord = { id: string; allocation_id: string; status: 'completed'; completed_at: string };
-export type DraftInput = { nik: string; sector_identifier: string; address: string; village: string; district: string; phone_number: string; identity_change_reason: string };
+export type DraftInput = {
+  nik: string; sector_identifier: string; address: string; village: string; district: string; phone_number: string; identity_change_reason: string;
+  machine_option_code: string; machine_serial_number: string; hose_option_code: string; hose_serial_number: string; converter_serial_number: string;
+};
 export type DataResponse<T> = { data: T };
 export type ScheduleResponse = DataResponse<Schedule[]>;

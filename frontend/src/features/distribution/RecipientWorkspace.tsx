@@ -5,12 +5,17 @@ import { FormEvent, useEffect, useState } from 'react';
 import { apiRequest } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
 import { formatDate } from '../programs/types';
-import type { DataResponse, DistributionRecord, DraftInput, RecipientWorkspaceData } from './types';
+import type { DataResponse, DistributionRecord, DraftInput, EquipmentOption, RecipientWorkspaceData } from './types';
 import { DocumentationSlot } from './DocumentationSlot';
 import styles from './Distribution.module.css';
 
 function draftFrom(data: RecipientWorkspaceData): DraftInput {
-  return { nik: data.nik ?? '', sector_identifier: data.sector_identifier ?? '', address: data.address ?? '', village: data.village ?? '', district: data.district ?? '', phone_number: data.phone_number ?? '', identity_change_reason: '' };
+  return {
+    nik: data.nik ?? '', sector_identifier: data.sector_identifier ?? '', address: data.address ?? '', village: data.village ?? '', district: data.district ?? '', phone_number: data.phone_number ?? '', identity_change_reason: '',
+    machine_option_code: data.machine_option_code ?? '', machine_serial_number: data.machine_serial_number ?? '',
+    hose_option_code: data.hose_option_code ?? '', hose_serial_number: data.hose_serial_number ?? '',
+    converter_serial_number: data.converter_serial_number ?? '',
+  };
 }
 
 export function RecipientWorkspace({ data, onSaved }: { data: RecipientWorkspaceData; onSaved: (data: RecipientWorkspaceData) => void }) {
@@ -39,6 +44,8 @@ export function RecipientWorkspace({ data, onSaved }: { data: RecipientWorkspace
 	const identityIncomplete = !data.full_name.trim() || !/^\d{16}$/.test(draft.nik) || !draft.sector_identifier.trim();
   const blocked = identityIncomplete || data.eligibility !== 'eligible' || data.documentation.some((slot) => slot.required && slot.status !== 'complete');
 	const packageEntries = Object.entries(data.package_snapshot ?? {}).filter(([, value]) => ['string', 'number'].includes(typeof value)).slice(0, 4);
+	const machineOptions = (data.package_snapshot?.machine_options as EquipmentOption[] | undefined) ?? [];
+	const hoseOptions = (data.package_snapshot?.hose_options as EquipmentOption[] | undefined) ?? [];
 
   return <section className={styles.recipientWorkspace}>
     <header className={styles.recipientHeader}><div className={styles.distributionNumber}><small>Nomor pembagian</small><strong>{data.distribution_number}</strong></div><div><h2>{data.full_name}</h2><p>{data.program_name} / {data.regency_name}</p></div><span className={`${styles.eligibilityBanner} ${styles[data.eligibility]}`}>{data.eligibility === 'previously_received' ? <AlertTriangle /> : <CheckCircle2 />}{data.eligibility === 'previously_received' ? 'Penerimaan ulang diblokir' : 'Siap diverifikasi'}</span></header>
@@ -54,6 +61,11 @@ export function RecipientWorkspace({ data, onSaved }: { data: RecipientWorkspace
 			<label><span>Desa / kelurahan {changed('village', data.village) && <small>Diubah</small>}</span><input value={draft.village} disabled={!editable} onChange={(event) => update('village', event.target.value)} /></label>
 			<label><span>Kecamatan {changed('district', data.district) && <small>Diubah</small>}</span><input value={draft.district} disabled={!editable} onChange={(event) => update('district', event.target.value)} /></label>
 			<label><span>Nomor telepon {changed('phone_number', data.phone_number) && <small>Diubah</small>}</span><input aria-label="Nomor telepon" value={draft.phone_number} disabled={!editable} onChange={(event) => update('phone_number', event.target.value)} /></label>
+			<label><span>Merk/Tipe Mesin</span><select aria-label="Merk/Tipe Mesin" value={draft.machine_option_code} disabled={!editable} onChange={(event) => update('machine_option_code', event.target.value)}><option value="">Pilih mesin</option>{machineOptions.map((option) => <option key={option.code} value={option.code}>{option.brand} {option.type}</option>)}</select></label>
+			<label><span>Serial Number Mesin</span><input aria-label="Serial Number Mesin" value={draft.machine_serial_number} disabled={!editable} onChange={(event) => update('machine_serial_number', event.target.value)} /></label>
+			<label><span>Merk/Spesifikasi Selang</span><select aria-label="Merk/Spesifikasi Selang" value={draft.hose_option_code} disabled={!editable} onChange={(event) => update('hose_option_code', event.target.value)}><option value="">Pilih selang</option>{hoseOptions.map((option) => <option key={option.code} value={option.code}>{option.brand} {option.spec}</option>)}</select></label>
+			<label><span>Serial Number Selang</span><input aria-label="Serial Number Selang" value={draft.hose_serial_number} disabled={!editable} onChange={(event) => update('hose_serial_number', event.target.value)} /></label>
+			<label><span>Serial Number Konkit/Reducer</span><input aria-label="Serial Number Konkit/Reducer" value={draft.converter_serial_number} disabled={!editable} onChange={(event) => update('converter_serial_number', event.target.value)} /></label>
 			{draft.nik !== (data.nik ?? '') && <label className={styles.fieldWide}><span>Alasan perubahan NIK</span><input value={draft.identity_change_reason} disabled={!editable} onChange={(event) => update('identity_change_reason', event.target.value)} /></label>}
         </div>
 		{editable && <div className={styles.formActions}>{saved && <span role="status">Draft penerima tersimpan.</span>}<button className="primaryButton" disabled={mutation.isPending} type="submit"><Save />{mutation.isPending ? 'Menyimpan...' : 'Simpan draft'}</button></div>}

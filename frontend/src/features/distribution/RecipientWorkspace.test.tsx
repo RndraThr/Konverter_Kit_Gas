@@ -15,7 +15,11 @@ const ready: RecipientWorkspaceData = {
   full_name: 'Siti Aminah', nik: '7306014101900001', sector_identifier: 'KP01',
   sector_identifier_type: 'farmer_card', address: 'Jalan Sawah', village: 'Tempe',
   district: 'Sabbangparu', phone_number: '', eligibility: 'eligible', eligibility_reasons: [],
-  source_snapshot: {}, package_snapshot: { converter_brand: 'ERGAS' }, receipt_history: [], documentation: [{ id: 'slot-1', code: 'recipient_package', label: 'Penerima dan paket', status: 'complete', required: true, min_files: 1, max_files: 1, files: [] }],
+  source_snapshot: {}, package_snapshot: {
+    converter_brand: 'ERGAS',
+    machine_options: [{ code: 'shark-spwp8030', brand: 'SHARK', type: 'SPWP 80-30/3"' }],
+    hose_options: [{ code: 'triliunhose', brand: 'TRILIUNHOSE', spec: '6m/10m' }],
+  }, receipt_history: [], documentation: [{ id: 'slot-1', code: 'recipient_package', label: 'Penerima dan paket', status: 'complete', required: true, min_files: 1, max_files: 1, files: [] }],
 };
 
 function renderWorkspace(permissions = ['distribution.manage']) {
@@ -46,4 +50,19 @@ test('confirms a complete distribution and publishes the completed workspace', a
 test('hides final distribution controls without manage permission', () => {
   renderWorkspace([]);
   expect(screen.queryByText('Konfirmasi distribusi')).not.toBeInTheDocument();
+});
+
+test('saves equipment fields as part of the recipient draft', async () => {
+  vi.mocked(apiRequest).mockResolvedValue({ data: { ...ready, machine_option_code: 'shark-spwp8030', machine_serial_number: 'SP 06IABD 421291' } });
+  renderWorkspace();
+
+  fireEvent.change(screen.getByLabelText('Merk/Tipe Mesin'), { target: { value: 'shark-spwp8030' } });
+  fireEvent.change(screen.getByLabelText('Serial Number Mesin'), { target: { value: 'SP 06IABD 421291' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Simpan draft' }));
+
+  expect(await screen.findByText('Draft penerima tersimpan.')).toBeVisible();
+  expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/allocations/allocation-1/draft', expect.objectContaining({
+    method: 'PATCH',
+    body: expect.stringContaining('"machine_serial_number":"SP 06IABD 421291"'),
+  }));
 });
