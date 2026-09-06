@@ -91,6 +91,11 @@ type RecipientWorkspace struct {
 	Village              string           `json:"village,omitempty"`
 	District             string           `json:"district,omitempty"`
 	PhoneNumber          string           `json:"phone_number,omitempty"`
+	MachineOptionCode    string           `json:"machine_option_code,omitempty"`
+	MachineSerialNumber  string           `json:"machine_serial_number,omitempty"`
+	HoseOptionCode       string           `json:"hose_option_code,omitempty"`
+	HoseSerialNumber     string           `json:"hose_serial_number,omitempty"`
+	ConverterSerialNumber string          `json:"converter_serial_number,omitempty"`
 	Eligibility          string           `json:"eligibility"`
 	EligibilityReasons   []string         `json:"eligibility_reasons"`
 	SourceSnapshot       map[string]any   `json:"source_snapshot"`
@@ -100,13 +105,18 @@ type RecipientWorkspace struct {
 }
 
 type DraftInput struct {
-	NIK                  string `json:"nik"`
-	Address              string `json:"address"`
-	Village              string `json:"village"`
-	District             string `json:"district"`
-	PhoneNumber          string `json:"phone_number"`
-	SectorIdentifier     string `json:"sector_identifier"`
-	IdentityChangeReason string `json:"identity_change_reason"`
+	NIK                   string `json:"nik"`
+	Address               string `json:"address"`
+	Village               string `json:"village"`
+	District              string `json:"district"`
+	PhoneNumber           string `json:"phone_number"`
+	SectorIdentifier      string `json:"sector_identifier"`
+	IdentityChangeReason  string `json:"identity_change_reason"`
+	MachineOptionCode     string `json:"machine_option_code"`
+	MachineSerialNumber   string `json:"machine_serial_number"`
+	HoseOptionCode        string `json:"hose_option_code"`
+	HoseSerialNumber      string `json:"hose_serial_number"`
+	ConverterSerialNumber string `json:"converter_serial_number"`
 }
 
 type DistributionRecord struct {

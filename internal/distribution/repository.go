@@ -80,6 +80,7 @@ func (r *Repository) GetWorkspace(ctx context.Context, allocationID string) (Rec
 			pr.program_type,pr.name,rg.name,COALESCE(p.full_name,''),COALESCE(p.nik,''),
 			COALESCE(psi.display_value,''),COALESCE(psi.identifier_type,''),COALESCE(p.address,''),
 			COALESCE(p.village,''),COALESCE(p.district,''),COALESCE(p.phone_number,''),n.source_snapshot_json,a.package_snapshot_json,
+			COALESCE(dr.machine_option_code,''),COALESCE(dr.machine_serial_number,''),COALESCE(dr.hose_option_code,''),COALESCE(dr.hose_serial_number,''),COALESCE(dr.converter_serial_number,''),
 			CASE
 				WHEN EXISTS(SELECT 1 FROM distribution_records old WHERE old.recipient_person_id=p.id AND old.status='completed' AND old.allocation_id<>a.id) THEN 'previously_received'
 				WHEN p.id IS NULL OR a.status='needs_review' THEN 'incomplete'
@@ -102,7 +103,9 @@ func (r *Repository) GetWorkspace(ctx context.Context, allocationID string) (Rec
 		&result.AllocationStatus, &result.DistributionStatus, &result.ProgramType, &result.ProgramName,
 		&result.RegencyName, &result.FullName, &result.NIK, &result.SectorIdentifier,
 		&result.SectorIdentifierType, &result.Address, &result.Village, &result.District,
-		&result.PhoneNumber, &sourceJSON, &packageJSON, &result.Eligibility,
+		&result.PhoneNumber, &sourceJSON, &packageJSON,
+		&result.MachineOptionCode, &result.MachineSerialNumber, &result.HoseOptionCode, &result.HoseSerialNumber, &result.ConverterSerialNumber,
+		&result.Eligibility,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return RecipientWorkspace{}, ErrAllocationNotFound
@@ -141,15 +144,15 @@ func (r *Repository) SaveDraft(ctx context.Context, actor auth.Principal, alloca
 		return RecipientWorkspace{}, fmt.Errorf("begin recipient draft: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	var personID, programType, oldNIK, oldAddress, oldVillage, oldDistrict, oldPhone string
+	var personID, distributionID, programType, oldNIK, oldAddress, oldVillage, oldDistrict, oldPhone string
 	err = tx.QueryRow(ctx, `
-		SELECT p.id::text,pr.program_type,COALESCE(p.nik,''),COALESCE(p.address,''),COALESCE(p.village,''),COALESCE(p.district,''),COALESCE(p.phone_number,'')
+		SELECT p.id::text,dr.id::text,pr.program_type,COALESCE(p.nik,''),COALESCE(p.address,''),COALESCE(p.village,''),COALESCE(p.district,''),COALESCE(p.phone_number,'')
 		FROM package_allocations a JOIN candidate_nominations n ON n.id=a.nomination_id
 		JOIN program_schedules ps ON ps.id=a.schedule_id JOIN programs pr ON pr.id=ps.program_id
 		JOIN distribution_records dr ON dr.allocation_id=a.id
 		JOIN people p ON p.id=COALESCE(a.actual_recipient_person_id,dr.recipient_person_id,a.intended_person_id,n.person_id)
-		WHERE a.id=$1 FOR UPDATE OF p
-	`, allocationID).Scan(&personID, &programType, &oldNIK, &oldAddress, &oldVillage, &oldDistrict, &oldPhone)
+		WHERE a.id=$1 FOR UPDATE OF p, dr
+	`, allocationID).Scan(&personID, &distributionID, &programType, &oldNIK, &oldAddress, &oldVillage, &oldDistrict, &oldPhone)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return RecipientWorkspace{}, ErrAllocationNotFound
 	}
@@ -162,6 +165,10 @@ func (r *Repository) SaveDraft(ctx context.Context, actor auth.Principal, alloca
 	}
 	if err != nil {
 		return RecipientWorkspace{}, fmt.Errorf("update recipient draft: %w", err)
+	}
+	_, err = tx.Exec(ctx, `UPDATE distribution_records SET machine_option_code=NULLIF($2,''),machine_serial_number=NULLIF($3,''),hose_option_code=NULLIF($4,''),hose_serial_number=NULLIF($5,''),converter_serial_number=NULLIF($6,''),updated_at=now() WHERE id=$1`, distributionID, input.MachineOptionCode, input.MachineSerialNumber, input.HoseOptionCode, input.HoseSerialNumber, input.ConverterSerialNumber)
+	if err != nil {
+		return RecipientWorkspace{}, fmt.Errorf("update recipient equipment: %w", err)
 	}
 	identifierType := "farmer_card"
 	if programType == "fisherman" {
@@ -201,10 +208,12 @@ func (r *Repository) Complete(ctx context.Context, actor auth.Principal, allocat
 
 	var record DistributionRecord
 	var allocationStatus, personID, fullName, nik, programType, sectorType, sectorIdentifier string
+	var machineOptionCode, machineSerialNumber, hoseOptionCode, hoseSerialNumber, converterSerialNumber string
 	var packageJSON []byte
 	err = tx.QueryRow(ctx, `
 		SELECT dr.id::text,dr.status,a.status,p.id::text,p.full_name,COALESCE(p.nik,''),pr.program_type,
-			COALESCE(psi.identifier_type,''),COALESCE(psi.normalized_value,''),a.package_snapshot_json
+			COALESCE(psi.identifier_type,''),COALESCE(psi.normalized_value,''),a.package_snapshot_json,
+			COALESCE(dr.machine_option_code,''),COALESCE(dr.machine_serial_number,''),COALESCE(dr.hose_option_code,''),COALESCE(dr.hose_serial_number,''),COALESCE(dr.converter_serial_number,'')
 		FROM package_allocations a
 		JOIN candidate_nominations n ON n.id=a.nomination_id
 		JOIN distribution_records dr ON dr.allocation_id=a.id
@@ -217,7 +226,8 @@ func (r *Repository) Complete(ctx context.Context, actor auth.Principal, allocat
 		) psi ON true
 		WHERE a.id=$1
 		FOR UPDATE OF a,dr,p
-	`, allocationID).Scan(&record.ID, &record.Status, &allocationStatus, &personID, &fullName, &nik, &programType, &sectorType, &sectorIdentifier, &packageJSON)
+	`, allocationID).Scan(&record.ID, &record.Status, &allocationStatus, &personID, &fullName, &nik, &programType, &sectorType, &sectorIdentifier, &packageJSON,
+		&machineOptionCode, &machineSerialNumber, &hoseOptionCode, &hoseSerialNumber, &converterSerialNumber)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return DistributionRecord{}, ErrAllocationNotFound
 	}
@@ -280,6 +290,11 @@ func (r *Repository) Complete(ctx context.Context, actor auth.Principal, allocat
 	snapshot, err := json.Marshal(map[string]any{
 		"identity": map[string]any{"person_id": personID, "full_name": fullName, "nik": nik, "sector_identifier_type": sectorType, "sector_identifier": sectorIdentifier, "program_type": programType},
 		"package":  packageSnapshot, "documentation": documentation,
+		"equipment": map[string]any{
+			"machine_option_code": machineOptionCode, "machine_serial_number": machineSerialNumber,
+			"hose_option_code": hoseOptionCode, "hose_serial_number": hoseSerialNumber,
+			"converter_serial_number": converterSerialNumber,
+		},
 	})
 	if err != nil {
 		return DistributionRecord{}, fmt.Errorf("encode verification snapshot: %w", err)
