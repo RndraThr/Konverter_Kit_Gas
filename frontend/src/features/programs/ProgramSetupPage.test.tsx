@@ -60,3 +60,14 @@ test('normalizes the schedule name to uppercase while typing', async () => {
 
   expect(name).toHaveValue('WAJO TAHAP 1');
 });
+
+test('accepts an optional supervisor name in the schedule dialog', async () => {
+  renderPage(['programs.view', 'programs.manage']);
+  await userEvent.click(await screen.findByRole('tab', { name: 'Jadwal' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Tambah jadwal' }));
+
+  const supervisor = screen.getByRole('textbox', { name: 'Konsultan pengawas' });
+  await userEvent.type(supervisor, 'Andi Amrullah');
+
+  expect(supervisor).toHaveValue('Andi Amrullah');
+});

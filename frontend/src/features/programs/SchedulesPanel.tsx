@@ -9,7 +9,7 @@ import { SetupDialog } from './SetupDialog';
 import { DataResponse, dateInputValue, datePayload, DocumentationTemplate, formatDate, PackageTemplate, Program, Regency, Schedule } from './types';
 
 const today = new Date().toISOString().slice(0, 10);
-const empty = { program_id: '', regency_id: '', package_template_version_id: '', documentation_template_version_id: '', name: '', start_date: today, end_date: today, status: 'draft', distribution_number_padding: 4, notes: '' };
+const empty = { program_id: '', regency_id: '', package_template_version_id: '', documentation_template_version_id: '', name: '', start_date: today, end_date: today, status: 'draft', distribution_number_padding: 4, supervisor_name: '', notes: '' };
 
 export function SchedulesPanel() {
   const canManage = useCan('programs.manage'); const client = useQueryClient();
@@ -20,7 +20,7 @@ export function SchedulesPanel() {
   const documents = useQuery({ queryKey: ['program-setup', 'documentation-templates'], queryFn: () => apiRequest<DataResponse<DocumentationTemplate[]>>('/api/v1/program-setup/documentation-templates') });
   const [open, setOpen] = useState(false); const [editing, setEditing] = useState<Schedule>(); const [values, setValues] = useState(empty);
   const mutation = useMutation({ mutationFn: () => apiRequest(`/api/v1/program-setup/schedules${editing ? `/${editing.id}` : ''}`, { method: editing ? 'PATCH' : 'POST', body: JSON.stringify({ ...values, start_date: datePayload(values.start_date), end_date: datePayload(values.end_date) }) }), onSuccess: () => { setOpen(false); client.invalidateQueries({ queryKey: ['program-setup', 'schedules'] }); } });
-  const show = (item?: Schedule) => { setEditing(item); setValues(item ? { program_id: item.program_id, regency_id: item.regency_id, package_template_version_id: item.package_template_version_id, documentation_template_version_id: item.documentation_template_version_id, name: item.name, start_date: dateInputValue(item.start_date), end_date: dateInputValue(item.end_date), status: item.status, distribution_number_padding: item.distribution_number_padding, notes: item.notes ?? '' } : empty); setOpen(true); };
+  const show = (item?: Schedule) => { setEditing(item); setValues(item ? { program_id: item.program_id, regency_id: item.regency_id, package_template_version_id: item.package_template_version_id, documentation_template_version_id: item.documentation_template_version_id, name: item.name, start_date: dateInputValue(item.start_date), end_date: dateInputValue(item.end_date), status: item.status, distribution_number_padding: item.distribution_number_padding, supervisor_name: item.supervisor_name ?? '', notes: item.notes ?? '' } : empty); setOpen(true); };
   const selectedProgram = programs.data?.data.find((item) => item.id === values.program_id);
   const compatiblePackages = packages.data?.data.filter((item) => item.status === 'published' && (!selectedProgram || item.program_type === selectedProgram.program_type)) ?? [];
   const compatibleDocuments = documents.data?.data.filter((item) => item.status === 'published' && (!selectedProgram || item.program_type === selectedProgram.program_type)) ?? [];
@@ -38,6 +38,7 @@ export function SchedulesPanel() {
       <FormField label="Mulai" name="start_date" type="date" required value={values.start_date} onChange={(e) => setValues({ ...values, start_date: e.target.value })} />
       <FormField label="Selesai" name="end_date" type="date" required value={values.end_date} onChange={(e) => setValues({ ...values, end_date: e.target.value })} />
       <FormField label="Digit nomor pembagian" name="distribution_number_padding" type="number" min={1} max={8} value={values.distribution_number_padding} onChange={(e) => setValues({ ...values, distribution_number_padding: Number(e.target.value) })} />
+      <FormField label="Konsultan pengawas" name="supervisor_name" value={values.supervisor_name} onChange={(e) => setValues({ ...values, supervisor_name: e.target.value })} />
       <FormField label="Catatan" name="notes" value={values.notes} onChange={(e) => setValues({ ...values, notes: e.target.value })} />
       {mutation.isError && <p className="formNotice">Jadwal belum dapat disimpan. Periksa kecocokan jenis template.</p>}
     </SetupDialog>
