@@ -200,6 +200,23 @@ func TestProgramSetupPatchPassesResourceID(t *testing.T) {
 	}
 }
 
+func TestRegenciesEndpointAppliesCallerRegencyScope(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"programs.view": true}, regencyScope: auth.RegencyScope{RegencyIDs: []string{"regency-1"}}}
+	programService := &fakeProgramSetupService{}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/program-setup/regencies", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+
+	NewHandler(Dependencies{Auth: authService, Programs: programService}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if programService.seenRegencyScope.Unrestricted || len(programService.seenRegencyScope.RegencyIDs) != 1 || programService.seenRegencyScope.RegencyIDs[0] != "regency-1" {
+		t.Fatalf("scope not forwarded: %+v", programService.seenRegencyScope)
+	}
+}
+
 func TestDCP3PreviewAcceptsMultipartWorkbook(t *testing.T) {
 	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"dcp3.import": true}}
 	dcp3Service := &fakeDCP3Service{preview: dcp3.ImportPreview{ID: "batch-1"}}
@@ -528,6 +545,8 @@ type fakeAuthService struct {
 	permissions        []string
 	allowed            bool
 	allowedPermissions map[string]bool
+	regencyScope       auth.RegencyScope
+	regencyScopeErr    error
 }
 
 type fakeHealthService struct{ status string }
@@ -544,7 +563,8 @@ type fakeAuditService struct {
 
 type fakeProgramSetupService struct {
 	ProgramSetupService
-	regencyInput programs.RegencyInput
+	regencyInput     programs.RegencyInput
+	seenRegencyScope auth.RegencyScope
 }
 
 type fakeDCP3Service struct {
@@ -639,7 +659,8 @@ func (f *fakeDCP3Service) Commit(_ context.Context, _ auth.Principal, batchID st
 	return f.result, nil
 }
 
-func (f *fakeProgramSetupService) ListRegencies(context.Context) ([]programs.Regency, error) {
+func (f *fakeProgramSetupService) ListRegencies(_ context.Context, scope auth.RegencyScope) ([]programs.Regency, error) {
+	f.seenRegencyScope = scope
 	return []programs.Regency{}, nil
 }
 func (f *fakeProgramSetupService) SaveRegency(_ context.Context, _ auth.Principal, input programs.RegencyInput, _ auth.ClientMeta) (programs.Regency, error) {
@@ -649,7 +670,8 @@ func (f *fakeProgramSetupService) SaveRegency(_ context.Context, _ auth.Principa
 func (f *fakeProgramSetupService) ListPrograms(context.Context) ([]programs.Program, error) {
 	return []programs.Program{}, nil
 }
-func (f *fakeProgramSetupService) ListSchedules(context.Context) ([]programs.Schedule, error) {
+func (f *fakeProgramSetupService) ListSchedules(_ context.Context, scope auth.RegencyScope) ([]programs.Schedule, error) {
+	f.seenRegencyScope = scope
 	return []programs.Schedule{}, nil
 }
 func (f *fakeProgramSetupService) ListPackageTemplates(context.Context) ([]programs.PackageTemplate, error) {
@@ -695,4 +717,8 @@ func (f *fakeAuthService) Can(_ context.Context, _ auth.Principal, permission st
 
 func (f *fakeAuthService) Permissions(context.Context, auth.Principal) ([]string, error) {
 	return f.permissions, nil
+}
+
+func (f *fakeAuthService) RegencyScope(context.Context, auth.Principal) (auth.RegencyScope, error) {
+	return f.regencyScope, f.regencyScopeErr
 }

@@ -28,6 +28,7 @@ type AuthService interface {
 	Authenticate(context.Context, string) (auth.Principal, error)
 	Can(context.Context, auth.Principal, string) (bool, error)
 	Permissions(context.Context, auth.Principal) ([]string, error)
+	RegencyScope(context.Context, auth.Principal) (auth.RegencyScope, error)
 }
 
 type ProfileService interface {
@@ -65,11 +66,11 @@ type AuditService interface {
 }
 
 type ProgramSetupService interface {
-	ListRegencies(context.Context) ([]programs.Regency, error)
+	ListRegencies(context.Context, auth.RegencyScope) ([]programs.Regency, error)
 	SaveRegency(context.Context, auth.Principal, programs.RegencyInput, auth.ClientMeta) (programs.Regency, error)
 	ListPrograms(context.Context) ([]programs.Program, error)
 	SaveProgram(context.Context, auth.Principal, programs.ProgramInput, auth.ClientMeta) (programs.Program, error)
-	ListSchedules(context.Context) ([]programs.Schedule, error)
+	ListSchedules(context.Context, auth.RegencyScope) ([]programs.Schedule, error)
 	SaveSchedule(context.Context, auth.Principal, programs.ScheduleInput, auth.ClientMeta) (programs.Schedule, error)
 	ListPackageTemplates(context.Context) ([]programs.PackageTemplate, error)
 	SavePackageTemplate(context.Context, auth.Principal, programs.PackageTemplateInput, auth.ClientMeta) (programs.PackageTemplate, error)
@@ -238,6 +239,15 @@ func (h *Handler) authorize(w http.ResponseWriter, r *http.Request, principal au
 		return false
 	}
 	return true
+}
+
+func (h *Handler) regencyScope(w http.ResponseWriter, r *http.Request, principal auth.Principal) (auth.RegencyScope, bool) {
+	scope, err := h.deps.Auth.RegencyScope(r.Context(), principal)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Tidak dapat memeriksa akses kabupaten")
+		return auth.RegencyScope{}, false
+	}
+	return scope, true
 }
 
 func (h *Handler) authorizeAny(w http.ResponseWriter, r *http.Request, principal auth.Principal, permissions ...string) bool {
