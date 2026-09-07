@@ -79,26 +79,26 @@ type ProgramSetupService interface {
 }
 
 type DCP3Service interface {
-	Preview(context.Context, auth.Principal, string, string, io.Reader, auth.ClientMeta) (dcp3.ImportPreview, error)
-	GetPreview(context.Context, string) (dcp3.ImportPreview, error)
-	Commit(context.Context, auth.Principal, string, dcp3.Mapping, auth.ClientMeta) (dcp3.ImportResult, error)
+	Preview(context.Context, auth.Principal, string, string, io.Reader, auth.ClientMeta, auth.RegencyScope) (dcp3.ImportPreview, error)
+	GetPreview(context.Context, string, auth.RegencyScope) (dcp3.ImportPreview, error)
+	Commit(context.Context, auth.Principal, string, dcp3.Mapping, auth.ClientMeta, auth.RegencyScope) (dcp3.ImportResult, error)
 }
 
 type DistributionService interface {
-	Search(context.Context, string, string, int) ([]distribution.SearchResult, error)
-	GetWorkspace(context.Context, string) (distribution.RecipientWorkspace, error)
-	SaveDraft(context.Context, auth.Principal, string, distribution.DraftInput, auth.ClientMeta) (distribution.RecipientWorkspace, error)
-	Complete(context.Context, auth.Principal, string, auth.ClientMeta) (distribution.DistributionRecord, error)
-	UploadMedia(context.Context, auth.Principal, distribution.UploadMediaInput, auth.ClientMeta) (distribution.MediaFile, error)
-	DeleteMedia(context.Context, auth.Principal, string, auth.ClientMeta) error
-	OpenMedia(context.Context, string) (distribution.MediaContent, error)
+	Search(context.Context, string, string, int, auth.RegencyScope) ([]distribution.SearchResult, error)
+	GetWorkspace(context.Context, string, auth.RegencyScope) (distribution.RecipientWorkspace, error)
+	SaveDraft(context.Context, auth.Principal, string, distribution.DraftInput, auth.ClientMeta, auth.RegencyScope) (distribution.RecipientWorkspace, error)
+	Complete(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionRecord, error)
+	UploadMedia(context.Context, auth.Principal, distribution.UploadMediaInput, auth.ClientMeta, auth.RegencyScope) (distribution.MediaFile, error)
+	DeleteMedia(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) error
+	OpenMedia(context.Context, string, auth.RegencyScope) (distribution.MediaContent, error)
 }
 
 type ReportsService interface {
-	Summary(context.Context, string, reports.Filter) (reports.Summary, error)
-	Rows(context.Context, string, reports.Filter) ([]reports.Row, error)
-	ExportExcel(context.Context, auth.Principal, string, reports.Filter, auth.ClientMeta) ([]byte, error)
-	ExportPDF(context.Context, auth.Principal, string, reports.Filter, auth.ClientMeta) ([]byte, error)
+	Summary(context.Context, string, reports.Filter, auth.RegencyScope) (reports.Summary, error)
+	Rows(context.Context, string, reports.Filter, auth.RegencyScope) ([]reports.Row, error)
+	ExportExcel(context.Context, auth.Principal, string, reports.Filter, auth.ClientMeta, auth.RegencyScope) ([]byte, error)
+	ExportPDF(context.Context, auth.Principal, string, reports.Filter, auth.ClientMeta, auth.RegencyScope) ([]byte, error)
 }
 
 type Dependencies struct {

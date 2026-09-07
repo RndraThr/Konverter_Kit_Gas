@@ -217,6 +217,57 @@ func TestRegenciesEndpointAppliesCallerRegencyScope(t *testing.T) {
 	}
 }
 
+func TestDCP3PreviewEndpointAppliesCallerRegencyScope(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"dcp3.view": true}, regencyScope: auth.RegencyScope{RegencyIDs: []string{"regency-1"}}}
+	dcp3Service := &fakeDCP3Service{}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/dcp3/previews/batch-1", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+
+	NewHandler(Dependencies{Auth: authService, DCP3: dcp3Service}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(dcp3Service.seenRegencyScope.RegencyIDs) != 1 || dcp3Service.seenRegencyScope.RegencyIDs[0] != "regency-1" {
+		t.Fatalf("scope not forwarded: %+v", dcp3Service.seenRegencyScope)
+	}
+}
+
+func TestDistributionSearchEndpointAppliesCallerRegencyScope(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.view": true}, regencyScope: auth.RegencyScope{RegencyIDs: []string{"regency-1"}}}
+	distributionService := &fakeDistributionService{}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/distribution/search?schedule_id=schedule-1&q=Siti", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+
+	NewHandler(Dependencies{Auth: authService, Distribution: distributionService}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(distributionService.seenRegencyScope.RegencyIDs) != 1 || distributionService.seenRegencyScope.RegencyIDs[0] != "regency-1" {
+		t.Fatalf("scope not forwarded: %+v", distributionService.seenRegencyScope)
+	}
+}
+
+func TestReportsSummaryEndpointAppliesCallerRegencyScope(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.view": true}, regencyScope: auth.RegencyScope{RegencyIDs: []string{"regency-1"}}}
+	reportsService := &fakeReportsService{}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/schedule/schedule-1/summary", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+
+	NewHandler(Dependencies{Auth: authService, Reports: reportsService}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(reportsService.seenRegencyScope.RegencyIDs) != 1 || reportsService.seenRegencyScope.RegencyIDs[0] != "regency-1" {
+		t.Fatalf("scope not forwarded: %+v", reportsService.seenRegencyScope)
+	}
+}
+
 func TestDCP3PreviewAcceptsMultipartWorkbook(t *testing.T) {
 	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"dcp3.import": true}}
 	dcp3Service := &fakeDCP3Service{preview: dcp3.ImportPreview{ID: "batch-1"}}
@@ -569,93 +620,99 @@ type fakeProgramSetupService struct {
 
 type fakeDCP3Service struct {
 	DCP3Service
-	preview    dcp3.ImportPreview
-	result     dcp3.ImportResult
-	scheduleID string
-	filename   string
-	batchID    string
-	mapping    dcp3.Mapping
+	preview          dcp3.ImportPreview
+	result           dcp3.ImportResult
+	scheduleID       string
+	filename         string
+	batchID          string
+	mapping          dcp3.Mapping
+	seenRegencyScope auth.RegencyScope
 }
 
 type fakeDistributionService struct {
 	DistributionService
-	results      []distribution.SearchResult
-	workspace    distribution.RecipientWorkspace
-	scheduleID   string
-	query        string
-	limit        int
-	allocationID string
-	media        distribution.MediaFile
-	mediaContent []byte
-	slotID       string
-	upload       distribution.UploadMediaInput
-	completed    distribution.DistributionRecord
-	completeErr  error
+	results          []distribution.SearchResult
+	workspace        distribution.RecipientWorkspace
+	scheduleID       string
+	query            string
+	limit            int
+	allocationID     string
+	media            distribution.MediaFile
+	mediaContent     []byte
+	slotID           string
+	upload           distribution.UploadMediaInput
+	completed        distribution.DistributionRecord
+	completeErr      error
+	seenRegencyScope auth.RegencyScope
 }
 
-func (f *fakeDistributionService) Search(_ context.Context, scheduleID, query string, limit int) ([]distribution.SearchResult, error) {
-	f.scheduleID, f.query, f.limit = scheduleID, query, limit
+func (f *fakeDistributionService) Search(_ context.Context, scheduleID, query string, limit int, scope auth.RegencyScope) ([]distribution.SearchResult, error) {
+	f.scheduleID, f.query, f.limit, f.seenRegencyScope = scheduleID, query, limit, scope
 	return f.results, nil
 }
-func (f *fakeDistributionService) GetWorkspace(_ context.Context, allocationID string) (distribution.RecipientWorkspace, error) {
-	f.allocationID = allocationID
+func (f *fakeDistributionService) GetWorkspace(_ context.Context, allocationID string, scope auth.RegencyScope) (distribution.RecipientWorkspace, error) {
+	f.allocationID, f.seenRegencyScope = allocationID, scope
 	return f.workspace, nil
 }
-func (f *fakeDistributionService) SaveDraft(_ context.Context, _ auth.Principal, allocationID string, _ distribution.DraftInput, _ auth.ClientMeta) (distribution.RecipientWorkspace, error) {
-	f.allocationID = allocationID
+func (f *fakeDistributionService) SaveDraft(_ context.Context, _ auth.Principal, allocationID string, _ distribution.DraftInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.RecipientWorkspace, error) {
+	f.allocationID, f.seenRegencyScope = allocationID, scope
 	return f.workspace, nil
 }
-func (f *fakeDistributionService) Complete(_ context.Context, _ auth.Principal, allocationID string, _ auth.ClientMeta) (distribution.DistributionRecord, error) {
-	f.allocationID = allocationID
+func (f *fakeDistributionService) Complete(_ context.Context, _ auth.Principal, allocationID string, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.DistributionRecord, error) {
+	f.allocationID, f.seenRegencyScope = allocationID, scope
 	return f.completed, f.completeErr
 }
-func (f *fakeDistributionService) UploadMedia(_ context.Context, _ auth.Principal, input distribution.UploadMediaInput, _ auth.ClientMeta) (distribution.MediaFile, error) {
-	f.slotID, f.upload = input.SlotID, input
+func (f *fakeDistributionService) UploadMedia(_ context.Context, _ auth.Principal, input distribution.UploadMediaInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.MediaFile, error) {
+	f.slotID, f.upload, f.seenRegencyScope = input.SlotID, input, scope
 	return f.media, nil
 }
-func (f *fakeDistributionService) DeleteMedia(context.Context, auth.Principal, string, auth.ClientMeta) error {
+func (f *fakeDistributionService) DeleteMedia(_ context.Context, _ auth.Principal, _ string, _ auth.ClientMeta, scope auth.RegencyScope) error {
+	f.seenRegencyScope = scope
 	return nil
 }
-func (f *fakeDistributionService) OpenMedia(context.Context, string) (distribution.MediaContent, error) {
+func (f *fakeDistributionService) OpenMedia(_ context.Context, _ string, scope auth.RegencyScope) (distribution.MediaContent, error) {
+	f.seenRegencyScope = scope
 	return distribution.MediaContent{Reader: io.NopCloser(bytes.NewReader(f.mediaContent)), MimeType: f.media.MimeType, Filename: f.media.OriginalFilename}, nil
 }
 
 type fakeReportsService struct {
 	ReportsService
-	scheduleID   string
-	filter       reports.Filter
-	summary      reports.Summary
-	rows         []reports.Row
-	exportData   []byte
-	exportFormat string
+	scheduleID       string
+	filter           reports.Filter
+	summary          reports.Summary
+	rows             []reports.Row
+	exportData       []byte
+	exportFormat     string
+	seenRegencyScope auth.RegencyScope
 }
 
-func (s *fakeReportsService) Summary(_ context.Context, scheduleID string, filter reports.Filter) (reports.Summary, error) {
-	s.scheduleID, s.filter = scheduleID, filter
+func (s *fakeReportsService) Summary(_ context.Context, scheduleID string, filter reports.Filter, scope auth.RegencyScope) (reports.Summary, error) {
+	s.scheduleID, s.filter, s.seenRegencyScope = scheduleID, filter, scope
 	return s.summary, nil
 }
-func (s *fakeReportsService) Rows(_ context.Context, scheduleID string, filter reports.Filter) ([]reports.Row, error) {
-	s.scheduleID, s.filter = scheduleID, filter
+func (s *fakeReportsService) Rows(_ context.Context, scheduleID string, filter reports.Filter, scope auth.RegencyScope) ([]reports.Row, error) {
+	s.scheduleID, s.filter, s.seenRegencyScope = scheduleID, filter, scope
 	return s.rows, nil
 }
-func (s *fakeReportsService) ExportExcel(_ context.Context, _ auth.Principal, scheduleID string, filter reports.Filter, _ auth.ClientMeta) ([]byte, error) {
-	s.scheduleID, s.filter, s.exportFormat = scheduleID, filter, "xlsx"
+func (s *fakeReportsService) ExportExcel(_ context.Context, _ auth.Principal, scheduleID string, filter reports.Filter, _ auth.ClientMeta, scope auth.RegencyScope) ([]byte, error) {
+	s.scheduleID, s.filter, s.exportFormat, s.seenRegencyScope = scheduleID, filter, "xlsx", scope
 	return s.exportData, nil
 }
-func (s *fakeReportsService) ExportPDF(_ context.Context, _ auth.Principal, scheduleID string, filter reports.Filter, _ auth.ClientMeta) ([]byte, error) {
-	s.scheduleID, s.filter, s.exportFormat = scheduleID, filter, "pdf"
+func (s *fakeReportsService) ExportPDF(_ context.Context, _ auth.Principal, scheduleID string, filter reports.Filter, _ auth.ClientMeta, scope auth.RegencyScope) ([]byte, error) {
+	s.scheduleID, s.filter, s.exportFormat, s.seenRegencyScope = scheduleID, filter, "pdf", scope
 	return s.exportData, nil
 }
 
-func (f *fakeDCP3Service) Preview(_ context.Context, _ auth.Principal, scheduleID, filename string, _ io.Reader, _ auth.ClientMeta) (dcp3.ImportPreview, error) {
-	f.scheduleID, f.filename = scheduleID, filename
+func (f *fakeDCP3Service) Preview(_ context.Context, _ auth.Principal, scheduleID, filename string, _ io.Reader, _ auth.ClientMeta, scope auth.RegencyScope) (dcp3.ImportPreview, error) {
+	f.scheduleID, f.filename, f.seenRegencyScope = scheduleID, filename, scope
 	return f.preview, nil
 }
-func (f *fakeDCP3Service) GetPreview(context.Context, string) (dcp3.ImportPreview, error) {
+func (f *fakeDCP3Service) GetPreview(_ context.Context, _ string, scope auth.RegencyScope) (dcp3.ImportPreview, error) {
+	f.seenRegencyScope = scope
 	return f.preview, nil
 }
-func (f *fakeDCP3Service) Commit(_ context.Context, _ auth.Principal, batchID string, mapping dcp3.Mapping, _ auth.ClientMeta) (dcp3.ImportResult, error) {
-	f.batchID, f.mapping = batchID, mapping
+func (f *fakeDCP3Service) Commit(_ context.Context, _ auth.Principal, batchID string, mapping dcp3.Mapping, _ auth.ClientMeta, scope auth.RegencyScope) (dcp3.ImportResult, error) {
+	f.batchID, f.mapping, f.seenRegencyScope = batchID, mapping, scope
 	return f.result, nil
 }
 
