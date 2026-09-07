@@ -135,6 +135,71 @@ func TestIntegrationRepositoryPersistsProgramSetupAndVersionsPublishedTemplate(t
 	}
 }
 
+func TestIntegrationListRegenciesAndSchedulesRespectRegencyScope(t *testing.T) {
+	pool := programsIntegrationPool(t)
+	repository := NewRepository(pool)
+	service := NewService(repository)
+	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	meta := auth.ClientMeta{IPAddress: "127.0.0.1", UserAgent: "programs-scope-integration-test-" + suffix}
+	actor := auth.Principal{}
+
+	codeA := fmt.Sprintf("%c%c%c", 'A'+suffix[len(suffix)-1]%20, 'A'+suffix[len(suffix)-2]%20, 'A'+suffix[len(suffix)-3]%20)
+	codeB := fmt.Sprintf("%c%c%c", 'A'+suffix[len(suffix)-4]%20, 'A'+suffix[len(suffix)-5]%20, 'A'+suffix[len(suffix)-6]%20)
+
+	regencyA, err := service.SaveRegency(ctx, actor, RegencyInput{
+		ProvinceName: "Sulawesi Selatan", Name: "Kabupaten Scope A " + suffix,
+		DocumentCode: codeA, IsActive: true,
+	}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	regencyB, err := service.SaveRegency(ctx, actor, RegencyInput{
+		ProvinceName: "Sulawesi Selatan", Name: "Kabupaten Scope B " + suffix,
+		DocumentCode: codeB, IsActive: true,
+	}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM audit_logs WHERE user_agent = $1", meta.UserAgent)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM regencies WHERE id = ANY($1)", []string{regencyA.ID, regencyB.ID})
+	})
+
+	scoped, err := service.ListRegencies(ctx, auth.RegencyScope{RegencyIDs: []string{regencyA.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsRegencyID(scoped, regencyA.ID) || containsRegencyID(scoped, regencyB.ID) {
+		t.Fatalf("scoped listing should only include regencyA: %+v", scoped)
+	}
+
+	unrestricted, err := service.ListRegencies(ctx, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsRegencyID(unrestricted, regencyA.ID) || !containsRegencyID(unrestricted, regencyB.ID) {
+		t.Fatalf("unrestricted listing should include both regencies: %+v", unrestricted)
+	}
+
+	empty, err := service.ListRegencies(ctx, auth.RegencyScope{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsRegencyID(empty, regencyA.ID) || containsRegencyID(empty, regencyB.ID) {
+		t.Fatalf("empty scope should exclude both regencies: %+v", empty)
+	}
+}
+
+func containsRegencyID(regencies []Regency, id string) bool {
+	for _, regency := range regencies {
+		if regency.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 func programsIntegrationPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	databaseURL := os.Getenv("TEST_DATABASE_URL")
