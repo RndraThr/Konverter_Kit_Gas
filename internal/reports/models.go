@@ -8,6 +8,7 @@ import (
 var (
 	ErrScheduleRequired = errors.New("report schedule is required")
 	ErrFilterInvalid    = errors.New("report filter is invalid")
+	ErrScheduleNotFound = errors.New("report schedule not found")
 )
 
 var allocationStatuses = map[string]bool{
