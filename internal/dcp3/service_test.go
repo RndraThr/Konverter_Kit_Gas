@@ -1,11 +1,73 @@
 package dcp3
 
 import (
+	"context"
 	"errors"
 	"testing"
 
+	"konkit/internal/auth"
 	"konkit/internal/programs"
 )
+
+type importRepositoryStub struct {
+	preview       ImportPreview
+	result        ImportResult
+	seenScope     auth.RegencyScope
+	getPreviewErr error
+}
+
+func (r *importRepositoryStub) CreatePreview(_ context.Context, _ auth.Principal, _, _, _ string, _ WorkbookPreview, _ auth.ClientMeta, scope auth.RegencyScope) (ImportPreview, error) {
+	r.seenScope = scope
+	return r.preview, nil
+}
+func (r *importRepositoryStub) GetPreview(_ context.Context, _ string, scope auth.RegencyScope) (ImportPreview, error) {
+	r.seenScope = scope
+	if r.getPreviewErr != nil {
+		return ImportPreview{}, r.getPreviewErr
+	}
+	return r.preview, nil
+}
+func (r *importRepositoryStub) Commit(_ context.Context, _ auth.Principal, batchID string, _ Mapping, _ auth.ClientMeta) (ImportResult, error) {
+	return r.result, nil
+}
+
+func TestPreviewGetPreviewAndCommitForwardRegencyScope(t *testing.T) {
+	scope := auth.RegencyScope{RegencyIDs: []string{"regency-1"}}
+	repository := &importRepositoryStub{}
+
+	repository.preview = ImportPreview{ID: "batch-1", Status: "draft", ProgramType: programs.ProgramFarmer, Headers: []string{"No", "Nama"}}
+	if _, err := repository.CreatePreview(context.Background(), auth.Principal{}, "schedule-1", "file.xlsx", "checksum", WorkbookPreview{}, auth.ClientMeta{}, scope); err != nil {
+		t.Fatal(err)
+	}
+	if len(repository.seenScope.RegencyIDs) != 1 || repository.seenScope.RegencyIDs[0] != "regency-1" {
+		t.Fatalf("CreatePreview scope=%+v", repository.seenScope)
+	}
+
+	service := NewImportService(repository, ParseLimits{MaxBytes: 10 << 20, MaxRows: 5000, MaxColumns: 100})
+	repository.seenScope = auth.RegencyScope{}
+	if _, err := service.GetPreview(context.Background(), "batch-1", scope); err != nil {
+		t.Fatal(err)
+	}
+	if len(repository.seenScope.RegencyIDs) != 1 || repository.seenScope.RegencyIDs[0] != "regency-1" {
+		t.Fatalf("GetPreview scope=%+v", repository.seenScope)
+	}
+
+	repository.seenScope = auth.RegencyScope{}
+	if _, err := service.Commit(context.Background(), auth.Principal{}, "batch-1", Mapping{SourceSequence: "No", FullName: "Nama"}, auth.ClientMeta{}, scope); err != nil {
+		t.Fatal(err)
+	}
+	if len(repository.seenScope.RegencyIDs) != 1 || repository.seenScope.RegencyIDs[0] != "regency-1" {
+		t.Fatalf("Commit did not forward scope through its internal GetPreview call: %+v", repository.seenScope)
+	}
+}
+
+func TestGetPreviewReturnsRepositoryErrorForOutOfScopeBatch(t *testing.T) {
+	repository := &importRepositoryStub{getPreviewErr: ErrPreviewNotFound}
+	service := NewImportService(repository, ParseLimits{MaxBytes: 10 << 20, MaxRows: 5000, MaxColumns: 100})
+	if _, err := service.GetPreview(context.Background(), "batch-1", auth.RegencyScope{}); !errors.Is(err, ErrPreviewNotFound) {
+		t.Fatalf("err=%v", err)
+	}
+}
 
 func TestValidateMappingRequiresSequenceAndName(t *testing.T) {
 	headers := []string{"No", "Nama", "NIK"}

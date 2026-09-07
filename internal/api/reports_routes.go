@@ -20,6 +20,10 @@ func (h *Handler) handleReportsSchedule(w http.ResponseWriter, r *http.Request, 
 	if !h.authorize(w, r, rc.principal, "distribution.view") {
 		return
 	}
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) != 2 {
 		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
@@ -33,28 +37,28 @@ func (h *Handler) handleReportsSchedule(w http.ResponseWriter, r *http.Request, 
 	}
 	switch parts[1] {
 	case "summary":
-		result, err := h.deps.Reports.Summary(r.Context(), scheduleID, filter)
+		result, err := h.deps.Reports.Summary(r.Context(), scheduleID, filter, scope)
 		if err != nil {
 			writeServiceError(w, err)
 			return
 		}
 		writeData(w, http.StatusOK, result)
 	case "rows":
-		result, err := h.deps.Reports.Rows(r.Context(), scheduleID, filter)
+		result, err := h.deps.Reports.Rows(r.Context(), scheduleID, filter, scope)
 		if err != nil {
 			writeServiceError(w, err)
 			return
 		}
 		writeData(w, http.StatusOK, result)
 	case "export.xlsx":
-		data, err := h.deps.Reports.ExportExcel(r.Context(), rc.principal, scheduleID, filter, clientMeta(r))
+		data, err := h.deps.Reports.ExportExcel(r.Context(), rc.principal, scheduleID, filter, clientMeta(r), scope)
 		if err != nil {
 			writeServiceError(w, err)
 			return
 		}
 		writeAttachment(w, "laporan-distribusi.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", data)
 	case "export.pdf":
-		data, err := h.deps.Reports.ExportPDF(r.Context(), rc.principal, scheduleID, filter, clientMeta(r))
+		data, err := h.deps.Reports.ExportPDF(r.Context(), rc.principal, scheduleID, filter, clientMeta(r), scope)
 		if err != nil {
 			writeServiceError(w, err)
 			return

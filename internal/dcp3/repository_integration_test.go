@@ -23,7 +23,7 @@ import (
 func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testing.T) {
 	pool := dcp3IntegrationPool(t)
 	ctx := context.Background()
-	scheduleID, conflictingPersonID := createDCP3ScheduleFixture(t, pool)
+	scheduleID, conflictingPersonID, _ := createDCP3ScheduleFixture(t, pool)
 	repository := NewRepository(pool)
 	service := NewImportService(repository, ParseLimits{MaxBytes: 10 << 20, MaxRows: 5000, MaxColumns: 100})
 	meta := auth.ClientMeta{IPAddress: "127.0.0.1", UserAgent: "dcp3-integration-test"}
@@ -39,14 +39,15 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 		}
 	})
 
-	preview, err := service.Preview(ctx, auth.Principal{}, scheduleID, "dcp3-petani.xlsx", bytes.NewReader(workbook), meta)
+	unrestricted := auth.RegencyScope{Unrestricted: true}
+	preview, err := service.Preview(ctx, auth.Principal{}, scheduleID, "dcp3-petani.xlsx", bytes.NewReader(workbook), meta, unrestricted)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if preview.ProgramType != "farmer" || len(preview.Rows) != 3 || len(preview.Headers) != 8 {
 		t.Fatalf("unexpected preview: %+v", preview)
 	}
-	_, err = service.Preview(ctx, auth.Principal{}, scheduleID, "dcp3-petani-copy.xlsx", bytes.NewReader(workbook), meta)
+	_, err = service.Preview(ctx, auth.Principal{}, scheduleID, "dcp3-petani-copy.xlsx", bytes.NewReader(workbook), meta, unrestricted)
 	if !errors.Is(err, ErrDuplicateImport) {
 		t.Fatalf("expected duplicate import, got %v", err)
 	}
@@ -54,14 +55,14 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 	result, err := service.Commit(ctx, auth.Principal{}, preview.ID, Mapping{
 		SourceSequence: "No", FullName: "Nama", NIK: "NIK", FarmerCardNumber: "No Kartu Petani",
 		Address: "Alamat", Village: "Desa", District: "Kecamatan", PhoneNumber: "No HP",
-	}, meta)
+	}, meta, unrestricted)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if result.TotalRows != 3 || result.ValidRows != 1 || result.WarningRows != 2 || result.InvalidRows != 0 {
 		t.Fatalf("unexpected import result: %+v", result)
 	}
-	committedPreview, err := service.GetPreview(ctx, preview.ID)
+	committedPreview, err := service.GetPreview(ctx, preview.ID, unrestricted)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +107,46 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 	}
 }
 
-func createDCP3ScheduleFixture(t *testing.T, pool *pgxpool.Pool) (string, string) {
+func TestIntegrationScopeEnforcementRejectsOutOfRegencyAccess(t *testing.T) {
+	pool := dcp3IntegrationPool(t)
+	ctx := context.Background()
+	scheduleID, _, regencyID := createDCP3ScheduleFixture(t, pool)
+	repository := NewRepository(pool)
+	service := NewImportService(repository, ParseLimits{MaxBytes: 10 << 20, MaxRows: 5000, MaxColumns: 100})
+	meta := auth.ClientMeta{IPAddress: "127.0.0.1", UserAgent: "dcp3-scope-integration-test"}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM audit_logs WHERE user_agent='dcp3-scope-integration-test'`)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM dcp3_import_batches WHERE schedule_id=$1`, scheduleID)
+	})
+	workbook := workbookBytes(t, func(file *excelize.File) {
+		rows := [][]any{{"No", "Nama"}, {1, "Siti Aminah"}}
+		for index, row := range rows {
+			_ = file.SetSheetRow("Sheet1", fmt.Sprintf("A%d", index+1), &row)
+		}
+	})
+	outOfScope := auth.RegencyScope{RegencyIDs: []string{"00000000-0000-0000-0000-000000000000"}}
+	if _, err := service.Preview(ctx, auth.Principal{}, scheduleID, "out-of-scope.xlsx", bytes.NewReader(workbook), meta, outOfScope); !errors.Is(err, ErrPreviewNotFound) {
+		t.Fatalf("expected ErrPreviewNotFound for out-of-scope schedule, got %v", err)
+	}
+
+	inScope := auth.RegencyScope{RegencyIDs: []string{regencyID}}
+	preview, err := service.Preview(ctx, auth.Principal{}, scheduleID, "in-scope.xlsx", bytes.NewReader(workbook), meta, inScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := service.GetPreview(ctx, preview.ID, outOfScope); !errors.Is(err, ErrPreviewNotFound) {
+		t.Fatalf("expected ErrPreviewNotFound reading preview out of scope, got %v", err)
+	}
+	if _, err := service.GetPreview(ctx, preview.ID, inScope); err != nil {
+		t.Fatalf("in-scope read should succeed: %v", err)
+	}
+	if _, err := service.Commit(ctx, auth.Principal{}, preview.ID, Mapping{SourceSequence: "No", FullName: "Nama"}, meta, outOfScope); !errors.Is(err, ErrPreviewNotFound) {
+		t.Fatalf("expected ErrPreviewNotFound committing out of scope, got %v", err)
+	}
+}
+
+func createDCP3ScheduleFixture(t *testing.T, pool *pgxpool.Pool) (string, string, string) {
 	t.Helper()
 	ctx := context.Background()
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
@@ -148,7 +188,7 @@ func createDCP3ScheduleFixture(t *testing.T, pool *pgxpool.Pool) (string, string
 		_, _ = pool.Exec(context.Background(), `DELETE FROM regencies WHERE id=$1`, regencyID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM audit_logs WHERE user_agent='dcp3-integration-test'`)
 	})
-	return scheduleID, personID
+	return scheduleID, personID, regencyID
 }
 
 func dcp3IntegrationPool(t *testing.T) *pgxpool.Pool {

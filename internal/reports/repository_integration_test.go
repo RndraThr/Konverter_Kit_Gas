@@ -3,6 +3,7 @@ package reports
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -85,6 +86,33 @@ func TestIntegrationRecordExportWritesAuditEvent(t *testing.T) {
 	}
 }
 
+func TestIntegrationScopeEnforcementRejectsOutOfRegencyAccess(t *testing.T) {
+	pool := reportsIntegrationPool(t)
+	ctx := context.Background()
+	fixture := createReportsFixture(t, pool)
+	repository := NewRepository(pool)
+	service := NewService(repository)
+
+	inScope := auth.RegencyScope{RegencyIDs: []string{fixture.regencyID}}
+	outOfScope := auth.RegencyScope{RegencyIDs: []string{"00000000-0000-0000-0000-000000000000"}}
+
+	if _, err := service.Summary(ctx, fixture.scheduleID, Filter{}, outOfScope); !errors.Is(err, ErrScheduleNotFound) {
+		t.Fatalf("Summary err=%v", err)
+	}
+	if _, err := service.Summary(ctx, fixture.scheduleID, Filter{}, inScope); err != nil {
+		t.Fatalf("Summary in-scope err=%v", err)
+	}
+	if _, err := service.Rows(ctx, fixture.scheduleID, Filter{}, outOfScope); !errors.Is(err, ErrScheduleNotFound) {
+		t.Fatalf("Rows err=%v", err)
+	}
+	if _, err := service.Rows(ctx, fixture.scheduleID, Filter{}, inScope); err != nil {
+		t.Fatalf("Rows in-scope err=%v", err)
+	}
+	if _, err := service.ExportExcel(ctx, auth.Principal{}, fixture.scheduleID, Filter{}, auth.ClientMeta{}, outOfScope); !errors.Is(err, ErrScheduleNotFound) {
+		t.Fatalf("ExportExcel err=%v", err)
+	}
+}
+
 func containsAll(haystack string, needles ...string) bool {
 	for _, needle := range needles {
 		if !strings.Contains(haystack, needle) {
@@ -97,6 +125,7 @@ func containsAll(haystack string, needles ...string) bool {
 type reportsFixture struct {
 	scheduleID string
 	primaryNIK string
+	regencyID  string
 }
 
 // insertAllocation generates its own 16-digit NIK per call (rather than a
@@ -180,7 +209,7 @@ func createReportsFixture(t *testing.T, pool *pgxpool.Pool) reportsFixture {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM programs WHERE id=$1`, programID)
 	})
 
-	return reportsFixture{scheduleID: scheduleID, primaryNIK: primaryNIK}
+	return reportsFixture{scheduleID: scheduleID, primaryNIK: primaryNIK, regencyID: regencyID}
 }
 
 func codeFromSuffix(prefix, suffix string) string {

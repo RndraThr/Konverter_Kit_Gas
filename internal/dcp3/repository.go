@@ -19,7 +19,7 @@ type Repository struct{ pool *pgxpool.Pool }
 
 func NewRepository(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
-func (r *Repository) CreatePreview(ctx context.Context, actor auth.Principal, scheduleID, filename, checksum string, workbook WorkbookPreview, meta auth.ClientMeta) (ImportPreview, error) {
+func (r *Repository) CreatePreview(ctx context.Context, actor auth.Principal, scheduleID, filename, checksum string, workbook WorkbookPreview, meta auth.ClientMeta, scope auth.RegencyScope) (ImportPreview, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return ImportPreview{}, fmt.Errorf("begin DCP3 preview: %w", err)
@@ -29,9 +29,9 @@ func (r *Repository) CreatePreview(ctx context.Context, actor auth.Principal, sc
 	headerEnvelope, _ := json.Marshal(map[string]any{"headers": workbook.Headers})
 	err = tx.QueryRow(ctx, `
 		INSERT INTO dcp3_import_batches(schedule_id,original_filename,file_checksum,sheet_name,mapping_json,total_rows)
-		SELECT s.id,$2,$3,$4,$5,$6 FROM program_schedules s WHERE s.id=$1
+		SELECT s.id,$2,$3,$4,$5,$6 FROM program_schedules s WHERE s.id=$1 AND ($7 OR s.regency_id::text = ANY($8))
 		RETURNING id::text
-	`, scheduleID, filename, checksum, workbook.SheetName, headerEnvelope, len(workbook.Rows)).Scan(&batchID)
+	`, scheduleID, filename, checksum, workbook.SheetName, headerEnvelope, len(workbook.Rows), scope.Unrestricted, scope.RegencyIDs).Scan(&batchID)
 	if isUniqueViolation(err) {
 		return ImportPreview{}, ErrDuplicateImport
 	}
@@ -59,18 +59,18 @@ func (r *Repository) CreatePreview(ctx context.Context, actor auth.Principal, sc
 	if err := tx.Commit(ctx); err != nil {
 		return ImportPreview{}, fmt.Errorf("commit DCP3 preview: %w", err)
 	}
-	return r.GetPreview(ctx, batchID)
+	return r.GetPreview(ctx, batchID, auth.RegencyScope{Unrestricted: true})
 }
 
-func (r *Repository) GetPreview(ctx context.Context, id string) (ImportPreview, error) {
+func (r *Repository) GetPreview(ctx context.Context, id string, scope auth.RegencyScope) (ImportPreview, error) {
 	var result ImportPreview
 	var programType programs.ProgramType
 	var envelopeData []byte
 	err := r.pool.QueryRow(ctx, `
 		SELECT b.id::text,b.schedule_id::text,p.program_type,b.original_filename,b.file_checksum,b.sheet_name,b.mapping_json,b.status,b.created_at
 		FROM dcp3_import_batches b JOIN program_schedules s ON s.id=b.schedule_id JOIN programs p ON p.id=s.program_id
-		WHERE b.id=$1
-	`, id).Scan(&result.ID, &result.ScheduleID, &programType, &result.OriginalFilename, &result.FileChecksum, &result.SheetName, &envelopeData, &result.Status, &result.CreatedAt)
+		WHERE b.id=$1 AND ($2 OR s.regency_id::text = ANY($3))
+	`, id, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.ScheduleID, &programType, &result.OriginalFilename, &result.FileChecksum, &result.SheetName, &envelopeData, &result.Status, &result.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ImportPreview{}, ErrPreviewNotFound
 	}

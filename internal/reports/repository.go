@@ -2,17 +2,31 @@ package reports
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"konkit/internal/audit"
 	"konkit/internal/auth"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Repository struct{ pool *pgxpool.Pool }
 
 func NewRepository(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
+
+func (r *Repository) ScheduleRegency(ctx context.Context, scheduleID string) (string, error) {
+	var regencyID string
+	err := r.pool.QueryRow(ctx, `SELECT regency_id::text FROM program_schedules WHERE id=$1`, scheduleID).Scan(&regencyID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrScheduleNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("look up schedule regency: %w", err)
+	}
+	return regencyID, nil
+}
 
 const reportsBaseCTE = `
 WITH base AS (
