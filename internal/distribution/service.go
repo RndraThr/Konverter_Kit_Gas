@@ -20,8 +20,8 @@ var onlyDigits = regexp.MustCompile(`^[0-9]+$`)
 var stripNonDigits = regexp.MustCompile(`[^0-9]+`)
 
 type repository interface {
-	Search(context.Context, string, string, int) ([]SearchRecord, error)
-	GetWorkspace(context.Context, string) (RecipientWorkspace, error)
+	Search(context.Context, string, string, int, auth.RegencyScope) ([]SearchRecord, error)
+	GetWorkspace(context.Context, string, auth.RegencyScope) (RecipientWorkspace, error)
 	SaveDraft(context.Context, auth.Principal, string, DraftInput, auth.ClientMeta) (RecipientWorkspace, error)
 }
 
@@ -34,7 +34,7 @@ type mediaRepository interface {
 }
 
 type completionRepository interface {
-	Complete(context.Context, auth.Principal, string, auth.ClientMeta) (DistributionRecord, error)
+	Complete(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) (DistributionRecord, error)
 }
 
 type Service struct {
@@ -54,7 +54,7 @@ func NewService(repository repository, storage ...media.Storage) *Service {
 	return service
 }
 
-func (s *Service) Complete(ctx context.Context, actor auth.Principal, allocationID string, meta auth.ClientMeta) (DistributionRecord, error) {
+func (s *Service) Complete(ctx context.Context, actor auth.Principal, allocationID string, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionRecord, error) {
 	allocationID = strings.TrimSpace(allocationID)
 	if allocationID == "" {
 		return DistributionRecord{}, ErrAllocationNotFound
@@ -62,10 +62,10 @@ func (s *Service) Complete(ctx context.Context, actor auth.Principal, allocation
 	if s.completion == nil {
 		return DistributionRecord{}, errors.New("distribution completion is unavailable")
 	}
-	return s.completion.Complete(ctx, actor, allocationID, meta)
+	return s.completion.Complete(ctx, actor, allocationID, meta, scope)
 }
 
-func (s *Service) Search(ctx context.Context, scheduleID, query string, limit int) ([]SearchResult, error) {
+func (s *Service) Search(ctx context.Context, scheduleID, query string, limit int, scope auth.RegencyScope) ([]SearchResult, error) {
 	scheduleID, query = strings.TrimSpace(scheduleID), strings.TrimSpace(query)
 	if scheduleID == "" {
 		return nil, ErrScheduleRequired
@@ -79,7 +79,7 @@ func (s *Service) Search(ctx context.Context, scheduleID, query string, limit in
 	if limit < 1 || limit > 20 {
 		limit = 20
 	}
-	records, err := s.repository.Search(ctx, scheduleID, query, limit)
+	records, err := s.repository.Search(ctx, scheduleID, query, limit, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -95,15 +95,15 @@ func (s *Service) Search(ctx context.Context, scheduleID, query string, limit in
 	return results, nil
 }
 
-func (s *Service) GetWorkspace(ctx context.Context, allocationID string) (RecipientWorkspace, error) {
+func (s *Service) GetWorkspace(ctx context.Context, allocationID string, scope auth.RegencyScope) (RecipientWorkspace, error) {
 	if strings.TrimSpace(allocationID) == "" {
 		return RecipientWorkspace{}, ErrAllocationNotFound
 	}
-	return s.repository.GetWorkspace(ctx, strings.TrimSpace(allocationID))
+	return s.repository.GetWorkspace(ctx, strings.TrimSpace(allocationID), scope)
 }
 
-func (s *Service) SaveDraft(ctx context.Context, actor auth.Principal, allocationID string, input DraftInput, meta auth.ClientMeta) (RecipientWorkspace, error) {
-	current, err := s.GetWorkspace(ctx, allocationID)
+func (s *Service) SaveDraft(ctx context.Context, actor auth.Principal, allocationID string, input DraftInput, meta auth.ClientMeta, scope auth.RegencyScope) (RecipientWorkspace, error) {
+	current, err := s.GetWorkspace(ctx, allocationID, scope)
 	if err != nil {
 		return RecipientWorkspace{}, err
 	}

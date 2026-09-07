@@ -20,7 +20,7 @@ type Repository struct{ pool *pgxpool.Pool }
 
 func NewRepository(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
-func (r *Repository) Search(ctx context.Context, scheduleID, query string, limit int) ([]SearchRecord, error) {
+func (r *Repository) Search(ctx context.Context, scheduleID, query string, limit int, scope auth.RegencyScope) ([]SearchRecord, error) {
 	digits := stripNonDigits.ReplaceAllString(query, "")
 	identifier := normalizeIdentifier(query)
 	rows, err := r.pool.Query(ctx, `
@@ -40,7 +40,7 @@ func (r *Repository) Search(ctx context.Context, scheduleID, query string, limit
 		JOIN regencies rg ON rg.id=ps.regency_id
 		LEFT JOIN people p ON p.id=COALESCE(a.actual_recipient_person_id,a.intended_person_id,n.person_id)
 		LEFT JOIN distribution_records dr ON dr.allocation_id=a.id
-		WHERE a.schedule_id=$1 AND (
+		WHERE a.schedule_id=$1 AND ($6 OR ps.regency_id::text = ANY($7)) AND (
 			a.distribution_number::text=$2 OR p.nik=NULLIF($3,'') OR
 			EXISTS(SELECT 1 FROM person_sector_identifiers psi WHERE psi.person_id=p.id AND psi.normalized_value=NULLIF($4,'')) OR
 			lower(p.full_name) LIKE lower($2)||'%' OR lower(p.full_name) LIKE '%'||lower($2)||'%'
@@ -51,7 +51,7 @@ func (r *Repository) Search(ctx context.Context, scheduleID, query string, limit
 			WHEN lower(p.full_name) LIKE lower($2)||'%' THEN 2 ELSE 3 END,
 			lower(COALESCE(p.full_name,'')),a.distribution_number
 		LIMIT $5
-	`, scheduleID, query, digits, identifier, limit)
+	`, scheduleID, query, digits, identifier, limit, scope.Unrestricted, scope.RegencyIDs)
 	if err != nil {
 		return nil, fmt.Errorf("search distribution recipients: %w", err)
 	}
@@ -72,7 +72,7 @@ func (r *Repository) Search(ctx context.Context, scheduleID, query string, limit
 	return results, rows.Err()
 }
 
-func (r *Repository) GetWorkspace(ctx context.Context, allocationID string) (RecipientWorkspace, error) {
+func (r *Repository) GetWorkspace(ctx context.Context, allocationID string, scope auth.RegencyScope) (RecipientWorkspace, error) {
 	var result RecipientWorkspace
 	var sourceJSON, packageJSON []byte
 	err := r.pool.QueryRow(ctx, `
@@ -97,8 +97,8 @@ func (r *Repository) GetWorkspace(ctx context.Context, allocationID string) (Rec
 			SELECT identifier_type,display_value FROM person_sector_identifiers
 			WHERE person_id=p.id AND identifier_type=CASE WHEN pr.program_type='farmer' THEN 'farmer_card' ELSE 'kusuka' END LIMIT 1
 		) psi ON true
-		WHERE a.id=$1
-	`, allocationID).Scan(
+		WHERE a.id=$1 AND ($2 OR ps.regency_id::text = ANY($3))
+	`, allocationID, scope.Unrestricted, scope.RegencyIDs).Scan(
 		&result.AllocationID, &result.DistributionID, &result.ScheduleID, &result.DistributionNumber,
 		&result.AllocationStatus, &result.DistributionStatus, &result.ProgramType, &result.ProgramName,
 		&result.RegencyName, &result.FullName, &result.NIK, &result.SectorIdentifier,
@@ -196,10 +196,10 @@ func (r *Repository) SaveDraft(ctx context.Context, actor auth.Principal, alloca
 	if err := tx.Commit(ctx); err != nil {
 		return RecipientWorkspace{}, fmt.Errorf("commit recipient draft: %w", err)
 	}
-	return r.GetWorkspace(ctx, allocationID)
+	return r.GetWorkspace(ctx, allocationID, auth.RegencyScope{Unrestricted: true})
 }
 
-func (r *Repository) Complete(ctx context.Context, actor auth.Principal, allocationID string, meta auth.ClientMeta) (DistributionRecord, error) {
+func (r *Repository) Complete(ctx context.Context, actor auth.Principal, allocationID string, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionRecord, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return DistributionRecord{}, fmt.Errorf("begin distribution completion: %w", err)
@@ -224,9 +224,9 @@ func (r *Repository) Complete(ctx context.Context, actor auth.Principal, allocat
 			SELECT identifier_type,normalized_value FROM person_sector_identifiers
 			WHERE person_id=p.id AND identifier_type=CASE WHEN pr.program_type='farmer' THEN 'farmer_card' ELSE 'kusuka' END LIMIT 1
 		) psi ON true
-		WHERE a.id=$1
+		WHERE a.id=$1 AND ($2 OR ps.regency_id::text = ANY($3))
 		FOR UPDATE OF a,dr,p
-	`, allocationID).Scan(&record.ID, &record.Status, &allocationStatus, &personID, &fullName, &nik, &programType, &sectorType, &sectorIdentifier, &packageJSON,
+	`, allocationID, scope.Unrestricted, scope.RegencyIDs).Scan(&record.ID, &record.Status, &allocationStatus, &personID, &fullName, &nik, &programType, &sectorType, &sectorIdentifier, &packageJSON,
 		&machineOptionCode, &machineSerialNumber, &hoseOptionCode, &hoseSerialNumber, &converterSerialNumber)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return DistributionRecord{}, ErrAllocationNotFound

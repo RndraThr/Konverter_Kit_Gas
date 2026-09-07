@@ -65,29 +65,40 @@ type repositoryStub struct {
 	searchLimit   int
 	workspace     RecipientWorkspace
 	saved         DraftInput
+	seenScope     auth.RegencyScope
+	completed     DistributionRecord
+	completeErr   error
 }
 
-func (r *repositoryStub) Search(_ context.Context, _ string, query string, limit int) ([]SearchRecord, error) {
-	r.searchQuery, r.searchLimit = query, limit
+func (r *repositoryStub) Search(_ context.Context, _ string, query string, limit int, scope auth.RegencyScope) ([]SearchRecord, error) {
+	r.searchQuery, r.searchLimit, r.seenScope = query, limit, scope
 	return r.searchRecords, nil
 }
-func (r *repositoryStub) GetWorkspace(context.Context, string) (RecipientWorkspace, error) {
+func (r *repositoryStub) GetWorkspace(_ context.Context, _ string, scope auth.RegencyScope) (RecipientWorkspace, error) {
+	r.seenScope = scope
 	return r.workspace, nil
 }
 func (r *repositoryStub) SaveDraft(_ context.Context, _ auth.Principal, _ string, input DraftInput, _ auth.ClientMeta) (RecipientWorkspace, error) {
 	r.saved = input
 	return r.workspace, nil
 }
+func (r *repositoryStub) Complete(_ context.Context, _ auth.Principal, _ string, _ auth.ClientMeta, scope auth.RegencyScope) (DistributionRecord, error) {
+	r.seenScope = scope
+	if r.completeErr != nil {
+		return DistributionRecord{}, r.completeErr
+	}
+	return r.completed, nil
+}
 
 func TestSearchValidatesContextAndNameLength(t *testing.T) {
 	service := NewService(&repositoryStub{})
-	if _, err := service.Search(context.Background(), "", "Siti", 20); !errors.Is(err, ErrScheduleRequired) {
+	if _, err := service.Search(context.Background(), "", "Siti", 20, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrScheduleRequired) {
 		t.Fatalf("missing schedule err=%v", err)
 	}
-	if _, err := service.Search(context.Background(), "schedule-1", "S", 20); !errors.Is(err, ErrQueryTooShort) {
+	if _, err := service.Search(context.Background(), "schedule-1", "S", 20, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrQueryTooShort) {
 		t.Fatalf("short name err=%v", err)
 	}
-	if _, err := service.Search(context.Background(), "schedule-1", "", 20); !errors.Is(err, ErrQueryRequired) {
+	if _, err := service.Search(context.Background(), "schedule-1", "", 20, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrQueryRequired) {
 		t.Fatalf("empty query err=%v", err)
 	}
 }
@@ -99,7 +110,7 @@ func TestSearchAllowsSingleDistributionNumberMasksNIKAndCapsResults(t *testing.T
 	}}}
 	service := NewService(repository)
 
-	results, err := service.Search(context.Background(), " schedule-1 ", " 7 ", 200)
+	results, err := service.Search(context.Background(), " schedule-1 ", " 7 ", 200, auth.RegencyScope{Unrestricted: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,12 +127,12 @@ func TestSaveDraftRequiresReasonWhenNIKChanges(t *testing.T) {
 	service := NewService(repository)
 	input := DraftInput{NIK: "7306014101900002"}
 
-	_, err := service.SaveDraft(context.Background(), auth.Principal{UserID: "user-1"}, "allocation-1", input, auth.ClientMeta{})
+	_, err := service.SaveDraft(context.Background(), auth.Principal{UserID: "user-1"}, "allocation-1", input, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
 	if !errors.Is(err, ErrIdentityChangeReasonRequired) {
 		t.Fatalf("err=%v", err)
 	}
 	input.IdentityChangeReason = "Perbaikan berdasarkan KTP asli"
-	if _, err := service.SaveDraft(context.Background(), auth.Principal{UserID: "user-1"}, "allocation-1", input, auth.ClientMeta{}); err != nil {
+	if _, err := service.SaveDraft(context.Background(), auth.Principal{UserID: "user-1"}, "allocation-1", input, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
 		t.Fatal(err)
 	}
 	if repository.saved.IdentityChangeReason == "" {
@@ -141,7 +152,7 @@ func TestSaveDraftPassesEquipmentFieldsThrough(t *testing.T) {
 		ConverterSerialNumber: " 240A005582 ",
 	}
 
-	_, err := service.SaveDraft(context.Background(), auth.Principal{UserID: "user-1"}, "allocation-1", input, auth.ClientMeta{})
+	_, err := service.SaveDraft(context.Background(), auth.Principal{UserID: "user-1"}, "allocation-1", input, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,5 +213,52 @@ func TestDeleteMediaRestoresMetadataWhenStorageDeleteFails(t *testing.T) {
 	}
 	if repository.restoredID != "media-1" {
 		t.Fatalf("restored=%q", repository.restoredID)
+	}
+}
+
+func TestSearchGetWorkspaceSaveDraftAndCompleteForwardRegencyScope(t *testing.T) {
+	scope := auth.RegencyScope{RegencyIDs: []string{"regency-1"}}
+	repository := &repositoryStub{workspace: RecipientWorkspace{NIK: "7306014101900001"}}
+	service := NewService(repository)
+
+	if _, err := service.Search(context.Background(), "schedule-1", "Siti", 20, scope); err != nil {
+		t.Fatal(err)
+	}
+	if len(repository.seenScope.RegencyIDs) != 1 || repository.seenScope.RegencyIDs[0] != "regency-1" {
+		t.Fatalf("Search scope=%+v", repository.seenScope)
+	}
+
+	repository.seenScope = auth.RegencyScope{}
+	if _, err := service.GetWorkspace(context.Background(), "allocation-1", scope); err != nil {
+		t.Fatal(err)
+	}
+	if len(repository.seenScope.RegencyIDs) != 1 || repository.seenScope.RegencyIDs[0] != "regency-1" {
+		t.Fatalf("GetWorkspace scope=%+v", repository.seenScope)
+	}
+
+	repository.seenScope = auth.RegencyScope{}
+	input := DraftInput{NIK: "7306014101900001"}
+	if _, err := service.SaveDraft(context.Background(), auth.Principal{UserID: "user-1"}, "allocation-1", input, auth.ClientMeta{}, scope); err != nil {
+		t.Fatal(err)
+	}
+	if len(repository.seenScope.RegencyIDs) != 1 || repository.seenScope.RegencyIDs[0] != "regency-1" {
+		t.Fatalf("SaveDraft did not forward scope through its internal GetWorkspace call: %+v", repository.seenScope)
+	}
+
+	repository.seenScope = auth.RegencyScope{}
+	if _, err := service.Complete(context.Background(), auth.Principal{UserID: "user-1"}, "allocation-1", auth.ClientMeta{}, scope); err != nil {
+		t.Fatal(err)
+	}
+	if len(repository.seenScope.RegencyIDs) != 1 || repository.seenScope.RegencyIDs[0] != "regency-1" {
+		t.Fatalf("Complete scope=%+v", repository.seenScope)
+	}
+}
+
+func TestCompleteReturnsRepositoryErrorForOutOfScopeAllocation(t *testing.T) {
+	repository := &repositoryStub{}
+	service := NewService(repository)
+	repository.completeErr = ErrAllocationNotFound
+	if _, err := service.Complete(context.Background(), auth.Principal{}, "allocation-1", auth.ClientMeta{}, auth.RegencyScope{}); !errors.Is(err, ErrAllocationNotFound) {
+		t.Fatalf("err=%v", err)
 	}
 }
