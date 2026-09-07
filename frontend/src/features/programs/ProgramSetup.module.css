@@ -31,12 +31,16 @@
 :global(.slotEditorHead .secondaryButton) { display: inline-flex; align-items: center; gap: 7px; }
 :global(.slotEditorHead svg) { width: 16px; }
 :global(.slotRow) { display: grid; grid-template-columns: 1.1fr 1.6fr 1.2fr 80px auto 40px; align-items: end; gap: 10px; padding: 13px 0; border-top: 1px solid var(--dashboard-line); }
+:global(.equipmentRow) { display: grid; grid-template-columns: 1fr 1.4fr 1.4fr 40px; align-items: end; gap: 10px; padding: 13px 0; border-top: 1px solid var(--dashboard-line); }
+:global(.componentRow) { display: grid; grid-template-columns: 1fr 1.6fr 90px 90px 40px; align-items: end; gap: 10px; padding: 13px 0; border-top: 1px solid var(--dashboard-line); }
 :global(.dangerIcon) { color: var(--dashboard-danger); }
 
 @media (max-width: 820px) {
   .contextMark { display: none; }
   :global(.slotRow) { grid-template-columns: 1fr 1fr; }
   :global(.slotRow .dangerIcon) { align-self: end; }
+  :global(.equipmentRow), :global(.componentRow) { grid-template-columns: 1fr 1fr; }
+  :global(.equipmentRow .dangerIcon), :global(.componentRow .dangerIcon) { align-self: end; }
 }
 @media (max-width: 640px) {
   .panel { padding-top: 18px; }
@@ -44,5 +48,6 @@
   :global(.panelHeading) { align-items: stretch; flex-direction: column; }
   :global(.panelHeading .primaryButton) { justify-content: center; }
   :global(.slotRow) { grid-template-columns: 1fr; }
+  :global(.equipmentRow), :global(.componentRow) { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { .indicator { transition: none; } }
