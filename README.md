@@ -77,6 +77,8 @@ Dashboard awal menyediakan:
 
 Browser memakai cookie sesi `HttpOnly`. Mutation API memerlukan token CSRF dari bootstrap `GET /api/v1/me`. Session token dan rahasia tidak disimpan di browser storage.
 
+Role kini dapat dibatasi ke satu atau beberapa kabupaten, atau ditandai memiliki akses tanpa batas (mis. untuk peran pengawasan lintas kabupaten); Super Admin selalu tanpa batas. Pembatasan ini sudah diterapkan pada listing kabupaten dan jadwal di Persiapan Program — penerapan pada DCP3, Pendistribusian, dan Laporan menyusul pada perubahan terpisah.
+
 ## Alur DCP3 Dan Pendistribusian
 
 Fondasi operasional saat ini mencakup persiapan kabupaten/program/jadwal, template paket dan dokumentasi berversi, import DCP3 `.xlsx`, pencarian penerima, verifikasi identitas, riwayat penerimaan lintas kabupaten, dokumentasi foto, serta finalisasi distribusi transaksional.
