@@ -129,6 +129,33 @@ func TestSaveDraftRequiresReasonWhenNIKChanges(t *testing.T) {
 	}
 }
 
+func TestSaveDraftPassesEquipmentFieldsThrough(t *testing.T) {
+	repository := &repositoryStub{workspace: RecipientWorkspace{NIK: "7306014101900001"}}
+	service := NewService(repository)
+	input := DraftInput{
+		NIK:                   "7306014101900001",
+		MachineOptionCode:     " shark-spwp8030 ",
+		MachineSerialNumber:   " SP 06IABD 421291 ",
+		HoseOptionCode:        " triliunhose ",
+		HoseSerialNumber:      "",
+		ConverterSerialNumber: " 240A005582 ",
+	}
+
+	_, err := service.SaveDraft(context.Background(), auth.Principal{UserID: "user-1"}, "allocation-1", input, auth.ClientMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repository.saved.MachineOptionCode != "shark-spwp8030" || repository.saved.MachineSerialNumber != "SP 06IABD 421291" {
+		t.Fatalf("machine fields not trimmed/passed: %+v", repository.saved)
+	}
+	if repository.saved.HoseOptionCode != "triliunhose" || repository.saved.HoseSerialNumber != "" {
+		t.Fatalf("hose fields not trimmed/passed: %+v", repository.saved)
+	}
+	if repository.saved.ConverterSerialNumber != "240A005582" {
+		t.Fatalf("converter serial not trimmed/passed: %+v", repository.saved)
+	}
+}
+
 func TestUploadMediaDetectsImageAndCleansStorageWhenMetadataFails(t *testing.T) {
 	storage := &storageStub{}
 	repository := &mediaRepositoryStub{slot: MediaSlot{ID: "slot-1", InputSource: "both", MinFiles: 1, MaxFiles: 2}}

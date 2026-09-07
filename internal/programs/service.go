@@ -81,6 +81,7 @@ func (s *Service) SaveSchedule(ctx context.Context, actor auth.Principal, input 
 	input.DocumentationTemplateVersionID = strings.TrimSpace(input.DocumentationTemplateVersionID)
 	input.Name = strings.ToUpper(strings.TrimSpace(input.Name))
 	input.Notes = strings.TrimSpace(input.Notes)
+	input.SupervisorName = strings.TrimSpace(input.SupervisorName)
 	if input.EndDate.Before(input.StartDate) {
 		return Schedule{}, ErrScheduleDatesInvalid
 	}
@@ -113,7 +114,33 @@ func (s *Service) SavePackageTemplate(ctx context.Context, actor auth.Principal,
 	if input.Values == nil {
 		input.Values = map[string]any{}
 	}
+	if input.Status == "published" && !hasEquipmentOptions(input.Values) {
+		return PackageTemplate{}, ErrPackageOptionsRequired
+	}
 	return s.repository.SavePackageTemplate(ctx, actor, input, meta)
+}
+
+func hasEquipmentOptions(values map[string]any) bool {
+	return validOptionList(values["machine_options"], "brand", "type") && validOptionList(values["hose_options"], "brand", "spec")
+}
+
+func validOptionList(raw any, secondField string, thirdField string) bool {
+	list, ok := raw.([]any)
+	if !ok || len(list) == 0 {
+		return false
+	}
+	for _, entry := range list {
+		option, ok := entry.(map[string]any)
+		if !ok || !nonEmptyString(option["code"]) || !nonEmptyString(option[secondField]) || !nonEmptyString(option[thirdField]) {
+			return false
+		}
+	}
+	return true
+}
+
+func nonEmptyString(value any) bool {
+	text, ok := value.(string)
+	return ok && strings.TrimSpace(text) != ""
 }
 
 func (s *Service) ListDocumentationTemplates(ctx context.Context) ([]DocumentationTemplate, error) {

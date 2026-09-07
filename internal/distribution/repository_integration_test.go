@@ -113,6 +113,57 @@ func TestCompleteSerializesConcurrentReceiptsForTheSamePerson(t *testing.T) {
 	}
 }
 
+func TestIntegrationSaveDraftAndCompletePersistEquipmentFields(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	fixture := createDistributionFixture(t, pool)
+	storage, err := mediastore.NewLocalStorage(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(NewRepository(pool), storage)
+	ctx := context.Background()
+	actor := auth.Principal{UserID: fixture.userID}
+	meta := auth.ClientMeta{UserAgent: fixture.userAgent}
+
+	// Use fixture.secondaryAllocationID (Siti Nur), not fixture.allocationID: createDistributionFixture
+	// deliberately makes fixture.allocationID (Siti Aminah) "previously received" via historyAllocationID
+	// in a different schedule, so Complete() on fixture.allocationID always returns ErrPreviouslyReceived
+	// (see TestCompleteEnforcesFinalDistributionRules). secondaryAllocationID has no such history and has
+	// no documentation_slots yet, so seed one directly satisfied (min_files=0) the same way the existing
+	// TestCompleteSerializesConcurrentReceiptsForTheSamePerson test does.
+	if _, err := pool.Exec(ctx, `INSERT INTO documentation_slots(distribution_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,status) SELECT id,'recipient_package','Penerima dan paket',true,0,1,'both','complete' FROM distribution_records WHERE allocation_id=$1`, fixture.secondaryAllocationID); err != nil {
+		t.Fatal(err)
+	}
+
+	workspace, err := service.SaveDraft(ctx, actor, fixture.secondaryAllocationID, DraftInput{
+		NIK: "7306014101900002", SectorIdentifier: "KP02",
+		MachineOptionCode: "shark-spwp8030", MachineSerialNumber: "SP 06IABD 421291",
+		HoseOptionCode: "triliunhose", HoseSerialNumber: "",
+		ConverterSerialNumber: "240A005582",
+	}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if workspace.MachineOptionCode != "shark-spwp8030" || workspace.MachineSerialNumber != "SP 06IABD 421291" || workspace.ConverterSerialNumber != "240A005582" {
+		t.Fatalf("workspace equipment=%+v", workspace)
+	}
+
+	record, err := service.Complete(ctx, actor, fixture.secondaryAllocationID, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.Status != "completed" {
+		t.Fatalf("record=%+v", record)
+	}
+	var snapshot string
+	if err := pool.QueryRow(ctx, `SELECT verification_snapshot_json::text FROM distribution_records WHERE allocation_id=$1`, fixture.secondaryAllocationID).Scan(&snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(snapshot, `"machine_serial_number": "SP 06IABD 421291"`) || !strings.Contains(snapshot, `"converter_serial_number": "240A005582"`) {
+		t.Fatalf("snapshot missing equipment data: %s", snapshot)
+	}
+}
+
 func TestIntegrationSearchRanksIdentifiersAndShowsCrossScheduleHistory(t *testing.T) {
 	pool := distributionIntegrationPool(t)
 	fixture := createDistributionFixture(t, pool)

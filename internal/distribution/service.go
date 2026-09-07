@@ -114,6 +114,11 @@ func (s *Service) SaveDraft(ctx context.Context, actor auth.Principal, allocatio
 	input.PhoneNumber = stripNonDigits.ReplaceAllString(input.PhoneNumber, "")
 	input.SectorIdentifier = normalizeIdentifier(input.SectorIdentifier)
 	input.IdentityChangeReason = strings.TrimSpace(input.IdentityChangeReason)
+	input.MachineOptionCode = strings.TrimSpace(input.MachineOptionCode)
+	input.MachineSerialNumber = strings.TrimSpace(input.MachineSerialNumber)
+	input.HoseOptionCode = strings.TrimSpace(input.HoseOptionCode)
+	input.HoseSerialNumber = strings.TrimSpace(input.HoseSerialNumber)
+	input.ConverterSerialNumber = strings.TrimSpace(input.ConverterSerialNumber)
 	if input.NIK != "" && len(input.NIK) != 16 {
 		return RecipientWorkspace{}, ErrNIKInvalid
 	}

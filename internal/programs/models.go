@@ -12,8 +12,9 @@ var (
 	ErrDocumentCodeInUse    = errors.New("regency document code is already used")
 	ErrCodeInUse            = errors.New("program or template code is already used")
 	ErrProgramTypeInvalid   = errors.New("program type must be farmer or fisherman")
-	ErrScheduleDatesInvalid = errors.New("schedule end date must not precede start date")
-	ErrTemplateSlotInvalid  = errors.New("documentation template slot is invalid")
+	ErrScheduleDatesInvalid   = errors.New("schedule end date must not precede start date")
+	ErrTemplateSlotInvalid    = errors.New("documentation template slot is invalid")
+	ErrPackageOptionsRequired = errors.New("package template requires at least one machine option and one hose option when published")
 )
 
 type ProgramType string
@@ -150,6 +151,7 @@ type Schedule struct {
 	Status                         string                 `json:"status"`
 	DistributionNumberPadding      int                    `json:"distribution_number_padding"`
 	ReceiptPolicy                  map[string]any         `json:"receipt_policy"`
+	SupervisorName                 string                 `json:"supervisor_name,omitempty"`
 	Notes                          string                 `json:"notes,omitempty"`
 	Program                        *Program               `json:"program,omitempty"`
 	Regency                        *Regency               `json:"regency,omitempty"`
@@ -171,5 +173,6 @@ type ScheduleInput struct {
 	Status                         string         `json:"status"`
 	DistributionNumberPadding      int            `json:"distribution_number_padding"`
 	ReceiptPolicy                  map[string]any `json:"receipt_policy"`
+	SupervisorName                 string         `json:"supervisor_name"`
 	Notes                          string         `json:"notes"`
 }

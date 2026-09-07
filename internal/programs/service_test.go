@@ -132,6 +132,37 @@ func TestSaveScheduleNormalizesNameToUppercase(t *testing.T) {
 	}
 }
 
+func TestSavePackageTemplateRequiresEquipmentOptionsWhenPublishing(t *testing.T) {
+	service := NewService(&repositoryStub{})
+	_, err := service.SavePackageTemplate(context.Background(), auth.Principal{}, PackageTemplateInput{
+		TemplateCode: "TEST-PKG", Name: "Template", ProgramType: ProgramFarmer, Status: "published",
+		Values: map[string]any{"converter_brand": "ERGAS"},
+	}, auth.ClientMeta{})
+	if !errors.Is(err, ErrPackageOptionsRequired) {
+		t.Fatalf("missing options err=%v", err)
+	}
+
+	_, err = service.SavePackageTemplate(context.Background(), auth.Principal{}, PackageTemplateInput{
+		TemplateCode: "TEST-PKG", Name: "Template", ProgramType: ProgramFarmer, Status: "draft",
+		Values: map[string]any{"converter_brand": "ERGAS"},
+	}, auth.ClientMeta{})
+	if err != nil {
+		t.Fatalf("draft without options should be allowed: %v", err)
+	}
+
+	_, err = service.SavePackageTemplate(context.Background(), auth.Principal{}, PackageTemplateInput{
+		TemplateCode: "TEST-PKG", Name: "Template", ProgramType: ProgramFarmer, Status: "published",
+		Values: map[string]any{
+			"converter_brand": "ERGAS",
+			"machine_options": []any{map[string]any{"code": "shark-spwp8030", "brand": "SHARK", "type": "SPWP 80-30/3\""}},
+			"hose_options":    []any{map[string]any{"code": "triliunhose", "brand": "TRILIUNHOSE", "spec": "6m/10m"}},
+		},
+	}, auth.ClientMeta{})
+	if err != nil {
+		t.Fatalf("complete options should be allowed: %v", err)
+	}
+}
+
 func TestSaveDocumentationTemplateRejectsDuplicateSlotCodes(t *testing.T) {
 	service := NewService(&repositoryStub{})
 	_, err := service.SaveDocumentationTemplate(context.Background(), auth.Principal{}, DocumentationTemplateInput{

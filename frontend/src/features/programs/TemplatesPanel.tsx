@@ -6,23 +6,47 @@ import { FormField } from '../../components/FormField';
 import { apiRequest } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
 import { SetupDialog } from './SetupDialog';
-import { DataResponse, DocumentationSlot, DocumentationTemplate, PackageTemplate, ProgramType, programTypeLabel } from './types';
+import { DataResponse, DocumentationSlot, DocumentationTemplate, HoseOption, MachineOption, PackageComponent, PackageTemplate, ProgramType, programTypeLabel } from './types';
 
 const newSlot = (index = 0): DocumentationSlot => ({ slot_code: '', label: '', stage: 'distribution', is_required: true, min_files: 1, max_files: 1, input_source: 'both', require_location: false, require_captured_at: false, sort_order: (index + 1) * 10 });
+const newMachineOption = (): MachineOption => ({ code: '', brand: '', type: '' });
+const newHoseOption = (): HoseOption => ({ code: '', brand: '', spec: '' });
+const newComponent = (): PackageComponent => ({ code: '', label: '', quantity: 1, unit: '' });
+
+const emptyPackageValues = { template_code: '', name: '', program_type: 'farmer' as ProgramType, status: 'draft', converter_brand: '', machine_options: [] as MachineOption[], hose_options: [] as HoseOption[], components: [] as PackageComponent[] };
+
+function asString(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+function asArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value as T[] : [];
+}
 
 export function TemplatesPanel() {
   const canManage = useCan('programs.manage'); const client = useQueryClient();
   const packages = useQuery({ queryKey: ['program-setup', 'package-templates'], queryFn: () => apiRequest<DataResponse<PackageTemplate[]>>('/api/v1/program-setup/package-templates') });
   const documents = useQuery({ queryKey: ['program-setup', 'documentation-templates'], queryFn: () => apiRequest<DataResponse<DocumentationTemplate[]>>('/api/v1/program-setup/documentation-templates') });
   const [packageOpen, setPackageOpen] = useState(false); const [packageEditing, setPackageEditing] = useState<PackageTemplate>();
-  const [packageValues, setPackageValues] = useState({ template_code: '', name: '', program_type: 'farmer' as ProgramType, status: 'draft', values: '{}' });
+  const [packageValues, setPackageValues] = useState(emptyPackageValues);
   const [documentOpen, setDocumentOpen] = useState(false); const [documentEditing, setDocumentEditing] = useState<DocumentationTemplate>();
   const [documentValues, setDocumentValues] = useState({ template_code: '', name: '', program_type: 'farmer' as ProgramType, status: 'draft', slots: [newSlot()] });
-  const packageMutation = useMutation({ mutationFn: () => apiRequest(`/api/v1/program-setup/package-templates${packageEditing ? `/${packageEditing.id}` : ''}`, { method: packageEditing ? 'PATCH' : 'POST', body: JSON.stringify({ ...packageValues, values: JSON.parse(packageValues.values) }) }), onSuccess: () => { setPackageOpen(false); client.invalidateQueries({ queryKey: ['program-setup', 'package-templates'] }); } });
+  const packageMutation = useMutation({
+    mutationFn: () => apiRequest(`/api/v1/program-setup/package-templates${packageEditing ? `/${packageEditing.id}` : ''}`, {
+      method: packageEditing ? 'PATCH' : 'POST',
+      body: JSON.stringify({
+        template_code: packageValues.template_code, name: packageValues.name, program_type: packageValues.program_type, status: packageValues.status,
+        values: { converter_brand: packageValues.converter_brand, machine_options: packageValues.machine_options, hose_options: packageValues.hose_options, components: packageValues.components },
+      }),
+    }),
+    onSuccess: () => { setPackageOpen(false); client.invalidateQueries({ queryKey: ['program-setup', 'package-templates'] }); },
+  });
   const documentMutation = useMutation({ mutationFn: () => apiRequest(`/api/v1/program-setup/documentation-templates${documentEditing ? `/${documentEditing.id}` : ''}`, { method: documentEditing ? 'PATCH' : 'POST', body: JSON.stringify(documentValues) }), onSuccess: () => { setDocumentOpen(false); client.invalidateQueries({ queryKey: ['program-setup', 'documentation-templates'] }); } });
-  const showPackage = (item?: PackageTemplate) => { setPackageEditing(item); setPackageValues(item ? { template_code: item.template_code, name: item.name, program_type: item.program_type, status: item.status, values: JSON.stringify(item.values, null, 2) } : { template_code: '', name: '', program_type: 'farmer', status: 'draft', values: '{}' }); setPackageOpen(true); };
+  const showPackage = (item?: PackageTemplate) => { setPackageEditing(item); setPackageValues(item ? { template_code: item.template_code, name: item.name, program_type: item.program_type, status: item.status, converter_brand: asString(item.values.converter_brand), machine_options: asArray<MachineOption>(item.values.machine_options), hose_options: asArray<HoseOption>(item.values.hose_options), components: asArray<PackageComponent>(item.values.components) } : emptyPackageValues); setPackageOpen(true); };
   const showDocument = (item?: DocumentationTemplate) => { setDocumentEditing(item); setDocumentValues(item ? { template_code: item.template_code, name: item.name, program_type: item.program_type, status: item.status, slots: item.slots } : { template_code: '', name: '', program_type: 'farmer', status: 'draft', slots: [newSlot()] }); setDocumentOpen(true); };
   const updateSlot = (index: number, patch: Partial<DocumentationSlot>) => setDocumentValues({ ...documentValues, slots: documentValues.slots.map((slot, slotIndex) => slotIndex === index ? { ...slot, ...patch } : slot) });
+  const updateMachineOption = (index: number, patch: Partial<MachineOption>) => setPackageValues({ ...packageValues, machine_options: packageValues.machine_options.map((option, optionIndex) => optionIndex === index ? { ...option, ...patch } : option) });
+  const updateHoseOption = (index: number, patch: Partial<HoseOption>) => setPackageValues({ ...packageValues, hose_options: packageValues.hose_options.map((option, optionIndex) => optionIndex === index ? { ...option, ...patch } : option) });
+  const updateComponent = (index: number, patch: Partial<PackageComponent>) => setPackageValues({ ...packageValues, components: packageValues.components.map((component, componentIndex) => componentIndex === index ? { ...component, ...patch } : component) });
   return <div className="templateGrid"><section className="setupPanel"><header className="panelHeading"><div><h2><PackageCheck />Template paket</h2><p>Nilai baku komponen yang disalin ke setiap alokasi.</p></div>{canManage && <button className="primaryButton" onClick={() => showPackage()}><Plus />Tambah paket</button>}</header>
     {packages.data?.data.length ? <DataTable label="Template paket"><thead><tr><th>Template</th><th>Jenis</th><th>Versi</th><th>Status</th>{canManage && <th>Aksi</th>}</tr></thead><tbody>{packages.data.data.map((item) => <tr key={item.id}><td><strong>{item.name}</strong><small className="subline">{item.template_code}</small></td><td>{programTypeLabel(item.program_type)}</td><td>v{item.version}</td><td>{item.status}</td>{canManage && <td><button className="iconButton" aria-label={`Edit ${item.name}`} onClick={() => showPackage(item)}><Edit3 /></button></td>}</tr>)}</tbody></DataTable> : <div className="emptyState">Belum ada template paket.</div>}
   </section><section className="setupPanel"><header className="panelHeading"><div><h2><Camera />Template dokumentasi</h2><p>Slot foto dapat berbeda untuk setiap jenis program.</p></div>{canManage && <button className="primaryButton" onClick={() => showDocument()}><Plus />Tambah dokumentasi</button>}</header>
@@ -30,15 +54,43 @@ export function TemplatesPanel() {
     </section>
     <SetupDialog open={packageOpen} onOpenChange={setPackageOpen} title={packageEditing ? `Edit ${packageEditing.name}` : 'Tambah template paket'} description="Perubahan pada versi published akan membuat draft versi baru." pending={packageMutation.isPending} onSubmit={() => packageMutation.mutate()}>
       <FormField label="Kode template" name="package_code" required disabled={Boolean(packageEditing)} value={packageValues.template_code} onChange={(e) => setPackageValues({ ...packageValues, template_code: e.target.value.toUpperCase() })} />
-      <FormField label="Nama template" name="package_name" required value={packageValues.name} onChange={(e) => setPackageValues({ ...packageValues, name: e.target.value })} />
+      <FormField label="Nama template" name="package_name" required value={packageValues.name} onChange={(e) => setPackageValues({ ...packageValues, name: e.target.value.toUpperCase() })} />
       <label className="formField"><span>Jenis program</span><select className="selectField" value={packageValues.program_type} onChange={(e) => setPackageValues({ ...packageValues, program_type: e.target.value as ProgramType })}><option value="farmer">Petani</option><option value="fisherman">Nelayan</option></select></label>
       <label className="formField"><span>Status</span><select className="selectField" value={packageValues.status} onChange={(e) => setPackageValues({ ...packageValues, status: e.target.value })}><option value="draft">Draft</option><option value="published">Published</option><option value="retired">Retired</option></select></label>
-      <label className="formField fullField"><span>Nilai paket</span><textarea className="jsonField" rows={10} value={packageValues.values} onChange={(e) => setPackageValues({ ...packageValues, values: e.target.value })} /><small>Struktur JSON menyimpan merek, tipe, komponen, jumlah, dan satuan.</small></label>
-      {packageMutation.isError && <p className="formNotice">Template paket belum dapat disimpan. Periksa format nilai paket.</p>}
+      <FormField label="Merk Konkit/Reducer" name="converter_brand" value={packageValues.converter_brand} onChange={(e) => setPackageValues({ ...packageValues, converter_brand: e.target.value.toUpperCase() })} />
+
+      <div className="slotEditor fullField"><div className="slotEditorHead"><strong>Opsi merk/tipe mesin</strong><button type="button" className="secondaryButton" onClick={() => setPackageValues({ ...packageValues, machine_options: [...packageValues.machine_options, newMachineOption()] })}><Plus />Tambah opsi mesin</button></div>
+        {packageValues.machine_options.map((option, index) => <div className="equipmentRow" key={index}>
+          <FormField label={`Kode mesin ${index + 1}`} name={`machine_code_${index}`} required value={option.code} onChange={(e) => updateMachineOption(index, { code: e.target.value.toLowerCase() })} />
+          <FormField label={`Merk mesin ${index + 1}`} name={`machine_brand_${index}`} required value={option.brand} onChange={(e) => updateMachineOption(index, { brand: e.target.value.toUpperCase() })} />
+          <FormField label={`Tipe mesin ${index + 1}`} name={`machine_type_${index}`} required value={option.type} onChange={(e) => updateMachineOption(index, { type: e.target.value.toUpperCase() })} />
+          <button type="button" className="iconButton dangerIcon" aria-label={`Hapus opsi mesin ${index + 1}`} onClick={() => setPackageValues({ ...packageValues, machine_options: packageValues.machine_options.filter((_, optionIndex) => optionIndex !== index) })}><Trash2 /></button>
+        </div>)}
+      </div>
+
+      <div className="slotEditor fullField"><div className="slotEditorHead"><strong>Opsi merk/spesifikasi selang</strong><button type="button" className="secondaryButton" onClick={() => setPackageValues({ ...packageValues, hose_options: [...packageValues.hose_options, newHoseOption()] })}><Plus />Tambah opsi selang</button></div>
+        {packageValues.hose_options.map((option, index) => <div className="equipmentRow" key={index}>
+          <FormField label={`Kode selang ${index + 1}`} name={`hose_code_${index}`} required value={option.code} onChange={(e) => updateHoseOption(index, { code: e.target.value.toLowerCase() })} />
+          <FormField label={`Merk selang ${index + 1}`} name={`hose_brand_${index}`} required value={option.brand} onChange={(e) => updateHoseOption(index, { brand: e.target.value.toUpperCase() })} />
+          <FormField label={`Spesifikasi selang ${index + 1}`} name={`hose_spec_${index}`} required value={option.spec} onChange={(e) => updateHoseOption(index, { spec: e.target.value.toUpperCase() })} />
+          <button type="button" className="iconButton dangerIcon" aria-label={`Hapus opsi selang ${index + 1}`} onClick={() => setPackageValues({ ...packageValues, hose_options: packageValues.hose_options.filter((_, optionIndex) => optionIndex !== index) })}><Trash2 /></button>
+        </div>)}
+      </div>
+
+      <div className="slotEditor fullField"><div className="slotEditorHead"><strong>Komponen paket, aksesoris & kelengkapan</strong><button type="button" className="secondaryButton" onClick={() => setPackageValues({ ...packageValues, components: [...packageValues.components, newComponent()] })}><Plus />Tambah komponen</button></div>
+        {packageValues.components.map((component, index) => <div className="componentRow" key={index}>
+          <FormField label={`Kode komponen ${index + 1}`} name={`component_code_${index}`} required value={component.code} onChange={(e) => updateComponent(index, { code: e.target.value.toLowerCase() })} />
+          <FormField label={`Nama komponen ${index + 1}`} name={`component_label_${index}`} required value={component.label} onChange={(e) => updateComponent(index, { label: e.target.value })} />
+          <FormField label={`Jumlah komponen ${index + 1}`} name={`component_quantity_${index}`} type="number" min={1} required value={component.quantity} onChange={(e) => updateComponent(index, { quantity: Number(e.target.value) })} />
+          <FormField label={`Satuan komponen ${index + 1}`} name={`component_unit_${index}`} required value={component.unit} onChange={(e) => updateComponent(index, { unit: e.target.value })} />
+          <button type="button" className="iconButton dangerIcon" aria-label={`Hapus komponen ${index + 1}`} onClick={() => setPackageValues({ ...packageValues, components: packageValues.components.filter((_, componentIndex) => componentIndex !== index) })}><Trash2 /></button>
+        </div>)}
+      </div>
+      {packageMutation.isError && <p className="formNotice">Template paket belum dapat disimpan.</p>}
     </SetupDialog>
     <SetupDialog open={documentOpen} onOpenChange={setDocumentOpen} title={documentEditing ? `Edit ${documentEditing.name}` : 'Tambah template dokumentasi'} description="Perubahan pada versi published akan membuat draft versi baru." pending={documentMutation.isPending} onSubmit={() => documentMutation.mutate()}>
       <FormField label="Kode template" name="document_code" required disabled={Boolean(documentEditing)} value={documentValues.template_code} onChange={(e) => setDocumentValues({ ...documentValues, template_code: e.target.value.toUpperCase() })} />
-      <FormField label="Nama template" name="document_name" required value={documentValues.name} onChange={(e) => setDocumentValues({ ...documentValues, name: e.target.value })} />
+      <FormField label="Nama template" name="document_name" required value={documentValues.name} onChange={(e) => setDocumentValues({ ...documentValues, name: e.target.value.toUpperCase() })} />
       <label className="formField"><span>Jenis program</span><select className="selectField" value={documentValues.program_type} onChange={(e) => setDocumentValues({ ...documentValues, program_type: e.target.value as ProgramType })}><option value="farmer">Petani</option><option value="fisherman">Nelayan</option></select></label>
       <label className="formField"><span>Status</span><select className="selectField" value={documentValues.status} onChange={(e) => setDocumentValues({ ...documentValues, status: e.target.value })}><option value="draft">Draft</option><option value="published">Published</option><option value="retired">Retired</option></select></label>
       <div className="slotEditor fullField"><div className="slotEditorHead"><strong>Slot dokumentasi</strong><button type="button" className="secondaryButton" onClick={() => setDocumentValues({ ...documentValues, slots: [...documentValues.slots, newSlot(documentValues.slots.length)] })}><Plus />Tambah slot</button></div>{documentValues.slots.map((slot, index) => <div className="slotRow" key={index}><FormField label="Kode slot" name={`slot_code_${index}`} required value={slot.slot_code} onChange={(e) => updateSlot(index, { slot_code: e.target.value.toLowerCase() })} /><FormField label="Judul" name={`slot_label_${index}`} required value={slot.label} onChange={(e) => updateSlot(index, { label: e.target.value })} /><label className="formField"><span>Sumber</span><select className="selectField" value={slot.input_source} onChange={(e) => updateSlot(index, { input_source: e.target.value as DocumentationSlot['input_source'] })}><option value="both">Kamera & galeri</option><option value="camera">Kamera</option><option value="gallery">Galeri</option></select></label><FormField label="Minimal" name={`slot_min_${index}`} type="number" min={0} value={slot.min_files} onChange={(e) => updateSlot(index, { min_files: Number(e.target.value) })} /><label className="checkboxField"><input type="checkbox" checked={slot.is_required} onChange={(e) => updateSlot(index, { is_required: e.target.checked })} />Wajib</label><button type="button" className="iconButton dangerIcon" aria-label={`Hapus slot ${slot.label || index + 1}`} onClick={() => setDocumentValues({ ...documentValues, slots: documentValues.slots.filter((_, slotIndex) => slotIndex !== index) })}><Trash2 /></button></div>)}</div>
