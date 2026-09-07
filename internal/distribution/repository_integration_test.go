@@ -1,6 +1,7 @@
 package distribution
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -215,7 +216,7 @@ func TestIntegrationSearchRanksIdentifiersAndShowsCrossScheduleHistory(t *testin
 		t.Fatalf("saved workspace=%+v err=%v", workspace, err)
 	}
 	jpeg := append([]byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}, make([]byte, 32)...)
-	media, err := service.UploadMedia(ctx, auth.Principal{}, UploadMediaInput{SlotID: workspace.Documentation[1].ID, OriginalFilename: "bast.jpg", Source: "gallery", Data: jpeg}, auth.ClientMeta{UserAgent: fixture.userAgent})
+	media, err := service.UploadMedia(ctx, auth.Principal{}, UploadMediaInput{SlotID: workspace.Documentation[1].ID, OriginalFilename: "bast.jpg", Source: "gallery", Data: jpeg}, auth.ClientMeta{UserAgent: fixture.userAgent}, unrestricted)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +224,7 @@ func TestIntegrationSearchRanksIdentifiersAndShowsCrossScheduleHistory(t *testin
 	if err != nil || workspace.Documentation[1].Status != "complete" || len(workspace.Documentation[1].Files) != 1 {
 		t.Fatalf("uploaded slot=%+v err=%v", workspace.Documentation[1], err)
 	}
-	if err := service.DeleteMedia(ctx, auth.Principal{}, media.ID, auth.ClientMeta{UserAgent: fixture.userAgent}); err != nil {
+	if err := service.DeleteMedia(ctx, auth.Principal{}, media.ID, auth.ClientMeta{UserAgent: fixture.userAgent}, unrestricted); err != nil {
 		t.Fatal(err)
 	}
 	workspace, err = service.GetWorkspace(ctx, fixture.allocationID, unrestricted)
@@ -270,6 +271,46 @@ func TestIntegrationScopeEnforcementRejectsOutOfRegencyAccess(t *testing.T) {
 
 	if _, err := service.Complete(ctx, auth.Principal{}, fixture.historyAllocationID, auth.ClientMeta{UserAgent: fixture.userAgent}, scoped); !errors.Is(err, ErrAllocationNotFound) {
 		t.Fatalf("expected ErrAllocationNotFound completing allocation from a different regency, got %v", err)
+	}
+}
+
+func TestIntegrationMediaScopeEnforcementRejectsOutOfRegencyAccess(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	ctx := context.Background()
+	fixture := createDistributionFixture(t, pool)
+	repository := NewRepository(pool)
+	storage := &storageStub{}
+	service := NewService(repository, storage)
+
+	var slotID string
+	if err := pool.QueryRow(ctx, `SELECT s.id::text FROM documentation_slots s JOIN distribution_records d ON d.id=s.distribution_id WHERE d.allocation_id=$1 AND s.slot_code='recipient_package'`, fixture.allocationID).Scan(&slotID); err != nil {
+		t.Fatal(err)
+	}
+
+	scoped := auth.RegencyScope{RegencyIDs: []string{fixture.regencyID}}
+	otherRegencyOnly := auth.RegencyScope{RegencyIDs: []string{fixture.historyRegencyID}}
+	jpeg := append([]byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}, bytes.Repeat([]byte{0}, 32)...)
+
+	if _, err := service.UploadMedia(ctx, auth.Principal{}, UploadMediaInput{SlotID: slotID, Source: "camera", Data: jpeg}, auth.ClientMeta{UserAgent: fixture.userAgent}, otherRegencyOnly); !errors.Is(err, ErrMediaNotFound) {
+		t.Fatalf("expected ErrMediaNotFound uploading to out-of-scope slot, got %v", err)
+	}
+	uploaded, err := service.UploadMedia(ctx, auth.Principal{}, UploadMediaInput{SlotID: slotID, Source: "camera", Data: jpeg}, auth.ClientMeta{UserAgent: fixture.userAgent}, scoped)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := service.OpenMedia(ctx, uploaded.ID, otherRegencyOnly); !errors.Is(err, ErrMediaNotFound) {
+		t.Fatalf("expected ErrMediaNotFound opening out-of-scope media, got %v", err)
+	}
+	if _, err := service.OpenMedia(ctx, uploaded.ID, scoped); err != nil {
+		t.Fatalf("in-scope open should succeed: %v", err)
+	}
+
+	if err := service.DeleteMedia(ctx, auth.Principal{}, uploaded.ID, auth.ClientMeta{UserAgent: fixture.userAgent}, otherRegencyOnly); !errors.Is(err, ErrMediaNotFound) {
+		t.Fatalf("expected ErrMediaNotFound deleting out-of-scope media, got %v", err)
+	}
+	if err := service.DeleteMedia(ctx, auth.Principal{}, uploaded.ID, auth.ClientMeta{UserAgent: fixture.userAgent}, scoped); err != nil {
+		t.Fatalf("in-scope delete should succeed: %v", err)
 	}
 }
 

@@ -340,9 +340,18 @@ func (r *Repository) listSlots(ctx context.Context, distributionID string) ([]Sl
 	return result, rows.Err()
 }
 
-func (r *Repository) GetMediaSlot(ctx context.Context, slotID string) (MediaSlot, error) {
+func (r *Repository) GetMediaSlot(ctx context.Context, slotID string, scope auth.RegencyScope) (MediaSlot, error) {
 	var result MediaSlot
-	err := r.pool.QueryRow(ctx, `SELECT s.id::text,s.input_source,s.require_location,s.require_captured_at,s.min_files,s.max_files,count(m.id) FILTER(WHERE m.status='accepted') FROM documentation_slots s LEFT JOIN media_files m ON m.documentation_slot_id=s.id WHERE s.id=$1 GROUP BY s.id`, slotID).Scan(&result.ID, &result.InputSource, &result.RequireLocation, &result.RequireCapturedAt, &result.MinFiles, &result.MaxFiles, &result.AcceptedFiles)
+	err := r.pool.QueryRow(ctx, `
+		SELECT s.id::text,s.input_source,s.require_location,s.require_captured_at,s.min_files,s.max_files,count(m.id) FILTER(WHERE m.status='accepted')
+		FROM documentation_slots s
+		LEFT JOIN media_files m ON m.documentation_slot_id=s.id
+		JOIN distribution_records dr ON dr.id=s.distribution_id
+		JOIN package_allocations a ON a.id=dr.allocation_id
+		JOIN program_schedules ps ON ps.id=a.schedule_id
+		WHERE s.id=$1 AND ($2 OR ps.regency_id::text = ANY($3))
+		GROUP BY s.id
+	`, slotID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.InputSource, &result.RequireLocation, &result.RequireCapturedAt, &result.MinFiles, &result.MaxFiles, &result.AcceptedFiles)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return MediaSlot{}, ErrMediaNotFound
 	}
@@ -375,9 +384,17 @@ func (r *Repository) SaveMedia(ctx context.Context, actor auth.Principal, input 
 	return result, nil
 }
 
-func (r *Repository) GetMedia(ctx context.Context, mediaID string) (MediaFile, error) {
+func (r *Repository) GetMedia(ctx context.Context, mediaID string, scope auth.RegencyScope) (MediaFile, error) {
 	var result MediaFile
-	err := r.pool.QueryRow(ctx, `SELECT id::text,documentation_slot_id::text,storage_key::text,original_filename,mime_type,byte_size,source,captured_at,latitude::float8,longitude::float8,status,uploaded_at FROM media_files WHERE id=$1 AND status='accepted'`, mediaID).Scan(&result.ID, &result.SlotID, &result.StorageKey, &result.OriginalFilename, &result.MimeType, &result.ByteSize, &result.Source, &result.CapturedAt, &result.Latitude, &result.Longitude, &result.Status, &result.UploadedAt)
+	err := r.pool.QueryRow(ctx, `
+		SELECT m.id::text,m.documentation_slot_id::text,m.storage_key::text,m.original_filename,m.mime_type,m.byte_size,m.source,m.captured_at,m.latitude::float8,m.longitude::float8,m.status,m.uploaded_at
+		FROM media_files m
+		JOIN documentation_slots s ON s.id=m.documentation_slot_id
+		JOIN distribution_records dr ON dr.id=s.distribution_id
+		JOIN package_allocations a ON a.id=dr.allocation_id
+		JOIN program_schedules ps ON ps.id=a.schedule_id
+		WHERE m.id=$1 AND m.status='accepted' AND ($2 OR ps.regency_id::text = ANY($3))
+	`, mediaID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.SlotID, &result.StorageKey, &result.OriginalFilename, &result.MimeType, &result.ByteSize, &result.Source, &result.CapturedAt, &result.Latitude, &result.Longitude, &result.Status, &result.UploadedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return MediaFile{}, ErrMediaNotFound
 	}
@@ -388,14 +405,25 @@ func (r *Repository) GetMedia(ctx context.Context, mediaID string) (MediaFile, e
 	return result, nil
 }
 
-func (r *Repository) DeleteMedia(ctx context.Context, actor auth.Principal, mediaID string, meta auth.ClientMeta) (MediaFile, error) {
+func (r *Repository) DeleteMedia(ctx context.Context, actor auth.Principal, mediaID string, meta auth.ClientMeta, scope auth.RegencyScope) (MediaFile, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return MediaFile{}, fmt.Errorf("begin media delete: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var result MediaFile
-	err = tx.QueryRow(ctx, `UPDATE media_files SET status='deleted',updated_at=now() WHERE id=$1 AND status='accepted' RETURNING id::text,documentation_slot_id::text,storage_key::text,original_filename,mime_type,byte_size,source,captured_at,latitude::float8,longitude::float8,status,uploaded_at`, mediaID).Scan(&result.ID, &result.SlotID, &result.StorageKey, &result.OriginalFilename, &result.MimeType, &result.ByteSize, &result.Source, &result.CapturedAt, &result.Latitude, &result.Longitude, &result.Status, &result.UploadedAt)
+	err = tx.QueryRow(ctx, `
+		UPDATE media_files m
+		SET status='deleted', updated_at=now()
+		FROM documentation_slots s
+		JOIN distribution_records dr ON dr.id=s.distribution_id
+		JOIN package_allocations a ON a.id=dr.allocation_id
+		JOIN program_schedules ps ON ps.id=a.schedule_id
+		WHERE m.documentation_slot_id=s.id
+			AND m.id=$1 AND m.status='accepted'
+			AND ($2 OR ps.regency_id::text = ANY($3))
+		RETURNING m.id::text,m.documentation_slot_id::text,m.storage_key::text,m.original_filename,m.mime_type,m.byte_size,m.source,m.captured_at,m.latitude::float8,m.longitude::float8,m.status,m.uploaded_at
+	`, mediaID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.SlotID, &result.StorageKey, &result.OriginalFilename, &result.MimeType, &result.ByteSize, &result.Source, &result.CapturedAt, &result.Latitude, &result.Longitude, &result.Status, &result.UploadedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return MediaFile{}, ErrMediaNotFound
 	}
