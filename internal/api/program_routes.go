@@ -46,7 +46,11 @@ func (h *Handler) handleRegencies(w http.ResponseWriter, r *http.Request, rc req
 		if !h.authorize(w, r, rc.principal, "programs.view") {
 			return
 		}
-		result, err := h.deps.Programs.ListRegencies(r.Context())
+		scope, ok := h.regencyScope(w, r, rc.principal)
+		if !ok {
+			return
+		}
+		result, err := h.deps.Programs.ListRegencies(r.Context(), scope)
 		if err != nil {
 			writeServiceError(w, err)
 			return
@@ -104,7 +108,11 @@ func (h *Handler) handleSchedules(w http.ResponseWriter, r *http.Request, rc req
 		if !h.authorize(w, r, rc.principal, "programs.view") {
 			return
 		}
-		result, err := h.deps.Programs.ListSchedules(r.Context())
+		scope, ok := h.regencyScope(w, r, rc.principal)
+		if !ok {
+			return
+		}
+		result, err := h.deps.Programs.ListSchedules(r.Context(), scope)
 		if err != nil {
 			writeServiceError(w, err)
 			return

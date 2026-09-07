@@ -18,8 +18,13 @@ type Repository struct{ pool *pgxpool.Pool }
 
 func NewRepository(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
-func (r *Repository) ListRegencies(ctx context.Context) ([]Regency, error) {
-	rows, err := r.pool.Query(ctx, `SELECT id::text, province_name, name, document_code, is_active, COALESCE(notes, ''), created_at, updated_at FROM regencies ORDER BY province_name, name`)
+func (r *Repository) ListRegencies(ctx context.Context, scope auth.RegencyScope) ([]Regency, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, province_name, name, document_code, is_active, COALESCE(notes, ''), created_at, updated_at
+		FROM regencies
+		WHERE ($1 OR id::text = ANY($2))
+		ORDER BY province_name, name
+	`, scope.Unrestricted, scope.RegencyIDs)
 	if err != nil {
 		return nil, fmt.Errorf("list regencies: %w", err)
 	}
@@ -258,8 +263,8 @@ func (r *Repository) SaveDocumentationTemplate(ctx context.Context, actor auth.P
 	return r.documentationTemplateByID(ctx, id)
 }
 
-func (r *Repository) ListSchedules(ctx context.Context) ([]Schedule, error) {
-	rows, err := r.pool.Query(ctx, scheduleSelect+` ORDER BY s.start_date DESC,s.name`)
+func (r *Repository) ListSchedules(ctx context.Context, scope auth.RegencyScope) ([]Schedule, error) {
+	rows, err := r.pool.Query(ctx, scheduleSelect+` WHERE ($1 OR s.regency_id::text = ANY($2)) ORDER BY s.start_date DESC,s.name`, scope.Unrestricted, scope.RegencyIDs)
 	if err != nil {
 		return nil, fmt.Errorf("list schedules: %w", err)
 	}

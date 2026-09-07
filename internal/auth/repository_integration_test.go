@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -15,6 +16,67 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 )
+
+func TestIntegrationRegencyScopeReflectsRoleAssignment(t *testing.T) {
+	pool := integrationPool(t)
+	repository := NewRepository(pool)
+	ctx := context.Background()
+	suffix := fmt.Sprint(time.Now().UnixNano())
+	documentCode := fmt.Sprintf("%c%c%c", 'A'+suffix[len(suffix)-1]%20, 'A'+suffix[len(suffix)-2]%20, 'A'+suffix[len(suffix)-3]%20)
+
+	var regencyID string
+	if err := pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code) VALUES('Sulawesi Selatan',$1,$2) RETURNING id::text`, "Wajo Scope "+suffix, documentCode).Scan(&regencyID); err != nil {
+		t.Fatal(err)
+	}
+	var roleID string
+	if err := pool.QueryRow(ctx, `INSERT INTO roles(code,name) VALUES($1,'Scope Test Role') RETURNING id::text`, "scope_role_"+suffix).Scan(&roleID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO role_regencies(role_id,regency_id) VALUES($1,$2)`, roleID, regencyID); err != nil {
+		t.Fatal(err)
+	}
+	var userID string
+	if err := pool.QueryRow(ctx, `INSERT INTO users(full_name,username,email,password_hash) VALUES('Scope Test','scope.test.`+suffix+`','scope.test.`+suffix+`@konkit.test','x') RETURNING id::text`).Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO user_roles(user_id,role_id) VALUES($1,$2)`, userID, roleID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM user_roles WHERE user_id=$1`, userID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM role_regencies WHERE role_id=$1`, roleID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM roles WHERE id=$1`, roleID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM regencies WHERE id=$1`, regencyID)
+	})
+
+	scope, err := repository.RegencyScopeForPrincipal(ctx, Principal{UserID: userID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scope.Unrestricted || len(scope.RegencyIDs) != 1 || scope.RegencyIDs[0] != regencyID {
+		t.Fatalf("scope=%+v", scope)
+	}
+
+	superAdminScope, err := repository.RegencyScopeForPrincipal(ctx, Principal{UserID: "irrelevant", Roles: []string{"super_admin"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !superAdminScope.Unrestricted {
+		t.Fatalf("super admin scope=%+v", superAdminScope)
+	}
+
+	if _, err := pool.Exec(ctx, `UPDATE roles SET all_regencies_access = true WHERE id = $1`, roleID); err != nil {
+		t.Fatal(err)
+	}
+	allAccessScope, err := repository.RegencyScopeForPrincipal(ctx, Principal{UserID: userID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !allAccessScope.Unrestricted {
+		t.Fatalf("all-access scope=%+v", allAccessScope)
+	}
+}
 
 func TestIntegrationRepositoryCreatesAndFindsSuperAdmin(t *testing.T) {
 	pool := integrationPool(t)

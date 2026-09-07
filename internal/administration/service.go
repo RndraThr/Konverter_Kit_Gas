@@ -205,6 +205,10 @@ func normalizeRoleInput(input *RoleInput) error {
 	input.Name = strings.TrimSpace(input.Name)
 	input.Description = strings.TrimSpace(input.Description)
 	input.PermissionCodes = uniqueNonEmpty(input.PermissionCodes)
+	input.RegencyIDs = uniqueNonEmpty(input.RegencyIDs)
+	if input.AllRegenciesAccess {
+		input.RegencyIDs = []string{}
+	}
 	if length := utf8.RuneCountInString(input.Name); length < 2 || length > 100 {
 		return ErrInvalidInput
 	}

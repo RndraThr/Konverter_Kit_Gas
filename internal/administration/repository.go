@@ -246,7 +246,7 @@ func (r *Repository) ListPermissions(ctx context.Context) ([]Permission, error) 
 
 func (r *Repository) ListRoles(ctx context.Context) ([]Role, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT roles.id::text, roles.code, roles.name, COALESCE(roles.description, ''), roles.is_system,
+		SELECT roles.id::text, roles.code, roles.name, COALESCE(roles.description, ''), roles.is_system, roles.all_regencies_access,
 		       roles.created_at, roles.updated_at, count(DISTINCT user_roles.user_id)
 		FROM roles LEFT JOIN user_roles ON user_roles.role_id = roles.id
 		GROUP BY roles.id ORDER BY roles.is_system DESC, roles.name
@@ -258,7 +258,7 @@ func (r *Repository) ListRoles(ctx context.Context) ([]Role, error) {
 	result := make([]Role, 0)
 	for rows.Next() {
 		var role Role
-		if err := rows.Scan(&role.ID, &role.Code, &role.Name, &role.Description, &role.IsSystem, &role.CreatedAt, &role.UpdatedAt, &role.UserCount); err != nil {
+		if err := rows.Scan(&role.ID, &role.Code, &role.Name, &role.Description, &role.IsSystem, &role.AllRegenciesAccess, &role.CreatedAt, &role.UpdatedAt, &role.UserCount); err != nil {
 			return nil, fmt.Errorf("scan role: %w", err)
 		}
 		result = append(result, role)
@@ -272,6 +272,11 @@ func (r *Repository) ListRoles(ctx context.Context) ([]Role, error) {
 			return nil, err
 		}
 		result[index].Permissions = permissions
+		regencies, err := regenciesForRole(ctx, r.pool, result[index].ID)
+		if err != nil {
+			return nil, err
+		}
+		result[index].Regencies = regencies
 	}
 	return result, nil
 }
@@ -290,10 +295,13 @@ func (r *Repository) CreateRole(ctx context.Context, actor auth.Principal, input
 	if err != nil {
 		return Role{}, err
 	}
+	if err := regencyIDsExist(ctx, tx, input.RegencyIDs); err != nil {
+		return Role{}, err
+	}
 	var roleID string
 	err = tx.QueryRow(ctx, `
-		INSERT INTO roles (code, name, description) VALUES ($1, $2, NULLIF($3, '')) RETURNING id::text
-	`, input.Code, input.Name, input.Description).Scan(&roleID)
+		INSERT INTO roles (code, name, description, all_regencies_access) VALUES ($1, $2, NULLIF($3, ''), $4) RETURNING id::text
+	`, input.Code, input.Name, input.Description, input.AllRegenciesAccess).Scan(&roleID)
 	if uniqueViolation(err) {
 		return Role{}, ErrRoleCodeInUse
 	}
@@ -303,7 +311,10 @@ func (r *Repository) CreateRole(ctx context.Context, actor auth.Principal, input
 	if err := replaceRolePermissions(ctx, tx, roleID, permissions); err != nil {
 		return Role{}, err
 	}
-	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "role.created", ResourceType: "role", ResourceID: roleID, Metadata: map[string]any{"code": input.Code, "permissions": input.PermissionCodes}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+	if err := replaceRoleRegencies(ctx, tx, roleID, input.RegencyIDs); err != nil {
+		return Role{}, err
+	}
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "role.created", ResourceType: "role", ResourceID: roleID, Metadata: map[string]any{"code": input.Code, "permissions": input.PermissionCodes, "all_regencies_access": input.AllRegenciesAccess, "regency_ids": input.RegencyIDs}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
 		return Role{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -332,13 +343,19 @@ func (r *Repository) UpdateRole(ctx context.Context, actor auth.Principal, roleI
 	if err != nil {
 		return Role{}, err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE roles SET name = $2, description = NULLIF($3, ''), updated_at = now() WHERE id = $1`, roleID, input.Name, input.Description); err != nil {
+	if err := regencyIDsExist(ctx, tx, input.RegencyIDs); err != nil {
+		return Role{}, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE roles SET name = $2, description = NULLIF($3, ''), all_regencies_access = $4, updated_at = now() WHERE id = $1`, roleID, input.Name, input.Description, input.AllRegenciesAccess); err != nil {
 		return Role{}, fmt.Errorf("update role: %w", err)
 	}
 	if err := replaceRolePermissions(ctx, tx, roleID, permissions); err != nil {
 		return Role{}, err
 	}
-	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "role.updated", ResourceType: "role", ResourceID: roleID, Metadata: map[string]any{"code": code, "previous_name": previousName, "previous_description": previousDescription, "name": input.Name, "description": input.Description, "permissions": input.PermissionCodes}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+	if err := replaceRoleRegencies(ctx, tx, roleID, input.RegencyIDs); err != nil {
+		return Role{}, err
+	}
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "role.updated", ResourceType: "role", ResourceID: roleID, Metadata: map[string]any{"code": code, "previous_name": previousName, "previous_description": previousDescription, "name": input.Name, "description": input.Description, "permissions": input.PermissionCodes, "all_regencies_access": input.AllRegenciesAccess, "regency_ids": input.RegencyIDs}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
 		return Role{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -534,14 +551,63 @@ func permissionsForRole(ctx context.Context, db interface {
 	return result, rows.Err()
 }
 
+func regencyIDsExist(ctx context.Context, tx pgx.Tx, regencyIDs []string) error {
+	if len(regencyIDs) == 0 {
+		return nil
+	}
+	var count int
+	if err := tx.QueryRow(ctx, `SELECT count(*) FROM regencies WHERE id::text = ANY($1)`, regencyIDs).Scan(&count); err != nil {
+		return fmt.Errorf("validate role regencies: %w", err)
+	}
+	if count != len(regencyIDs) {
+		return ErrRegencyNotFound
+	}
+	return nil
+}
+
+func replaceRoleRegencies(ctx context.Context, tx pgx.Tx, roleID string, regencyIDs []string) error {
+	if _, err := tx.Exec(ctx, `DELETE FROM role_regencies WHERE role_id = $1`, roleID); err != nil {
+		return fmt.Errorf("clear role regencies: %w", err)
+	}
+	for _, regencyID := range regencyIDs {
+		if _, err := tx.Exec(ctx, `INSERT INTO role_regencies (role_id, regency_id) VALUES ($1, $2)`, roleID, regencyID); err != nil {
+			return fmt.Errorf("assign role regency: %w", err)
+		}
+	}
+	return nil
+}
+
+func regenciesForRole(ctx context.Context, db interface {
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+}, roleID string) ([]RegencyRef, error) {
+	rows, err := db.Query(ctx, `
+		SELECT regencies.id::text, regencies.name, regencies.document_code
+		FROM regencies JOIN role_regencies ON role_regencies.regency_id = regencies.id
+		WHERE role_regencies.role_id = $1 ORDER BY regencies.name
+	`, roleID)
+	if err != nil {
+		return nil, fmt.Errorf("list role regencies: %w", err)
+	}
+	defer rows.Close()
+	result := make([]RegencyRef, 0)
+	for rows.Next() {
+		var regency RegencyRef
+		if err := rows.Scan(&regency.ID, &regency.Name, &regency.DocumentCode); err != nil {
+			return nil, fmt.Errorf("scan role regency: %w", err)
+		}
+		result = append(result, regency)
+	}
+	return result, rows.Err()
+}
+
 func (r *Repository) roleByID(ctx context.Context, roleID string) (Role, error) {
 	var role Role
 	err := r.pool.QueryRow(ctx, `
-		SELECT roles.id::text, roles.code, roles.name, COALESCE(roles.description, ''), roles.is_system,
+		SELECT roles.id::text, roles.code, roles.name, COALESCE(roles.description, ''), roles.is_system, roles.all_regencies_access,
 		       roles.created_at, roles.updated_at, count(DISTINCT user_roles.user_id)
 		FROM roles LEFT JOIN user_roles ON user_roles.role_id = roles.id
 		WHERE roles.id = $1 GROUP BY roles.id
-	`, roleID).Scan(&role.ID, &role.Code, &role.Name, &role.Description, &role.IsSystem, &role.CreatedAt, &role.UpdatedAt, &role.UserCount)
+	`, roleID).Scan(&role.ID, &role.Code, &role.Name, &role.Description, &role.IsSystem, &role.AllRegenciesAccess, &role.CreatedAt, &role.UpdatedAt, &role.UserCount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Role{}, ErrNotFound
 	}
@@ -549,6 +615,10 @@ func (r *Repository) roleByID(ctx context.Context, roleID string) (Role, error) 
 		return Role{}, fmt.Errorf("get role: %w", err)
 	}
 	role.Permissions, err = permissionsForRole(ctx, r.pool, roleID)
+	if err != nil {
+		return Role{}, err
+	}
+	role.Regencies, err = regenciesForRole(ctx, r.pool, roleID)
 	return role, err
 }
 

@@ -20,6 +20,7 @@ type sessionStore interface {
 	DeleteSession(ctx context.Context, tokenHash []byte) error
 	HasPermission(ctx context.Context, principal Principal, permission string) (bool, error)
 	PermissionsForPrincipal(ctx context.Context, principal Principal) ([]string, error)
+	RegencyScopeForPrincipal(ctx context.Context, principal Principal) (RegencyScope, error)
 }
 
 type Service struct {
@@ -101,6 +102,10 @@ func (s *Service) Can(ctx context.Context, principal Principal, permission strin
 
 func (s *Service) Permissions(ctx context.Context, principal Principal) ([]string, error) {
 	return s.store.PermissionsForPrincipal(ctx, principal)
+}
+
+func (s *Service) RegencyScope(ctx context.Context, principal Principal) (RegencyScope, error) {
+	return s.store.RegencyScopeForPrincipal(ctx, principal)
 }
 
 func (s *Service) newToken() (sessionToken, error) {

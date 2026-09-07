@@ -173,6 +173,47 @@ func (r *Repository) PermissionsForPrincipal(ctx context.Context, principal Prin
 	return permissions, nil
 }
 
+func (r *Repository) RegencyScopeForPrincipal(ctx context.Context, principal Principal) (RegencyScope, error) {
+	if principal.IsSuperAdmin() {
+		return RegencyScope{Unrestricted: true}, nil
+	}
+	var unrestricted bool
+	if err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM user_roles
+			JOIN roles ON roles.id = user_roles.role_id
+			WHERE user_roles.user_id = $1 AND roles.all_regencies_access = true
+		)
+	`, principal.UserID).Scan(&unrestricted); err != nil {
+		return RegencyScope{}, fmt.Errorf("check unrestricted regency access: %w", err)
+	}
+	if unrestricted {
+		return RegencyScope{Unrestricted: true}, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT role_regencies.regency_id::text
+		FROM user_roles
+		JOIN role_regencies ON role_regencies.role_id = user_roles.role_id
+		WHERE user_roles.user_id = $1
+	`, principal.UserID)
+	if err != nil {
+		return RegencyScope{}, fmt.Errorf("list principal regency access: %w", err)
+	}
+	defer rows.Close()
+	regencyIDs := make([]string, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return RegencyScope{}, fmt.Errorf("scan principal regency: %w", err)
+		}
+		regencyIDs = append(regencyIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return RegencyScope{}, fmt.Errorf("iterate principal regencies: %w", err)
+	}
+	return RegencyScope{RegencyIDs: regencyIDs}, nil
+}
+
 func (r *Repository) CreateSession(
 	ctx context.Context,
 	userID string,
