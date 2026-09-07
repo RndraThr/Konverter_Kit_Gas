@@ -17,7 +17,7 @@ type repositoryStub struct {
 	meta          auth.ClientMeta
 }
 
-func (r *repositoryStub) ListRegencies(context.Context) ([]Regency, error) { return nil, nil }
+func (r *repositoryStub) ListRegencies(context.Context, auth.RegencyScope) ([]Regency, error) { return nil, nil }
 func (r *repositoryStub) SaveRegency(_ context.Context, actor auth.Principal, input RegencyInput, meta auth.ClientMeta) (Regency, error) {
 	r.regencyInput = input
 	r.actor = actor
@@ -29,7 +29,7 @@ func (r *repositoryStub) SaveProgram(_ context.Context, _ auth.Principal, input 
 	r.programInput = input
 	return Program{ProgramType: input.ProgramType}, nil
 }
-func (r *repositoryStub) ListSchedules(context.Context) ([]Schedule, error) { return nil, nil }
+func (r *repositoryStub) ListSchedules(context.Context, auth.RegencyScope) ([]Schedule, error) { return nil, nil }
 func (r *repositoryStub) SaveSchedule(_ context.Context, _ auth.Principal, input ScheduleInput, _ auth.ClientMeta) (Schedule, error) {
 	r.scheduleInput = input
 	return Schedule{DistributionNumberPadding: input.DistributionNumberPadding}, nil
@@ -174,5 +174,40 @@ func TestSaveDocumentationTemplateRejectsDuplicateSlotCodes(t *testing.T) {
 	}, auth.ClientMeta{})
 	if !errors.Is(err, ErrTemplateSlotInvalid) {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+type scopedRepositoryStub struct {
+	repositoryStub
+	seenScope auth.RegencyScope
+}
+
+func (r *scopedRepositoryStub) ListRegencies(_ context.Context, scope auth.RegencyScope) ([]Regency, error) {
+	r.seenScope = scope
+	return nil, nil
+}
+func (r *scopedRepositoryStub) ListSchedules(_ context.Context, scope auth.RegencyScope) ([]Schedule, error) {
+	r.seenScope = scope
+	return nil, nil
+}
+
+func TestListRegenciesAndSchedulesForwardRegencyScope(t *testing.T) {
+	repository := &scopedRepositoryStub{}
+	service := NewService(repository)
+	scope := auth.RegencyScope{RegencyIDs: []string{"regency-1"}}
+
+	if _, err := service.ListRegencies(context.Background(), scope); err != nil {
+		t.Fatal(err)
+	}
+	if len(repository.seenScope.RegencyIDs) != 1 || repository.seenScope.RegencyIDs[0] != "regency-1" {
+		t.Fatalf("ListRegencies scope=%+v", repository.seenScope)
+	}
+
+	repository.seenScope = auth.RegencyScope{}
+	if _, err := service.ListSchedules(context.Background(), scope); err != nil {
+		t.Fatal(err)
+	}
+	if len(repository.seenScope.RegencyIDs) != 1 || repository.seenScope.RegencyIDs[0] != "regency-1" {
+		t.Fatalf("ListSchedules scope=%+v", repository.seenScope)
 	}
 }

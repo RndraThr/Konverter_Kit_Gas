@@ -37,3 +37,20 @@ type ClientMeta struct {
 	IPAddress string
 	UserAgent string
 }
+
+type RegencyScope struct {
+	Unrestricted bool
+	RegencyIDs   []string
+}
+
+func (s RegencyScope) Allows(regencyID string) bool {
+	if s.Unrestricted {
+		return true
+	}
+	for _, id := range s.RegencyIDs {
+		if id == regencyID {
+			return true
+		}
+	}
+	return false
+}

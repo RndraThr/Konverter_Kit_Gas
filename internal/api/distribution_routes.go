@@ -40,7 +40,11 @@ func (h *Handler) handleDistributionSearch(w http.ResponseWriter, r *http.Reques
 		}
 		limit = parsed
 	}
-	result, err := h.deps.Distribution.Search(r.Context(), scheduleID, query, limit)
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := h.deps.Distribution.Search(r.Context(), scheduleID, query, limit, scope)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -58,7 +62,11 @@ func (h *Handler) handleDistributionAllocation(w http.ResponseWriter, r *http.Re
 		if !h.authorize(w, r, rc.principal, "distribution.view") {
 			return
 		}
-		result, err := h.deps.Distribution.GetWorkspace(r.Context(), parts[0])
+		scope, ok := h.regencyScope(w, r, rc.principal)
+		if !ok {
+			return
+		}
+		result, err := h.deps.Distribution.GetWorkspace(r.Context(), parts[0], scope)
 		if err != nil {
 			writeServiceError(w, err)
 			return
@@ -74,7 +82,11 @@ func (h *Handler) handleDistributionAllocation(w http.ResponseWriter, r *http.Re
 		if !decodeJSON(w, r, &input) {
 			return
 		}
-		result, err := h.deps.Distribution.SaveDraft(r.Context(), rc.principal, parts[0], input, clientMeta(r))
+		scope, ok := h.regencyScope(w, r, rc.principal)
+		if !ok {
+			return
+		}
+		result, err := h.deps.Distribution.SaveDraft(r.Context(), rc.principal, parts[0], input, clientMeta(r), scope)
 		if err != nil {
 			writeServiceError(w, err)
 			return
@@ -86,7 +98,11 @@ func (h *Handler) handleDistributionAllocation(w http.ResponseWriter, r *http.Re
 		if !h.authorize(w, r, rc.principal, "distribution.manage") {
 			return
 		}
-		result, err := h.deps.Distribution.Complete(r.Context(), rc.principal, parts[0], clientMeta(r))
+		scope, ok := h.regencyScope(w, r, rc.principal)
+		if !ok {
+			return
+		}
+		result, err := h.deps.Distribution.Complete(r.Context(), rc.principal, parts[0], clientMeta(r), scope)
 		if err != nil {
 			writeServiceError(w, err)
 			return
@@ -166,7 +182,11 @@ func (h *Handler) handleDistributionSlot(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	input.Longitude = longitude
-	result, err := h.deps.Distribution.UploadMedia(r.Context(), rc.principal, input, clientMeta(r))
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := h.deps.Distribution.UploadMedia(r.Context(), rc.principal, input, clientMeta(r), scope)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -184,7 +204,11 @@ func (h *Handler) handleDistributionMedia(w http.ResponseWriter, r *http.Request
 		if !h.authorize(w, r, rc.principal, "distribution.view") {
 			return
 		}
-		content, err := h.deps.Distribution.OpenMedia(r.Context(), parts[0])
+		scope, ok := h.regencyScope(w, r, rc.principal)
+		if !ok {
+			return
+		}
+		content, err := h.deps.Distribution.OpenMedia(r.Context(), parts[0], scope)
 		if err != nil {
 			writeServiceError(w, err)
 			return
@@ -201,7 +225,11 @@ func (h *Handler) handleDistributionMedia(w http.ResponseWriter, r *http.Request
 		if !h.authorize(w, r, rc.principal, "documentation.manage") {
 			return
 		}
-		if err := h.deps.Distribution.DeleteMedia(r.Context(), rc.principal, parts[0], clientMeta(r)); err != nil {
+		scope, ok := h.regencyScope(w, r, rc.principal)
+		if !ok {
+			return
+		}
+		if err := h.deps.Distribution.DeleteMedia(r.Context(), rc.principal, parts[0], clientMeta(r), scope); err != nil {
 			writeServiceError(w, err)
 			return
 		}

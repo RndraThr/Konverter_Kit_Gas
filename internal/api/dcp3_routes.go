@@ -57,7 +57,11 @@ func (h *Handler) handleDCP3PreviewCreate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "workbook_invalid", "File DCP3 tidak dapat dibaca")
 		return
 	}
-	result, err := h.deps.DCP3.Preview(r.Context(), rc.principal, scheduleID, filepath.Base(header.Filename), file, clientMeta(r))
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := h.deps.DCP3.Preview(r.Context(), rc.principal, scheduleID, filepath.Base(header.Filename), file, clientMeta(r), scope)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -77,7 +81,11 @@ func (h *Handler) handleDCP3Preview(w http.ResponseWriter, r *http.Request, rc r
 	if !h.authorize(w, r, rc.principal, "dcp3.view") {
 		return
 	}
-	result, err := h.deps.DCP3.GetPreview(r.Context(), strings.TrimSpace(id))
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := h.deps.DCP3.GetPreview(r.Context(), strings.TrimSpace(id), scope)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -104,7 +112,11 @@ func (h *Handler) handleDCP3Import(w http.ResponseWriter, r *http.Request, rc re
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := h.deps.DCP3.Commit(r.Context(), rc.principal, strings.TrimSpace(input.BatchID), input.Mapping, clientMeta(r))
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := h.deps.DCP3.Commit(r.Context(), rc.principal, strings.TrimSpace(input.BatchID), input.Mapping, clientMeta(r), scope)
 	if err != nil {
 		writeServiceError(w, err)
 		return

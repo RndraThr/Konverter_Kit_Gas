@@ -1,6 +1,7 @@
 package distribution
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -29,13 +30,14 @@ func TestCompleteEnforcesFinalDistributionRules(t *testing.T) {
 	actor := auth.Principal{UserID: fixture.userID}
 	meta := auth.ClientMeta{UserAgent: fixture.userAgent}
 
-	if _, err := service.Complete(ctx, actor, fixture.allocationID, meta); !errors.Is(err, ErrPreviouslyReceived) {
+	unrestricted := auth.RegencyScope{Unrestricted: true}
+	if _, err := service.Complete(ctx, actor, fixture.allocationID, meta, unrestricted); !errors.Is(err, ErrPreviouslyReceived) {
 		t.Fatalf("previous receipt err=%v", err)
 	}
-	if _, err := service.Complete(ctx, actor, fixture.historyAllocationID, meta); !errors.Is(err, ErrAlreadyCompleted) {
+	if _, err := service.Complete(ctx, actor, fixture.historyAllocationID, meta, unrestricted); !errors.Is(err, ErrAlreadyCompleted) {
 		t.Fatalf("already completed err=%v", err)
 	}
-	if _, err := service.Complete(ctx, actor, fixture.secondaryAllocationID, meta); !errors.Is(err, ErrIdentityIncomplete) {
+	if _, err := service.Complete(ctx, actor, fixture.secondaryAllocationID, meta, unrestricted); !errors.Is(err, ErrIdentityIncomplete) {
 		t.Fatalf("identity err=%v", err)
 	}
 	if _, err := pool.Exec(ctx, `INSERT INTO person_sector_identifiers(person_id,identifier_type,normalized_value,display_value) VALUES($1,'farmer_card','KP02','KP 02')`, fixture.secondaryPersonID); err != nil {
@@ -45,13 +47,13 @@ func TestCompleteEnforcesFinalDistributionRules(t *testing.T) {
 	if err := pool.QueryRow(ctx, `INSERT INTO documentation_slots(distribution_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,status) SELECT id,'recipient_package','Penerima dan paket',true,1,1,'both','missing' FROM distribution_records WHERE allocation_id=$1 RETURNING id::text`, fixture.secondaryAllocationID).Scan(&slotID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.Complete(ctx, actor, fixture.secondaryAllocationID, meta); !errors.Is(err, ErrDocumentationIncomplete) {
+	if _, err := service.Complete(ctx, actor, fixture.secondaryAllocationID, meta, unrestricted); !errors.Is(err, ErrDocumentationIncomplete) {
 		t.Fatalf("documentation err=%v", err)
 	}
 	if _, err := pool.Exec(ctx, `INSERT INTO media_files(documentation_slot_id,storage_key,original_filename,mime_type,byte_size,checksum,source) VALUES($1,gen_random_uuid(),'recipient.jpg','image/jpeg',100,$2,'gallery')`, slotID, fmt.Sprintf("%064d", time.Now().UnixNano())); err != nil {
 		t.Fatal(err)
 	}
-	record, err := service.Complete(ctx, actor, fixture.secondaryAllocationID, meta)
+	record, err := service.Complete(ctx, actor, fixture.secondaryAllocationID, meta, unrestricted)
 	if err != nil || record.Status != "completed" || record.CompletedAt.IsZero() {
 		t.Fatalf("record=%+v err=%v", record, err)
 	}
@@ -63,7 +65,7 @@ func TestCompleteEnforcesFinalDistributionRules(t *testing.T) {
 	if allocationStatus != "distributed" || distributionStatus != "completed" || !strings.Contains(string(snapshot), "KP02") || !strings.Contains(string(snapshot), "recipient_package") {
 		t.Fatalf("allocation=%q distribution=%q snapshot=%s", allocationStatus, distributionStatus, snapshot)
 	}
-	if _, err := service.Complete(ctx, actor, fixture.secondaryAllocationID, meta); !errors.Is(err, ErrAlreadyCompleted) {
+	if _, err := service.Complete(ctx, actor, fixture.secondaryAllocationID, meta, unrestricted); !errors.Is(err, ErrAlreadyCompleted) {
 		t.Fatalf("repeat completion err=%v", err)
 	}
 }
@@ -90,7 +92,7 @@ func TestCompleteSerializesConcurrentReceiptsForTheSamePerson(t *testing.T) {
 		go func(id string) {
 			defer wait.Done()
 			<-start
-			_, err := service.Complete(ctx, auth.Principal{}, id, auth.ClientMeta{UserAgent: fixture.userAgent})
+			_, err := service.Complete(ctx, auth.Principal{}, id, auth.ClientMeta{UserAgent: fixture.userAgent}, auth.RegencyScope{Unrestricted: true})
 			errs <- err
 		}(allocationID)
 	}
@@ -140,7 +142,7 @@ func TestIntegrationSaveDraftAndCompletePersistEquipmentFields(t *testing.T) {
 		MachineOptionCode: "shark-spwp8030", MachineSerialNumber: "SP 06IABD 421291",
 		HoseOptionCode: "triliunhose", HoseSerialNumber: "",
 		ConverterSerialNumber: "240A005582",
-	}, meta)
+	}, meta, auth.RegencyScope{Unrestricted: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +150,7 @@ func TestIntegrationSaveDraftAndCompletePersistEquipmentFields(t *testing.T) {
 		t.Fatalf("workspace equipment=%+v", workspace)
 	}
 
-	record, err := service.Complete(ctx, actor, fixture.secondaryAllocationID, meta)
+	record, err := service.Complete(ctx, actor, fixture.secondaryAllocationID, meta, auth.RegencyScope{Unrestricted: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +176,8 @@ func TestIntegrationSearchRanksIdentifiersAndShowsCrossScheduleHistory(t *testin
 	service := NewService(NewRepository(pool), storage)
 	ctx := context.Background()
 
-	byNumber, err := service.Search(ctx, fixture.scheduleID, "7", 50)
+	unrestricted := auth.RegencyScope{Unrestricted: true}
+	byNumber, err := service.Search(ctx, fixture.scheduleID, "7", 50, unrestricted)
 	if err != nil || len(byNumber) != 1 || byNumber[0].FullName != "Siti Aminah" {
 		t.Fatalf("number search=%+v err=%v", byNumber, err)
 	}
@@ -185,16 +188,16 @@ func TestIntegrationSearchRanksIdentifiersAndShowsCrossScheduleHistory(t *testin
 		t.Fatalf("documentation=%+v", byNumber[0].Documentation)
 	}
 
-	byNIK, err := service.Search(ctx, fixture.scheduleID, "7306014101900001", 20)
+	byNIK, err := service.Search(ctx, fixture.scheduleID, "7306014101900001", 20, unrestricted)
 	if err != nil || len(byNIK) == 0 || byNIK[0].AllocationID != fixture.allocationID {
 		t.Fatalf("NIK search=%+v err=%v", byNIK, err)
 	}
-	byName, err := service.Search(ctx, fixture.scheduleID, "Siti", 20)
+	byName, err := service.Search(ctx, fixture.scheduleID, "Siti", 20, unrestricted)
 	if err != nil || len(byName) != 2 || byName[0].FullName != "Siti Aminah" {
 		t.Fatalf("name search=%+v err=%v", byName, err)
 	}
 
-	workspace, err := service.GetWorkspace(ctx, fixture.allocationID)
+	workspace, err := service.GetWorkspace(ctx, fixture.allocationID, unrestricted)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,31 +211,113 @@ func TestIntegrationSearchRanksIdentifiersAndShowsCrossScheduleHistory(t *testin
 	workspace, err = service.SaveDraft(ctx, auth.Principal{UserID: fixture.userID}, fixture.allocationID, DraftInput{
 		NIK: "7306014101900001", Address: "Jalan Sawah 10", Village: "Tempe", District: "Sabbangparu",
 		PhoneNumber: "0812-345", SectorIdentifier: "KP 01",
-	}, auth.ClientMeta{UserAgent: fixture.userAgent})
+	}, auth.ClientMeta{UserAgent: fixture.userAgent}, unrestricted)
 	if err != nil || workspace.PhoneNumber != "0812345" || workspace.SectorIdentifier != "KP01" {
 		t.Fatalf("saved workspace=%+v err=%v", workspace, err)
 	}
 	jpeg := append([]byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}, make([]byte, 32)...)
-	media, err := service.UploadMedia(ctx, auth.Principal{}, UploadMediaInput{SlotID: workspace.Documentation[1].ID, OriginalFilename: "bast.jpg", Source: "gallery", Data: jpeg}, auth.ClientMeta{UserAgent: fixture.userAgent})
+	media, err := service.UploadMedia(ctx, auth.Principal{}, UploadMediaInput{SlotID: workspace.Documentation[1].ID, OriginalFilename: "bast.jpg", Source: "gallery", Data: jpeg}, auth.ClientMeta{UserAgent: fixture.userAgent}, unrestricted)
 	if err != nil {
 		t.Fatal(err)
 	}
-	workspace, err = service.GetWorkspace(ctx, fixture.allocationID)
+	workspace, err = service.GetWorkspace(ctx, fixture.allocationID, unrestricted)
 	if err != nil || workspace.Documentation[1].Status != "complete" || len(workspace.Documentation[1].Files) != 1 {
 		t.Fatalf("uploaded slot=%+v err=%v", workspace.Documentation[1], err)
 	}
-	if err := service.DeleteMedia(ctx, auth.Principal{}, media.ID, auth.ClientMeta{UserAgent: fixture.userAgent}); err != nil {
+	if err := service.DeleteMedia(ctx, auth.Principal{}, media.ID, auth.ClientMeta{UserAgent: fixture.userAgent}, unrestricted); err != nil {
 		t.Fatal(err)
 	}
-	workspace, err = service.GetWorkspace(ctx, fixture.allocationID)
+	workspace, err = service.GetWorkspace(ctx, fixture.allocationID, unrestricted)
 	if err != nil || workspace.Documentation[1].Status != "missing" {
 		t.Fatalf("deleted slot=%+v err=%v", workspace.Documentation[1], err)
+	}
+}
+
+func TestIntegrationScopeEnforcementRejectsOutOfRegencyAccess(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	ctx := context.Background()
+	fixture := createDistributionFixture(t, pool)
+	repository := NewRepository(pool)
+	service := NewService(repository)
+
+	scoped := auth.RegencyScope{RegencyIDs: []string{fixture.regencyID}}
+	otherRegencyOnly := auth.RegencyScope{RegencyIDs: []string{fixture.historyRegencyID}}
+
+	results, err := service.Search(ctx, fixture.scheduleID, "Siti", 20, otherRegencyOnly)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("out-of-scope search should return no matches, got %+v", results)
+	}
+	results, err = service.Search(ctx, fixture.scheduleID, "Siti", 20, scoped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) == 0 {
+		t.Fatal("in-scope search should return matches")
+	}
+
+	if _, err := service.GetWorkspace(ctx, fixture.allocationID, otherRegencyOnly); !errors.Is(err, ErrAllocationNotFound) {
+		t.Fatalf("expected ErrAllocationNotFound reading out-of-scope allocation, got %v", err)
+	}
+	if _, err := service.GetWorkspace(ctx, fixture.allocationID, scoped); err != nil {
+		t.Fatalf("in-scope read should succeed: %v", err)
+	}
+
+	if _, err := service.SaveDraft(ctx, auth.Principal{}, fixture.allocationID, DraftInput{}, auth.ClientMeta{UserAgent: fixture.userAgent}, otherRegencyOnly); !errors.Is(err, ErrAllocationNotFound) {
+		t.Fatalf("expected ErrAllocationNotFound saving draft out of scope, got %v", err)
+	}
+
+	if _, err := service.Complete(ctx, auth.Principal{}, fixture.historyAllocationID, auth.ClientMeta{UserAgent: fixture.userAgent}, scoped); !errors.Is(err, ErrAllocationNotFound) {
+		t.Fatalf("expected ErrAllocationNotFound completing allocation from a different regency, got %v", err)
+	}
+}
+
+func TestIntegrationMediaScopeEnforcementRejectsOutOfRegencyAccess(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	ctx := context.Background()
+	fixture := createDistributionFixture(t, pool)
+	repository := NewRepository(pool)
+	storage := &storageStub{}
+	service := NewService(repository, storage)
+
+	var slotID string
+	if err := pool.QueryRow(ctx, `SELECT s.id::text FROM documentation_slots s JOIN distribution_records d ON d.id=s.distribution_id WHERE d.allocation_id=$1 AND s.slot_code='recipient_package'`, fixture.allocationID).Scan(&slotID); err != nil {
+		t.Fatal(err)
+	}
+
+	scoped := auth.RegencyScope{RegencyIDs: []string{fixture.regencyID}}
+	otherRegencyOnly := auth.RegencyScope{RegencyIDs: []string{fixture.historyRegencyID}}
+	jpeg := append([]byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}, bytes.Repeat([]byte{0}, 32)...)
+
+	if _, err := service.UploadMedia(ctx, auth.Principal{}, UploadMediaInput{SlotID: slotID, Source: "camera", Data: jpeg}, auth.ClientMeta{UserAgent: fixture.userAgent}, otherRegencyOnly); !errors.Is(err, ErrMediaNotFound) {
+		t.Fatalf("expected ErrMediaNotFound uploading to out-of-scope slot, got %v", err)
+	}
+	uploaded, err := service.UploadMedia(ctx, auth.Principal{}, UploadMediaInput{SlotID: slotID, Source: "camera", Data: jpeg}, auth.ClientMeta{UserAgent: fixture.userAgent}, scoped)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := service.OpenMedia(ctx, uploaded.ID, otherRegencyOnly); !errors.Is(err, ErrMediaNotFound) {
+		t.Fatalf("expected ErrMediaNotFound opening out-of-scope media, got %v", err)
+	}
+	if _, err := service.OpenMedia(ctx, uploaded.ID, scoped); err != nil {
+		t.Fatalf("in-scope open should succeed: %v", err)
+	}
+
+	if err := service.DeleteMedia(ctx, auth.Principal{}, uploaded.ID, auth.ClientMeta{UserAgent: fixture.userAgent}, otherRegencyOnly); !errors.Is(err, ErrMediaNotFound) {
+		t.Fatalf("expected ErrMediaNotFound deleting out-of-scope media, got %v", err)
+	}
+	if err := service.DeleteMedia(ctx, auth.Principal{}, uploaded.ID, auth.ClientMeta{UserAgent: fixture.userAgent}, scoped); err != nil {
+		t.Fatalf("in-scope delete should succeed: %v", err)
 	}
 }
 
 type distributionFixture struct {
 	scheduleID, allocationID, historyAllocationID, secondaryAllocationID string
 	secondaryPersonID, userID, userAgent                                 string
+	regencyID, historyRegencyID                                          string
 }
 
 func createDistributionFixture(t *testing.T, pool *pgxpool.Pool) distributionFixture {
@@ -303,7 +388,7 @@ func createDistributionFixture(t *testing.T, pool *pgxpool.Pool) distributionFix
 		_, _ = pool.Exec(context.Background(), `DELETE FROM regencies WHERE id IN ($1,$2)`, regencyID, historyRegencyID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM programs WHERE id=$1`, programID)
 	})
-	return distributionFixture{scheduleID: scheduleID, allocationID: allocationID, historyAllocationID: historyAllocationID, secondaryAllocationID: secondaryAllocationID, secondaryPersonID: sitiNurID, userAgent: userAgent}
+	return distributionFixture{scheduleID: scheduleID, allocationID: allocationID, historyAllocationID: historyAllocationID, secondaryAllocationID: secondaryAllocationID, secondaryPersonID: sitiNurID, userAgent: userAgent, regencyID: regencyID, historyRegencyID: historyRegencyID}
 }
 
 func insertDistributionFixture(t *testing.T, pool *pgxpool.Pool, scheduleID, personID string, number int, status string) string {

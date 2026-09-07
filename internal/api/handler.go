@@ -28,6 +28,7 @@ type AuthService interface {
 	Authenticate(context.Context, string) (auth.Principal, error)
 	Can(context.Context, auth.Principal, string) (bool, error)
 	Permissions(context.Context, auth.Principal) ([]string, error)
+	RegencyScope(context.Context, auth.Principal) (auth.RegencyScope, error)
 }
 
 type ProfileService interface {
@@ -65,11 +66,11 @@ type AuditService interface {
 }
 
 type ProgramSetupService interface {
-	ListRegencies(context.Context) ([]programs.Regency, error)
+	ListRegencies(context.Context, auth.RegencyScope) ([]programs.Regency, error)
 	SaveRegency(context.Context, auth.Principal, programs.RegencyInput, auth.ClientMeta) (programs.Regency, error)
 	ListPrograms(context.Context) ([]programs.Program, error)
 	SaveProgram(context.Context, auth.Principal, programs.ProgramInput, auth.ClientMeta) (programs.Program, error)
-	ListSchedules(context.Context) ([]programs.Schedule, error)
+	ListSchedules(context.Context, auth.RegencyScope) ([]programs.Schedule, error)
 	SaveSchedule(context.Context, auth.Principal, programs.ScheduleInput, auth.ClientMeta) (programs.Schedule, error)
 	ListPackageTemplates(context.Context) ([]programs.PackageTemplate, error)
 	SavePackageTemplate(context.Context, auth.Principal, programs.PackageTemplateInput, auth.ClientMeta) (programs.PackageTemplate, error)
@@ -78,26 +79,26 @@ type ProgramSetupService interface {
 }
 
 type DCP3Service interface {
-	Preview(context.Context, auth.Principal, string, string, io.Reader, auth.ClientMeta) (dcp3.ImportPreview, error)
-	GetPreview(context.Context, string) (dcp3.ImportPreview, error)
-	Commit(context.Context, auth.Principal, string, dcp3.Mapping, auth.ClientMeta) (dcp3.ImportResult, error)
+	Preview(context.Context, auth.Principal, string, string, io.Reader, auth.ClientMeta, auth.RegencyScope) (dcp3.ImportPreview, error)
+	GetPreview(context.Context, string, auth.RegencyScope) (dcp3.ImportPreview, error)
+	Commit(context.Context, auth.Principal, string, dcp3.Mapping, auth.ClientMeta, auth.RegencyScope) (dcp3.ImportResult, error)
 }
 
 type DistributionService interface {
-	Search(context.Context, string, string, int) ([]distribution.SearchResult, error)
-	GetWorkspace(context.Context, string) (distribution.RecipientWorkspace, error)
-	SaveDraft(context.Context, auth.Principal, string, distribution.DraftInput, auth.ClientMeta) (distribution.RecipientWorkspace, error)
-	Complete(context.Context, auth.Principal, string, auth.ClientMeta) (distribution.DistributionRecord, error)
-	UploadMedia(context.Context, auth.Principal, distribution.UploadMediaInput, auth.ClientMeta) (distribution.MediaFile, error)
-	DeleteMedia(context.Context, auth.Principal, string, auth.ClientMeta) error
-	OpenMedia(context.Context, string) (distribution.MediaContent, error)
+	Search(context.Context, string, string, int, auth.RegencyScope) ([]distribution.SearchResult, error)
+	GetWorkspace(context.Context, string, auth.RegencyScope) (distribution.RecipientWorkspace, error)
+	SaveDraft(context.Context, auth.Principal, string, distribution.DraftInput, auth.ClientMeta, auth.RegencyScope) (distribution.RecipientWorkspace, error)
+	Complete(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionRecord, error)
+	UploadMedia(context.Context, auth.Principal, distribution.UploadMediaInput, auth.ClientMeta, auth.RegencyScope) (distribution.MediaFile, error)
+	DeleteMedia(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) error
+	OpenMedia(context.Context, string, auth.RegencyScope) (distribution.MediaContent, error)
 }
 
 type ReportsService interface {
-	Summary(context.Context, string, reports.Filter) (reports.Summary, error)
-	Rows(context.Context, string, reports.Filter) ([]reports.Row, error)
-	ExportExcel(context.Context, auth.Principal, string, reports.Filter, auth.ClientMeta) ([]byte, error)
-	ExportPDF(context.Context, auth.Principal, string, reports.Filter, auth.ClientMeta) ([]byte, error)
+	Summary(context.Context, string, reports.Filter, auth.RegencyScope) (reports.Summary, error)
+	Rows(context.Context, string, reports.Filter, auth.RegencyScope) ([]reports.Row, error)
+	ExportExcel(context.Context, auth.Principal, string, reports.Filter, auth.ClientMeta, auth.RegencyScope) ([]byte, error)
+	ExportPDF(context.Context, auth.Principal, string, reports.Filter, auth.ClientMeta, auth.RegencyScope) ([]byte, error)
 }
 
 type Dependencies struct {
@@ -238,6 +239,15 @@ func (h *Handler) authorize(w http.ResponseWriter, r *http.Request, principal au
 		return false
 	}
 	return true
+}
+
+func (h *Handler) regencyScope(w http.ResponseWriter, r *http.Request, principal auth.Principal) (auth.RegencyScope, bool) {
+	scope, err := h.deps.Auth.RegencyScope(r.Context(), principal)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "Tidak dapat memeriksa akses kabupaten")
+		return auth.RegencyScope{}, false
+	}
+	return scope, true
 }
 
 func (h *Handler) authorizeAny(w http.ResponseWriter, r *http.Request, principal auth.Principal, permissions ...string) bool {

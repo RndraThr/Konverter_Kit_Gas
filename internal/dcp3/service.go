@@ -18,8 +18,8 @@ import (
 var nonDigit = regexp.MustCompile(`[^0-9]+`)
 
 type importRepository interface {
-	CreatePreview(context.Context, auth.Principal, string, string, string, WorkbookPreview, auth.ClientMeta) (ImportPreview, error)
-	GetPreview(context.Context, string) (ImportPreview, error)
+	CreatePreview(context.Context, auth.Principal, string, string, string, WorkbookPreview, auth.ClientMeta, auth.RegencyScope) (ImportPreview, error)
+	GetPreview(context.Context, string, auth.RegencyScope) (ImportPreview, error)
 	Commit(context.Context, auth.Principal, string, Mapping, auth.ClientMeta) (ImportResult, error)
 }
 
@@ -32,7 +32,7 @@ func NewImportService(repository importRepository, limits ParseLimits) *ImportSe
 	return &ImportService{repository: repository, limits: limits}
 }
 
-func (s *ImportService) Preview(ctx context.Context, actor auth.Principal, scheduleID, filename string, source io.Reader, meta auth.ClientMeta) (ImportPreview, error) {
+func (s *ImportService) Preview(ctx context.Context, actor auth.Principal, scheduleID, filename string, source io.Reader, meta auth.ClientMeta, scope auth.RegencyScope) (ImportPreview, error) {
 	data, err := io.ReadAll(io.LimitReader(source, s.limits.MaxBytes+1))
 	if err != nil {
 		return ImportPreview{}, err
@@ -45,15 +45,15 @@ func (s *ImportService) Preview(ctx context.Context, actor auth.Principal, sched
 		return ImportPreview{}, err
 	}
 	digest := sha256.Sum256(data)
-	return s.repository.CreatePreview(ctx, actor, strings.TrimSpace(scheduleID), strings.TrimSpace(filename), hex.EncodeToString(digest[:]), preview, meta)
+	return s.repository.CreatePreview(ctx, actor, strings.TrimSpace(scheduleID), strings.TrimSpace(filename), hex.EncodeToString(digest[:]), preview, meta, scope)
 }
 
-func (s *ImportService) GetPreview(ctx context.Context, id string) (ImportPreview, error) {
-	return s.repository.GetPreview(ctx, strings.TrimSpace(id))
+func (s *ImportService) GetPreview(ctx context.Context, id string, scope auth.RegencyScope) (ImportPreview, error) {
+	return s.repository.GetPreview(ctx, strings.TrimSpace(id), scope)
 }
 
-func (s *ImportService) Commit(ctx context.Context, actor auth.Principal, batchID string, mapping Mapping, meta auth.ClientMeta) (ImportResult, error) {
-	preview, err := s.repository.GetPreview(ctx, strings.TrimSpace(batchID))
+func (s *ImportService) Commit(ctx context.Context, actor auth.Principal, batchID string, mapping Mapping, meta auth.ClientMeta, scope auth.RegencyScope) (ImportResult, error) {
+	preview, err := s.repository.GetPreview(ctx, strings.TrimSpace(batchID), scope)
 	if err != nil {
 		return ImportResult{}, err
 	}

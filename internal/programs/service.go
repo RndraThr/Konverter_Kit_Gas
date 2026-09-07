@@ -16,11 +16,11 @@ var (
 )
 
 type repository interface {
-	ListRegencies(context.Context) ([]Regency, error)
+	ListRegencies(context.Context, auth.RegencyScope) ([]Regency, error)
 	SaveRegency(context.Context, auth.Principal, RegencyInput, auth.ClientMeta) (Regency, error)
 	ListPrograms(context.Context) ([]Program, error)
 	SaveProgram(context.Context, auth.Principal, ProgramInput, auth.ClientMeta) (Program, error)
-	ListSchedules(context.Context) ([]Schedule, error)
+	ListSchedules(context.Context, auth.RegencyScope) ([]Schedule, error)
 	SaveSchedule(context.Context, auth.Principal, ScheduleInput, auth.ClientMeta) (Schedule, error)
 	ListPackageTemplates(context.Context) ([]PackageTemplate, error)
 	SavePackageTemplate(context.Context, auth.Principal, PackageTemplateInput, auth.ClientMeta) (PackageTemplate, error)
@@ -32,8 +32,8 @@ type Service struct{ repository repository }
 
 func NewService(repository repository) *Service { return &Service{repository: repository} }
 
-func (s *Service) ListRegencies(ctx context.Context) ([]Regency, error) {
-	return s.repository.ListRegencies(ctx)
+func (s *Service) ListRegencies(ctx context.Context, scope auth.RegencyScope) ([]Regency, error) {
+	return s.repository.ListRegencies(ctx, scope)
 }
 
 func (s *Service) SaveRegency(ctx context.Context, actor auth.Principal, input RegencyInput, meta auth.ClientMeta) (Regency, error) {
@@ -69,8 +69,8 @@ func (s *Service) SaveProgram(ctx context.Context, actor auth.Principal, input P
 	return s.repository.SaveProgram(ctx, actor, input, meta)
 }
 
-func (s *Service) ListSchedules(ctx context.Context) ([]Schedule, error) {
-	return s.repository.ListSchedules(ctx)
+func (s *Service) ListSchedules(ctx context.Context, scope auth.RegencyScope) ([]Schedule, error) {
+	return s.repository.ListSchedules(ctx, scope)
 }
 
 func (s *Service) SaveSchedule(ctx context.Context, actor auth.Principal, input ScheduleInput, meta auth.ClientMeta) (Schedule, error) {

@@ -113,14 +113,42 @@ func TestPermissionsReturnsStorePermissions(t *testing.T) {
 	}
 }
 
+func TestRegencyScopeReturnsStoreScope(t *testing.T) {
+	store := &fakeSessionStore{regencyScope: RegencyScope{RegencyIDs: []string{"regency-1"}}}
+	scope, err := NewService(store, time.Hour, 24*time.Hour).RegencyScope(context.Background(), Principal{UserID: "user-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scope.Unrestricted || len(scope.RegencyIDs) != 1 || scope.RegencyIDs[0] != "regency-1" {
+		t.Fatalf("scope=%+v", scope)
+	}
+}
+
+func TestRegencyScopeAllows(t *testing.T) {
+	unrestricted := RegencyScope{Unrestricted: true}
+	if !unrestricted.Allows("any-regency") {
+		t.Fatal("unrestricted scope must allow any regency")
+	}
+	scoped := RegencyScope{RegencyIDs: []string{"regency-1"}}
+	if !scoped.Allows("regency-1") || scoped.Allows("regency-2") {
+		t.Fatalf("scoped allow check wrong: %+v", scoped)
+	}
+	empty := RegencyScope{}
+	if empty.Allows("regency-1") {
+		t.Fatal("empty scope must allow nothing")
+	}
+}
+
 type fakeSessionStore struct {
-	user        User
-	findErr     error
-	principal   Principal
-	createdHash []byte
-	deletedHash []byte
-	expiresAt   time.Time
-	permissions []string
+	user            User
+	findErr         error
+	principal       Principal
+	createdHash     []byte
+	deletedHash     []byte
+	expiresAt       time.Time
+	permissions     []string
+	regencyScope    RegencyScope
+	regencyScopeErr error
 }
 
 func (f *fakeSessionStore) FindUserByIdentity(context.Context, string) (User, error) {
@@ -151,4 +179,8 @@ func (f *fakeSessionStore) HasPermission(context.Context, Principal, string) (bo
 
 func (f *fakeSessionStore) PermissionsForPrincipal(context.Context, Principal) ([]string, error) {
 	return f.permissions, nil
+}
+
+func (f *fakeSessionStore) RegencyScopeForPrincipal(_ context.Context, _ Principal) (RegencyScope, error) {
+	return f.regencyScope, f.regencyScopeErr
 }

@@ -39,6 +39,32 @@ func TestIntegrationUserAndRoleAdministration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	var regencyID string
+	if err := pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code) VALUES('Sulawesi Selatan','Wajo Role Test','WRT') RETURNING id::text`).Scan(&regencyID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM regencies WHERE id = $1", regencyID) })
+
+	scopedRole, err := service.CreateRole(ctx, actor, RoleInput{
+		Code: roleCode + "_scoped", Name: "Scoped Role", PermissionCodes: []string{"dashboard.view"},
+		RegencyIDs: []string{regencyID},
+	}, auth.ClientMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM roles WHERE code = $1", roleCode+"_scoped") })
+	if scopedRole.AllRegenciesAccess || len(scopedRole.Regencies) != 1 || scopedRole.Regencies[0].ID != regencyID {
+		t.Fatalf("scoped role regencies=%+v", scopedRole.Regencies)
+	}
+
+	_, err = service.CreateRole(ctx, actor, RoleInput{
+		Code: roleCode + "_bogus", Name: "Bogus Role", RegencyIDs: []string{"00000000-0000-0000-0000-000000000000"},
+	}, auth.ClientMeta{})
+	if !errors.Is(err, ErrRegencyNotFound) {
+		t.Fatalf("expected ErrRegencyNotFound, got %v", err)
+	}
+
 	user, err := service.CreateUser(ctx, actor, CreateUserInput{
 		FullName: "Administration Integration",
 		Username: "administration.integration",

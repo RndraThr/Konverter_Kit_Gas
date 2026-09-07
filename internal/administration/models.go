@@ -18,6 +18,7 @@ var (
 	ErrRoleInUse          = errors.New("role is assigned to users")
 	ErrSystemRole         = errors.New("system role cannot be changed")
 	ErrRoleCodeInUse      = errors.New("role code already exists")
+	ErrRegencyNotFound    = errors.New("one or more regencies do not exist")
 )
 
 type RoleRef struct {
@@ -88,21 +89,31 @@ type PermissionGroup struct {
 	Permissions []Permission `json:"permissions"`
 }
 
+type RegencyRef struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	DocumentCode string `json:"document_code"`
+}
+
 type Role struct {
-	ID          string       `json:"id"`
-	Code        string       `json:"code"`
-	Name        string       `json:"name"`
-	Description string       `json:"description,omitempty"`
-	IsSystem    bool         `json:"is_system"`
-	Permissions []Permission `json:"permissions"`
-	UserCount   int64        `json:"user_count"`
-	CreatedAt   time.Time    `json:"created_at"`
-	UpdatedAt   time.Time    `json:"updated_at"`
+	ID                 string       `json:"id"`
+	Code               string       `json:"code"`
+	Name               string       `json:"name"`
+	Description        string       `json:"description,omitempty"`
+	IsSystem           bool         `json:"is_system"`
+	Permissions        []Permission `json:"permissions"`
+	AllRegenciesAccess bool         `json:"all_regencies_access"`
+	Regencies          []RegencyRef `json:"regencies"`
+	UserCount          int64        `json:"user_count"`
+	CreatedAt          time.Time    `json:"created_at"`
+	UpdatedAt          time.Time    `json:"updated_at"`
 }
 
 type RoleInput struct {
-	Code            string   `json:"code"`
-	Name            string   `json:"name"`
-	Description     string   `json:"description"`
-	PermissionCodes []string `json:"permission_codes"`
+	Code               string   `json:"code"`
+	Name               string   `json:"name"`
+	Description        string   `json:"description"`
+	PermissionCodes    []string `json:"permission_codes"`
+	AllRegenciesAccess bool     `json:"all_regencies_access"`
+	RegencyIDs         []string `json:"regency_ids"`
 }
