@@ -65,6 +65,21 @@ func TestCreateRoleValidatesStableCode(t *testing.T) {
 	}
 }
 
+func TestNormalizeRoleInputClearsRegencyIDsWhenAllAccessGranted(t *testing.T) {
+	repository := &fakeRepository{}
+	service := NewService(repository)
+	_, err := service.CreateRole(context.Background(), auth.Principal{UserID: "admin-1"}, RoleInput{
+		Code: "regional_role", Name: "Regional Role",
+		AllRegenciesAccess: true, RegencyIDs: []string{"regency-1", "regency-2"},
+	}, auth.ClientMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repository.createdRole.RegencyIDs) != 0 {
+		t.Fatalf("regency ids not cleared: %+v", repository.createdRole)
+	}
+}
+
 func TestSetPasswordRejectsShortPassword(t *testing.T) {
 	repository := &fakeRepository{}
 	err := NewService(repository).SetPassword(context.Background(), auth.Principal{UserID: "admin-1"}, "user-2", "short", auth.ClientMeta{})
@@ -80,6 +95,7 @@ type fakeRepository struct {
 	created      CreateUserInput
 	passwordHash string
 	updatedID    string
+	createdRole  RoleInput
 }
 
 func (f *fakeRepository) UserCounts(context.Context) (UserCounts, error) {
@@ -113,6 +129,7 @@ func (f *fakeRepository) ListRoles(context.Context) ([]Role, error)             
 func (f *fakeRepository) GetRole(context.Context, string) (Role, error)         { return Role{}, nil }
 func (f *fakeRepository) ListPermissions(context.Context) ([]Permission, error) { return nil, nil }
 func (f *fakeRepository) CreateRole(_ context.Context, _ auth.Principal, input RoleInput, _ auth.ClientMeta) (Role, error) {
+	f.createdRole = input
 	return Role{Code: input.Code, Name: input.Name}, nil
 }
 func (f *fakeRepository) UpdateRole(_ context.Context, _ auth.Principal, roleID string, input RoleInput, _ auth.ClientMeta) (Role, error) {
