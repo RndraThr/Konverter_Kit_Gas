@@ -39,6 +39,11 @@ test('shows the four program preparation workspaces', async () => {
   expect(screen.getByText('Foto Distribusi Petani')).toBeVisible();
 });
 
+test('exposes the active setup workspace as a named region', async () => {
+  renderPage(['programs.view', 'programs.manage']);
+  expect(await screen.findByRole('region', { name: 'Kabupaten operasional' })).toBeInTheDocument();
+});
+
 test('keeps data readable without mutation controls', async () => {
   renderPage(['programs.view']);
   expect(await screen.findByText('Wajo')).toBeVisible();
