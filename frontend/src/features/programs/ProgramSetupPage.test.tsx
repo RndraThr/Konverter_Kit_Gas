@@ -44,6 +44,40 @@ test('exposes the active setup workspace as a named region', async () => {
   expect(await screen.findByRole('region', { name: 'Kabupaten operasional' })).toBeInTheDocument();
 });
 
+test('moves focus, selection, and named workspace regions with arrow keys', async () => {
+  renderPage(['programs.view', 'programs.manage']);
+  const regencyTab = await screen.findByRole('tab', { name: 'Kabupaten' });
+  const programTab = screen.getByRole('tab', { name: 'Program' });
+  const scheduleTab = screen.getByRole('tab', { name: 'Jadwal' });
+  const templateTab = screen.getByRole('tab', { name: 'Template' });
+
+  regencyTab.focus();
+  expect(regencyTab).toHaveFocus();
+  expect(regencyTab).toHaveAttribute('aria-selected', 'true');
+  expect(await screen.findByRole('region', { name: 'Kabupaten operasional' })).toBeInTheDocument();
+
+  await userEvent.keyboard('{ArrowRight}');
+  expect(programTab).toHaveFocus();
+  expect(programTab).toHaveAttribute('aria-selected', 'true');
+  expect(await screen.findByRole('region', { name: 'Program bantuan' })).toBeInTheDocument();
+
+  await userEvent.keyboard('{ArrowRight}');
+  expect(scheduleTab).toHaveFocus();
+  expect(scheduleTab).toHaveAttribute('aria-selected', 'true');
+  expect(await screen.findByRole('region', { name: 'Jadwal kabupaten' })).toBeInTheDocument();
+
+  await userEvent.keyboard('{ArrowRight}');
+  expect(templateTab).toHaveFocus();
+  expect(templateTab).toHaveAttribute('aria-selected', 'true');
+  expect(await screen.findByRole('region', { name: 'Template paket' })).toBeInTheDocument();
+  expect(screen.getByRole('region', { name: 'Template dokumentasi' })).toBeInTheDocument();
+
+  await userEvent.keyboard('{ArrowLeft}');
+  expect(scheduleTab).toHaveFocus();
+  expect(scheduleTab).toHaveAttribute('aria-selected', 'true');
+  expect(await screen.findByRole('region', { name: 'Jadwal kabupaten' })).toBeInTheDocument();
+});
+
 test('keeps data readable without mutation controls', async () => {
   renderPage(['programs.view']);
   expect(await screen.findByText('Wajo')).toBeVisible();

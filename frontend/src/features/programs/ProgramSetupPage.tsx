@@ -9,7 +9,7 @@ import styles from './ProgramSetup.module.css';
 export function ProgramSetupPage() {
   return <div className={`page ${styles.page}`}><PageHeader title="Persiapan program" description="Atur wilayah, jenis bantuan, jadwal, dan nilai baku sebelum data DCP3 diproses." context={<div className={styles.contextMark}><span aria-hidden="true" />Satu data lintas kabupaten</div>} />
     <Tabs defaultValue="regencies" className={styles.tabs}>
-      <TabsList variant="line" className={styles.tabList} aria-label="Persiapan program">
+      <TabsList activateOnFocus variant="line" className={styles.tabList} aria-label="Persiapan program">
         <TabsTrigger className={styles.tab} value="regencies">Kabupaten</TabsTrigger>
         <TabsTrigger className={styles.tab} value="programs">Program</TabsTrigger>
         <TabsTrigger className={styles.tab} value="schedules">Jadwal</TabsTrigger>
