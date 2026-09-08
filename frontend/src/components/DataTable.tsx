@@ -1,5 +1,17 @@
 import { ReactNode } from 'react';
+import { Table } from '@/components/ui/table';
+import { cn } from '@/lib/utils';
 
-export function DataTable({ children, label }: { children: ReactNode; label: string }) {
-  return <div className="tableFrame"><table aria-label={label}>{children}</table></div>;
+type DataTableProps = {
+  children: ReactNode;
+  label: string;
+  minimumWidth?: number | string;
+};
+
+export function DataTable({ children, label, minimumWidth = 720 }: DataTableProps) {
+  return <div aria-label={label} className="w-full overflow-x-auto rounded-lg border focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50" role="region" tabIndex={0}>
+    <Table aria-label={label} className={cn('min-w-full w-full')} style={{ minWidth: minimumWidth }}>
+      {children}
+    </Table>
+  </div>;
 }

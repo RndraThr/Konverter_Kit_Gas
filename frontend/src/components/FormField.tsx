@@ -1,4 +1,6 @@
-import { InputHTMLAttributes, ReactNode } from 'react';
+import { InputHTMLAttributes, ReactNode, useId } from 'react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 type Props = InputHTMLAttributes<HTMLInputElement> & {
   label: string;
@@ -7,10 +9,20 @@ type Props = InputHTMLAttributes<HTMLInputElement> & {
 };
 
 export function FormField({ label, error, hint, id, ...input }: Props) {
-  const fieldID = id ?? input.name;
-  return <label className="formField" htmlFor={fieldID}>
-    <span>{label}</span>
-    <input id={fieldID} aria-invalid={Boolean(error)} aria-describedby={error ? `${fieldID}-error` : undefined} {...input} />
-    {error ? <small className="fieldError" id={`${fieldID}-error`}>{error}</small> : hint ? <small>{hint}</small> : null}
-  </label>;
+  const generatedID = useId();
+  const fieldID = id ?? input.name ?? generatedID;
+  const descriptionID = error ? `${fieldID}-error` : hint ? `${fieldID}-hint` : undefined;
+  const describedBy = [input['aria-describedby'], descriptionID].filter(Boolean).join(' ') || undefined;
+
+  return <div className="grid gap-2">
+    <Label htmlFor={fieldID}>{label}</Label>
+    <Input
+      {...input}
+      id={fieldID}
+      aria-describedby={describedBy}
+      aria-invalid={error ? true : input['aria-invalid']}
+      className={input.className}
+    />
+    {error ? <p className="text-sm text-destructive" id={descriptionID} role="alert">{error}</p> : hint ? <p className="text-sm text-muted-foreground" id={descriptionID}>{hint}</p> : null}
+  </div>;
 }
