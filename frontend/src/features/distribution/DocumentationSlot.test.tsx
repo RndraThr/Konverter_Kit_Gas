@@ -4,13 +4,14 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { apiRequest } from '../../lib/api';
 import { PermissionsProvider } from '../../lib/permissions';
 import { DocumentationSlot } from './DocumentationSlot';
+import styles from './Distribution.module.css';
 
 vi.mock('../../lib/api', () => ({ apiRequest: vi.fn() }));
 
-function renderSlot() {
+function renderSlot(files = []) {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   return render(<QueryClientProvider client={client}><PermissionsProvider permissions={['documentation.manage']}><DocumentationSlot slot={{
-    id: 'slot-1', code: 'signed_bast', label: 'BAST bertanda tangan', status: 'missing', required: true, min_files: 1, max_files: 2, files: [],
+    id: 'slot-1', code: 'signed_bast', label: 'BAST bertanda tangan', status: 'missing', required: true, min_files: 1, max_files: 2, files,
   }} onChanged={vi.fn()} /></PermissionsProvider></QueryClientProvider>);
 }
 
@@ -42,4 +43,17 @@ test('shows a retry action when upload fails', async () => {
   renderSlot();
   fireEvent.change(screen.getByLabelText('Pilih galeri'), { target: { files: [new File(['image'], 'bast.jpg', { type: 'image/jpeg' })] } });
   expect(await screen.findByRole('button', { name: 'Coba unggah lagi' })).toBeVisible();
+});
+
+test('uses the 44-pixel remove-media target contract', () => {
+  renderSlot([{ id: 'media-1', slot_id: 'slot-1', original_filename: 'bast.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: '/media/bast.jpg' }]);
+  expect(screen.getByRole('button', { name: 'Hapus bast.jpg' })).toHaveClass(styles.removeMedia);
+});
+
+test('associates camera and gallery inputs with visible focus controls', () => {
+  renderSlot();
+  const cameraControl = screen.getByLabelText('Buka kamera').closest('label');
+  const galleryControl = screen.getByLabelText('Pilih galeri').closest('label');
+  expect(cameraControl).toHaveClass(styles.captureControl);
+  expect(galleryControl).toHaveClass(styles.captureControl);
 });
