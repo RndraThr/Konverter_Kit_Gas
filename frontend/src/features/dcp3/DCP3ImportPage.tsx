@@ -16,6 +16,8 @@ export function DCP3ImportPage() {
   const [step, setStep] = useState(1);
   const [scheduleID, setScheduleID] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [headerRow, setHeaderRow] = useState(1);
+  const [rawRows, setRawRows] = useState<string[][] | null>(null);
   const [preview, setPreview] = useState<DCP3Preview | null>(null);
   const [mapping, setMapping] = useState<DCP3Mapping>(emptyMapping);
   const [result, setResult] = useState<ImportResult | null>(null);
@@ -31,10 +33,21 @@ export function DCP3ImportPage() {
       const body = new FormData();
       body.set('schedule_id', scheduleID);
       body.set('file', file);
+      body.set('header_row', String(headerRow));
       return apiRequest<DataResponse<DCP3Preview>>('/api/v1/dcp3/previews', { method: 'POST', body });
     },
-    onSuccess: ({ data }) => { setPreview(data); setMapping(emptyMapping); setStep(3); },
+    onSuccess: ({ data }) => { setPreview(data); setMapping(emptyMapping); setRawRows(null); setStep(3); },
   });
+  const rawPreview = useMutation({
+    mutationFn: async () => {
+      if (!file) throw new Error('Pilih file DCP3 terlebih dahulu');
+      const body = new FormData();
+      body.set('file', file);
+      return apiRequest<DataResponse<string[][]>>('/api/v1/dcp3/raw-preview', { method: 'POST', body });
+    },
+    onSuccess: ({ data }) => setRawRows(data),
+  });
+  const headersInvalid = upload.error instanceof ApiError && upload.error.code === 'dcp3_headers_invalid';
   const commit = useMutation({
     mutationFn: () => apiRequest<DataResponse<ImportResult>>('/api/v1/dcp3/imports', {
       method: 'POST', body: JSON.stringify({ batch_id: preview?.id, mapping }),
@@ -63,8 +76,21 @@ export function DCP3ImportPage() {
 
       {step === 2 && <section className={styles.workspace}>
         <div className={styles.sectionHeading}><div><h2>Upload workbook DCP3</h2><p>Gunakan file .xlsx dengan maksimal 5.000 baris.</p></div></div>
-        <label className={styles.dropzone}><Upload aria-hidden="true" /><strong>{file?.name ?? 'Letakkan file Excel di sini'}</strong><span>{file ? `${(file.size / 1024).toFixed(1)} KB` : 'atau pilih dari perangkat'}</span><input aria-label="Pilih file DCP3" accept=".xlsx" type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} /></label>
+        <label className={styles.dropzone}><Upload aria-hidden="true" /><strong>{file?.name ?? 'Letakkan file Excel di sini'}</strong><span>{file ? `${(file.size / 1024).toFixed(1)} KB` : 'atau pilih dari perangkat'}</span><input aria-label="Pilih file DCP3" accept=".xlsx" type="file" onChange={(event) => { setFile(event.target.files?.[0] ?? null); setHeaderRow(1); setRawRows(null); upload.reset(); rawPreview.reset(); }} /></label>
         {upload.error && <p className={styles.error} role="alert">{upload.error instanceof ApiError ? upload.error.message : 'File DCP3 tidak dapat dibaca.'}</p>}
+        {headersInvalid && <div className={styles.headerRowPicker}>
+          {!rawRows ? <button type="button" className="secondaryButton" disabled={rawPreview.isPending} onClick={() => rawPreview.mutate()}>{rawPreview.isPending ? 'Membaca baris...' : 'Lihat & pilih baris header'}</button> : <>
+            <p>File ini punya baris tambahan sebelum header. Pilih baris mana yang sebenarnya header:</p>
+            <div className={styles.tableWrap}><table className={styles.previewTable}><tbody>
+              {rawRows.map((row, index) => <tr key={index}>
+                <td><label><input type="radio" name="header_row_pick" checked={headerRow === index + 1} onChange={() => setHeaderRow(index + 1)} /> Baris {index + 1}</label></td>
+                <td>{row.filter(Boolean).join(' | ') || <em>(baris kosong)</em>}</td>
+              </tr>)}
+            </tbody></table></div>
+            <div className={styles.actions}><button type="button" className="primaryButton" onClick={() => upload.mutate()}>Coba lagi dengan baris ini</button></div>
+          </>}
+          {rawPreview.isError && <p className={styles.error} role="alert">Baris file tidak dapat dibaca.</p>}
+        </div>}
         <div className={styles.actions}><button className="secondaryButton" onClick={() => setStep(1)}><ArrowLeft /> Kembali</button><button className="primaryButton" disabled={!file || upload.isPending} onClick={() => upload.mutate()}>{upload.isPending ? 'Membaca file...' : 'Unggah dan baca file'}</button></div>
       </section>}
 
@@ -82,7 +108,7 @@ export function DCP3ImportPage() {
         <div className={styles.actions}><button className="secondaryButton" onClick={() => setStep(3)}><ArrowLeft /> Kembali</button><button className="primaryButton" disabled={commit.isPending} onClick={() => commit.mutate()}>{commit.isPending ? 'Mengimport...' : `Import ${preview.rows.length} data`}</button></div>
       </section>}
 
-      {result && <section className={styles.success} aria-live="polite"><CheckCircle2 aria-hidden="true" /><div><h2>{result.total_rows} data selesai diproses</h2><p>Data penerima dan nomor distribusi sudah dibuat untuk jadwal ini.</p><div><span>{result.valid_rows} valid</span><span>{result.warning_rows} peringatan</span><span>{result.invalid_rows} konflik</span></div></div><button className="secondaryButton" onClick={() => { setStep(1); setScheduleID(''); setFile(null); setPreview(null); setMapping(emptyMapping); setResult(null); }}>Import file lain</button></section>}
+      {result && <section className={styles.success} aria-live="polite"><CheckCircle2 aria-hidden="true" /><div><h2>{result.total_rows} data selesai diproses</h2><p>Data penerima dan nomor distribusi sudah dibuat untuk jadwal ini.</p><div><span>{result.valid_rows} valid</span><span>{result.warning_rows} peringatan</span><span>{result.invalid_rows} konflik</span></div></div><button className="secondaryButton" onClick={() => { setStep(1); setScheduleID(''); setFile(null); setHeaderRow(1); setRawRows(null); setPreview(null); setMapping(emptyMapping); setResult(null); }}>Import file lain</button></section>}
     </>}
   </div>;
 }

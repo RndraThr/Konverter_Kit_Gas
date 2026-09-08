@@ -32,7 +32,7 @@ func NewImportService(repository importRepository, limits ParseLimits) *ImportSe
 	return &ImportService{repository: repository, limits: limits}
 }
 
-func (s *ImportService) Preview(ctx context.Context, actor auth.Principal, scheduleID, filename string, source io.Reader, meta auth.ClientMeta, scope auth.RegencyScope) (ImportPreview, error) {
+func (s *ImportService) Preview(ctx context.Context, actor auth.Principal, scheduleID, filename string, source io.Reader, meta auth.ClientMeta, scope auth.RegencyScope, headerRow int) (ImportPreview, error) {
 	data, err := io.ReadAll(io.LimitReader(source, s.limits.MaxBytes+1))
 	if err != nil {
 		return ImportPreview{}, err
@@ -40,12 +40,16 @@ func (s *ImportService) Preview(ctx context.Context, actor auth.Principal, sched
 	if int64(len(data)) > s.limits.MaxBytes {
 		return ImportPreview{}, ErrWorkbookTooLarge
 	}
-	preview, err := ParseWorkbook(bytes.NewReader(data), s.limits)
+	preview, err := ParseWorkbook(bytes.NewReader(data), s.limits, headerRow-1)
 	if err != nil {
 		return ImportPreview{}, err
 	}
 	digest := sha256.Sum256(data)
 	return s.repository.CreatePreview(ctx, actor, strings.TrimSpace(scheduleID), strings.TrimSpace(filename), hex.EncodeToString(digest[:]), preview, meta, scope)
+}
+
+func (s *ImportService) RawPreview(ctx context.Context, source io.Reader) ([][]string, error) {
+	return RawRows(source, s.limits, 10)
 }
 
 func (s *ImportService) GetPreview(ctx context.Context, id string, scope auth.RegencyScope) (ImportPreview, error) {

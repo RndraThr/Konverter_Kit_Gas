@@ -79,7 +79,8 @@ type ProgramSetupService interface {
 }
 
 type DCP3Service interface {
-	Preview(context.Context, auth.Principal, string, string, io.Reader, auth.ClientMeta, auth.RegencyScope) (dcp3.ImportPreview, error)
+	Preview(context.Context, auth.Principal, string, string, io.Reader, auth.ClientMeta, auth.RegencyScope, int) (dcp3.ImportPreview, error)
+	RawPreview(context.Context, io.Reader) ([][]string, error)
 	GetPreview(context.Context, string, auth.RegencyScope) (dcp3.ImportPreview, error)
 	Commit(context.Context, auth.Principal, string, dcp3.Mapping, auth.ClientMeta, auth.RegencyScope) (dcp3.ImportResult, error)
 }
@@ -209,6 +210,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleProgramSetup(w, r, rc, strings.TrimPrefix(path, "program-setup/"))
 	case path == "dcp3/previews":
 		h.handleDCP3PreviewCreate(w, r, rc)
+	case path == "dcp3/raw-preview":
+		h.handleDCP3RawPreview(w, r, rc)
 	case strings.HasPrefix(path, "dcp3/previews/"):
 		h.handleDCP3Preview(w, r, rc, strings.TrimPrefix(path, "dcp3/previews/"))
 	case path == "dcp3/imports":

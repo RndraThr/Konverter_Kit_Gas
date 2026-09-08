@@ -488,8 +488,10 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, distribution.ErrMediaTypeInvalid), errors.Is(err, distribution.ErrMediaSourceInvalid), errors.Is(err, distribution.ErrMediaLocationRequired),
 		errors.Is(err, distribution.ErrMediaCapturedAtRequired), errors.Is(err, distribution.ErrMediaLimitReached):
 		writeFieldError(w, http.StatusBadRequest, "media_invalid", err.Error(), map[string]string{"file": err.Error()})
+	case errors.Is(err, dcp3.ErrHeadersInvalid):
+		writeFieldError(w, http.StatusBadRequest, "dcp3_headers_invalid", err.Error(), map[string]string{"file": err.Error()})
 	case errors.Is(err, dcp3.ErrMappingInvalid), errors.Is(err, dcp3.ErrTooManyRows), errors.Is(err, dcp3.ErrTooManyColumns),
-		errors.Is(err, dcp3.ErrHeadersInvalid), errors.Is(err, dcp3.ErrWorkbookInvalid):
+		errors.Is(err, dcp3.ErrWorkbookInvalid):
 		writeFieldError(w, http.StatusBadRequest, "dcp3_invalid", err.Error(), map[string]string{"file": err.Error()})
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Terjadi kesalahan pada server")

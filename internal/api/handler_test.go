@@ -291,6 +291,80 @@ func TestDCP3PreviewAcceptsMultipartWorkbook(t *testing.T) {
 	if rec.Code != http.StatusCreated || dcp3Service.scheduleID != "schedule-1" || dcp3Service.filename != "calon-penerima.xlsx" {
 		t.Fatalf("status=%d schedule=%q filename=%q body=%s", rec.Code, dcp3Service.scheduleID, dcp3Service.filename, rec.Body.String())
 	}
+	if dcp3Service.seenHeaderRow != 1 {
+		t.Fatalf("expected default header_row=1, got %d", dcp3Service.seenHeaderRow)
+	}
+}
+
+func TestDCP3PreviewCreateUsesProvidedHeaderRow(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"dcp3.import": true}}
+	dcp3Service := &fakeDCP3Service{preview: dcp3.ImportPreview{ID: "batch-1"}}
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("schedule_id", "schedule-1")
+	_ = writer.WriteField("header_row", "3")
+	file, err := writer.CreateFormFile("file", "calon-penerima.xlsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = file.Write([]byte("PK\x03\x04workbook"))
+	_ = writer.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/dcp3/previews", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
+	rec := httptest.NewRecorder()
+
+	NewHandler(Dependencies{Auth: authService, DCP3: dcp3Service, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated || dcp3Service.seenHeaderRow != 3 {
+		t.Fatalf("status=%d header_row=%d body=%s", rec.Code, dcp3Service.seenHeaderRow, rec.Body.String())
+	}
+}
+
+func TestDCP3RawPreviewReturnsRows(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"dcp3.import": true}}
+	dcp3Service := &fakeDCP3Service{rawPreviewRows: [][]string{{"USULAN CALON PENERIMA"}, {"No", "Nama"}}}
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	file, err := writer.CreateFormFile("file", "calon-penerima.xlsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = file.Write([]byte("PK\x03\x04workbook"))
+	_ = writer.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/dcp3/raw-preview", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
+	rec := httptest.NewRecorder()
+
+	NewHandler(Dependencies{Auth: authService, DCP3: dcp3Service, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "USULAN CALON PENERIMA") {
+		t.Fatalf("body=%s", rec.Body.String())
+	}
+}
+
+func TestDCP3RawPreviewRequiresFile(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"dcp3.import": true}}
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/dcp3/raw-preview", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
+	rec := httptest.NewRecorder()
+
+	NewHandler(Dependencies{Auth: authService, DCP3: &fakeDCP3Service{}, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
 }
 
 func TestDCP3PreviewRejectsNonWorkbook(t *testing.T) {
@@ -627,6 +701,9 @@ type fakeDCP3Service struct {
 	batchID          string
 	mapping          dcp3.Mapping
 	seenRegencyScope auth.RegencyScope
+	seenHeaderRow    int
+	rawPreviewRows   [][]string
+	rawPreviewErr    error
 }
 
 type fakeDistributionService struct {
@@ -703,9 +780,12 @@ func (s *fakeReportsService) ExportPDF(_ context.Context, _ auth.Principal, sche
 	return s.exportData, nil
 }
 
-func (f *fakeDCP3Service) Preview(_ context.Context, _ auth.Principal, scheduleID, filename string, _ io.Reader, _ auth.ClientMeta, scope auth.RegencyScope) (dcp3.ImportPreview, error) {
-	f.scheduleID, f.filename, f.seenRegencyScope = scheduleID, filename, scope
+func (f *fakeDCP3Service) Preview(_ context.Context, _ auth.Principal, scheduleID, filename string, _ io.Reader, _ auth.ClientMeta, scope auth.RegencyScope, headerRow int) (dcp3.ImportPreview, error) {
+	f.scheduleID, f.filename, f.seenRegencyScope, f.seenHeaderRow = scheduleID, filename, scope, headerRow
 	return f.preview, nil
+}
+func (f *fakeDCP3Service) RawPreview(context.Context, io.Reader) ([][]string, error) {
+	return f.rawPreviewRows, f.rawPreviewErr
 }
 func (f *fakeDCP3Service) GetPreview(_ context.Context, _ string, scope auth.RegencyScope) (dcp3.ImportPreview, error) {
 	f.seenRegencyScope = scope

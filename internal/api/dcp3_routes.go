@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"konkit/internal/dcp3"
@@ -44,6 +45,15 @@ func (h *Handler) handleDCP3PreviewCreate(w http.ResponseWriter, r *http.Request
 		return
 	}
 	defer file.Close()
+	headerRow := 1
+	if raw := strings.TrimSpace(r.FormValue("header_row")); raw != "" {
+		parsed, parseErr := strconv.Atoi(raw)
+		if parseErr != nil {
+			writeFieldError(w, http.StatusBadRequest, "validation_failed", "Baris header tidak valid", map[string]string{"header_row": "Gunakan angka baris header"})
+			return
+		}
+		headerRow = parsed
+	}
 	if strings.ToLower(filepath.Ext(header.Filename)) != ".xlsx" {
 		writeError(w, http.StatusUnsupportedMediaType, "workbook_type_invalid", "Gunakan file Excel berformat .xlsx")
 		return
@@ -61,12 +71,51 @@ func (h *Handler) handleDCP3PreviewCreate(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	result, err := h.deps.DCP3.Preview(r.Context(), rc.principal, scheduleID, filepath.Base(header.Filename), file, clientMeta(r), scope)
+	result, err := h.deps.DCP3.Preview(r.Context(), rc.principal, scheduleID, filepath.Base(header.Filename), file, clientMeta(r), scope, headerRow)
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
 	writeData(w, http.StatusCreated, result)
+}
+
+func (h *Handler) handleDCP3RawPreview(w http.ResponseWriter, r *http.Request, rc requestContext) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if h.deps.DCP3 == nil {
+		writeUnavailable(w)
+		return
+	}
+	if !h.authorize(w, r, rc.principal, "dcp3.import") {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxDCP3RequestBody)
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			writeError(w, http.StatusRequestEntityTooLarge, "workbook_too_large", "File DCP3 melebihi batas 10 MiB")
+		} else {
+			writeError(w, http.StatusBadRequest, "multipart_invalid", "Form upload DCP3 tidak valid")
+		}
+		return
+	}
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		writeFieldError(w, http.StatusBadRequest, "validation_failed", "File DCP3 wajib dipilih", map[string]string{"file": "File DCP3 wajib dipilih"})
+		return
+	}
+	defer file.Close()
+	rows, err := h.deps.DCP3.RawPreview(r.Context(), file)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, rows)
 }
 
 func (h *Handler) handleDCP3Preview(w http.ResponseWriter, r *http.Request, rc requestContext, id string) {
