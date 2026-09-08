@@ -29,6 +29,12 @@ function renderWorkspace(permissions = ['distribution.manage']) {
   return onSaved;
 }
 
+test('groups verification and documentation into named regions', () => {
+  renderWorkspace(['distribution.manage']);
+  expect(screen.getByRole('region', { name: 'Verifikasi penerima' })).toBeInTheDocument();
+  expect(screen.getByRole('region', { name: 'Dokumentasi penyerahan' })).toBeInTheDocument();
+});
+
 test('confirms a complete distribution and publishes the completed workspace', async () => {
   const completed = { ...ready, allocation_status: 'distributed', distribution_status: 'completed' };
   vi.mocked(apiRequest).mockResolvedValue({ data: completed });

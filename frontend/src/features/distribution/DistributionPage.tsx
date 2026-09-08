@@ -5,6 +5,8 @@ import { RecipientSearch } from './RecipientSearch';
 import { RecipientWorkspace } from './RecipientWorkspace';
 import type { DataResponse, RecipientWorkspaceData, ScheduleResponse, SearchResult } from './types';
 import styles from './Distribution.module.css';
+import { DataState } from '@/components/DataState';
+import { PageHeader } from '@/components/PageHeader';
 
 export function DistributionPage() {
 	const queryClient = useQueryClient();
@@ -31,12 +33,13 @@ export function DistributionPage() {
   const selectedSchedule = schedules.data?.data.find((schedule) => schedule.id === scheduleID);
 
   return <div className={`page ${styles.page}`}>
-    <header className="pageHeader"><div><h1>Pendistribusian</h1><p>Cari penerima, periksa data, dan lengkapi dokumentasi pembagian.</p></div>{selectedSchedule && <span className={styles.context}><strong>{selectedSchedule.regency?.document_code}</strong>{selectedSchedule.name}</span>}</header>
-    <section className={styles.lookup}>
+    <PageHeader title="Pendistribusian" description="Cari penerima, periksa data, dan lengkapi dokumentasi pembagian." context={selectedSchedule ? <span className={styles.context}><strong>{selectedSchedule.regency?.document_code}</strong>{selectedSchedule.name}</span> : undefined} />
+    <section className={styles.lookup} aria-label="Cari penerima">
       <label className={styles.scheduleField}><span>Jadwal distribusi</span><select value={scheduleID} onChange={(event) => setScheduleID(event.target.value)}><option value="">Pilih kabupaten dan jadwal</option>{schedules.data?.data.filter((schedule) => schedule.status === 'active').map((schedule) => <option value={schedule.id} key={schedule.id}>{schedule.regency?.name} / {schedule.name}</option>)}</select></label>
 		<RecipientSearch query={query} disabled={!scheduleID} loading={search.isFetching} results={search.data?.data ?? []} onQueryChange={(value) => { setQuery(value); setAllocationID(''); setWorkspace(null); }} onSelect={(id) => { setAllocationID(id); setQuery(''); setDebouncedQuery(''); }} />
     </section>
-    {allocationID && detail.isPending && <p className={styles.loading}>Memuat data lengkap penerima...</p>}
+    {allocationID && detail.isPending && <DataState kind="loading" title="Memuat penerima" description="Menyiapkan data verifikasi dan dokumentasi." />}
+	{allocationID && detail.isError && <DataState kind="error" title="Data penerima belum dapat dimuat" description="Periksa koneksi lalu coba kembali." action={{ label: 'Coba lagi', onClick: () => detail.refetch() }} />}
 	{workspace && <RecipientWorkspace data={workspace} onSaved={(next) => { setWorkspace(next); if (next.distribution_status === 'completed') { void queryClient.invalidateQueries({ queryKey: ['distribution'] }); } }} />}
   </div>;
 }
