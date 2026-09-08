@@ -40,14 +40,14 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 	})
 
 	unrestricted := auth.RegencyScope{Unrestricted: true}
-	preview, err := service.Preview(ctx, auth.Principal{}, scheduleID, "dcp3-petani.xlsx", bytes.NewReader(workbook), meta, unrestricted)
+	preview, err := service.Preview(ctx, auth.Principal{}, scheduleID, "dcp3-petani.xlsx", bytes.NewReader(workbook), meta, unrestricted, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if preview.ProgramType != "farmer" || len(preview.Rows) != 3 || len(preview.Headers) != 8 {
 		t.Fatalf("unexpected preview: %+v", preview)
 	}
-	_, err = service.Preview(ctx, auth.Principal{}, scheduleID, "dcp3-petani-copy.xlsx", bytes.NewReader(workbook), meta, unrestricted)
+	_, err = service.Preview(ctx, auth.Principal{}, scheduleID, "dcp3-petani-copy.xlsx", bytes.NewReader(workbook), meta, unrestricted, 1)
 	if !errors.Is(err, ErrDuplicateImport) {
 		t.Fatalf("expected duplicate import, got %v", err)
 	}
@@ -125,12 +125,12 @@ func TestIntegrationScopeEnforcementRejectsOutOfRegencyAccess(t *testing.T) {
 		}
 	})
 	outOfScope := auth.RegencyScope{RegencyIDs: []string{"00000000-0000-0000-0000-000000000000"}}
-	if _, err := service.Preview(ctx, auth.Principal{}, scheduleID, "out-of-scope.xlsx", bytes.NewReader(workbook), meta, outOfScope); !errors.Is(err, ErrPreviewNotFound) {
+	if _, err := service.Preview(ctx, auth.Principal{}, scheduleID, "out-of-scope.xlsx", bytes.NewReader(workbook), meta, outOfScope, 1); !errors.Is(err, ErrPreviewNotFound) {
 		t.Fatalf("expected ErrPreviewNotFound for out-of-scope schedule, got %v", err)
 	}
 
 	inScope := auth.RegencyScope{RegencyIDs: []string{regencyID}}
-	preview, err := service.Preview(ctx, auth.Principal{}, scheduleID, "in-scope.xlsx", bytes.NewReader(workbook), meta, inScope)
+	preview, err := service.Preview(ctx, auth.Principal{}, scheduleID, "in-scope.xlsx", bytes.NewReader(workbook), meta, inScope, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
