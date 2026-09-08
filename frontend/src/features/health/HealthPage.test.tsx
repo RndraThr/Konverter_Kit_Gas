@@ -19,5 +19,7 @@ test('renders degraded reports returned with readiness status 503', async () => 
   render(<QueryClientProvider client={client}><HealthPage /></QueryClientProvider>);
   expect(await screen.findByText('Perlu perhatian')).toBeInTheDocument();
   expect(screen.getByText('Database tidak terhubung')).toBeInTheDocument();
+  expect(screen.getByRole('alert')).toHaveTextContent('Perlu perhatian');
+  expect(screen.getByRole('button', { name: 'Periksa ulang' })).toBeInTheDocument();
   expect(apiRequest).toHaveBeenCalledWith('/api/v1/system/health', { acceptedStatuses: [503] });
 });

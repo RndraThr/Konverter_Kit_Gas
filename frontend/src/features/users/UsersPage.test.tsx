@@ -18,6 +18,10 @@ test('lists users and opens the create dialog', async () => {
   expect(await screen.findByText('Petugas Wajo')).toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Tambah pengguna' }));
   expect(screen.getByRole('dialog', { name: 'Tambah pengguna' })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Tutup' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Aksi Petugas Wajo' }));
+  expect(screen.getByRole('menuitem', { name: 'Edit pengguna' })).toBeInTheDocument();
+  expect(screen.getByRole('menuitem', { name: 'Atur ulang password' })).toBeInTheDocument();
 });
 
 test('hides mutation controls for read-only users', async () => {
