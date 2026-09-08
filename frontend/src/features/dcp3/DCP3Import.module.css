@@ -47,6 +47,11 @@
 .actions :global(.secondaryButton) { display: inline-flex; align-items: center; gap: 7px; }
 .actions svg { width: 16px; }
 .error { max-width: 780px; padding: 10px 12px; border-left: 3px solid var(--red); color: var(--red); background: #fff6f5; font-size: 12px; }
+.headerRowPicker { display: grid; gap: 12px; max-width: 780px; padding: 14px; border: 1px solid var(--dashboard-line); border-radius: 8px; background: #fbfbfa; }
+.headerRowPicker p { margin: 0; color: var(--dashboard-ink); font-size: 13px; }
+.headerRowPicker .tableWrap { max-height: 220px; }
+.headerRowPicker .previewTable td { vertical-align: top; }
+.headerRowPicker .previewTable label { display: flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 12px; font-weight: 700; }
 .readOnly, .success { min-height: 170px; display: flex; align-items: center; gap: 18px; padding: 26px 0; border-top: 1px solid var(--dashboard-line); border-bottom: 1px solid var(--dashboard-line); }
 .readOnly > svg, .success > svg { width: 34px; height: 34px; color: var(--green); }
 .success > div { flex: 1; }

@@ -85,6 +85,8 @@ Fondasi operasional saat ini mencakup persiapan kabupaten/program/jadwal, templa
 
 Data DCP3 diproses melalui halaman `DCP3`: pilih jadwal aktif, unggah workbook, cocokkan nama kolom, periksa hasil, lalu import. Penerima yang sudah pernah menerima tetap dibuat sebagai alokasi berstatus perlu ditinjau dan ditampilkan dengan label blokir pada halaman `Pendistribusian`. Finalisasi hanya dapat dilakukan bila nama, NIK 16 digit, Kartu Petani/KUSUKA, dan seluruh slot dokumentasi wajib telah lengkap.
 
+Workbook DCP3 tidak harus mengikuti template baku — nama kolom dicocokkan manual di step "Cocokkan kolom". Satu syarat struktural: baris header harus rata satu baris tanpa sel kosong/duplikat. Jika workbook punya baris judul/kop di atas header (format umum dari sebagian kabupaten), sistem menampilkan galat khusus beserta opsi "Lihat & pilih baris header" yang menampilkan pratinjau baris mentah agar pengguna dapat memilih baris header yang benar sebelum mencoba lagi.
+
 Foto disimpan di `STORAGE_PATH`. Nilai relatif seperti `./storage` diperbolehkan untuk `APP_ENV=local`; gunakan path absolut di environment test, staging, dan production. Input `Buka kamera` bergantung pada dukungan browser/perangkat, sedangkan `Pilih galeri` dapat digunakan pada desktop maupun mobile.
 
 Halaman `Laporan` menampilkan ringkasan dan tabel alokasi/distribusi/dokumentasi untuk satu jadwal terpilih, dengan export Excel dan PDF, memakai permission `distribution.view` yang sama dengan Pendistribusian.
