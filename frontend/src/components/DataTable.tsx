@@ -9,9 +9,13 @@ type DataTableProps = {
 };
 
 export function DataTable({ children, label, minimumWidth = 720 }: DataTableProps) {
-  return <div aria-label={label} className="w-full overflow-x-auto rounded-lg border focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50" role="region" tabIndex={0}>
-    <Table aria-label={label} className={cn('min-w-full w-full')} style={{ minWidth: minimumWidth }}>
-      {children}
-    </Table>
-  </div>;
+  return <Table
+    aria-label={label}
+    className={cn('min-w-full w-full')}
+    containerClassName="rounded-lg border focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+    containerProps={{ 'aria-label': label, role: 'region', tabIndex: 0 }}
+    style={{ minWidth: minimumWidth }}
+  >
+    {children}
+  </Table>;
 }

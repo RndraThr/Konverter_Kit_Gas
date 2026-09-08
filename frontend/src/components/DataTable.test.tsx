@@ -20,3 +20,13 @@ test('keeps the established minimum width by default', () => {
 
   expect(screen.getByRole('table')).toHaveStyle({ minWidth: '720px' });
 });
+
+test('makes the constrained scroll container the labelled focus region', () => {
+  render(<DataTable label="Daftar pengguna" minimumWidth={720}><tbody><tr><td>Admin</td></tr></tbody></DataTable>);
+
+  const region = screen.getByRole('region', { name: 'Daftar pengguna' });
+  expect(region).toHaveAttribute('data-slot', 'table-container');
+  expect(region).toHaveAttribute('tabindex', '0');
+  expect(region).toHaveClass('overflow-x-auto');
+  expect(screen.getByRole('table')).toHaveStyle({ minWidth: '720px' });
+});
