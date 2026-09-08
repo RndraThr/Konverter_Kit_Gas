@@ -1,11 +1,10 @@
-.overall { min-height: 84px; padding: 16px 0; display: flex; align-items: center; gap: 14px; border-top: 1px solid var(--dashboard-line); border-bottom: 1px solid var(--dashboard-line); }
-.overall > svg { width: 30px; height: 30px; }
-.overall div { display: grid; gap: 3px; }
-.overall strong { font-size: 17px; }
-.overall span { color: var(--dashboard-muted); font-size: 12px; }
-.healthy > svg { color: var(--dashboard-green-dark); }.degraded > svg { color: #a47313; }.unhealthy > svg { color: var(--dashboard-danger); }
-.details { margin: 22px 0 0; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); border-top: 1px solid var(--dashboard-line); border-left: 1px solid var(--dashboard-line); }
-.details div { min-height: 82px; padding: 15px; border-right: 1px solid var(--dashboard-line); border-bottom: 1px solid var(--dashboard-line); background: white; }
-.details dt { margin-bottom: 7px; color: var(--dashboard-muted); font-size: 12px; }.details dd { margin: 0; font-size: 14px; font-weight: 700; }
-@media (max-width: 720px) { .details { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 430px) { .details { grid-template-columns: 1fr; } }
+.overall { align-items: center; grid-template-columns: auto 1fr; padding: 1rem; }
+.overall > svg { grid-row: span 2; width: 1.75rem; height: 1.75rem; }
+.healthy > svg { color: var(--primary); }.degraded > svg { color: #a47313; }.unhealthy > svg { color: var(--destructive); }
+.surfaces { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
+.surfaces article { min-width: 0; display: grid; grid-template-columns: auto 1fr; gap: .2rem .55rem; border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem; background: var(--card); }
+.surfaces svg { grid-row: span 2; width: 1.1rem; color: var(--primary); }.surfaces span, .surfaces small { color: var(--muted-foreground); font-size: .75rem; }.surfaces strong { font-size: 1rem; }.surfaces small { grid-column: 1 / -1; overflow-wrap: anywhere; }
+.details { margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.details div { min-height: 5.25rem; padding: .9rem 1rem; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--card); }.details dt { margin-bottom: .4rem; color: var(--muted-foreground); font-size: .75rem; }.details dd { margin: 0; font-size: .875rem; font-weight: 700; overflow-wrap: anywhere; }
+@media (max-width: 720px) { .surfaces, .details { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 430px) { .surfaces, .details { grid-template-columns: 1fr; } }

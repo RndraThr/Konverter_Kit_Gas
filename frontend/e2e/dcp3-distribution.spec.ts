@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { resolve } from 'node:path';
 
 const username = 'e2e.admin';
@@ -7,10 +7,18 @@ const password = 'Konkit-E2E-Password-2026';
 async function navigate(page: Page, label: string, mobile: boolean) {
   if (mobile) await page.getByRole('button', { name: 'Buka navigasi' }).click();
   await page.getByRole('link', { name: label, exact: true }).click();
+  // The mobile Sheet closes with a 150ms opacity transition; screenshotting
+  // before it settles captures the drawer ghosted over the page content.
+  if (mobile) await expect(page.locator('[data-slot="sheet-overlay"]')).not.toBeVisible();
 }
 
 async function expectNoHorizontalOverflow(page: Page) {
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+}
+
+async function chooseOption(trigger: Locator, optionName: string | RegExp) {
+  await trigger.click();
+  await trigger.page().getByRole('option', { name: optionName, exact: true }).click();
 }
 
 test.beforeEach(async ({ page }) => {
@@ -34,7 +42,7 @@ test('DCP3 to completed package distribution', async ({ page }, testInfo) => {
   await expectNoHorizontalOverflow(page);
 
   await navigate(page, 'DCP3', mobile);
-  await page.getByLabel('Jadwal distribusi').selectOption({ label: `Wajo E2E - ${schedule}` });
+  await chooseOption(page.getByLabel('Jadwal distribusi'), `Wajo E2E - ${schedule}`);
   await page.getByRole('button', { name: /Lanjut ke upload/ }).click();
   await page.getByLabel('Pilih file DCP3').setInputFiles(resolve(process.cwd(), '..', '.cache', 'e2e', `dcp3-${project}.xlsx`));
   await page.getByRole('button', { name: 'Unggah dan baca file' }).click();
@@ -43,13 +51,15 @@ test('DCP3 to completed package distribution', async ({ page }, testInfo) => {
     ['Nomor urut DCP3', 'No'], ['Nama lengkap', 'Nama'], ['NIK', 'NIK'],
     ['Nomor kartu petani', 'No Kartu Petani'], ['Alamat', 'Alamat'],
     ['Desa / kelurahan', 'Desa'], ['Kecamatan', 'Kecamatan'], ['Nomor telepon', 'No HP'],
-	]) await page.locator('label').filter({ hasText: new RegExp(`^${field}`) }).getByRole('combobox').selectOption(column);
+	]) await chooseOption(page.getByRole('combobox', { name: new RegExp(`^${field}`) }), column);
   await page.getByRole('button', { name: /Periksa data/ }).click();
   await expect(page.getByText(cleanName, { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Import 2 data' }).click();
   await expect(page.getByRole('heading', { name: '2 data selesai diproses' })).toBeVisible();
 
   await navigate(page, 'Pendistribusian', mobile);
+  // DistributionPage still uses a native <select> for this field (not yet migrated to the
+  // shared Select primitive — same deferred gap as the Task 5 user/settings selects).
   await page.getByLabel('Jadwal distribusi').selectOption({ label: `Wajo E2E / ${schedule}` });
   const search = page.getByRole('combobox', { name: 'Cari penerima' });
 
@@ -87,11 +97,12 @@ test('DCP3 to completed package distribution', async ({ page }, testInfo) => {
   }
   await expect(page.getByRole('button', { name: 'Selesaikan distribusi' })).toBeEnabled();
   await page.getByRole('button', { name: 'Selesaikan distribusi' }).click();
-  await expect(page.getByRole('dialog', { name: 'Konfirmasi distribusi' })).toContainText('ERGAS');
+  await expect(page.getByRole('alertdialog', { name: 'Konfirmasi distribusi' })).toContainText('ERGAS');
   await page.getByRole('button', { name: 'Konfirmasi penyerahan' }).click();
   await expect(page.getByText('Distribusi berhasil diselesaikan.')).toBeVisible();
 	await expect(page.getByText('Distribusi selesai', { exact: true })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 	await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: testInfo.outputPath('distribution-completed.png'), fullPage: true });
+  await page.screenshot({ path: testInfo.outputPath(`konkit-${project}-final.png`), fullPage: true });
 });

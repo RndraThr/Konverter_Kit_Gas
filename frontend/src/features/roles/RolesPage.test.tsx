@@ -13,7 +13,8 @@ test('marks system roles as protected', async () => {
   render(<QueryClientProvider client={client}><RolesPage /></QueryClientProvider>);
   expect(await screen.findByText('Super Admin')).toBeInTheDocument();
   expect(screen.getByText('Role sistem')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Edit Super Admin' })).toBeDisabled();
+  await userEvent.click(screen.getByRole('button', { name: 'Aksi Super Admin' }));
+  expect(screen.getByRole('menuitem', { name: 'Edit Super Admin' })).toHaveAttribute('aria-disabled', 'true');
 });
 
 test('shows assigned regencies and toggles the all-regencies checkbox', async () => {
@@ -26,11 +27,25 @@ test('shows assigned regencies and toggles the all-regencies checkbox', async ()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><RolesPage /></QueryClientProvider>);
 
-  await userEvent.click(await screen.findByRole('button', { name: 'Edit Petugas Wajo' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'Aksi Petugas Wajo' }));
+  await userEvent.click(screen.getByRole('menuitem', { name: 'Edit Petugas Wajo' }));
+
+  const dialog = screen.getByRole('dialog', { name: 'Edit Petugas Wajo' });
+  expect(dialog.querySelector('[data-slot="dialog-footer"]')).toHaveClass('mx-0', 'mb-0');
 
   expect(screen.getByRole('checkbox', { name: 'Wajo' })).toBeChecked();
   expect(screen.getByRole('checkbox', { name: 'Bone' })).not.toBeChecked();
 
   await userEvent.click(screen.getByRole('checkbox', { name: 'Akses semua kabupaten' }));
   expect(screen.queryByRole('checkbox', { name: 'Wajo' })).not.toBeInTheDocument();
+});
+
+test('uses named role actions and confirms deletion', async () => {
+  vi.mocked(apiRequest).mockImplementation(async (path) => path.includes('/permissions') ? { data: [] } : { data: [{ id: 'r1', code: 'petugas_wajo', name: 'Petugas Wajo', is_system: false, permissions: [], all_regencies_access: true, regencies: [], user_count: 0 }] });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><RolesPage /></QueryClientProvider>);
+  await userEvent.click(await screen.findByRole('button', { name: 'Aksi Petugas Wajo' }));
+  expect(screen.getByRole('menuitem', { name: 'Edit Petugas Wajo' })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('menuitem', { name: 'Hapus Petugas Wajo' }));
+  expect(screen.getByRole('alertdialog', { name: 'Hapus role Petugas Wajo?' })).toBeInTheDocument();
 });

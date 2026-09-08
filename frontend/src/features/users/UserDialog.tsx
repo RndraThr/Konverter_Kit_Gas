@@ -1,36 +1,19 @@
-import { Dialog } from '@base-ui/react/dialog';
 import { FormEvent, useEffect, useState } from 'react';
 import { X } from 'lucide-react';
+import { Checkbox } from '../../components/ui/checkbox';
+import { Button } from '../../components/ui/button';
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog';
 import { FormField } from '../../components/FormField';
 
 export type Role = { id: string; code: string; name: string };
 export type UserRecord = { id: string; full_name: string; username: string; email: string; is_active: boolean; roles: Role[] };
 export type UserValues = { full_name: string; username: string; email: string; password?: string; is_active: boolean; role_ids: string[] };
 
-export function UserDialog({ open, onOpenChange, roles, user, pending, error, fields = {}, onSave }: {
-  open: boolean; onOpenChange: (open: boolean) => void; roles: Role[]; user?: UserRecord; pending?: boolean; error?: string; fields?: Record<string, string>; onSave: (values: UserValues) => void;
-}) {
+export function UserDialog({ open, onOpenChange, roles, user, pending, error, fields = {}, onSave }: { open: boolean; onOpenChange: (open: boolean) => void; roles: Role[]; user?: UserRecord; pending?: boolean; error?: string; fields?: Record<string, string>; onSave: (values: UserValues) => void; }) {
   const empty = { full_name: '', username: '', email: '', password: '', is_active: true, role_ids: [] as string[] };
   const [values, setValues] = useState<UserValues>(empty);
   useEffect(() => setValues(user ? { full_name: user.full_name, username: user.username, email: user.email, is_active: user.is_active, role_ids: user.roles.map((role) => role.id) } : empty), [user, open]);
   const toggleRole = (id: string) => setValues({ ...values, role_ids: values.role_ids.includes(id) ? values.role_ids.filter((value) => value !== id) : [...values.role_ids, id] });
-  const submit = (event: FormEvent) => { event.preventDefault(); onSave(values); };
   const title = user ? `Edit ${user.full_name}` : 'Tambah pengguna';
-  return <Dialog.Root open={open} onOpenChange={onOpenChange}>
-    <Dialog.Portal><Dialog.Backdrop className="dialogBackdrop" /><Dialog.Popup className="dialogPopup" aria-label={title}>
-      <form onSubmit={submit}>
-        <header className="dialogHeader"><div><Dialog.Title>{title}</Dialog.Title><Dialog.Description>Atur identitas dan akses pengguna.</Dialog.Description></div><Dialog.Close className="iconButton" aria-label="Tutup"><X /></Dialog.Close></header>
-        <div className="dialogBody">
-          <FormField className="fullField" error={fields.full_name} label="Nama lengkap" name="full_name" required value={values.full_name} onChange={(e) => setValues({ ...values, full_name: e.target.value })} />
-          <FormField error={fields.username} label="Username" name="username" required value={values.username} onChange={(e) => setValues({ ...values, username: e.target.value })} />
-          <FormField error={fields.email} label="Email" name="email" type="email" required value={values.email} onChange={(e) => setValues({ ...values, email: e.target.value })} />
-          {!user && <FormField className="fullField" error={fields.password} label="Password awal" name="password" type="password" minLength={12} required value={values.password} onChange={(e) => setValues({ ...values, password: e.target.value })} hint="Minimal 12 karakter" />}
-          <fieldset className="fullField" style={{ border: 0, padding: 0, margin: 0 }}><legend style={{ fontSize: 13, fontWeight: 700, marginBottom: 9 }}>Role</legend>{roles.map((role) => <label className="checkboxField" key={role.id}><input type="checkbox" checked={values.role_ids.includes(role.id)} onChange={() => toggleRole(role.id)} />{role.name}</label>)}{fields.role_ids && <small className="fieldError">{fields.role_ids}</small>}</fieldset>
-          <label className="checkboxField fullField"><input type="checkbox" checked={values.is_active} onChange={(e) => setValues({ ...values, is_active: e.target.checked })} />Pengguna aktif</label>
-          {error && <p className="formNotice fullField">{error}</p>}
-        </div>
-        <footer className="dialogActions"><Dialog.Close className="secondaryButton">Batal</Dialog.Close><button className="primaryButton" disabled={pending} type="submit">Simpan pengguna</button></footer>
-      </form>
-    </Dialog.Popup></Dialog.Portal>
-  </Dialog.Root>;
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent showCloseButton={false} aria-label={title} className="max-h-[calc(100dvh-2rem)] max-w-2xl overflow-y-auto p-0"><form onSubmit={(event: FormEvent) => { event.preventDefault(); onSave(values); }}><DialogHeader className="relative border-b p-5 pr-16"><DialogTitle>{title}</DialogTitle><DialogDescription>Atur identitas dan akses pengguna.</DialogDescription><DialogClose render={<Button variant="ghost" size="icon" type="button" aria-label="Tutup" className="absolute top-3 right-3" />}><X /></DialogClose></DialogHeader><div className="grid gap-4 p-5 sm:grid-cols-2"><FormField className="sm:col-span-2" error={fields.full_name} label="Nama lengkap" name="full_name" required value={values.full_name} onChange={(event) => setValues({ ...values, full_name: event.target.value })} /><FormField error={fields.username} label="Username" name="username" required value={values.username} onChange={(event) => setValues({ ...values, username: event.target.value })} /><FormField error={fields.email} label="Email" name="email" type="email" required value={values.email} onChange={(event) => setValues({ ...values, email: event.target.value })} />{!user && <FormField className="sm:col-span-2" error={fields.password} label="Password awal" name="password" type="password" minLength={12} required value={values.password} onChange={(event) => setValues({ ...values, password: event.target.value })} hint="Minimal 12 karakter" />}<fieldset className="grid gap-3 border-0 p-0 sm:col-span-2"><legend className="mb-2 text-sm font-semibold">Role</legend>{roles.map((role) => <label className="flex min-h-11 items-center gap-3" key={role.id}><Checkbox checked={values.role_ids.includes(role.id)} onCheckedChange={() => toggleRole(role.id)} />{role.name}</label>)}{fields.role_ids && <p className="text-sm text-destructive" role="alert">{fields.role_ids}</p>}</fieldset><label className="flex min-h-11 items-center gap-3 sm:col-span-2"><Checkbox checked={values.is_active} onCheckedChange={(checked) => setValues({ ...values, is_active: checked === true })} />Pengguna aktif</label>{error && <p className="text-sm text-destructive sm:col-span-2" role="alert">{error}</p>}</div><DialogFooter className="mx-0 mb-0"><DialogClose render={<Button variant="outline" type="button" />}>Batal</DialogClose><Button disabled={pending} type="submit">Simpan pengguna</Button></DialogFooter></form></DialogContent></Dialog>;
 }

@@ -62,6 +62,19 @@ describe('AppShell', () => {
     expect(screen.getByRole('dialog', { name: 'Navigasi utama' })).toBeInTheDocument();
   });
 
+  it('exposes the workspace and account actions through landmarks', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(bootstrap), { status: 200 }));
+    renderShell();
+
+    expect(await screen.findByRole('navigation', { name: 'Navigasi utama' })).toBeInTheDocument();
+    expect(screen.getByRole('main')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Menu akun' }));
+
+    expect(screen.getByRole('menuitem', { name: 'Profil saya' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Keluar' })).toBeInTheDocument();
+  });
+
   it('redirects to login when bootstrap returns 401', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ error: { code: 'unauthorized' } }), { status: 401 }));
     const location = window.location;

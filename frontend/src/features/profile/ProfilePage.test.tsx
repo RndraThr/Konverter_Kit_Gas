@@ -13,6 +13,8 @@ test('updates the signed-in profile', async () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(<QueryClientProvider client={client}><ProfilePage /></QueryClientProvider>);
   const name = await screen.findByLabelText('Nama lengkap');
+  expect(screen.getByRole('heading', { name: 'Profil saya' })).toBeInTheDocument();
+  expect(await screen.findByText('Aktif')).toBeInTheDocument();
   await userEvent.clear(name);
   await userEvent.type(name, 'Admin Program');
   await userEvent.click(screen.getByRole('button', { name: 'Simpan perubahan' }));

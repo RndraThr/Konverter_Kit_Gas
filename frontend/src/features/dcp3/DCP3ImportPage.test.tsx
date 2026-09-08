@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
 import { apiRequest, ApiError } from '../../lib/api';
@@ -43,29 +43,44 @@ function renderPage(permissions = ['dcp3.view', 'dcp3.import']) {
   return render(<QueryClientProvider client={client}><PermissionsProvider permissions={permissions}><DCP3ImportPage /></PermissionsProvider></QueryClientProvider>);
 }
 
+async function chooseOption(label: string | RegExp, optionName: string) {
+  const trigger = screen.getByRole('combobox', { name: label });
+  await waitFor(() => expect(trigger).toBeEnabled());
+  await userEvent.click(trigger);
+  await userEvent.click(await screen.findByRole('option', { name: optionName }));
+}
+
 test('imports a DCP3 workbook through the four review steps', async () => {
   renderPage();
-  expect(screen.getByText('1 Pilih jadwal')).toBeVisible();
-  expect(screen.getByText('2 Upload DCP3')).toBeVisible();
-  expect(screen.getByText('3 Cocokkan kolom')).toBeVisible();
-  expect(screen.getByText('4 Periksa dan import')).toBeVisible();
+  const stepper = screen.getByRole('list', { name: 'Tahapan import DCP3' });
+  expect(within(stepper).getByText('Jadwal').closest('li')).toHaveAttribute('aria-current', 'step');
+  expect(within(stepper).getByText('Workbook')).toBeVisible();
+  expect(within(stepper).getByText('Pemetaan')).toBeVisible();
+  expect(within(stepper).getByText('Tinjau')).toBeVisible();
 
-  await screen.findByRole('option', { name: 'Wajo - Wajo Tahap 1' });
-  await userEvent.selectOptions(screen.getByLabelText('Jadwal distribusi'), 'schedule-1');
+  await chooseOption('Jadwal distribusi', 'Wajo - Wajo Tahap 1');
   await userEvent.click(screen.getByRole('button', { name: 'Lanjut ke upload' }));
+  expect(within(stepper).getByText('Workbook').closest('li')).toHaveAttribute('aria-current', 'step');
   const file = new File(['PK\x03\x04workbook'], 'dcp3-wajo.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   await userEvent.upload(screen.getByLabelText('Pilih file DCP3'), file);
   await userEvent.click(screen.getByRole('button', { name: 'Unggah dan baca file' }));
 
   expect(await screen.findByText('Cocokkan kolom Excel')).toBeVisible();
+  expect(within(stepper).getByText('Pemetaan').closest('li')).toHaveAttribute('aria-current', 'step');
   const continueButton = screen.getByRole('button', { name: 'Periksa data' });
   expect(continueButton).toBeDisabled();
-  await userEvent.selectOptions(screen.getByLabelText(/Nomor urut DCP3/), 'Urutan');
-  await userEvent.selectOptions(screen.getByLabelText(/Nama lengkap/), 'Penerima');
-  await userEvent.selectOptions(screen.getByLabelText('NIK'), 'NIK');
+  await chooseOption(/Nomor urut DCP3/, 'Urutan');
+  await chooseOption(/Nama lengkap/, 'Penerima');
+  expect(continueButton).toBeEnabled();
+  await chooseOption(/Nomor urut DCP3/, 'Tidak dipetakan');
+  expect(continueButton).toBeDisabled();
+  await chooseOption(/Nomor urut DCP3/, 'Urutan');
+  await chooseOption('NIK', 'NIK');
   await userEvent.click(continueButton);
 
-  const previewTable = await screen.findByRole('table');
+  expect(within(stepper).getByText('Tinjau').closest('li')).toHaveAttribute('aria-current', 'step');
+  const previewRegion = await screen.findByRole('region', { name: 'Pratinjau data DCP3' });
+  const previewTable = within(previewRegion).getByRole('table', { name: 'Pratinjau data DCP3' });
   expect(within(previewTable).getByText('Valid')).toBeVisible();
   expect(within(previewTable).getByText('Peringatan')).toBeVisible();
   expect(within(previewTable).getByText('Konflik')).toBeVisible();
@@ -100,8 +115,7 @@ test('lets the user pick the real header row when the workbook has leading title
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(<QueryClientProvider client={client}><PermissionsProvider permissions={['dcp3.view', 'dcp3.import']}><DCP3ImportPage /></PermissionsProvider></QueryClientProvider>);
 
-  await screen.findByRole('option', { name: 'Wajo - Wajo Tahap 1' });
-  await userEvent.selectOptions(screen.getByLabelText('Jadwal distribusi'), 'schedule-1');
+  await chooseOption('Jadwal distribusi', 'Wajo - Wajo Tahap 1');
   await userEvent.click(screen.getByRole('button', { name: 'Lanjut ke upload' }));
   const file = new File(['PK\x03\x04workbook'], 'dcp3-sukabumi.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   await userEvent.upload(screen.getByLabelText('Pilih file DCP3'), file);
@@ -111,6 +125,7 @@ test('lets the user pick the real header row when the workbook has leading title
   await userEvent.click(screen.getByRole('button', { name: 'Lihat & pilih baris header' }));
 
   await screen.findByText('No | Nama | NIK');
+  expect(screen.getByRole('region', { name: 'Baris awal workbook DCP3' })).toBeVisible();
   await userEvent.click(screen.getByRole('radio', { name: 'Baris 3' }));
   await userEvent.click(screen.getByRole('button', { name: 'Coba lagi dengan baris ini' }));
 
