@@ -84,7 +84,7 @@ export function DCP3ImportPage() {
             <div className={styles.tableWrap}><table className={styles.previewTable}><tbody>
               {rawRows.map((row, index) => <tr key={index}>
                 <td><label><input type="radio" name="header_row_pick" checked={headerRow === index + 1} onChange={() => setHeaderRow(index + 1)} /> Baris {index + 1}</label></td>
-                <td>{row.filter(Boolean).join(' | ') || <em>(baris kosong)</em>}</td>
+                <td>{(row ?? []).filter(Boolean).join(' | ') || <em>(baris kosong)</em>}</td>
               </tr>)}
             </tbody></table></div>
             <div className={styles.actions}><button type="button" className="primaryButton" onClick={() => upload.mutate()}>Coba lagi dengan baris ini</button></div>

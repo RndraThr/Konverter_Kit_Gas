@@ -159,6 +159,28 @@ func TestRawRowsReturnsUpToRequestedRowCountWithoutHeaderValidation(t *testing.T
 	}
 }
 
+func TestRawRowsNeverReturnsNilSubSlicesForUntouchedRows(t *testing.T) {
+	data := workbookBytes(t, func(file *excelize.File) {
+		_ = file.SetCellValue("Sheet1", "A1", "USULAN CALON PENERIMA")
+		_ = file.SetCellValue("Sheet1", "A2", "No")
+		// Row 3 is intentionally left untouched (no cell ever set), which is how
+		// excelize represents a genuinely blank spreadsheet row: GetRows returns a
+		// nil []string for it, and encoding/json marshals that as `null`, not `[]`,
+		// which crashes frontend code that calls .filter()/.map() on every row.
+		_ = file.SetCellValue("Sheet1", "A4", "1")
+	})
+
+	rows, err := RawRows(bytes.NewReader(data), ParseLimits{MaxBytes: 1 << 20, MaxRows: 10, MaxColumns: 10}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, row := range rows {
+		if row == nil {
+			t.Fatalf("row[%d] is nil; must be normalized to an empty slice", index)
+		}
+	}
+}
+
 func TestRawRowsRejectsMalformedFile(t *testing.T) {
 	_, err := RawRows(strings.NewReader("not an xlsx file"), ParseLimits{MaxBytes: 1024, MaxRows: 10, MaxColumns: 10}, 10)
 	if !errors.Is(err, ErrWorkbookInvalid) {
