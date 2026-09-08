@@ -1,5 +1,4 @@
-import { Dialog } from '@base-ui/react/dialog';
-import { AlertTriangle, CheckCircle2, FileText, PackageCheck, Save, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, FileText, PackageCheck, Save } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { FormEvent, useEffect, useState } from 'react';
 import { apiRequest } from '../../lib/api';
@@ -10,6 +9,7 @@ import { DocumentationSlot } from './DocumentationSlot';
 import styles from './Distribution.module.css';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 
 function draftFrom(data: RecipientWorkspaceData): DraftInput {
   return {
@@ -85,11 +85,11 @@ export function RecipientWorkspace({ data, onSaved }: { data: RecipientWorkspace
     </div>
     <section className={styles.documentationSection} aria-labelledby="documentation-title"><div className={styles.sectionTitle}><Badge variant="outline">Langkah 2</Badge><h3 id="documentation-title">Dokumentasi penyerahan</h3><p>Lengkapi setiap slot sesuai template jadwal.</p></div><div className={styles.documentationList}>{data.documentation.map((slot) => <DocumentationSlot key={slot.code} slot={slot} onChanged={(nextSlot) => onSaved({ ...data, documentation: data.documentation.map((item) => item.code === nextSlot.code ? nextSlot : item) })} />)}</div></section>
 	{canManage && <footer className={styles.completion}><div><strong>{completed ? 'Distribusi selesai' : 'Konfirmasi distribusi'}</strong><span role={completed ? 'status' : undefined}>{completed ? 'Distribusi berhasil diselesaikan.' : blocked ? 'Selesaikan identitas dan seluruh dokumentasi sebelum konfirmasi.' : 'Semua pemeriksaan awal telah terpenuhi.'}</span></div>{!completed && <Button disabled={blocked} onClick={() => setConfirmOpen(true)}>Selesaikan distribusi</Button>}</footer>}
-	<Dialog.Root open={confirmOpen} onOpenChange={setConfirmOpen}><Dialog.Portal><Dialog.Backdrop className="dialogBackdrop" /><Dialog.Popup className="dialogPopup" aria-label="Konfirmasi distribusi">
-		<header className="dialogHeader"><div><Dialog.Title>Konfirmasi distribusi</Dialog.Title><Dialog.Description>Pastikan penerima dan bukti penyerahan sudah benar. Aksi ini tidak dapat dibatalkan dari halaman ini.</Dialog.Description></div><Dialog.Close className="iconButton" aria-label="Tutup"><X /></Dialog.Close></header>
-		<div className="dialogBody"><div className={styles.confirmSummary}><PackageCheck aria-hidden="true" /><div><strong>{data.full_name}</strong><span>No. {data.distribution_number} / {data.regency_name}</span><small>{data.program_name}</small></div></div><div className={styles.confirmPackage}><strong>Paket efektif</strong>{packageEntries.length === 0 ? <span>Sesuai template paket jadwal</span> : packageEntries.map(([key, value]) => <span key={key}><small>{key.replaceAll('_', ' ')}</small>{String(value)}</span>)}</div><div className={styles.confirmSlots}><strong>Dokumentasi wajib</strong>{data.documentation.filter((slot) => slot.required).map((slot) => <span key={slot.code}><CheckCircle2 aria-hidden="true" />{slot.label}</span>)}</div></div>
+	<AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}><AlertDialogContent aria-label="Konfirmasi distribusi">
+		<AlertDialogHeader><AlertDialogTitle>Konfirmasi distribusi</AlertDialogTitle><AlertDialogDescription>Pastikan penerima dan bukti penyerahan sudah benar. Aksi ini tidak dapat dibatalkan dari halaman ini.</AlertDialogDescription></AlertDialogHeader>
+		<div className={styles.confirmSummary}><PackageCheck aria-hidden="true" /><div><strong>{data.full_name}</strong><span>No. {data.distribution_number} / {data.regency_name}</span><small>{data.program_name}</small></div></div><div className={styles.confirmPackage}><strong>Paket efektif</strong>{packageEntries.length === 0 ? <span>Sesuai template paket jadwal</span> : packageEntries.map(([key, value]) => <span key={key}><small>{key.replaceAll('_', ' ')}</small>{String(value)}</span>)}</div><div className={styles.confirmSlots}><strong>Dokumentasi wajib</strong>{data.documentation.filter((slot) => slot.required).map((slot) => <span key={slot.code}><CheckCircle2 aria-hidden="true" />{slot.label}</span>)}</div>
 		{completion.isError && <p className={styles.completionError} role="alert">{completion.error.message}</p>}
-		<footer className="dialogActions"><Dialog.Close className="secondaryButton">Periksa lagi</Dialog.Close><button className="primaryButton" disabled={completion.isPending} onClick={() => completion.mutate()}>{completion.isPending ? 'Menyelesaikan...' : 'Konfirmasi penyerahan'}</button></footer>
-	</Dialog.Popup></Dialog.Portal></Dialog.Root>
+		<AlertDialogFooter><AlertDialogCancel>Periksa lagi</AlertDialogCancel><Button disabled={completion.isPending} onClick={() => completion.mutate()}>{completion.isPending ? 'Menyelesaikan...' : 'Konfirmasi penyerahan'}</Button></AlertDialogFooter>
+	</AlertDialogContent></AlertDialog>
   </section>;
 }

@@ -1,7 +1,15 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 const username = 'e2e.admin';
 const password = 'Konkit-E2E-Password-2026';
+
+async function navigate(page: Page, label: string, mobile: boolean) {
+  if (mobile) await page.getByRole('button', { name: 'Buka navigasi' }).click();
+  await page.getByRole('link', { name: label, exact: true }).click();
+  // The mobile Sheet closes with a 150ms opacity transition; screenshotting
+  // before it settles captures the drawer ghosted over the page content.
+  if (mobile) await expect(page.locator('[data-slot="sheet-overlay"]')).not.toBeVisible();
+}
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/login');
@@ -20,17 +28,13 @@ test('administration foundation journey', async ({ page }, testInfo) => {
     ['Profil saya', 'Profil saya'], ['Pengguna', 'Pengguna'], ['Role & akses', 'Role & akses'],
     ['Pengaturan', 'Pengaturan sistem'], ['Kesehatan sistem', 'Kesehatan sistem'], ['Riwayat aktivitas', 'Riwayat aktivitas'],
   ]) {
-    if (testInfo.project.name === 'mobile') {
-      await page.getByRole('button', { name: 'Buka navigasi' }).click();
-    }
-    await page.getByRole('link', { name: link, exact: true }).click();
+    await navigate(page, link, testInfo.project.name === 'mobile');
     await expect(page.getByRole('heading', { name: heading })).toBeVisible();
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`${link.toLowerCase().replaceAll(' ', '-')}.png`), fullPage: true });
   }
 
-  if (testInfo.project.name === 'mobile') await page.getByRole('button', { name: 'Buka navigasi' }).click();
-  await page.getByRole('link', { name: 'Pengguna', exact: true }).click();
+  await navigate(page, 'Pengguna', testInfo.project.name === 'mobile');
   await page.getByRole('button', { name: 'Tambah pengguna' }).click();
   await page.getByLabel('Nama lengkap').fill(displayName);
   await page.getByLabel('Username').fill(`petugas.e2e.${testInfo.project.name}`);
@@ -39,18 +43,19 @@ test('administration foundation journey', async ({ page }, testInfo) => {
   await page.getByRole('checkbox', { name: 'Super Admin' }).check();
   await page.getByRole('button', { name: 'Simpan pengguna' }).click();
   await expect(page.getByText(displayName)).toBeVisible();
-  await page.getByRole('button', { name: `Edit ${displayName}` }).click();
+  await page.getByRole('button', { name: `Aksi ${displayName}` }).click();
+  await page.getByRole('menuitem', { name: 'Edit pengguna' }).click();
   await page.getByRole('checkbox', { name: 'Pengguna aktif' }).uncheck();
-  page.once('dialog', (dialog) => dialog.accept());
   await page.getByRole('button', { name: 'Simpan pengguna' }).click();
+  await page.getByRole('alertdialog', { name: `Nonaktifkan ${displayName}?` }).getByRole('button', { name: 'Nonaktifkan pengguna' }).click();
   await expect(page.getByRole('row').filter({ hasText: displayName }).getByText('Nonaktif')).toBeVisible();
 
-  if (testInfo.project.name === 'mobile') await page.getByRole('button', { name: 'Buka navigasi' }).click();
-  await page.getByRole('link', { name: 'Riwayat aktivitas' }).click();
+  await navigate(page, 'Riwayat aktivitas', testInfo.project.name === 'mobile');
   await expect(page.getByText(/user\.(created|updated)/).first()).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath(`konkit-${testInfo.project.name}-final.png`), fullPage: true });
 
   await page.getByRole('button', { name: 'Menu akun' }).click();
-  await page.getByRole('button', { name: 'Keluar' }).click();
+  await page.getByRole('menuitem', { name: 'Keluar' }).click();
   await expect(page).toHaveURL(/\/login/);
   await page.goto('/dashboard');
   await expect(page).toHaveURL(/\/login/);

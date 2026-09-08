@@ -41,7 +41,7 @@ test('confirms a complete distribution and publishes the completed workspace', a
   const onSaved = renderWorkspace();
 
   fireEvent.click(screen.getByRole('button', { name: 'Selesaikan distribusi' }));
-  const dialog = screen.getByRole('dialog', { name: 'Konfirmasi distribusi' });
+  const dialog = screen.getByRole('alertdialog', { name: 'Konfirmasi distribusi' });
   expect(dialog).toHaveTextContent('Siti Aminah');
   expect(dialog).toHaveTextContent('Program Petani 2026');
 	expect(dialog).toHaveTextContent('ERGAS');

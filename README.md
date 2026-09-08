@@ -93,6 +93,12 @@ Halaman `Laporan` menampilkan ringkasan dan tabel alokasi/distribusi/dokumentasi
 
 Template paket kini mendefinisikan daftar opsi merk/tipe mesin (`machine_options`) dan merk/spesifikasi selang (`hose_options`) yang wajib diisi minimal satu sebelum template dipublikasikan; jadwal dapat mencatat nama Konsultan Pengawas opsional; dan halaman Pendistribusian menangkap serial number mesin, selang, serta konkit/reducer per penerima sebagai bagian dari draft yang sudah ada, sebagai fondasi data untuk modul BAST Generator berikutnya.
 
+### Frontend UI
+
+Frontend menggunakan Tailwind CSS v4 dan komponen Shadcn berbasis Base UI. Token tema berada di `frontend/src/styles/global.css`, primitive UI berada di `frontend/src/components/ui`, dan komponen domain tetap berada di folder feature masing-masing.
+
+Tambahkan primitive baru dari direktori `frontend`; sebagai contoh, Button ditambahkan dengan `npx shadcn@latest add button`. Jangan mengubah kontrak API atau permission ketika melakukan perubahan presentasi.
+
 ## Pengujian
 
 ```powershell

@@ -30,6 +30,17 @@
   --sidebar-accent-foreground: #ffffff;
   --sidebar-border: #315c43;
   --sidebar-ring: #d7b764;
+
+  /* Still referenced by DCP3Import/Distribution/ProgramSetup module CSS, which keep their
+     own responsive grid layout rather than converting to Tailwind utilities. */
+  --dashboard-ink: #18251d;
+  --dashboard-muted: #68756c;
+  --dashboard-line: #dbe3dc;
+  --dashboard-green: #4fad42;
+  --dashboard-green-dark: #28733a;
+  --dashboard-gold: #c89b39;
+  --dashboard-danger: #b43c37;
+  --dashboard-focus: #d5a943;
 }
 
 @theme inline {
