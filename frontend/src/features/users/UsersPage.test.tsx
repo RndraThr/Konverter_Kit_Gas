@@ -51,3 +51,26 @@ test('shows an API error when creating a user fails', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Simpan pengguna' }));
   expect(await screen.findByText('Username atau email sudah digunakan')).toBeInTheDocument();
 });
+
+test('confirms deactivation and keeps dialog footers inside the user surface', async () => {
+  vi.mocked(apiRequest).mockImplementation(async (path) => path.includes('/role-options') ? { data: [] } : { data: { items: [{ id: 'u1', full_name: 'Petugas Wajo', username: 'wajo', email: 'wajo@test.id', is_active: true, roles: [] }], total: 1, page: 1, page_size: 20 } });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><MemoryRouter><UsersPage /></MemoryRouter></QueryClientProvider>);
+  await userEvent.click(await screen.findByRole('button', { name: 'Aksi Petugas Wajo' }));
+  await userEvent.click(screen.getByRole('menuitem', { name: 'Edit pengguna' }));
+  const dialog = screen.getByRole('dialog', { name: 'Edit Petugas Wajo' });
+  expect(dialog.querySelector('[data-slot="dialog-footer"]')).toHaveClass('mx-0', 'mb-0');
+  await userEvent.click(screen.getByRole('checkbox', { name: 'Pengguna aktif' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Simpan pengguna' }));
+  expect(screen.getByRole('alertdialog', { name: 'Nonaktifkan Petugas Wajo?' })).toBeInTheDocument();
+});
+
+test('keeps the password footer inside its dialog surface', async () => {
+  vi.mocked(apiRequest).mockImplementation(async (path) => path.includes('/role-options') ? { data: [] } : { data: { items: [{ id: 'u1', full_name: 'Petugas Wajo', username: 'wajo', email: 'wajo@test.id', is_active: true, roles: [] }], total: 1, page: 1, page_size: 20 } });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<QueryClientProvider client={client}><MemoryRouter><UsersPage /></MemoryRouter></QueryClientProvider>);
+  await userEvent.click(await screen.findByRole('button', { name: 'Aksi Petugas Wajo' }));
+  await userEvent.click(screen.getByRole('menuitem', { name: 'Atur ulang password' }));
+  const dialog = screen.getByRole('dialog', { name: 'Reset password' });
+  expect(dialog.querySelector('[data-slot="dialog-footer"]')).toHaveClass('mx-0', 'mb-0');
+});
