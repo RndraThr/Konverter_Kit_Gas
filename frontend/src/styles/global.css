@@ -72,3 +72,13 @@
   button, input, select, textarea { font: inherit; }
   :where([data-numeric]) { font-variant-numeric: tabular-nums; }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
