@@ -77,7 +77,17 @@ func RawRows(source io.Reader, limits ParseLimits, maxRows int) ([][]string, err
 	if maxRows >= 0 && len(rows) > maxRows {
 		rows = rows[:maxRows]
 	}
-	return rows, nil
+	// A spreadsheet row with no cells ever set comes back from excelize as a nil
+	// []string, which encoding/json marshals as `null` instead of `[]` — normalize
+	// it so every row is safe for frontend code to call .filter()/.map() on.
+	normalized := make([][]string, len(rows))
+	for index, row := range rows {
+		if row == nil {
+			row = []string{}
+		}
+		normalized[index] = row
+	}
+	return normalized, nil
 }
 
 func openWorkbook(source io.Reader, limits ParseLimits) (*excelize.File, string, [][]string, error) {
