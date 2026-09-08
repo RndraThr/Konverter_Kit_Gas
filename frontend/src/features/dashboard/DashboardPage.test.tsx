@@ -12,6 +12,8 @@ test('shows operational counts from the API', async () => {
   render(<QueryClientProvider client={client}><DashboardPage /></QueryClientProvider>);
   expect(await screen.findByText('12')).toBeInTheDocument();
   expect(screen.getByText('2')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Ringkasan program' })).toBeInTheDocument();
+  expect(screen.getByRole('region', { name: 'Ringkasan pengguna' })).toBeInTheDocument();
   expect(apiRequest).toHaveBeenCalledOnce();
   expect(apiRequest).toHaveBeenCalledWith('/api/v1/dashboard/summary');
 });
