@@ -3,7 +3,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import styles from './DCP3Import.module.css';
 
 type MappingField = { key: keyof DCP3Mapping; label: string; required?: boolean };
-const unmappedValue = '__dcp3_unmapped__';
+const unmappedValue = 'unmapped';
 
 const sharedFields: MappingField[] = [
   { key: 'source_sequence', label: 'Nomor urut DCP3', required: true },
@@ -27,13 +27,17 @@ export function ColumnMappingStep({ headers, mapping, programType, onChange }: {
   return <div className={styles.mappingGrid}>
     {[...sharedFields.slice(0, 3), sectorField, ...sharedFields.slice(3)].map((field) => {
       const labelID = `dcp3-mapping-${field.key}`;
+      const selectedHeaderIndex = headers.indexOf(mapping[field.key]);
       return <div className={styles.mappingField} key={field.key}>
         <label id={labelID}>{field.label}{field.required && <strong aria-label="wajib">*</strong>}</label>
-        <Select value={mapping[field.key] || unmappedValue} onValueChange={(value) => onChange({ ...mapping, [field.key]: value === unmappedValue ? '' : value ?? '' })}>
+        <Select value={selectedHeaderIndex === -1 ? unmappedValue : String(selectedHeaderIndex)} onValueChange={(value) => {
+          const headerIndex = value === unmappedValue ? -1 : Number(value);
+          onChange({ ...mapping, [field.key]: headers[headerIndex] ?? '' });
+        }}>
           <SelectTrigger className="w-full" aria-labelledby={labelID}><SelectValue placeholder="Tidak dipetakan" /></SelectTrigger>
           <SelectContent>
             <SelectItem value={unmappedValue}>Tidak dipetakan</SelectItem>
-            {headers.map((header) => <SelectItem value={header} key={header}>{header}</SelectItem>)}
+            {headers.map((header, index) => <SelectItem value={String(index)} key={`${header}-${index}`}>{header}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>;

@@ -1,4 +1,3 @@
-import { Check } from 'lucide-react';
 import styles from './DCP3Import.module.css';
 
 type ImportStep = {
@@ -28,9 +27,7 @@ export function ImportStepper({ currentStep, steps }: ImportStepperProps) {
         data-state={state}
         aria-current={state === 'current' ? 'step' : undefined}
       >
-        <span className={styles.stepNumber} aria-hidden="true">
-          {state === 'complete' ? <Check /> : number}
-        </span>
+        <span className={styles.stepNumber} aria-hidden="true">{number}</span>
         <span className={styles.stepCopy}>
           <span className={styles.stepState}>{stateLabel[state]}</span>
           <strong>{step.label}</strong>
