@@ -2,6 +2,7 @@ package recipients
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"konkit/internal/auth"
@@ -159,4 +160,124 @@ func TestStatsGroupsByAllocationStatusAndExcludesCancelledFromTotal(t *testing.T
 		t.Fatalf("expected all three statuses represented: %+v", stats.ByAllocationStatus)
 	}
 	_ = fixture.distributedAllocID
+}
+
+func TestCreateInsertsRecipientWithoutImportRowAndRejectsOutOfScopeSchedule(t *testing.T) {
+	pool := recipientsIntegrationPool(t)
+	fixture := seedRecipientFixture(t, pool)
+	repository := NewRepository(pool)
+	ctx := context.Background()
+	actor := auth.Principal{}
+	meta := auth.ClientMeta{UserAgent: "test"}
+
+	created, err := repository.Create(ctx, actor, CreateInput{
+		ScheduleID: fixture.scheduleID, FullName: "Manual Recipient", NIK: "1234567890123456", SectorIdentifier: "KP-99",
+		Address: "Jalan Test", Village: "Desa Test", District: "Kecamatan Test", PhoneNumber: "0812345678",
+	}, meta, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		var personID, nominationID string
+		if err := pool.QueryRow(cleanupCtx, `
+			SELECT COALESCE(pa.actual_recipient_person_id, pa.intended_person_id, cn.person_id)::text, pa.nomination_id::text
+			FROM package_allocations pa JOIN candidate_nominations cn ON cn.id = pa.nomination_id WHERE pa.id = $1
+		`, created.AllocationID).Scan(&personID, &nominationID); err != nil {
+			t.Logf("cleanup: lookup created recipient failed: %v", err)
+			return
+		}
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM package_allocations WHERE id = $1`, created.AllocationID); err != nil {
+			t.Logf("cleanup: delete created package_allocations failed: %v", err)
+		}
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM candidate_nominations WHERE id = $1`, nominationID); err != nil {
+			t.Logf("cleanup: delete created candidate_nominations failed: %v", err)
+		}
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM people WHERE id = $1`, personID); err != nil {
+			t.Logf("cleanup: delete created people failed: %v", err)
+		}
+	})
+	if created.FullName != "Manual Recipient" || created.NIK != "1234567890123456" || created.SectorIdentifier != "KP-99" || created.AllocationStatus != "ready" {
+		t.Fatalf("unexpected created recipient: %+v", created)
+	}
+
+	var importRowID, batchID *string
+	if err := pool.QueryRow(ctx, `
+		SELECT cn.import_row_id::text, cn.batch_id::text FROM package_allocations pa JOIN candidate_nominations cn ON cn.id = pa.nomination_id WHERE pa.id = $1
+	`, created.AllocationID).Scan(&importRowID, &batchID); err != nil {
+		t.Fatal(err)
+	}
+	if importRowID != nil || batchID != nil {
+		t.Fatalf("manual recipient must have null import linkage, got row=%v batch=%v", importRowID, batchID)
+	}
+
+	scoped := auth.RegencyScope{RegencyIDs: []string{fixture.otherRegencyID}}
+	if _, err := repository.Create(ctx, actor, CreateInput{ScheduleID: fixture.scheduleID, FullName: "Should Fail"}, meta, scoped); !errors.Is(err, ErrScheduleNotFound) {
+		t.Fatalf("expected ErrScheduleNotFound for out-of-scope schedule, got %v", err)
+	}
+}
+
+func TestUpdateChangesIdentityFieldsWithinScope(t *testing.T) {
+	pool := recipientsIntegrationPool(t)
+	fixture := seedRecipientFixture(t, pool)
+	repository := NewRepository(pool)
+	ctx := context.Background()
+	actor := auth.Principal{}
+	meta := auth.ClientMeta{UserAgent: "test"}
+
+	updated, err := repository.Update(ctx, actor, fixture.needsReviewAllocID, UpdateInput{
+		FullName: "Updated Name", NIK: "9999999999999999", Address: "Alamat Baru", Village: "Desa Baru", District: "Kecamatan Baru", PhoneNumber: "0899999999",
+	}, meta, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.FullName != "Updated Name" || updated.NIK != "9999999999999999" || updated.Address != "Alamat Baru" {
+		t.Fatalf("update did not apply: %+v", updated)
+	}
+
+	scoped := auth.RegencyScope{RegencyIDs: []string{fixture.otherRegencyID}}
+	if _, err := repository.Update(ctx, actor, fixture.needsReviewAllocID, UpdateInput{FullName: "Nope"}, meta, scoped); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for out-of-scope update, got %v", err)
+	}
+}
+
+func TestCancelHidesFromDefaultListAndRestoreReturnsToReady(t *testing.T) {
+	pool := recipientsIntegrationPool(t)
+	fixture := seedRecipientFixture(t, pool)
+	repository := NewRepository(pool)
+	ctx := context.Background()
+	actor := auth.Principal{}
+	meta := auth.ClientMeta{UserAgent: "test"}
+	unrestricted := auth.RegencyScope{Unrestricted: true}
+
+	if err := repository.Cancel(ctx, actor, fixture.needsReviewAllocID, meta, unrestricted); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.Cancel(ctx, actor, fixture.needsReviewAllocID, meta, unrestricted); !errors.Is(err, ErrAlreadyCancelled) {
+		t.Fatalf("expected ErrAlreadyCancelled, got %v", err)
+	}
+
+	page, err := repository.List(ctx, Filter{Page: 1, PageSize: 20}, unrestricted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range page.Items {
+		if item.AllocationID == fixture.needsReviewAllocID {
+			t.Fatal("cancelled recipient must not appear in default list")
+		}
+	}
+
+	if err := repository.Restore(ctx, actor, fixture.needsReviewAllocID, meta, unrestricted); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.Restore(ctx, actor, fixture.needsReviewAllocID, meta, unrestricted); !errors.Is(err, ErrNotCancelled) {
+		t.Fatalf("expected ErrNotCancelled, got %v", err)
+	}
+	restored, err := getRecipientByID(ctx, pool, fixture.needsReviewAllocID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.AllocationStatus != "ready" {
+		t.Fatalf("expected status ready after restore, got %q", restored.AllocationStatus)
+	}
 }
