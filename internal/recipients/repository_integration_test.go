@@ -48,14 +48,30 @@ func seedRecipientFixture(t *testing.T, pool *pgxpool.Pool) recipientFixture {
 
 	t.Cleanup(func() {
 		cleanupCtx := context.Background()
-		_, _ = pool.Exec(cleanupCtx, `DELETE FROM package_allocations WHERE schedule_id = $1`, fixture.scheduleID)
-		_, _ = pool.Exec(cleanupCtx, `DELETE FROM candidate_nominations WHERE id = ANY($1)`, nominationIDs)
-		_, _ = pool.Exec(cleanupCtx, `DELETE FROM people WHERE id = ANY($1)`, personIDs)
-		_, _ = pool.Exec(cleanupCtx, `DELETE FROM program_schedules WHERE id = $1`, fixture.scheduleID)
-		_, _ = pool.Exec(cleanupCtx, `DELETE FROM programs WHERE id = $1`, programID)
-		_, _ = pool.Exec(cleanupCtx, `DELETE FROM package_template_versions WHERE id = $1`, packageTemplateID)
-		_, _ = pool.Exec(cleanupCtx, `DELETE FROM documentation_template_versions WHERE id = $1`, docTemplateID)
-		_, _ = pool.Exec(cleanupCtx, `DELETE FROM regencies WHERE id IN ($1,$2)`, fixture.farmerRegencyID, fixture.otherRegencyID)
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM package_allocations WHERE schedule_id = $1`, fixture.scheduleID); err != nil {
+			t.Logf("cleanup: delete package_allocations failed: %v", err)
+		}
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM candidate_nominations WHERE id = ANY($1)`, nominationIDs); err != nil {
+			t.Logf("cleanup: delete candidate_nominations failed: %v", err)
+		}
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM people WHERE id = ANY($1)`, personIDs); err != nil {
+			t.Logf("cleanup: delete people failed: %v", err)
+		}
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM program_schedules WHERE id = $1`, fixture.scheduleID); err != nil {
+			t.Logf("cleanup: delete program_schedules failed: %v", err)
+		}
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM programs WHERE id = $1`, programID); err != nil {
+			t.Logf("cleanup: delete programs failed: %v", err)
+		}
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM package_template_versions WHERE id = $1`, packageTemplateID); err != nil {
+			t.Logf("cleanup: delete package_template_versions failed: %v", err)
+		}
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM documentation_template_versions WHERE id = $1`, docTemplateID); err != nil {
+			t.Logf("cleanup: delete documentation_template_versions failed: %v", err)
+		}
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM regencies WHERE id IN ($1,$2)`, fixture.farmerRegencyID, fixture.otherRegencyID); err != nil {
+			t.Logf("cleanup: delete regencies failed: %v", err)
+		}
 	})
 	return fixture
 }
