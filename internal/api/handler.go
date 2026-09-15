@@ -18,6 +18,7 @@ import (
 	apphealth "konkit/internal/health"
 	"konkit/internal/profile"
 	"konkit/internal/programs"
+	"konkit/internal/recipients"
 	"konkit/internal/reports"
 	"konkit/internal/settings"
 )
@@ -102,6 +103,15 @@ type ReportsService interface {
 	ExportPDF(context.Context, auth.Principal, string, reports.Filter, auth.ClientMeta, auth.RegencyScope) ([]byte, error)
 }
 
+type RecipientsService interface {
+	List(context.Context, recipients.Filter, auth.RegencyScope) (recipients.Page, error)
+	Stats(context.Context, auth.RegencyScope) (recipients.Stats, error)
+	Create(context.Context, auth.Principal, recipients.CreateInput, auth.ClientMeta, auth.RegencyScope) (recipients.Recipient, error)
+	Update(context.Context, auth.Principal, string, recipients.UpdateInput, auth.ClientMeta, auth.RegencyScope) (recipients.Recipient, error)
+	Cancel(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) error
+	Restore(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) error
+}
+
 type Dependencies struct {
 	Auth           AuthService
 	Profile        ProfileService
@@ -113,6 +123,7 @@ type Dependencies struct {
 	DCP3           DCP3Service
 	Distribution   DistributionService
 	Reports        ReportsService
+	Recipients     RecipientsService
 	SessionSecret  []byte
 }
 
@@ -226,6 +237,12 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleDistributionAllocation(w, r, rc, strings.TrimPrefix(path, "distribution/allocations/"))
 	case strings.HasPrefix(path, "reports/schedule/"):
 		h.handleReportsSchedule(w, r, rc, strings.TrimPrefix(path, "reports/schedule/"))
+	case path == "recipients":
+		h.handleRecipients(w, r, rc)
+	case path == "recipients/stats":
+		h.handleRecipientStats(w, r, rc)
+	case strings.HasPrefix(path, "recipients/"):
+		h.handleRecipient(w, r, rc, strings.TrimPrefix(path, "recipients/"))
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
 	}

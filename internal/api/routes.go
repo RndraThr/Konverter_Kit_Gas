@@ -13,6 +13,7 @@ import (
 	apphealth "konkit/internal/health"
 	"konkit/internal/profile"
 	"konkit/internal/programs"
+	"konkit/internal/recipients"
 	"konkit/internal/reports"
 	"konkit/internal/settings"
 )
@@ -445,7 +446,7 @@ func writeUnavailable(w http.ResponseWriter) {
 
 func writeServiceError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, profile.ErrNotFound), errors.Is(err, administration.ErrNotFound), errors.Is(err, programs.ErrNotFound), errors.Is(err, dcp3.ErrPreviewNotFound), errors.Is(err, distribution.ErrAllocationNotFound), errors.Is(err, distribution.ErrMediaNotFound), errors.Is(err, reports.ErrScheduleNotFound):
+	case errors.Is(err, profile.ErrNotFound), errors.Is(err, administration.ErrNotFound), errors.Is(err, programs.ErrNotFound), errors.Is(err, dcp3.ErrPreviewNotFound), errors.Is(err, distribution.ErrAllocationNotFound), errors.Is(err, distribution.ErrMediaNotFound), errors.Is(err, reports.ErrScheduleNotFound), errors.Is(err, recipients.ErrNotFound), errors.Is(err, recipients.ErrScheduleNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "Data tidak ditemukan")
 	case errors.Is(err, profile.ErrIdentityInUse), errors.Is(err, administration.ErrIdentityInUse):
 		writeFieldError(w, http.StatusConflict, "conflict", "Data sudah digunakan", map[string]string{"username": err.Error(), "email": err.Error()})
@@ -473,6 +474,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusRequestEntityTooLarge, "media_too_large", err.Error())
 	case errors.Is(err, administration.ErrLastSuperAdmin), errors.Is(err, administration.ErrSelfDeactivation), errors.Is(err, administration.ErrRoleInUse), errors.Is(err, administration.ErrSystemRole):
 		writeError(w, http.StatusConflict, "operation_rejected", err.Error())
+	case errors.Is(err, recipients.ErrAlreadyCancelled), errors.Is(err, recipients.ErrNotCancelled):
+		writeError(w, http.StatusConflict, "operation_rejected", err.Error())
 	case errors.Is(err, profile.ErrFullNameInvalid), errors.Is(err, profile.ErrUsernameInvalid), errors.Is(err, profile.ErrEmailInvalid),
 		errors.Is(err, profile.ErrCurrentPassword), errors.Is(err, profile.ErrPasswordTooShort), errors.Is(err, profile.ErrPasswordUnchanged),
 		errors.Is(err, administration.ErrInvalidInput), errors.Is(err, administration.ErrPasswordTooShort), errors.Is(err, administration.ErrRoleNotFound),
@@ -485,6 +488,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), validationFields(err))
 	case errors.Is(err, reports.ErrScheduleRequired), errors.Is(err, reports.ErrFilterInvalid):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), map[string]string{"request": err.Error()})
+	case errors.Is(err, recipients.ErrFullNameRequired), errors.Is(err, recipients.ErrNIKInvalid):
+		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), validationFields(err))
 	case errors.Is(err, distribution.ErrMediaTypeInvalid), errors.Is(err, distribution.ErrMediaSourceInvalid), errors.Is(err, distribution.ErrMediaLocationRequired),
 		errors.Is(err, distribution.ErrMediaCapturedAtRequired), errors.Is(err, distribution.ErrMediaLimitReached):
 		writeFieldError(w, http.StatusBadRequest, "media_invalid", err.Error(), map[string]string{"file": err.Error()})
@@ -520,6 +525,10 @@ func validationFields(err error) map[string]string {
 		return map[string]string{"permission_codes": err.Error()}
 	case errors.Is(err, settings.ErrInvalidSetting):
 		return map[string]string{"values": err.Error()}
+	case errors.Is(err, recipients.ErrFullNameRequired):
+		return map[string]string{"full_name": err.Error()}
+	case errors.Is(err, recipients.ErrNIKInvalid):
+		return map[string]string{"nik": err.Error()}
 	default:
 		return map[string]string{"request": err.Error()}
 	}

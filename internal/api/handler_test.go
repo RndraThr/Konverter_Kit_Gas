@@ -20,6 +20,7 @@ import (
 	"konkit/internal/health"
 	"konkit/internal/profile"
 	"konkit/internal/programs"
+	"konkit/internal/recipients"
 	"konkit/internal/reports"
 )
 
@@ -858,4 +859,113 @@ func (f *fakeAuthService) Permissions(context.Context, auth.Principal) ([]string
 
 func (f *fakeAuthService) RegencyScope(context.Context, auth.Principal) (auth.RegencyScope, error) {
 	return f.regencyScope, f.regencyScopeErr
+}
+
+type fakeRecipientsService struct {
+	page             recipients.Page
+	stats            recipients.Stats
+	created          recipients.Recipient
+	updated          recipients.Recipient
+	createInput      recipients.CreateInput
+	updateInput      recipients.UpdateInput
+	allocationID     string
+	seenRegencyScope auth.RegencyScope
+	cancelErr        error
+	restoreErr       error
+}
+
+func (f *fakeRecipientsService) List(_ context.Context, _ recipients.Filter, scope auth.RegencyScope) (recipients.Page, error) {
+	f.seenRegencyScope = scope
+	return f.page, nil
+}
+func (f *fakeRecipientsService) Stats(_ context.Context, scope auth.RegencyScope) (recipients.Stats, error) {
+	f.seenRegencyScope = scope
+	return f.stats, nil
+}
+func (f *fakeRecipientsService) Create(_ context.Context, _ auth.Principal, input recipients.CreateInput, _ auth.ClientMeta, scope auth.RegencyScope) (recipients.Recipient, error) {
+	f.createInput, f.seenRegencyScope = input, scope
+	return f.created, nil
+}
+func (f *fakeRecipientsService) Update(_ context.Context, _ auth.Principal, allocationID string, input recipients.UpdateInput, _ auth.ClientMeta, scope auth.RegencyScope) (recipients.Recipient, error) {
+	f.allocationID, f.updateInput, f.seenRegencyScope = allocationID, input, scope
+	return f.updated, nil
+}
+func (f *fakeRecipientsService) Cancel(_ context.Context, _ auth.Principal, allocationID string, _ auth.ClientMeta, scope auth.RegencyScope) error {
+	f.allocationID, f.seenRegencyScope = allocationID, scope
+	return f.cancelErr
+}
+func (f *fakeRecipientsService) Restore(_ context.Context, _ auth.Principal, allocationID string, _ auth.ClientMeta, scope auth.RegencyScope) error {
+	f.allocationID, f.seenRegencyScope = allocationID, scope
+	return f.restoreErr
+}
+
+func TestRecipientsListRequiresViewPermissionAndForwardsFilters(t *testing.T) {
+	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"recipients.view": true}}
+	service := &fakeRecipientsService{page: recipients.Page{Page: 1, PageSize: 20, Total: 1, Items: []recipients.Recipient{{AllocationID: "allocation-1", FullName: "Siti Aminah"}}}}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/recipients?search=Siti&page=1", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: viewer, Recipients: service}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Siti Aminah") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	noPerm := &fakeAuthService{principal: auth.Principal{UserID: "user-2"}, allowedPermissions: map[string]bool{}}
+	denied := httptest.NewRequest(http.MethodGet, "/api/v1/recipients", nil)
+	denied.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	deniedRecorder := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: noPerm, Recipients: service}).ServeHTTP(deniedRecorder, denied)
+	if deniedRecorder.Code != http.StatusForbidden {
+		t.Fatalf("expected forbidden without recipients.view, got %d", deniedRecorder.Code)
+	}
+}
+
+func TestRecipientsCreateRequiresManagePermission(t *testing.T) {
+	secret := []byte("01234567890123456789012345678901")
+	service := &fakeRecipientsService{created: recipients.Recipient{AllocationID: "allocation-1", FullName: "Budi"}}
+	manager := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"recipients.manage": true}}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/recipients", strings.NewReader(`{"schedule_id":"schedule-1","full_name":"Budi"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: manager, Recipients: service, SessionSecret: secret}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated || service.createInput.ScheduleID != "schedule-1" {
+		t.Fatalf("status=%d schedule=%q body=%s", rec.Code, service.createInput.ScheduleID, rec.Body.String())
+	}
+
+	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user-2"}, allowedPermissions: map[string]bool{"recipients.view": true}}
+	denied := httptest.NewRequest(http.MethodPost, "/api/v1/recipients", strings.NewReader(`{}`))
+	denied.Header.Set("Content-Type", "application/json")
+	denied.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	denied.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+	deniedRecorder := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: viewer, Recipients: service, SessionSecret: secret}).ServeHTTP(deniedRecorder, denied)
+	if deniedRecorder.Code != http.StatusForbidden {
+		t.Fatalf("expected forbidden for viewer, got %d", deniedRecorder.Code)
+	}
+}
+
+func TestRecipientCancelAndRestoreUseManagePermissionAndReturnConflicts(t *testing.T) {
+	secret := []byte("01234567890123456789012345678901")
+	manager := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"recipients.manage": true}}
+	service := &fakeRecipientsService{cancelErr: recipients.ErrAlreadyCancelled}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/recipients/allocation-1/cancel", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: manager, Recipients: service, SessionSecret: secret}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict || service.allocationID != "allocation-1" {
+		t.Fatalf("status=%d allocation=%q body=%s", rec.Code, service.allocationID, rec.Body.String())
+	}
+
+	restoreService := &fakeRecipientsService{}
+	restoreReq := httptest.NewRequest(http.MethodPost, "/api/v1/recipients/allocation-1/restore", nil)
+	restoreReq.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	restoreReq.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+	restoreRec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: manager, Recipients: restoreService, SessionSecret: secret}).ServeHTTP(restoreRec, restoreReq)
+	if restoreRec.Code != http.StatusNoContent || restoreService.allocationID != "allocation-1" {
+		t.Fatalf("status=%d allocation=%q", restoreRec.Code, restoreService.allocationID)
+	}
 }
