@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
 import { apiRequest } from '../../lib/api';
 import { PermissionsProvider } from '../../lib/permissions';
@@ -62,7 +63,8 @@ test('saves equipment fields as part of the recipient draft', async () => {
   vi.mocked(apiRequest).mockResolvedValue({ data: { ...ready, machine_option_code: 'shark-spwp8030', machine_serial_number: 'SP 06IABD 421291' } });
   renderWorkspace();
 
-  fireEvent.change(screen.getByLabelText('Merk/Tipe Mesin'), { target: { value: 'shark-spwp8030' } });
+  await userEvent.click(screen.getByRole('combobox', { name: 'Merk/Tipe Mesin' }));
+  await userEvent.click(await screen.findByRole('option', { name: 'SHARK SPWP 80-30/3"' }));
   fireEvent.change(screen.getByLabelText('Serial Number Mesin'), { target: { value: 'SP 06IABD 421291' } });
   fireEvent.click(screen.getByRole('button', { name: 'Simpan draft' }));
 

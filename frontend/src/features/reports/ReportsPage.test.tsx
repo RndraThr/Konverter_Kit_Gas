@@ -1,10 +1,16 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
 import { apiRequest } from '../../lib/api';
 import { ReportsPage } from './ReportsPage';
 
 vi.mock('../../lib/api', () => ({ apiRequest: vi.fn() }));
+
+async function chooseOption(label: string | RegExp, optionName: string | RegExp) {
+  await userEvent.click(screen.getByRole('combobox', { name: label }));
+  await userEvent.click(await screen.findByRole('option', { name: optionName }));
+}
 
 function renderPage() {
   vi.mocked(apiRequest).mockImplementation((path) => {
@@ -30,12 +36,11 @@ function renderPage() {
   return render(<QueryClientProvider client={client}><ReportsPage /></QueryClientProvider>);
 }
 
-afterEach(() => { vi.clearAllMocks(); });
+afterEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); });
 
 test('loads summary and rows for the selected schedule with full NIK', async () => {
   renderPage();
-  await screen.findByRole('option', { name: /Wajo Tahap 1/ });
-  fireEvent.change(screen.getByLabelText('Jadwal'), { target: { value: 'schedule-1' } });
+  await chooseOption('Jadwal', /Wajo Tahap 1/);
 
   expect(await screen.findByText('3')).toBeVisible();
   const table = screen.getByRole('table');
@@ -46,24 +51,24 @@ test('loads summary and rows for the selected schedule with full NIK', async () 
 
 test('applies status filters to the rows request', async () => {
   renderPage();
-  await screen.findByRole('option', { name: /Wajo Tahap 1/ });
-  fireEvent.change(screen.getByLabelText('Jadwal'), { target: { value: 'schedule-1' } });
+  await chooseOption('Jadwal', /Wajo Tahap 1/);
   await screen.findByText('Siti Aminah');
-  fireEvent.change(screen.getByLabelText('Status alokasi'), { target: { value: 'distributed' } });
+  await chooseOption('Status alokasi', 'distributed');
 
   const call = vi.mocked(apiRequest).mock.calls.find(([path]) => typeof path === 'string' && path.startsWith('/api/v1/reports/schedule/schedule-1/rows') && path.includes('allocation_status=distributed'));
   expect(call).toBeTruthy();
 });
 
 test('renders export links scoped to the selected schedule and active filters', async () => {
+  const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
   renderPage();
-  await screen.findByRole('option', { name: /Wajo Tahap 1/ });
-  fireEvent.change(screen.getByLabelText('Jadwal'), { target: { value: 'schedule-1' } });
+  await chooseOption('Jadwal', /Wajo Tahap 1/);
   await screen.findByText('Siti Aminah');
-  fireEvent.change(screen.getByLabelText('Status alokasi'), { target: { value: 'distributed' } });
+  await chooseOption('Status alokasi', 'distributed');
 
   const excelLink = screen.getByRole('link', { name: 'Export Excel' });
   const pdfLink = screen.getByRole('link', { name: 'Export PDF' });
   expect(excelLink.getAttribute('href')).toBe('/api/v1/reports/schedule/schedule-1/export.xlsx?allocation_status=distributed&distribution_status=&documentation_status=');
   expect(pdfLink.getAttribute('href')).toBe('/api/v1/reports/schedule/schedule-1/export.pdf?allocation_status=distributed&distribution_status=&documentation_status=');
+  expect(consoleError.mock.calls.flat().join(' ')).not.toContain('expected a native <button>');
 });

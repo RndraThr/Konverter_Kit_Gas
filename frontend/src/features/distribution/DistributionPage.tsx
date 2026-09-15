@@ -7,6 +7,8 @@ import type { DataResponse, RecipientWorkspaceData, ScheduleResponse, SearchResu
 import styles from './Distribution.module.css';
 import { DataState } from '@/components/DataState';
 import { PageHeader } from '@/components/PageHeader';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export function DistributionPage() {
 	const queryClient = useQueryClient();
@@ -35,7 +37,13 @@ export function DistributionPage() {
   return <div className={`page ${styles.page}`}>
     <PageHeader title="Pendistribusian" description="Cari penerima, periksa data, dan lengkapi dokumentasi pembagian." context={selectedSchedule ? <span className={styles.context}><strong>{selectedSchedule.regency?.document_code}</strong>{selectedSchedule.name}</span> : undefined} />
     <section className={styles.lookup} aria-label="Cari penerima">
-      <label className={styles.scheduleField}><span>Jadwal distribusi</span><select value={scheduleID} onChange={(event) => setScheduleID(event.target.value)}><option value="">Pilih kabupaten dan jadwal</option>{schedules.data?.data.filter((schedule) => schedule.status === 'active').map((schedule) => <option value={schedule.id} key={schedule.id}>{schedule.regency?.name} / {schedule.name}</option>)}</select></label>
+      <div className={styles.scheduleField}>
+        <Label id="distribution-schedule-label">Jadwal distribusi</Label>
+        <Select value={scheduleID} onValueChange={(value) => setScheduleID(value ?? '')}>
+          <SelectTrigger className="w-full" aria-labelledby="distribution-schedule-label"><SelectValue placeholder="Pilih kabupaten dan jadwal" /></SelectTrigger>
+          <SelectContent>{schedules.data?.data.filter((schedule) => schedule.status === 'active').map((schedule) => <SelectItem key={schedule.id} value={schedule.id}>{schedule.regency?.name} / {schedule.name}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
 		<RecipientSearch query={query} disabled={!scheduleID} loading={search.isFetching} results={search.data?.data ?? []} onQueryChange={(value) => { setQuery(value); setAllocationID(''); setWorkspace(null); }} onSelect={(id) => { setAllocationID(id); setQuery(''); setDebouncedQuery(''); }} />
     </section>
     {allocationID && detail.isPending && <DataState kind="loading" title="Memuat penerima" description="Menyiapkan data verifikasi dan dokumentasi." />}

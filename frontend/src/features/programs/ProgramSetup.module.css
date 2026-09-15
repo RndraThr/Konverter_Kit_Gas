@@ -2,9 +2,8 @@
 .contextMark { display: inline-flex; align-items: center; gap: 9px; color: var(--dashboard-muted); font-size: 12px; font-weight: 700; }
 .contextMark span { width: 26px; height: 2px; background: linear-gradient(90deg, var(--dashboard-green), var(--dashboard-gold)); }
 .tabs { min-width: 0; margin-top: 22px; }
-.tabList { position: relative; display: flex; width: 100%; max-width: 100%; height: 44px; min-height: 44px; justify-content: flex-start; gap: 4px; overflow-x: auto; overscroll-behavior-inline: contain; border-bottom: 1px solid var(--dashboard-line); scrollbar-width: none; }
-.tabList::-webkit-scrollbar { display: none; }
-.tab { min-width: 104px; height: 44px; padding: 0 18px; color: var(--dashboard-muted); font-size: 13px; font-weight: 750; }
+.tabList { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: 100%; max-width: 100%; height: 44px; min-height: 44px; gap: 0; border-bottom: 1px solid var(--dashboard-line); }
+.tab { width: 100%; min-width: 0; height: 44px; padding: 0 12px; color: var(--dashboard-muted); font-size: 13px; font-weight: 750; }
 .tab[data-active] { color: var(--dashboard-green-dark); }
 .tab::after { background: var(--dashboard-green-dark); }
 .tab:focus-visible { outline: 2px solid var(--dashboard-focus); outline-offset: -3px; }
@@ -42,7 +41,7 @@
 }
 @media (max-width: 640px) {
   .panel { padding-top: 18px; }
-  .tab { min-width: 92px; padding: 0 13px; }
+  .tab { padding: 0 6px; font-size: 12px; }
   :global(.panelHeading) { align-items: stretch; flex-direction: column; }
   :global(.panelHeading > button) { justify-content: center; }
   :global(.slotRow), :global(.equipmentRow), :global(.componentRow) { grid-template-columns: 1fr; }

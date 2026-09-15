@@ -5,8 +5,10 @@ import { DataState } from '@/components/DataState';
 import { DataTable } from '@/components/DataTable';
 import { PageHeader } from '@/components/PageHeader';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { apiRequest } from '../../lib/api';
 import type { DataResponse, ReportRow, ReportSummary, ScheduleResponse } from './types';
 import styles from './Reports.module.css';
@@ -35,14 +37,38 @@ export function ReportsPage() {
   return <div className={styles.page}>
     <PageHeader title="Laporan" description="Pantau progres alokasi, distribusi, dan dokumentasi per jadwal." />
     <section className={styles.filters} aria-label="Filter laporan">
-      <label><span>Jadwal</span><select value={scheduleID} onChange={(event) => setScheduleID(event.target.value)}><option value="">Pilih kabupaten dan jadwal</option>{schedules.data?.data.map((schedule) => <option value={schedule.id} key={schedule.id}>{schedule.regency?.name} / {schedule.name}</option>)}</select></label>
-      <label><span>Status alokasi</span><select value={allocationStatus} onChange={(event) => setAllocationStatus(event.target.value)}><option value="">Semua</option>{ALLOCATION_STATUSES.map((status) => <option value={status} key={status}>{statusText(status)}</option>)}</select></label>
-      <label><span>Status distribusi</span><select value={distributionStatus} onChange={(event) => setDistributionStatus(event.target.value)}><option value="">Semua</option>{DISTRIBUTION_STATUSES.map((status) => <option value={status} key={status}>{statusText(status)}</option>)}</select></label>
-      <label><span>Dokumentasi</span><select value={documentationStatus} onChange={(event) => setDocumentationStatus(event.target.value)}><option value="">Semua</option><option value="complete">Lengkap</option><option value="incomplete">Belum lengkap</option></select></label>
+      <div className="grid min-w-0 gap-2">
+        <Label id="report-schedule-label">Jadwal</Label>
+        <Select value={scheduleID} onValueChange={(value) => setScheduleID(value ?? '')}>
+          <SelectTrigger className="w-full" aria-labelledby="report-schedule-label"><SelectValue placeholder="Pilih kabupaten dan jadwal" /></SelectTrigger>
+          <SelectContent>{schedules.data?.data.map((schedule) => <SelectItem key={schedule.id} value={schedule.id}>{schedule.regency?.name} / {schedule.name}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+      <div className="grid min-w-0 gap-2">
+        <Label id="report-allocation-status-label">Status alokasi</Label>
+        <Select value={allocationStatus} onValueChange={(value) => setAllocationStatus(value ?? '')}>
+          <SelectTrigger className="w-full" aria-labelledby="report-allocation-status-label"><SelectValue placeholder="Semua status alokasi" /></SelectTrigger>
+          <SelectContent><SelectItem value="">Semua status alokasi</SelectItem>{ALLOCATION_STATUSES.map((status) => <SelectItem key={status} value={status}>{statusText(status)}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+      <div className="grid min-w-0 gap-2">
+        <Label id="report-distribution-status-label">Status distribusi</Label>
+        <Select value={distributionStatus} onValueChange={(value) => setDistributionStatus(value ?? '')}>
+          <SelectTrigger className="w-full" aria-labelledby="report-distribution-status-label"><SelectValue placeholder="Semua status distribusi" /></SelectTrigger>
+          <SelectContent><SelectItem value="">Semua status distribusi</SelectItem>{DISTRIBUTION_STATUSES.map((status) => <SelectItem key={status} value={status}>{statusText(status)}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+      <div className="grid min-w-0 gap-2">
+        <Label id="report-documentation-status-label">Dokumentasi</Label>
+        <Select value={documentationStatus} onValueChange={(value) => setDocumentationStatus(value ?? '')}>
+          <SelectTrigger className="w-full" aria-labelledby="report-documentation-status-label"><SelectValue placeholder="Semua dokumentasi" /></SelectTrigger>
+          <SelectContent><SelectItem value="">Semua dokumentasi</SelectItem><SelectItem value="complete">Lengkap</SelectItem><SelectItem value="incomplete">Belum lengkap</SelectItem></SelectContent>
+        </Select>
+      </div>
     </section>
     {!scheduleID ? <DataState kind="empty" title="Pilih jadwal untuk melihat laporan" description="Filter dan tautan ekspor akan menyesuaikan jadwal yang dipilih." /> : rows.isError || summary.isError ? <DataState kind="error" title="Laporan belum dapat dimuat" description="Periksa koneksi lalu coba kembali." action={{ label: 'Coba lagi', onClick: () => { void rows.refetch(); void summary.refetch(); } }} /> : <>
       <section className={styles.summary} aria-label="Ringkasan laporan"><Card><CardContent><strong>{summary.data?.data.total_allocations ?? '-'}</strong><span>Total alokasi</span></CardContent></Card>{summary.data?.data.allocation_status_counts.map((item) => <Card key={`allocation-${item.status}`}><CardContent><strong>{item.count}</strong><span>Alokasi {statusText(item.status)}</span></CardContent></Card>)}{summary.data?.data.distribution_status_counts.map((item) => <Card key={`distribution-${item.status}`}><CardContent><strong>{item.count}</strong><span>Distribusi {statusText(item.status)}</span></CardContent></Card>)}<Card><CardContent><strong>{summary.data?.data.documentation_incomplete ?? '-'}</strong><span>Dokumentasi belum lengkap</span></CardContent></Card></section>
-      <section className={styles.exportBar} aria-label="Ekspor laporan"><Button render={<a href={`${exportBase}/export.xlsx?${queryString}`} />} variant="outline"><FileSpreadsheet aria-hidden="true" />Export Excel<Download aria-hidden="true" /></Button><Button render={<a href={`${exportBase}/export.pdf?${queryString}`} />} variant="outline"><FileText aria-hidden="true" />Export PDF<Download aria-hidden="true" /></Button></section>
+      <section className={styles.exportBar} aria-label="Ekspor laporan"><a className={buttonVariants({ variant: 'outline' })} href={`${exportBase}/export.xlsx?${queryString}`}><FileSpreadsheet aria-hidden="true" />Export Excel<Download aria-hidden="true" /></a><a className={buttonVariants({ variant: 'outline' })} href={`${exportBase}/export.pdf?${queryString}`}><FileText aria-hidden="true" />Export PDF<Download aria-hidden="true" /></a></section>
       {rows.data?.data.length ? <DataTable label="Baris laporan distribusi" minimumWidth={1080}><thead><tr><th>No. Pembagian</th><th>Nama</th><th>NIK</th><th>No. Kartu/KUSUKA</th><th>Desa/Kecamatan</th><th>Status alokasi</th><th>Status distribusi</th><th>Dokumentasi</th><th>Tanggal selesai</th></tr></thead><tbody>{rows.data.data.map((row) => <tr key={row.distribution_number}><td className="font-medium tabular-nums">{row.distribution_number}</td><td><strong>{row.full_name}</strong></td><td className="tabular-nums">{row.nik}</td><td>{row.sector_identifier}</td><td>{[row.village, row.district].filter(Boolean).join(', ')}</td><td><ReportStatus value={row.allocation_status} complete={row.allocation_status === 'distributed'} /></td><td><ReportStatus value={row.distribution_status} complete={row.distribution_status === 'completed'} /></td><td><ReportStatus value={row.documentation_complete ? 'Lengkap' : 'Belum lengkap'} complete={row.documentation_complete} /></td><td className="whitespace-nowrap">{row.completed_at ? new Date(row.completed_at).toLocaleString('id-ID') : '-'}</td></tr>)}</tbody></DataTable> : <DataState kind="empty" title="Tidak ada baris laporan" description="Ubah filter untuk menampilkan penerima lain." />}
     </>}
   </div>;

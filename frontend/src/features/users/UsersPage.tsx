@@ -11,6 +11,7 @@ import { Button } from '../../components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../../components/ui/alert-dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../../components/ui/dropdown-menu';
 import { Input } from '../../components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { apiRequest, type ApiError } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
 import { Role, UserDialog, UserRecord, UserValues } from './UserDialog';
@@ -51,8 +52,14 @@ export function UsersPage() {
     <PageHeader title="Pengguna" description="Kelola akun internal dan role untuk akses operasional." actions={canManage ? <Button onClick={() => { save.reset(); setSelected(undefined); setDialogOpen(true); }}><Plus />Tambah pengguna</Button> : undefined} />
     <form className="flex flex-col gap-3 rounded-lg border bg-card p-3 sm:flex-row sm:items-end" onSubmit={submitSearch}>
       <div className="relative min-w-0 flex-1"><Search aria-hidden="true" className="pointer-events-none absolute top-3 left-3 size-5 text-muted-foreground" /><Input aria-label="Cari pengguna" className="pl-10" placeholder="Cari nama, username, atau email" value={search} onChange={(event) => setSearch(event.target.value)} /></div>
-      <select className="h-11 rounded-lg border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50" aria-label="Filter status" value={params.get('active') ?? ''} onChange={(event) => setFilter('active', event.target.value)}><option value="">Semua status</option><option value="true">Aktif</option><option value="false">Nonaktif</option></select>
-      <select className="h-11 rounded-lg border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50" aria-label="Filter role" value={params.get('role') ?? ''} onChange={(event) => setFilter('role', event.target.value)}><option value="">Semua role</option>{roles.data?.data.map((role) => <option key={role.id} value={role.code}>{role.name}</option>)}</select>
+      <Select value={params.get('active') ?? ''} onValueChange={(value) => setFilter('active', value ?? '')}>
+        <SelectTrigger aria-label="Filter status"><SelectValue placeholder="Semua status" /></SelectTrigger>
+        <SelectContent><SelectItem value="">Semua status</SelectItem><SelectItem value="true">Aktif</SelectItem><SelectItem value="false">Nonaktif</SelectItem></SelectContent>
+      </Select>
+      <Select value={params.get('role') ?? ''} onValueChange={(value) => setFilter('role', value ?? '')}>
+        <SelectTrigger aria-label="Filter role"><SelectValue placeholder="Semua role" /></SelectTrigger>
+        <SelectContent><SelectItem value="">Semua role</SelectItem>{roles.data?.data.map((role) => <SelectItem key={role.id} value={role.code}>{role.name}</SelectItem>)}</SelectContent>
+      </Select>
       <Button type="submit" variant="outline">Cari</Button>
     </form>
     {query.isError ? <DataState kind="error" title="Data pengguna belum dapat dimuat" description="Periksa koneksi lalu coba lagi." action={{ label: 'Coba lagi', onClick: () => query.refetch() }} /> : query.isPending ? <DataState kind="loading" title="Memuat pengguna" description="Menyiapkan daftar akun internal." /> : query.data?.data.items.length === 0 ? <DataState kind="empty" title="Belum ada pengguna yang sesuai" description="Ubah filter atau tambahkan pengguna baru." /> : <DataTable label="Daftar pengguna" minimumWidth={760}><thead><tr><th>Nama</th><th>Username</th><th>Role</th><th>Status</th>{canManage && <th className="w-14 text-right">Aksi</th>}</tr></thead><tbody>{query.data?.data.items.map((user) => <tr key={user.id}><td><strong>{user.full_name}</strong><br /><span className="text-xs text-muted-foreground">{user.email}</span></td><td>{user.username}</td><td>{user.roles.map((role) => role.name).join(', ') || '-'}</td><td><StatusBadge active={user.is_active} /></td>{canManage && <td className="text-right"><DropdownMenu open={actionsOpen === user.id} onOpenChange={(open) => setActionsOpen(open ? user.id : undefined)}><DropdownMenuTrigger onClick={() => setActionsOpen(user.id)} render={<Button variant="ghost" size="icon" aria-label={`Aksi ${user.full_name}`} />}><MoreHorizontal /></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-48"><DropdownMenuItem onClick={() => openEdit(user)}><Pencil />Edit pengguna</DropdownMenuItem><DropdownMenuItem onClick={() => openPassword(user)}><KeyRound />Atur ulang password</DropdownMenuItem></DropdownMenuContent></DropdownMenu></td>}</tr>)}</tbody></DataTable>}

@@ -10,6 +10,7 @@ import styles from './Distribution.module.css';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 function draftFrom(data: RecipientWorkspaceData): DraftInput {
   return {
@@ -67,9 +68,9 @@ export function RecipientWorkspace({ data, onSaved }: { data: RecipientWorkspace
 			{draft.nik !== (data.nik ?? '') && <label className={styles.fieldWide}><span>Alasan perubahan NIK</span><input value={draft.identity_change_reason} disabled={!editable} onChange={(event) => update('identity_change_reason', event.target.value)} /></label>}
         </div></div>
         <div className={styles.formGroup}><h4>Perlengkapan yang diserahkan</h4><div className={styles.fields}>
-			<label><span>Merk/Tipe Mesin</span><select aria-label="Merk/Tipe Mesin" value={draft.machine_option_code} disabled={!editable} onChange={(event) => update('machine_option_code', event.target.value)}><option value="">Pilih mesin</option>{machineOptions.map((option) => <option key={option.code} value={option.code}>{option.brand} {option.type}</option>)}</select></label>
+			<label><span>Merk/Tipe Mesin</span><Select value={draft.machine_option_code} disabled={!editable} onValueChange={(value) => update('machine_option_code', value ?? '')}><SelectTrigger className="w-full" aria-label="Merk/Tipe Mesin"><SelectValue placeholder="Pilih mesin" /></SelectTrigger><SelectContent>{machineOptions.map((option) => <SelectItem key={option.code} value={option.code}>{option.brand} {option.type}</SelectItem>)}</SelectContent></Select></label>
 			<label><span>Serial Number Mesin</span><input aria-label="Serial Number Mesin" value={draft.machine_serial_number} disabled={!editable} onChange={(event) => update('machine_serial_number', event.target.value)} /></label>
-			<label><span>Merk/Spesifikasi Selang</span><select aria-label="Merk/Spesifikasi Selang" value={draft.hose_option_code} disabled={!editable} onChange={(event) => update('hose_option_code', event.target.value)}><option value="">Pilih selang</option>{hoseOptions.map((option) => <option key={option.code} value={option.code}>{option.brand} {option.spec}</option>)}</select></label>
+			<label><span>Merk/Spesifikasi Selang</span><Select value={draft.hose_option_code} disabled={!editable} onValueChange={(value) => update('hose_option_code', value ?? '')}><SelectTrigger className="w-full" aria-label="Merk/Spesifikasi Selang"><SelectValue placeholder="Pilih selang" /></SelectTrigger><SelectContent>{hoseOptions.map((option) => <SelectItem key={option.code} value={option.code}>{option.brand} {option.spec}</SelectItem>)}</SelectContent></Select></label>
 			<label><span>Serial Number Selang</span><input aria-label="Serial Number Selang" value={draft.hose_serial_number} disabled={!editable} onChange={(event) => update('hose_serial_number', event.target.value)} /></label>
 			<label><span>Serial Number Konkit/Reducer</span><input aria-label="Serial Number Konkit/Reducer" value={draft.converter_serial_number} disabled={!editable} onChange={(event) => update('converter_serial_number', event.target.value)} /></label>
         </div></div>

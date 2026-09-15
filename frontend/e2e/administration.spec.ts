@@ -21,15 +21,58 @@ test.beforeEach(async ({ page }) => {
 
 test('administration foundation journey', async ({ page }, testInfo) => {
   const displayName = `Petugas E2E ${testInfo.project.name}`;
-  await expect(page.getByRole('heading', { name: 'Ringkasan program' })).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath('dashboard.png'), fullPage: true });
+  await expect(page.getByRole('heading', { name: 'Data Penerima', exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('data-penerima.png'), fullPage: true });
+
+  if (testInfo.project.name === 'desktop') {
+    const sidebar = page.getByLabel('Sidebar utama');
+    const toggle = page.getByRole('button', { name: 'Minimalkan sidebar' });
+    const ergasLogo = sidebar.getByAltText('Ergas');
+    const ksmLogo = sidebar.getByAltText('PT Kian Santang Mulitama Tbk');
+    const [sidebarBox, toggleBox, ergasBox, ksmBox] = await Promise.all([
+      sidebar.boundingBox(), toggle.boundingBox(), ergasLogo.boundingBox(), ksmLogo.boundingBox(),
+    ]);
+
+    expect(toggleBox?.width).toBe(44);
+    expect(toggleBox?.height).toBe(44);
+    expect(Math.abs((toggleBox?.x ?? 0) + 22 - ((sidebarBox?.x ?? 0) + (sidebarBox?.width ?? 0)))).toBeLessThanOrEqual(1);
+    expect(toggleBox?.y).toBeLessThan(40);
+    expect(ergasBox?.width).toBeGreaterThanOrEqual(76);
+    expect(ksmBox?.width).toBeGreaterThanOrEqual(92);
+
+    await toggle.click();
+    await expect(page.getByLabel('Sidebar utama')).toHaveAttribute('data-state', 'collapsed');
+    await expect(page.getByRole('button', { name: 'Maksimalkan sidebar' })).toBeVisible();
+    await expect.poll(async () => (await page.getByLabel('Sidebar utama').boundingBox())?.width).toBe(76);
+    await expect.poll(async () => (await page.getByLabel('Sidebar utama').getByAltText('Ergas').boundingBox())?.width).toBeGreaterThanOrEqual(48);
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await page.screenshot({ path: testInfo.outputPath('sidebar-minimized.png'), fullPage: true });
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Maksimalkan sidebar' })).toBeVisible();
+    await page.getByRole('button', { name: 'Maksimalkan sidebar' }).click();
+    await expect(page.getByRole('button', { name: 'Minimalkan sidebar' })).toBeVisible();
+  }
+
+  await navigate(page, 'Map Distribusi', testInfo.project.name === 'mobile');
+  await expect(page.getByRole('heading', { name: 'Map Distribusi', exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('map-distribusi.png'), fullPage: true });
+
+  await navigate(page, 'Profil saya', testInfo.project.name === 'mobile');
+  await expect(page.getByRole('heading', { name: 'Profil saya', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Informasi profil', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Keamanan akun', exact: true })).toBeVisible();
+  await expect(page.getByLabel('Password saat ini')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: testInfo.outputPath('profil-saya.png'), fullPage: true });
 
   for (const [link, heading] of [
-    ['Profil saya', 'Profil saya'], ['Pengguna', 'Pengguna'], ['Role & akses', 'Role & akses'],
+    ['Pengguna', 'Pengguna'], ['Role & akses', 'Role & akses'],
     ['Pengaturan', 'Pengaturan sistem'], ['Kesehatan sistem', 'Kesehatan sistem'], ['Riwayat aktivitas', 'Riwayat aktivitas'],
   ]) {
     await navigate(page, link, testInfo.project.name === 'mobile');
-    await expect(page.getByRole('heading', { name: heading })).toBeVisible();
+    await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`${link.toLowerCase().replaceAll(' ', '-')}.png`), fullPage: true });
   }

@@ -14,7 +14,9 @@ test('loads typed settings and saves changes', async () => {
   await userEvent.clear(name); await userEvent.type(name, 'Konkit Nasional');
   await userEvent.click(screen.getByRole('button', { name: 'Simpan pengaturan' }));
   expect(apiRequest).toHaveBeenCalledWith('/api/v1/system/settings', expect.objectContaining({ method: 'PATCH' }));
-  expect(screen.getByRole('button', { name: 'Simpan pengaturan' }).parentElement).toHaveClass('sticky', 'sm:static');
+  const actions = screen.getByRole('button', { name: 'Simpan pengaturan' }).parentElement;
+  expect(actions).not.toHaveClass('sticky');
+  expect(actions).toHaveClass('border-t', 'pt-5');
 });
 
 test('renders settings without save controls for read-only access', async () => {

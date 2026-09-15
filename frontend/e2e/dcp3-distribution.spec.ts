@@ -39,6 +39,7 @@ test('DCP3 to completed package distribution', async ({ page }, testInfo) => {
   await navigate(page, 'Persiapan program', mobile);
   await page.getByRole('tab', { name: 'Jadwal' }).click();
   await expect(page.getByText(schedule, { exact: true })).toBeVisible();
+  await expect.poll(() => page.getByRole('tablist').evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await expectNoHorizontalOverflow(page);
 
   await navigate(page, 'DCP3', mobile);
@@ -58,9 +59,7 @@ test('DCP3 to completed package distribution', async ({ page }, testInfo) => {
   await expect(page.getByRole('heading', { name: '2 data selesai diproses' })).toBeVisible();
 
   await navigate(page, 'Pendistribusian', mobile);
-  // DistributionPage still uses a native <select> for this field (not yet migrated to the
-  // shared Select primitive — same deferred gap as the Task 5 user/settings selects).
-  await page.getByLabel('Jadwal distribusi').selectOption({ label: `Wajo E2E / ${schedule}` });
+  await chooseOption(page.getByLabel('Jadwal distribusi'), `Wajo E2E / ${schedule}`);
   const search = page.getByRole('combobox', { name: 'Cari penerima' });
 
   await search.fill('1');

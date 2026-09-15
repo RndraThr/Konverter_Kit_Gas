@@ -2,9 +2,7 @@
 .context { display: inline-flex; align-items: center; gap: 9px; color: var(--dashboard-muted); font-size: 12px; font-weight: 700; }
 .context strong { display: grid; width: 38px; height: 28px; place-items: center; border: 1px solid #d5bd7f; border-radius: 4px; color: #745718; background: #fffaf0; }
 .lookup { display: grid; grid-template-columns: minmax(230px, .72fr) minmax(400px, 1.7fr); align-items: end; gap: 16px; padding: 18px 0 24px; border-top: 1px solid var(--dashboard-line); border-bottom: 1px solid var(--dashboard-line); }
-.scheduleField { display: grid; gap: 7px; }
-.scheduleField > span { font-size: 12px; font-weight: 700; }
-.scheduleField select { width: 100%; height: 45px; padding: 0 12px; border: 1px solid var(--dashboard-line); border-radius: 6px; color: var(--dashboard-ink); background: white; font: inherit; font-size: 13px; }
+.scheduleField { display: grid; min-width: 0; gap: 7px; }
 .searchArea { position: relative; min-width: 0; }
 .searchField { height: 45px; display: flex; align-items: center; gap: 9px; padding: 0 12px; border: 1px solid #aab9aa; border-radius: 6px; background: white; }
 .searchField:focus-within { outline: 2px solid var(--dashboard-focus); outline-offset: 1px; }
@@ -40,9 +38,9 @@
 .sectionTitle { display: grid; justify-items: start; gap: 6px; }.sectionTitle h3 { margin: 0; font-size: 16px; }.sectionTitle p { margin: 0; color: var(--dashboard-muted); font-size: 12px; }
 .formGroup { margin-top: 20px; }.formGroup + .formGroup { padding-top: 20px; border-top: 1px solid var(--dashboard-line); }.formGroup h4 { margin: 0; color: var(--green); font-size: 12px; }
 .fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 13px 15px; margin-top: 12px; }
-.fields label { display: grid; gap: 6px; }.fields label > span { font-size: 11px; font-weight: 700; }.fields label small { margin-left: 5px; color: var(--blue); font-size: 10px; }
-.fields input,.fields select { width: 100%; height: 44px; box-sizing: border-box; padding: 0 11px; border: 1px solid var(--dashboard-line); border-radius: 5px; color: var(--dashboard-ink); background: white; font: inherit; font-size: 12px; }
-.fields input:disabled,.fields select:disabled { color: var(--dashboard-muted); background: #f5f7f5; }.fields input:focus,.fields select:focus { outline: 2px solid var(--dashboard-focus); outline-offset: 1px; }
+.fields label { display: grid; min-width: 0; gap: 6px; }.fields label > span { font-size: 11px; font-weight: 700; }.fields label small { margin-left: 5px; color: var(--blue); font-size: 10px; }
+.fields input { width: 100%; height: 44px; box-sizing: border-box; padding: 0 11px; border: 1px solid var(--dashboard-line); border-radius: 5px; color: var(--dashboard-ink); background: white; font: inherit; font-size: 12px; }
+.fields input:disabled { color: var(--dashboard-muted); background: #f5f7f5; }.fields input:focus { outline: 2px solid var(--dashboard-focus); outline-offset: 1px; }
 .fieldWide { grid-column: 1/-1; }
 .formActions { min-height: 56px; display: flex; align-items: center; justify-content: flex-end; gap: 14px; margin-top: 15px; border-top: 1px solid var(--dashboard-line); }
 .formActions > span { color: var(--green); font-size: 11px; font-weight: 700; }.formActions button { display: inline-flex; align-items: center; gap: 7px; }.formActions svg { width: 16px; }

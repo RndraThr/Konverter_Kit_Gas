@@ -5,10 +5,11 @@ import { apiRequest } from '../../lib/api';
 import { PermissionsProvider } from '../../lib/permissions';
 import { DocumentationSlot } from './DocumentationSlot';
 import styles from './Distribution.module.css';
+import type { MediaFile } from './types';
 
 vi.mock('../../lib/api', () => ({ apiRequest: vi.fn() }));
 
-function renderSlot(files = []) {
+function renderSlot(files: MediaFile[] = []) {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   return render(<QueryClientProvider client={client}><PermissionsProvider permissions={['documentation.manage']}><DocumentationSlot slot={{
     id: 'slot-1', code: 'signed_bast', label: 'BAST bertanda tangan', status: 'missing', required: true, min_files: 1, max_files: 2, files,

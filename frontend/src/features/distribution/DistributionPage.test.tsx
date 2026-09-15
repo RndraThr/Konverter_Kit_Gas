@@ -1,11 +1,17 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
 import { apiRequest } from '../../lib/api';
 import { PermissionsProvider } from '../../lib/permissions';
 import { DistributionPage } from './DistributionPage';
 
 vi.mock('../../lib/api', () => ({ apiRequest: vi.fn() }));
+
+async function chooseSchedule(name: string | RegExp) {
+  await userEvent.click(screen.getByRole('combobox', { name: 'Jadwal distribusi' }));
+  await userEvent.click(await screen.findByRole('option', { name }));
+}
 
 const searchResult = {
   allocation_id: 'allocation-1', distribution_number: 7, full_name: 'Siti Aminah',
@@ -48,9 +54,8 @@ afterEach(() => { vi.useRealTimers(); vi.clearAllMocks(); });
 
 test('debounces recipient search and opens a masked eligibility result', async () => {
   renderPage();
-  await screen.findByRole('option', { name: /Wajo Tahap 1/ });
+  await chooseSchedule(/Wajo Tahap 1/);
   vi.useFakeTimers();
-  fireEvent.change(screen.getByLabelText('Jadwal distribusi'), { target: { value: 'schedule-1' } });
   fireEvent.change(screen.getByRole('combobox', { name: 'Cari penerima' }), { target: { value: 'Siti' } });
   await act(() => vi.advanceTimersByTimeAsync(299));
   expect(screen.queryByText('7306********0001')).not.toBeInTheDocument();
@@ -76,9 +81,8 @@ test('debounces recipient search and opens a masked eligibility result', async (
 
 test('saves missing recipient fields as a draft', async () => {
   renderPage();
-  await screen.findByRole('option', { name: /Wajo Tahap 1/ });
+  await chooseSchedule(/Wajo Tahap 1/);
   vi.useFakeTimers();
-  fireEvent.change(screen.getByLabelText('Jadwal distribusi'), { target: { value: 'schedule-1' } });
   fireEvent.change(screen.getByRole('combobox', { name: 'Cari penerima' }), { target: { value: 'Siti' } });
   await act(() => vi.advanceTimersByTimeAsync(300));
   await act(() => vi.runOnlyPendingTimersAsync());

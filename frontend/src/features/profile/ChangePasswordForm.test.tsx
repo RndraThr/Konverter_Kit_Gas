@@ -10,7 +10,7 @@ vi.mock('../../lib/api', () => ({ apiRequest: vi.fn() }));
 test('does not submit a password when confirmation differs', async () => {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   render(<QueryClientProvider client={client}><ChangePasswordForm /></QueryClientProvider>);
-  expect(screen.getByRole('heading', { name: 'Ubah password' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Keamanan akun' })).toBeInTheDocument();
   await userEvent.type(screen.getByLabelText('Password saat ini'), 'Current-password-2026');
   await userEvent.type(screen.getByLabelText('Password baru'), 'New-password-2026');
   await userEvent.type(screen.getByLabelText('Konfirmasi password baru'), 'Different-password-2026');

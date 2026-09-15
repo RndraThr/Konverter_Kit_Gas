@@ -14,7 +14,7 @@ export function FormField({ label, error, hint, id, ...input }: Props) {
   const descriptionID = error ? `${fieldID}-error` : hint ? `${fieldID}-hint` : undefined;
   const describedBy = [input['aria-describedby'], descriptionID].filter(Boolean).join(' ') || undefined;
 
-  return <div className="grid gap-2">
+  return <div className="grid min-w-0 gap-2">
     <Label htmlFor={fieldID}>{label}</Label>
     <Input
       {...input}

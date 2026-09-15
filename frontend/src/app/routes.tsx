@@ -4,8 +4,8 @@ import { ReactNode } from 'react';
 import { AppShell } from './AppShell';
 import { getBootstrap } from '../lib/api';
 import { DashboardPage } from '../features/dashboard/DashboardPage';
+import { DistributionMapPage } from '../features/dashboard/DistributionMapPage';
 import { ProfilePage } from '../features/profile/ProfilePage';
-import { ChangePasswordForm } from '../features/profile/ChangePasswordForm';
 import { UsersPage } from '../features/users/UsersPage';
 import { RolesPage } from '../features/roles/RolesPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
@@ -28,6 +28,7 @@ export const dashboardRoutes: RouteObject[] = [{
   element: <AppShell />,
   children: [
     { index: true, element: <DashboardPage /> },
+    { path: 'map-distribusi', element: <ProtectedPage permission="distribution.view"><DistributionMapPage /></ProtectedPage> },
     { path: 'persiapan-program', element: <ProtectedPage permission="programs.view"><ProgramSetupPage /></ProtectedPage> },
     { path: 'dcp3', element: <ProtectedPage permission="dcp3.view"><DCP3ImportPage /></ProtectedPage> },
     { path: 'dokumentasi/pendistribusian', element: <ProtectedPage permission="distribution.view"><DistributionPage /></ProtectedPage> },
@@ -38,7 +39,7 @@ export const dashboardRoutes: RouteObject[] = [{
     { path: 'kesehatan', element: <ProtectedPage permission="health.view"><HealthPage /></ProtectedPage> },
     { path: 'riwayat', element: <ProtectedPage permission="audit.view"><AuditPage /></ProtectedPage> },
     { path: 'profil', element: <ProfilePage /> },
-    { path: 'profil/password', element: <ChangePasswordForm /> },
+    { path: 'profil/password', element: <Navigate to="/profil" replace /> },
     { path: '*', element: <Navigate to="/" replace /> },
   ],
 }];

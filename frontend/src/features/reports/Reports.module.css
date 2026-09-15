@@ -1,8 +1,5 @@
 .page { display: grid; gap: 1.5rem; min-width: 0; }
 .filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .875rem; padding: 1rem; border: 1px solid var(--border); border-radius: .75rem; background: color-mix(in srgb, var(--card) 96%, #f4e4a6); }
-.filters label { display: grid; gap: .4rem; min-width: 0; color: var(--muted-foreground); font-size: .75rem; font-weight: 700; }
-.filters select { min-width: 0; height: 2.75rem; padding: 0 .75rem; border: 1px solid var(--input); border-radius: .5rem; color: var(--foreground); background: var(--background); font: inherit; font-size: .875rem; }
-.filters select:focus-visible { outline: 3px solid color-mix(in srgb, var(--ring) 50%, transparent); outline-offset: 1px; }
 .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .75rem; }
 .summary [data-slot="card"] { min-height: 6.5rem; border-color: color-mix(in srgb, var(--border) 76%, #b89b35); }
 .summary [data-slot="card-content"] { display: grid; align-content: center; gap: .25rem; height: 100%; }
