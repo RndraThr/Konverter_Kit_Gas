@@ -125,7 +125,7 @@ describe('AppShell', () => {
     Object.defineProperty(window, 'location', { configurable: true, value: { ...location, assign: vi.fn() } });
 
     renderShell();
-    await waitFor(() => expect(window.location.assign).toHaveBeenCalledWith('/login'));
+    await waitFor(() => expect(window.location.assign).toHaveBeenCalledWith('/login?notice=session_expired'));
 
     Object.defineProperty(window, 'location', { configurable: true, value: location });
   });

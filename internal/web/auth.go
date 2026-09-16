@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log"
 	"net"
@@ -68,12 +69,20 @@ func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) loginPost(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
+		if acceptsJSON(r) {
+			writeLoginJSONError(w, http.StatusBadRequest, "invalid_request")
+			return
+		}
 		http.Redirect(w, r, "/login?error=invalid", http.StatusSeeOther)
 		return
 	}
 	identity := strings.TrimSpace(r.FormValue("identity"))
 	password := r.FormValue("password")
 	if identity == "" || password == "" {
+		if acceptsJSON(r) {
+			writeLoginJSONError(w, http.StatusBadRequest, "invalid_request")
+			return
+		}
 		http.Redirect(w, r, "/login?error=invalid", http.StatusSeeOther)
 		return
 	}
@@ -81,6 +90,10 @@ func (s *Server) loginPost(w http.ResponseWriter, r *http.Request) {
 	ip := clientIP(r.RemoteAddr)
 	limiterKey := ip + "|" + strings.ToLower(identity)
 	if !s.limiter.Allow(limiterKey, time.Now()) {
+		if acceptsJSON(r) {
+			writeLoginJSONError(w, http.StatusTooManyRequests, "throttled")
+			return
+		}
 		http.Redirect(w, r, "/login?error=throttled", http.StatusSeeOther)
 		return
 	}
@@ -91,11 +104,19 @@ func (s *Server) loginPost(w http.ResponseWriter, r *http.Request) {
 		UserAgent: r.UserAgent(),
 	})
 	if errors.Is(err, auth.ErrInvalidCredentials) {
+		if acceptsJSON(r) {
+			writeLoginJSONError(w, http.StatusUnauthorized, "invalid_credentials")
+			return
+		}
 		http.Redirect(w, r, "/login?error=invalid", http.StatusSeeOther)
 		return
 	}
 	if err != nil {
 		log.Printf("login failed: %v", err)
+		if acceptsJSON(r) {
+			writeLoginJSONError(w, http.StatusInternalServerError, "login_failed")
+			return
+		}
 		http.Error(w, "Login tidak dapat diproses", http.StatusInternalServerError)
 		return
 	}
@@ -114,7 +135,26 @@ func (s *Server) loginPost(w http.ResponseWriter, r *http.Request) {
 		Secure:   s.deps.SessionCookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
+	if acceptsJSON(r) {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]any{"data": map[string]bool{"authenticated": true}}); err != nil {
+			log.Printf("encode login response failed: %v", err)
+		}
+		return
+	}
 	http.Redirect(w, r, "/dashboard", http.StatusSeeOther)
+}
+
+func acceptsJSON(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Accept"), "application/json")
+}
+
+func writeLoginJSONError(w http.ResponseWriter, status int, code string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(map[string]any{"error": map[string]string{"code": code}}); err != nil {
+		log.Printf("encode login error failed: %v", err)
+	}
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
@@ -146,7 +186,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 		Secure:   s.deps.SessionCookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
+	http.Redirect(w, r, "/login?notice=logged_out", http.StatusSeeOther)
 }
 
 func (s *Server) requireAuth(next http.Handler) http.Handler {

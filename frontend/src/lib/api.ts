@@ -48,7 +48,7 @@ export async function apiRequest<T>(path: string, init: ApiRequestInit = {}): Pr
 
   const response = await fetch(path, { ...requestInit, headers, credentials: 'same-origin' });
   if (response.status === 401) {
-    window.location.assign('/login');
+    window.location.assign('/login?notice=session_expired');
     throw new ApiError(401, 'unauthorized', 'Sesi login telah berakhir');
   }
   if (!response.ok && !acceptedStatuses.includes(response.status)) {

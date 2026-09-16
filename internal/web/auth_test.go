@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -12,6 +13,55 @@ import (
 	apihttp "konkit/internal/api"
 	"konkit/internal/auth"
 )
+
+func TestLoginPostReturnsJSONAfterSuccessfulAsyncAuthentication(t *testing.T) {
+	fake := &fakeAuthService{loginToken: "raw-session-token"}
+	req := formRequest(http.MethodPost, "/login", url.Values{
+		"identity": {"admin"}, "password": {"secret-password"},
+	})
+	req.Header.Set("Accept", "application/json")
+	rec := httptest.NewRecorder()
+
+	NewHandler(testDependencies(fake, false)).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || rec.Header().Get("Location") != "" {
+		t.Fatalf("unexpected response: status=%d location=%q", rec.Code, rec.Header().Get("Location"))
+	}
+	var payload struct {
+		Data struct {
+			Authenticated bool `json:"authenticated"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil || !payload.Data.Authenticated {
+		t.Fatalf("unexpected JSON response: err=%v body=%q", err, rec.Body.String())
+	}
+	if cookies := rec.Result().Cookies(); len(cookies) != 1 || cookies[0].Value != "raw-session-token" {
+		t.Fatalf("expected authenticated session cookie, got %+v", cookies)
+	}
+}
+
+func TestLoginPostReturnsGenericJSONForRejectedAsyncAuthentication(t *testing.T) {
+	fake := &fakeAuthService{loginErr: auth.ErrInvalidCredentials}
+	req := formRequest(http.MethodPost, "/login", url.Values{
+		"identity": {"admin"}, "password": {"wrong-password"},
+	})
+	req.Header.Set("Accept", "application/json")
+	rec := httptest.NewRecorder()
+
+	NewHandler(testDependencies(fake, false)).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized || rec.Header().Get("Location") != "" {
+		t.Fatalf("unexpected response: status=%d location=%q body=%q", rec.Code, rec.Header().Get("Location"), rec.Body.String())
+	}
+	var payload struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil || payload.Error.Code != "invalid_credentials" {
+		t.Fatalf("unexpected JSON response: err=%v payload=%+v", err, payload)
+	}
+}
 
 func TestLoginPostSetsSecureSessionCookieAndRedirects(t *testing.T) {
 	fake := &fakeAuthService{loginToken: "raw-session-token"}
@@ -126,7 +176,7 @@ func TestLogoutRevokesSessionAndExpiresCookie(t *testing.T) {
 
 	NewHandler(deps).ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/login" {
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/login?notice=logged_out" {
 		t.Fatalf("unexpected response: status=%d location=%q", rec.Code, rec.Header().Get("Location"))
 	}
 	if fake.loggedOutToken != "valid-token" {

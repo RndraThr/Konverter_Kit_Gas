@@ -26,6 +26,7 @@ test.beforeEach(async ({ page }) => {
   await page.getByLabel('Email atau username').fill(username);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Masuk' }).click();
+  await expect(page.getByText('Login berhasil. Mengarahkan ke dashboard…')).toBeVisible();
   await expect(page).toHaveURL(/\/dashboard/);
 });
 
