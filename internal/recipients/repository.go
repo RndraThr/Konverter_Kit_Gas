@@ -129,10 +129,20 @@ func getRecipientByID(ctx context.Context, q interface {
 	return item, nil
 }
 
-func isUniqueViolation(err error) bool {
+// uniqueViolationConstraint reports whether err is a Postgres unique-violation
+// and, if so, the name of the constraint/index that was violated.
+func uniqueViolationConstraint(err error) (string, bool) {
 	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return pgErr.ConstraintName, true
+	}
+	return "", false
 }
+
+const (
+	peopleNIKUniqueIndex                    = "people_nik_uq"
+	personSectorIdentifierCrossPersonUnique = "person_sector_identifiers_identifier_type_normalized_value_key"
+)
 
 func recordRecipientAudit(ctx context.Context, tx pgx.Tx, actor auth.Principal, meta auth.ClientMeta, action, resourceID string, metadata map[string]any) error {
 	return audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "recipient." + action, ResourceType: "package_allocation", ResourceID: resourceID, Metadata: metadata, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent})
@@ -161,7 +171,10 @@ func (r *Repository) Create(ctx context.Context, actor auth.Principal, input Cre
 	var personID string
 	err = tx.QueryRow(ctx, `INSERT INTO people(full_name,nik,address,village,district,phone_number) VALUES($1,NULLIF($2,''),$3,$4,$5,$6) RETURNING id::text`,
 		input.FullName, input.NIK, input.Address, input.Village, input.District, input.PhoneNumber).Scan(&personID)
-	if isUniqueViolation(err) {
+	if constraint, ok := uniqueViolationConstraint(err); ok {
+		if constraint == peopleNIKUniqueIndex {
+			return Recipient{}, ErrNIKInUse
+		}
 		return Recipient{}, ErrNIKInvalid
 	}
 	if err != nil {
@@ -175,6 +188,9 @@ func (r *Repository) Create(ctx context.Context, actor auth.Principal, input Cre
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO person_sector_identifiers(person_id,identifier_type,normalized_value,display_value) VALUES($1,$2,$3,$3)`,
 			personID, identifierType, strings.ToUpper(strings.TrimSpace(input.SectorIdentifier))); err != nil {
+			if constraint, ok := uniqueViolationConstraint(err); ok && constraint == personSectorIdentifierCrossPersonUnique {
+				return Recipient{}, ErrSectorIdentifierInUse
+			}
 			return Recipient{}, fmt.Errorf("insert sector identifier: %w", err)
 		}
 	}
@@ -238,7 +254,10 @@ func (r *Repository) Update(ctx context.Context, actor auth.Principal, allocatio
 
 	_, err = tx.Exec(ctx, `UPDATE people SET full_name=$2,nik=NULLIF($3,''),address=$4,village=$5,district=$6,phone_number=$7,updated_at=now() WHERE id=$1`,
 		personID, input.FullName, input.NIK, input.Address, input.Village, input.District, input.PhoneNumber)
-	if isUniqueViolation(err) {
+	if constraint, ok := uniqueViolationConstraint(err); ok {
+		if constraint == peopleNIKUniqueIndex {
+			return Recipient{}, ErrNIKInUse
+		}
 		return Recipient{}, ErrNIKInvalid
 	}
 	if err != nil {
@@ -255,6 +274,9 @@ func (r *Repository) Update(ctx context.Context, actor auth.Principal, allocatio
 			INSERT INTO person_sector_identifiers(person_id,identifier_type,normalized_value,display_value) VALUES($1,$2,$3,$3)
 			ON CONFLICT (person_id, identifier_type) DO UPDATE SET normalized_value = EXCLUDED.normalized_value, display_value = EXCLUDED.display_value, updated_at = now()
 		`, personID, identifierType, normalized); err != nil {
+			if constraint, ok := uniqueViolationConstraint(err); ok && constraint == personSectorIdentifierCrossPersonUnique {
+				return Recipient{}, ErrSectorIdentifierInUse
+			}
 			return Recipient{}, fmt.Errorf("upsert sector identifier: %w", err)
 		}
 	}
@@ -281,6 +303,9 @@ func (r *Repository) Cancel(ctx context.Context, actor auth.Principal, allocatio
 	}
 	if currentStatus == "cancelled" {
 		return ErrAlreadyCancelled
+	}
+	if currentStatus == "distributed" || currentStatus == "replaced" {
+		return ErrCancelNotAllowed
 	}
 	if _, err := tx.Exec(ctx, `UPDATE package_allocations SET status='cancelled', updated_at=now() WHERE id=$1`, allocationID); err != nil {
 		return fmt.Errorf("cancel allocation: %w", err)

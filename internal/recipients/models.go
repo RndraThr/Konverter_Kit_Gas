@@ -6,12 +6,15 @@ import (
 )
 
 var (
-	ErrNotFound         = errors.New("recipient not found")
-	ErrScheduleNotFound = errors.New("schedule not found")
-	ErrFullNameRequired = errors.New("full name is required")
-	ErrNIKInvalid       = errors.New("nik must be exactly 16 digits")
-	ErrAlreadyCancelled = errors.New("recipient is already cancelled")
-	ErrNotCancelled     = errors.New("recipient is not cancelled")
+	ErrNotFound              = errors.New("recipient not found")
+	ErrScheduleNotFound      = errors.New("schedule not found")
+	ErrFullNameRequired      = errors.New("full name is required")
+	ErrNIKInvalid            = errors.New("nik must be exactly 16 digits")
+	ErrNIKInUse              = errors.New("nik is already registered to another person")
+	ErrSectorIdentifierInUse = errors.New("sector identifier is already registered to another person")
+	ErrAlreadyCancelled      = errors.New("recipient is already cancelled")
+	ErrNotCancelled          = errors.New("recipient is not cancelled")
+	ErrCancelNotAllowed      = errors.New("recipient: cannot cancel a completed distribution")
 )
 
 type Recipient struct {

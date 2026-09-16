@@ -49,3 +49,21 @@ test('redirects the old password URL to the unified profile page', async () => {
   expect(screen.getByRole('heading', { name: 'Keamanan akun' })).toBeInTheDocument();
   expect(router.state.location.pathname).toBe('/profil');
 });
+
+test('redirects a user without recipients.view away from / to /profil instead of looping', async () => {
+  const restrictedBootstrap = {
+    ...bootstrap,
+    data: { ...bootstrap.data, permissions: ['distribution.view'] },
+  };
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify(restrictedBootstrap), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  }));
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const router = createMemoryRouter(dashboardRoutes, { initialEntries: ['/'] });
+
+  render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
+
+  expect(await screen.findByRole('heading', { name: 'Profil saya' })).toBeInTheDocument();
+  expect(router.state.location.pathname).toBe('/profil');
+});

@@ -474,8 +474,12 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusRequestEntityTooLarge, "media_too_large", err.Error())
 	case errors.Is(err, administration.ErrLastSuperAdmin), errors.Is(err, administration.ErrSelfDeactivation), errors.Is(err, administration.ErrRoleInUse), errors.Is(err, administration.ErrSystemRole):
 		writeError(w, http.StatusConflict, "operation_rejected", err.Error())
-	case errors.Is(err, recipients.ErrAlreadyCancelled), errors.Is(err, recipients.ErrNotCancelled):
+	case errors.Is(err, recipients.ErrAlreadyCancelled), errors.Is(err, recipients.ErrNotCancelled), errors.Is(err, recipients.ErrCancelNotAllowed):
 		writeError(w, http.StatusConflict, "operation_rejected", err.Error())
+	case errors.Is(err, recipients.ErrNIKInUse):
+		writeFieldError(w, http.StatusConflict, "conflict", err.Error(), map[string]string{"nik": err.Error()})
+	case errors.Is(err, recipients.ErrSectorIdentifierInUse):
+		writeFieldError(w, http.StatusConflict, "conflict", err.Error(), map[string]string{"sector_identifier": err.Error()})
 	case errors.Is(err, profile.ErrFullNameInvalid), errors.Is(err, profile.ErrUsernameInvalid), errors.Is(err, profile.ErrEmailInvalid),
 		errors.Is(err, profile.ErrCurrentPassword), errors.Is(err, profile.ErrPasswordTooShort), errors.Is(err, profile.ErrPasswordUnchanged),
 		errors.Is(err, administration.ErrInvalidInput), errors.Is(err, administration.ErrPasswordTooShort), errors.Is(err, administration.ErrRoleNotFound),

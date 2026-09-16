@@ -20,7 +20,7 @@ function ProtectedPage({ permission, children }: { permission: string; children:
   const bootstrap = useQuery({ queryKey: ['bootstrap'], queryFn: getBootstrap });
   if (!bootstrap.data) return null;
   const permissions = bootstrap.data.data.permissions;
-  return permissions.includes('*') || permissions.includes(permission) ? children : <Navigate to="/" replace />;
+  return permissions.includes('*') || permissions.includes(permission) ? children : <Navigate to="/profil" replace />;
 }
 
 export const dashboardRoutes: RouteObject[] = [{
@@ -40,6 +40,6 @@ export const dashboardRoutes: RouteObject[] = [{
     { path: 'riwayat', element: <ProtectedPage permission="audit.view"><AuditPage /></ProtectedPage> },
     { path: 'profil', element: <ProfilePage /> },
     { path: 'profil/password', element: <Navigate to="/profil" replace /> },
-    { path: '*', element: <Navigate to="/" replace /> },
+    { path: '*', element: <Navigate to="/profil" replace /> },
   ],
 }];

@@ -281,3 +281,147 @@ func TestCancelHidesFromDefaultListAndRestoreReturnsToReady(t *testing.T) {
 		t.Fatalf("expected status ready after restore, got %q", restored.AllocationStatus)
 	}
 }
+
+func TestCancelRejectsAlreadyDistributedAllocation(t *testing.T) {
+	pool := recipientsIntegrationPool(t)
+	fixture := seedRecipientFixture(t, pool)
+	repository := NewRepository(pool)
+	ctx := context.Background()
+	actor := auth.Principal{}
+	meta := auth.ClientMeta{UserAgent: "test"}
+	unrestricted := auth.RegencyScope{Unrestricted: true}
+
+	if err := repository.Cancel(ctx, actor, fixture.distributedAllocID, meta, unrestricted); !errors.Is(err, ErrCancelNotAllowed) {
+		t.Fatalf("expected ErrCancelNotAllowed for a distributed allocation, got %v", err)
+	}
+
+	recipient, err := getRecipientByID(ctx, pool, fixture.distributedAllocID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recipient.AllocationStatus != "distributed" {
+		t.Fatalf("expected status to remain distributed after rejected cancel, got %q", recipient.AllocationStatus)
+	}
+}
+
+func TestCreateRejectsNIKAlreadyRegisteredToAnotherPerson(t *testing.T) {
+	pool := recipientsIntegrationPool(t)
+	fixture := seedRecipientFixture(t, pool)
+	repository := NewRepository(pool)
+	ctx := context.Background()
+	actor := auth.Principal{}
+	meta := auth.ClientMeta{UserAgent: "test"}
+	unrestricted := auth.RegencyScope{Unrestricted: true}
+
+	first, err := repository.Create(ctx, actor, CreateInput{
+		ScheduleID: fixture.scheduleID, FullName: "First Owner", NIK: "1111222233334444",
+	}, meta, unrestricted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cleanupCreatedRecipient(t, pool, first.AllocationID) })
+
+	_, err = repository.Create(ctx, actor, CreateInput{
+		ScheduleID: fixture.scheduleID, FullName: "Second Person", NIK: "1111222233334444",
+	}, meta, unrestricted)
+	if !errors.Is(err, ErrNIKInUse) {
+		t.Fatalf("expected ErrNIKInUse for a duplicate NIK, got %v", err)
+	}
+}
+
+func TestUpdateRejectsNIKAlreadyRegisteredToAnotherPerson(t *testing.T) {
+	pool := recipientsIntegrationPool(t)
+	fixture := seedRecipientFixture(t, pool)
+	repository := NewRepository(pool)
+	ctx := context.Background()
+	actor := auth.Principal{}
+	meta := auth.ClientMeta{UserAgent: "test"}
+	unrestricted := auth.RegencyScope{Unrestricted: true}
+
+	first, err := repository.Create(ctx, actor, CreateInput{
+		ScheduleID: fixture.scheduleID, FullName: "Owner Of NIK", NIK: "5555666677778888",
+	}, meta, unrestricted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cleanupCreatedRecipient(t, pool, first.AllocationID) })
+
+	_, err = repository.Update(ctx, actor, fixture.needsReviewAllocID, UpdateInput{
+		FullName: "Needs Review Person", NIK: "5555666677778888",
+	}, meta, unrestricted)
+	if !errors.Is(err, ErrNIKInUse) {
+		t.Fatalf("expected ErrNIKInUse when updating to a NIK owned by another person, got %v", err)
+	}
+}
+
+func TestCreateRejectsSectorIdentifierAlreadyRegisteredToAnotherPerson(t *testing.T) {
+	pool := recipientsIntegrationPool(t)
+	fixture := seedRecipientFixture(t, pool)
+	repository := NewRepository(pool)
+	ctx := context.Background()
+	actor := auth.Principal{}
+	meta := auth.ClientMeta{UserAgent: "test"}
+	unrestricted := auth.RegencyScope{Unrestricted: true}
+
+	first, err := repository.Create(ctx, actor, CreateInput{
+		ScheduleID: fixture.scheduleID, FullName: "First Card Owner", SectorIdentifier: "KP-SHARED-001",
+	}, meta, unrestricted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cleanupCreatedRecipient(t, pool, first.AllocationID) })
+
+	_, err = repository.Create(ctx, actor, CreateInput{
+		ScheduleID: fixture.scheduleID, FullName: "Second Card Owner", SectorIdentifier: "KP-SHARED-001",
+	}, meta, unrestricted)
+	if !errors.Is(err, ErrSectorIdentifierInUse) {
+		t.Fatalf("expected ErrSectorIdentifierInUse for a duplicate sector identifier on create, got %v", err)
+	}
+}
+
+func TestUpdateRejectsSectorIdentifierAlreadyRegisteredToAnotherPerson(t *testing.T) {
+	pool := recipientsIntegrationPool(t)
+	fixture := seedRecipientFixture(t, pool)
+	repository := NewRepository(pool)
+	ctx := context.Background()
+	actor := auth.Principal{}
+	meta := auth.ClientMeta{UserAgent: "test"}
+	unrestricted := auth.RegencyScope{Unrestricted: true}
+
+	first, err := repository.Create(ctx, actor, CreateInput{
+		ScheduleID: fixture.scheduleID, FullName: "Card Owner", SectorIdentifier: "KP-SHARED-002",
+	}, meta, unrestricted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cleanupCreatedRecipient(t, pool, first.AllocationID) })
+
+	_, err = repository.Update(ctx, actor, fixture.needsReviewAllocID, UpdateInput{
+		FullName: "Needs Review Person", SectorIdentifier: "KP-SHARED-002",
+	}, meta, unrestricted)
+	if !errors.Is(err, ErrSectorIdentifierInUse) {
+		t.Fatalf("expected ErrSectorIdentifierInUse when updating to a sector identifier owned by another person, got %v", err)
+	}
+}
+
+func cleanupCreatedRecipient(t *testing.T, pool *pgxpool.Pool, allocationID string) {
+	t.Helper()
+	cleanupCtx := context.Background()
+	var personID, nominationID string
+	if err := pool.QueryRow(cleanupCtx, `
+		SELECT COALESCE(pa.actual_recipient_person_id, pa.intended_person_id, cn.person_id)::text, pa.nomination_id::text
+		FROM package_allocations pa JOIN candidate_nominations cn ON cn.id = pa.nomination_id WHERE pa.id = $1
+	`, allocationID).Scan(&personID, &nominationID); err != nil {
+		t.Logf("cleanup: lookup created recipient failed: %v", err)
+		return
+	}
+	if _, err := pool.Exec(cleanupCtx, `DELETE FROM package_allocations WHERE id = $1`, allocationID); err != nil {
+		t.Logf("cleanup: delete created package_allocations failed: %v", err)
+	}
+	if _, err := pool.Exec(cleanupCtx, `DELETE FROM candidate_nominations WHERE id = $1`, nominationID); err != nil {
+		t.Logf("cleanup: delete created candidate_nominations failed: %v", err)
+	}
+	if _, err := pool.Exec(cleanupCtx, `DELETE FROM people WHERE id = $1`, personID); err != nil {
+		t.Logf("cleanup: delete created people failed: %v", err)
+	}
+}
