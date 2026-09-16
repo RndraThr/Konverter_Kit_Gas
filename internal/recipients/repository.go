@@ -2,6 +2,7 @@ package recipients
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -18,6 +19,13 @@ type Repository struct{ pool *pgxpool.Pool }
 
 func NewRepository(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
+const evidenceStatusSQL = `CASE
+	WHEN COALESCE(evidence.total_slots, 0) = 0 THEN 'not-configured'
+	WHEN COALESCE(evidence.required_complete, 0) = COALESCE(evidence.required_total, 0) THEN 'complete'
+	WHEN COALESCE(evidence.accepted_files, 0) = 0 THEN 'empty'
+	ELSE 'partial'
+END`
+
 const recipientSelect = `
 SELECT
 	pa.id::text, pa.distribution_number, pa.status,
@@ -27,7 +35,10 @@ SELECT
 	prog.id::text, prog.name, prog.program_type,
 	r.id::text, r.name, r.document_code,
 	ps.id::text, ps.name,
-	pa.created_at, pa.updated_at
+	COALESCE(evidence.evidence_slots, '[]'::jsonb),
+	pa.created_at, pa.updated_at` + recipientFrom
+
+const recipientFrom = `
 FROM package_allocations pa
 JOIN candidate_nominations cn ON cn.id = pa.nomination_id
 JOIN program_schedules ps ON ps.id = pa.schedule_id
@@ -36,7 +47,33 @@ JOIN regencies r ON r.id = ps.regency_id
 JOIN people p ON p.id = COALESCE(pa.actual_recipient_person_id, pa.intended_person_id, cn.person_id)
 LEFT JOIN distribution_records dr ON dr.allocation_id = pa.id
 LEFT JOIN person_sector_identifiers psi ON psi.person_id = p.id
-	AND psi.identifier_type = CASE prog.program_type WHEN 'farmer' THEN 'farmer_card' ELSE 'kusuka' END`
+	AND psi.identifier_type = CASE prog.program_type WHEN 'farmer' THEN 'farmer_card' ELSE 'kusuka' END
+LEFT JOIN LATERAL (
+	SELECT
+	jsonb_agg(
+		jsonb_build_object(
+			'slot_code', slot.slot_code,
+			'label', slot.label_snapshot,
+			'is_required', slot.is_required,
+			'min_files', slot.min_files,
+			'accepted_files', slot.accepted_files,
+			'complete', slot.accepted_files >= slot.min_files
+		)
+		ORDER BY slot.sort_order, slot.slot_code
+	) AS evidence_slots,
+	count(*)::int AS total_slots,
+	count(*) FILTER (WHERE slot.is_required)::int AS required_total,
+	count(*) FILTER (WHERE slot.is_required AND slot.accepted_files >= slot.min_files)::int AS required_complete,
+	COALESCE(sum(slot.accepted_files), 0)::int AS accepted_files
+	FROM (
+		SELECT s.slot_code, s.label_snapshot, s.is_required, s.min_files, s.sort_order,
+			count(m.id) FILTER (WHERE m.status = 'accepted')::int AS accepted_files
+		FROM documentation_slots s
+		LEFT JOIN media_files m ON m.documentation_slot_id = s.id
+		WHERE s.distribution_id = dr.id
+		GROUP BY s.id, s.slot_code, s.label_snapshot, s.is_required, s.min_files, s.sort_order
+	) slot
+) evidence ON true`
 
 const recipientWhere = `
 WHERE ($1 = '%%' OR p.full_name ILIKE $1 OR p.nik ILIKE $1 OR psi.normalized_value ILIKE $1)
@@ -45,10 +82,57 @@ WHERE ($1 = '%%' OR p.full_name ILIKE $1 OR p.nik ILIKE $1 OR psi.normalized_val
   AND ($4 = '' OR prog.program_type = $4)
   AND (($5 = '' AND pa.status != 'cancelled') OR ($5 != '' AND pa.status = $5))
   AND ($6 = '' OR dr.status = $6)
-  AND ($7 OR ps.regency_id::text = ANY($8))`
+  AND ($7 = '' OR ps.id::text = $7)
+  AND ($8 = '' OR p.district ILIKE $8)
+  AND ($9 = '' OR (` + evidenceStatusSQL + `) = $9)
+  AND ($10 OR ps.regency_id::text = ANY($11))`
+
+func recipientOrder(filter Filter) string {
+	columns := map[string]string{
+		"created_at":          "pa.created_at",
+		"distribution_number": "pa.distribution_number",
+		"full_name":           "p.full_name",
+		"nik":                 "p.nik",
+		"district":            "p.district",
+		"regency":             "r.name",
+		"program":             "prog.name",
+		"schedule":            "ps.name",
+		"allocation_status":   "pa.status",
+		"distribution_status": "dr.status",
+		"evidence": `CASE (` + evidenceStatusSQL + `)
+			WHEN 'not-configured' THEN 0 WHEN 'empty' THEN 1
+			WHEN 'partial' THEN 2 WHEN 'complete' THEN 3 ELSE 0 END`,
+	}
+	column, ok := columns[filter.SortBy]
+	if !ok {
+		column = columns["created_at"]
+	}
+	direction := "DESC"
+	if strings.EqualFold(filter.SortDirection, "asc") {
+		direction = "ASC"
+	}
+	return " ORDER BY " + column + " " + direction + " NULLS LAST, pa.id DESC"
+}
+
+func recipientFilterArgs(filter Filter, scope auth.RegencyScope) []any {
+	return []any{
+		"%" + filter.Search + "%",
+		filter.RegencyID,
+		filter.ProgramID,
+		filter.ProgramType,
+		filter.AllocationStatus,
+		filter.DistributionStatus,
+		filter.ScheduleID,
+		filter.District,
+		filter.EvidenceStatus,
+		scope.Unrestricted,
+		scope.RegencyIDs,
+	}
+}
 
 func scanRecipient(row pgx.Row) (Recipient, error) {
 	var item Recipient
+	var evidenceJSON []byte
 	if err := row.Scan(
 		&item.AllocationID, &item.DistributionNumber, &item.AllocationStatus,
 		&item.DistributionStatus,
@@ -57,23 +141,29 @@ func scanRecipient(row pgx.Row) (Recipient, error) {
 		&item.ProgramID, &item.ProgramName, &item.ProgramType,
 		&item.RegencyID, &item.RegencyName, &item.RegencyDocumentCode,
 		&item.ScheduleID, &item.ScheduleName,
+		&evidenceJSON,
 		&item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
 		return Recipient{}, fmt.Errorf("scan recipient: %w", err)
+	}
+	if err := json.Unmarshal(evidenceJSON, &item.EvidenceSlots); err != nil {
+		return Recipient{}, fmt.Errorf("decode recipient evidence: %w", err)
+	}
+	if item.EvidenceSlots == nil {
+		item.EvidenceSlots = []EvidenceSlotSummary{}
 	}
 	return item, nil
 }
 
 func (r *Repository) List(ctx context.Context, filter Filter, scope auth.RegencyScope) (Page, error) {
-	search := "%" + filter.Search + "%"
-	args := []any{search, filter.RegencyID, filter.ProgramID, filter.ProgramType, filter.AllocationStatus, filter.DistributionStatus, scope.Unrestricted, scope.RegencyIDs}
+	args := recipientFilterArgs(filter, scope)
 
 	var total int64
-	if err := r.pool.QueryRow(ctx, "SELECT count(*) FROM package_allocations pa JOIN candidate_nominations cn ON cn.id=pa.nomination_id JOIN program_schedules ps ON ps.id=pa.schedule_id JOIN programs prog ON prog.id=ps.program_id JOIN regencies r ON r.id=ps.regency_id JOIN people p ON p.id=COALESCE(pa.actual_recipient_person_id,pa.intended_person_id,cn.person_id) LEFT JOIN distribution_records dr ON dr.allocation_id=pa.id LEFT JOIN person_sector_identifiers psi ON psi.person_id=p.id AND psi.identifier_type = CASE prog.program_type WHEN 'farmer' THEN 'farmer_card' ELSE 'kusuka' END "+recipientWhere, args...).Scan(&total); err != nil {
+	if err := r.pool.QueryRow(ctx, "SELECT count(*) "+recipientFrom+recipientWhere, args...).Scan(&total); err != nil {
 		return Page{}, fmt.Errorf("count recipients: %w", err)
 	}
 
-	rows, err := r.pool.Query(ctx, recipientSelect+recipientWhere+" ORDER BY pa.created_at DESC, pa.id DESC LIMIT $9 OFFSET $10",
+	rows, err := r.pool.Query(ctx, recipientSelect+recipientWhere+recipientOrder(filter)+" LIMIT $12 OFFSET $13",
 		append(args, filter.PageSize, (filter.Page-1)*filter.PageSize)...)
 	if err != nil {
 		return Page{}, fmt.Errorf("list recipients: %w", err)
@@ -93,27 +183,23 @@ func (r *Repository) List(ctx context.Context, filter Filter, scope auth.Regency
 	return Page{Items: items, Page: filter.Page, PageSize: filter.PageSize, Total: total}, nil
 }
 
-func (r *Repository) Stats(ctx context.Context, scope auth.RegencyScope) (Stats, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT pa.status, count(*)
-		FROM package_allocations pa JOIN program_schedules ps ON ps.id = pa.schedule_id
-		WHERE ($1 OR ps.regency_id::text = ANY($2))
-		GROUP BY pa.status`, scope.Unrestricted, scope.RegencyIDs)
+func (r *Repository) Stats(ctx context.Context, filter Filter, scope auth.RegencyScope) (Stats, error) {
+	rows, err := r.pool.Query(ctx, `SELECT pa.status, (`+evidenceStatusSQL+`) AS evidence_status, count(*) `+
+		recipientFrom+recipientWhere+` GROUP BY pa.status, evidence_status`, recipientFilterArgs(filter, scope)...)
 	if err != nil {
 		return Stats{}, fmt.Errorf("stats recipients: %w", err)
 	}
 	defer rows.Close()
-	stats := Stats{ByAllocationStatus: map[string]int64{}}
+	stats := Stats{ByAllocationStatus: map[string]int64{}, ByEvidenceStatus: map[string]int64{}}
 	for rows.Next() {
-		var status string
+		var status, evidenceStatus string
 		var count int64
-		if err := rows.Scan(&status, &count); err != nil {
+		if err := rows.Scan(&status, &evidenceStatus, &count); err != nil {
 			return Stats{}, fmt.Errorf("scan recipient stats: %w", err)
 		}
 		stats.ByAllocationStatus[status] = count
-		if status != "cancelled" {
-			stats.Total += count
-		}
+		stats.ByEvidenceStatus[evidenceStatus] += count
+		stats.Total += count
 	}
 	return stats, rows.Err()
 }

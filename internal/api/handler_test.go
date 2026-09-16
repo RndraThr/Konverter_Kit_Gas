@@ -870,16 +870,17 @@ type fakeRecipientsService struct {
 	updateInput      recipients.UpdateInput
 	allocationID     string
 	seenRegencyScope auth.RegencyScope
+	seenFilter       recipients.Filter
 	cancelErr        error
 	restoreErr       error
 }
 
-func (f *fakeRecipientsService) List(_ context.Context, _ recipients.Filter, scope auth.RegencyScope) (recipients.Page, error) {
-	f.seenRegencyScope = scope
+func (f *fakeRecipientsService) List(_ context.Context, filter recipients.Filter, scope auth.RegencyScope) (recipients.Page, error) {
+	f.seenFilter, f.seenRegencyScope = filter, scope
 	return f.page, nil
 }
-func (f *fakeRecipientsService) Stats(_ context.Context, scope auth.RegencyScope) (recipients.Stats, error) {
-	f.seenRegencyScope = scope
+func (f *fakeRecipientsService) Stats(_ context.Context, filter recipients.Filter, scope auth.RegencyScope) (recipients.Stats, error) {
+	f.seenFilter, f.seenRegencyScope = filter, scope
 	return f.stats, nil
 }
 func (f *fakeRecipientsService) Create(_ context.Context, _ auth.Principal, input recipients.CreateInput, _ auth.ClientMeta, scope auth.RegencyScope) (recipients.Recipient, error) {
@@ -902,12 +903,15 @@ func (f *fakeRecipientsService) Restore(_ context.Context, _ auth.Principal, all
 func TestRecipientsListRequiresViewPermissionAndForwardsFilters(t *testing.T) {
 	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"recipients.view": true}}
 	service := &fakeRecipientsService{page: recipients.Page{Page: 1, PageSize: 20, Total: 1, Items: []recipients.Recipient{{AllocationID: "allocation-1", FullName: "Siti Aminah"}}}}
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/recipients?search=Siti&page=1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/recipients?search=Siti&page=2&page_size=50&regency_id=regency-1&program_id=program-1&schedule_id=schedule-1&district=Sabbangparu&allocation_status=ready&distribution_status=draft&evidence_status=partial&sort=full_name&direction=asc", nil)
 	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
 	rec := httptest.NewRecorder()
 	NewHandler(Dependencies{Auth: viewer, Recipients: service}).ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Siti Aminah") {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if service.seenFilter.Page != 2 || service.seenFilter.PageSize != 50 || service.seenFilter.ScheduleID != "schedule-1" || service.seenFilter.District != "Sabbangparu" || service.seenFilter.EvidenceStatus != "partial" || service.seenFilter.SortBy != "full_name" || service.seenFilter.SortDirection != "asc" {
+		t.Fatalf("combined filters were not forwarded: %+v", service.seenFilter)
 	}
 
 	noPerm := &fakeAuthService{principal: auth.Principal{UserID: "user-2"}, allowedPermissions: map[string]bool{}}
@@ -917,6 +921,20 @@ func TestRecipientsListRequiresViewPermissionAndForwardsFilters(t *testing.T) {
 	NewHandler(Dependencies{Auth: noPerm, Recipients: service}).ServeHTTP(deniedRecorder, denied)
 	if deniedRecorder.Code != http.StatusForbidden {
 		t.Fatalf("expected forbidden without recipients.view, got %d", deniedRecorder.Code)
+	}
+}
+
+func TestRecipientStatsForwardsTheSameCombinedFiltersAsTheList(t *testing.T) {
+	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"recipients.view": true}}
+	service := &fakeRecipientsService{stats: recipients.Stats{Total: 3}}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/recipients/stats?search=Siti&regency_id=regency-1&program_id=program-1&schedule_id=schedule-1&district=Sabbangparu&allocation_status=ready&distribution_status=draft&evidence_status=partial", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+
+	NewHandler(Dependencies{Auth: viewer, Recipients: service}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || service.seenFilter.Search != "Siti" || service.seenFilter.ScheduleID != "schedule-1" || service.seenFilter.District != "Sabbangparu" || service.seenFilter.EvidenceStatus != "partial" {
+		t.Fatalf("status=%d filter=%+v body=%s", rec.Code, service.seenFilter, rec.Body.String())
 	}
 }
 

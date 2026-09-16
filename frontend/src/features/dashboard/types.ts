@@ -1,3 +1,12 @@
+export type EvidenceSlot = {
+  slot_code: string;
+  label: string;
+  is_required: boolean;
+  min_files: number;
+  accepted_files: number;
+  complete: boolean;
+};
+
 export type Recipient = {
   allocation_id: string;
   distribution_number: number;
@@ -19,11 +28,16 @@ export type Recipient = {
   regency_document_code: string;
   schedule_id: string;
   schedule_name: string;
+  evidence_slots: EvidenceSlot[];
 };
 
 export type RecipientPage = { items: Recipient[]; page: number; page_size: number; total: number };
 
-export type RecipientStats = { total: number; by_allocation_status: Record<string, number> };
+export type RecipientStats = {
+  total: number;
+  by_allocation_status: Record<string, number>;
+  by_evidence_status: Record<string, number>;
+};
 
 export type RecipientInput = {
   schedule_id?: string;

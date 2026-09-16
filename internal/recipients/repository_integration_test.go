@@ -146,13 +146,142 @@ func TestListRespectsRegencyScope(t *testing.T) {
 	}
 }
 
+func TestListIncludesOrderedEvidenceSlotCompleteness(t *testing.T) {
+	pool := recipientsIntegrationPool(t)
+	fixture := seedRecipientFixture(t, pool)
+	repository := NewRepository(pool)
+	ctx := context.Background()
+
+	var distributionID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO distribution_records(allocation_id,status) VALUES($1,'draft') RETURNING id::text`, fixture.needsReviewAllocID).Scan(&distributionID))
+	t.Cleanup(func() {
+		if _, err := pool.Exec(context.Background(), `DELETE FROM distribution_records WHERE id=$1`, distributionID); err != nil {
+			t.Logf("cleanup: delete distribution record failed: %v", err)
+		}
+	})
+
+	var portraitSlotID, handoverSlotID, optionalSlotID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_slots(distribution_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,status,sort_order) VALUES($1,'recipient_portrait','Foto penerima',true,1,2,'both','complete',10) RETURNING id::text`, distributionID).Scan(&portraitSlotID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_slots(distribution_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,status,sort_order) VALUES($1,'signed_handover','BAST bertanda tangan',true,1,1,'both','missing',20) RETURNING id::text`, distributionID).Scan(&handoverSlotID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_slots(distribution_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,status,sort_order) VALUES($1,'package_detail','Detail paket',false,1,2,'both','complete',30) RETURNING id::text`, distributionID).Scan(&optionalSlotID))
+
+	const checksum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	must(t, func() error {
+		_, err := pool.Exec(ctx, `INSERT INTO media_files(documentation_slot_id,storage_key,original_filename,mime_type,byte_size,checksum,source,status) VALUES($1,gen_random_uuid(),'portrait.jpg','image/jpeg',128,$3,'gallery','accepted'),($2,gen_random_uuid(),'package.jpg','image/jpeg',128,$3,'gallery','accepted')`, portraitSlotID, optionalSlotID, checksum)
+		return err
+	}())
+
+	page, err := repository.List(ctx, Filter{Page: 1, PageSize: 20}, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got *Recipient
+	for i := range page.Items {
+		if page.Items[i].AllocationID == fixture.needsReviewAllocID {
+			got = &page.Items[i]
+			break
+		}
+	}
+	if got == nil {
+		t.Fatal("expected seeded recipient in list")
+	}
+	if len(got.EvidenceSlots) != 3 {
+		t.Fatalf("expected 3 ordered evidence slots, got %+v", got.EvidenceSlots)
+	}
+	wantCodes := []string{"recipient_portrait", "signed_handover", "package_detail"}
+	for i, wantCode := range wantCodes {
+		if got.EvidenceSlots[i].SlotCode != wantCode {
+			t.Fatalf("slot %d: expected %q, got %+v", i, wantCode, got.EvidenceSlots[i])
+		}
+	}
+	if !got.EvidenceSlots[0].Complete || got.EvidenceSlots[0].AcceptedFiles != 1 {
+		t.Fatalf("expected first required slot complete with one file, got %+v", got.EvidenceSlots[0])
+	}
+	if got.EvidenceSlots[1].Complete || got.EvidenceSlots[1].AcceptedFiles != 0 {
+		t.Fatalf("expected second required slot incomplete with no files, got %+v", got.EvidenceSlots[1])
+	}
+	if got.EvidenceSlots[2].IsRequired || !got.EvidenceSlots[2].Complete || got.EvidenceSlots[2].AcceptedFiles != 1 {
+		t.Fatalf("expected optional slot visible and complete, got %+v", got.EvidenceSlots[2])
+	}
+}
+
+func TestListAndStatsApplyTheSameCombinedScheduleDistrictAndEvidenceFilters(t *testing.T) {
+	pool := recipientsIntegrationPool(t)
+	fixture := seedRecipientFixture(t, pool)
+	repository := NewRepository(pool)
+	ctx := context.Background()
+
+	must(t, func() error {
+		_, err := pool.Exec(ctx, `UPDATE people p SET district='Sabbangparu' FROM package_allocations pa JOIN candidate_nominations cn ON cn.id=pa.nomination_id WHERE pa.id=$1 AND p.id=COALESCE(pa.actual_recipient_person_id,pa.intended_person_id,cn.person_id)`, fixture.needsReviewAllocID)
+		return err
+	}())
+	var distributionID, completeSlotID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO distribution_records(allocation_id,status) VALUES($1,'draft') RETURNING id::text`, fixture.needsReviewAllocID).Scan(&distributionID))
+	t.Cleanup(func() {
+		if _, err := pool.Exec(context.Background(), `DELETE FROM distribution_records WHERE id=$1`, distributionID); err != nil {
+			t.Logf("cleanup: delete distribution record failed: %v", err)
+		}
+	})
+	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_slots(distribution_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,status,sort_order) VALUES($1,'portrait','Foto penerima',true,1,1,'both','complete',10) RETURNING id::text`, distributionID).Scan(&completeSlotID))
+	must(t, func() error {
+		_, err := pool.Exec(ctx, `INSERT INTO documentation_slots(distribution_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,status,sort_order) VALUES($1,'handover','BAST',true,1,1,'both','missing',20)`, distributionID)
+		return err
+	}())
+	const checksum = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+	must(t, func() error {
+		_, err := pool.Exec(ctx, `INSERT INTO media_files(documentation_slot_id,storage_key,original_filename,mime_type,byte_size,checksum,source,status) VALUES($1,gen_random_uuid(),'portrait.jpg','image/jpeg',128,$2,'gallery','accepted')`, completeSlotID, checksum)
+		return err
+	}())
+
+	filter := Filter{Page: 1, PageSize: 20, ScheduleID: fixture.scheduleID, District: "Sabbangparu", EvidenceStatus: "partial"}
+	page, err := repository.List(ctx, filter, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 1 || len(page.Items) != 1 || page.Items[0].AllocationID != fixture.needsReviewAllocID {
+		t.Fatalf("expected one recipient matching all filters, got total=%d items=%+v", page.Total, page.Items)
+	}
+
+	stats, err := repository.Stats(ctx, filter, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Total != 1 || stats.ByAllocationStatus["needs_review"] != 1 || stats.ByEvidenceStatus["partial"] != 1 {
+		t.Fatalf("expected filtered stats to describe the same recipient set, got %+v", stats)
+	}
+}
+
+func TestListSortsAllowlistedColumnsInBothDirections(t *testing.T) {
+	pool := recipientsIntegrationPool(t)
+	fixture := seedRecipientFixture(t, pool)
+	repository := NewRepository(pool)
+	ctx := context.Background()
+	scope := auth.RegencyScope{Unrestricted: true}
+
+	ascending, err := repository.List(ctx, Filter{Page: 1, PageSize: 20, ScheduleID: fixture.scheduleID, SortBy: "full_name", SortDirection: "asc"}, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ascending.Items) != 2 || ascending.Items[0].FullName != "Distributed Person" || ascending.Items[1].FullName != "Needs Review Person" {
+		t.Fatalf("unexpected ascending order: %+v", ascending.Items)
+	}
+
+	descending, err := repository.List(ctx, Filter{Page: 1, PageSize: 20, ScheduleID: fixture.scheduleID, SortBy: "full_name", SortDirection: "desc"}, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(descending.Items) != 2 || descending.Items[0].FullName != "Needs Review Person" || descending.Items[1].FullName != "Distributed Person" {
+		t.Fatalf("unexpected descending order: %+v", descending.Items)
+	}
+}
+
 func TestStatsGroupsByAllocationStatusAndExcludesCancelledFromTotal(t *testing.T) {
 	pool := recipientsIntegrationPool(t)
 	fixture := seedRecipientFixture(t, pool)
 	repository := NewRepository(pool)
 	ctx := context.Background()
 
-	stats, err := repository.Stats(ctx, auth.RegencyScope{Unrestricted: true})
+	stats, err := repository.Stats(ctx, Filter{}, auth.RegencyScope{Unrestricted: true})
 	if err != nil {
 		t.Fatal(err)
 	}

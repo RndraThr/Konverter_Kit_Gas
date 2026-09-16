@@ -12,7 +12,7 @@ var nikPattern = regexp.MustCompile(`^[0-9]{16}$`)
 
 type repository interface {
 	List(context.Context, Filter, auth.RegencyScope) (Page, error)
-	Stats(context.Context, auth.RegencyScope) (Stats, error)
+	Stats(context.Context, Filter, auth.RegencyScope) (Stats, error)
 	Create(context.Context, auth.Principal, CreateInput, auth.ClientMeta, auth.RegencyScope) (Recipient, error)
 	Update(context.Context, auth.Principal, string, UpdateInput, auth.ClientMeta, auth.RegencyScope) (Recipient, error)
 	Cancel(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) error
@@ -23,6 +23,23 @@ type Service struct{ repository repository }
 
 func NewService(repository repository) *Service { return &Service{repository: repository} }
 
+var allowedSortColumns = map[string]struct{}{
+	"created_at": {}, "distribution_number": {}, "full_name": {}, "nik": {}, "district": {},
+	"regency": {}, "program": {}, "schedule": {}, "allocation_status": {}, "distribution_status": {}, "evidence": {},
+}
+
+func normalizeFilter(filter Filter) Filter {
+	if _, ok := allowedSortColumns[filter.SortBy]; !ok {
+		filter.SortBy = "created_at"
+	}
+	filter.SortDirection = strings.ToLower(strings.TrimSpace(filter.SortDirection))
+	if filter.SortDirection != "asc" && filter.SortDirection != "desc" {
+		filter.SortDirection = "desc"
+	}
+	filter.District = strings.TrimSpace(filter.District)
+	return filter
+}
+
 func (s *Service) List(ctx context.Context, filter Filter, scope auth.RegencyScope) (Page, error) {
 	if filter.Page < 1 {
 		filter.Page = 1
@@ -30,11 +47,12 @@ func (s *Service) List(ctx context.Context, filter Filter, scope auth.RegencySco
 	if filter.PageSize < 1 || filter.PageSize > 100 {
 		filter.PageSize = 20
 	}
+	filter = normalizeFilter(filter)
 	return s.repository.List(ctx, filter, scope)
 }
 
-func (s *Service) Stats(ctx context.Context, scope auth.RegencyScope) (Stats, error) {
-	return s.repository.Stats(ctx, scope)
+func (s *Service) Stats(ctx context.Context, filter Filter, scope auth.RegencyScope) (Stats, error) {
+	return s.repository.Stats(ctx, normalizeFilter(filter), scope)
 }
 
 func validateIdentity(fullName, nik string) error {

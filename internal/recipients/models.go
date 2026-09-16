@@ -18,28 +18,38 @@ var (
 )
 
 type Recipient struct {
-	AllocationID         string    `json:"allocation_id"`
-	DistributionNumber   int       `json:"distribution_number"`
-	AllocationStatus     string    `json:"allocation_status"`
-	DistributionStatus   *string   `json:"distribution_status"`
-	FullName             string    `json:"full_name"`
-	NIK                  string    `json:"nik"`
-	SectorIdentifierType string    `json:"sector_identifier_type"`
-	SectorIdentifier     string    `json:"sector_identifier"`
-	Address              string    `json:"address"`
-	Village              string    `json:"village"`
-	District             string    `json:"district"`
-	PhoneNumber          string    `json:"phone_number"`
-	ProgramID            string    `json:"program_id"`
-	ProgramName          string    `json:"program_name"`
-	ProgramType          string    `json:"program_type"`
-	RegencyID            string    `json:"regency_id"`
-	RegencyName          string    `json:"regency_name"`
-	RegencyDocumentCode  string    `json:"regency_document_code"`
-	ScheduleID           string    `json:"schedule_id"`
-	ScheduleName         string    `json:"schedule_name"`
-	CreatedAt            time.Time `json:"created_at"`
-	UpdatedAt            time.Time `json:"updated_at"`
+	AllocationID         string                `json:"allocation_id"`
+	DistributionNumber   int                   `json:"distribution_number"`
+	AllocationStatus     string                `json:"allocation_status"`
+	DistributionStatus   *string               `json:"distribution_status"`
+	FullName             string                `json:"full_name"`
+	NIK                  string                `json:"nik"`
+	SectorIdentifierType string                `json:"sector_identifier_type"`
+	SectorIdentifier     string                `json:"sector_identifier"`
+	Address              string                `json:"address"`
+	Village              string                `json:"village"`
+	District             string                `json:"district"`
+	PhoneNumber          string                `json:"phone_number"`
+	ProgramID            string                `json:"program_id"`
+	ProgramName          string                `json:"program_name"`
+	ProgramType          string                `json:"program_type"`
+	RegencyID            string                `json:"regency_id"`
+	RegencyName          string                `json:"regency_name"`
+	RegencyDocumentCode  string                `json:"regency_document_code"`
+	ScheduleID           string                `json:"schedule_id"`
+	ScheduleName         string                `json:"schedule_name"`
+	EvidenceSlots        []EvidenceSlotSummary `json:"evidence_slots"`
+	CreatedAt            time.Time             `json:"created_at"`
+	UpdatedAt            time.Time             `json:"updated_at"`
+}
+
+type EvidenceSlotSummary struct {
+	SlotCode      string `json:"slot_code"`
+	Label         string `json:"label"`
+	IsRequired    bool   `json:"is_required"`
+	MinFiles      int    `json:"min_files"`
+	AcceptedFiles int    `json:"accepted_files"`
+	Complete      bool   `json:"complete"`
 }
 
 type Filter struct {
@@ -51,6 +61,11 @@ type Filter struct {
 	ProgramType        string
 	AllocationStatus   string
 	DistributionStatus string
+	ScheduleID         string
+	District           string
+	EvidenceStatus     string
+	SortBy             string
+	SortDirection      string
 }
 
 type Page struct {
@@ -63,6 +78,7 @@ type Page struct {
 type Stats struct {
 	Total              int64            `json:"total"`
 	ByAllocationStatus map[string]int64 `json:"by_allocation_status"`
+	ByEvidenceStatus   map[string]int64 `json:"by_evidence_status"`
 }
 
 type CreateInput struct {

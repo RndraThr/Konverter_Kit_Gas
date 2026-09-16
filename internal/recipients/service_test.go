@@ -13,13 +13,17 @@ type repositoryStub struct {
 	updateInput UpdateInput
 	actor       auth.Principal
 	listFilter  Filter
+	statsFilter Filter
 }
 
 func (r *repositoryStub) List(_ context.Context, filter Filter, _ auth.RegencyScope) (Page, error) {
 	r.listFilter = filter
 	return Page{Page: filter.Page, PageSize: filter.PageSize}, nil
 }
-func (r *repositoryStub) Stats(context.Context, auth.RegencyScope) (Stats, error) { return Stats{}, nil }
+func (r *repositoryStub) Stats(_ context.Context, filter Filter, _ auth.RegencyScope) (Stats, error) {
+	r.statsFilter = filter
+	return Stats{}, nil
+}
 func (r *repositoryStub) Create(_ context.Context, actor auth.Principal, input CreateInput, _ auth.ClientMeta, _ auth.RegencyScope) (Recipient, error) {
 	r.actor, r.createInput = actor, input
 	return Recipient{FullName: input.FullName}, nil
@@ -87,5 +91,37 @@ func TestListNormalizesPagination(t *testing.T) {
 	}
 	if repository.listFilter.Page != 3 || repository.listFilter.PageSize != 20 {
 		t.Fatalf("expected page=3 clamped page_size=20, got %+v", repository.listFilter)
+	}
+}
+
+func TestListNormalizesSortingToAnAllowlistedColumnAndDirection(t *testing.T) {
+	repository := &repositoryStub{}
+	service := NewService(repository)
+
+	if _, err := service.List(context.Background(), Filter{SortBy: "full_name", SortDirection: "asc"}, auth.RegencyScope{}); err != nil {
+		t.Fatal(err)
+	}
+	if repository.listFilter.SortBy != "full_name" || repository.listFilter.SortDirection != "asc" {
+		t.Fatalf("expected valid sort preserved, got %+v", repository.listFilter)
+	}
+
+	if _, err := service.List(context.Background(), Filter{SortBy: "pa.id; DROP TABLE people", SortDirection: "sideways"}, auth.RegencyScope{}); err != nil {
+		t.Fatal(err)
+	}
+	if repository.listFilter.SortBy != "created_at" || repository.listFilter.SortDirection != "desc" {
+		t.Fatalf("expected invalid sort normalized to created_at desc, got %+v", repository.listFilter)
+	}
+}
+
+func TestStatsUsesTheSameNormalizedFiltersAsTheRecipientList(t *testing.T) {
+	repository := &repositoryStub{}
+	service := NewService(repository)
+	filter := Filter{Search: "Siti", RegencyID: "regency-1", ProgramID: "program-1", ScheduleID: "schedule-1", District: "Sabbangparu", EvidenceStatus: "partial"}
+
+	if _, err := service.Stats(context.Background(), filter, auth.RegencyScope{}); err != nil {
+		t.Fatal(err)
+	}
+	if repository.statsFilter.Search != "Siti" || repository.statsFilter.ScheduleID != "schedule-1" || repository.statsFilter.District != "Sabbangparu" || repository.statsFilter.EvidenceStatus != "partial" {
+		t.Fatalf("expected combined filters forwarded to stats, got %+v", repository.statsFilter)
 	}
 }

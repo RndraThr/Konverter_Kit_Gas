@@ -24,6 +24,33 @@ test('administration foundation journey', async ({ page }, testInfo) => {
   const displayName = `Petugas E2E ${testInfo.project.name}`;
   await expect(page.getByRole('heading', { name: 'Data Penerima', exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  if (testInfo.project.name === 'mobile') {
+    const tableRegion = page.getByRole('region', { name: 'Daftar penerima' });
+    const nikHeader = page.getByRole('columnheader', { name: /NIK/ });
+    const [regionBox, nikBox] = await Promise.all([tableRegion.boundingBox(), nikHeader.boundingBox()]);
+    expect(regionBox).not.toBeNull();
+    expect(nikBox).not.toBeNull();
+    expect((nikBox?.x ?? 0) + (nikBox?.width ?? 0)).toBeLessThanOrEqual((regionBox?.x ?? 0) + (regionBox?.width ?? 0) + 1);
+  }
+  const recipientRow = page.getByRole('row').filter({ has: page.getByRole('button', { name: 'Edit' }) }).first();
+  await recipientRow.hover();
+  const stickyBackgrounds = await recipientRow.getByRole('cell').evaluateAll((cells) => cells.slice(0, 3).map((cell) => getComputedStyle(cell).backgroundColor));
+  expect(stickyBackgrounds.every((color) => color !== 'transparent' && !/rgba\([^)]*,\s*0(?:\.\d+)?\)$/.test(color))).toBe(true);
+
+  await page.getByRole('button', { name: 'Urutkan Nama ascending' }).click();
+  await expect(page).toHaveURL(/sort=full_name/);
+  await expect(page).toHaveURL(/direction=asc/);
+  const nameHeader = page.getByRole('button', { name: 'Urutkan Nama descending' }).locator('xpath=ancestor::th');
+  await expect(nameHeader).toHaveAttribute('aria-sort', 'ascending');
+  await expect.poll(() => nameHeader.evaluate((header) => getComputedStyle(header).textTransform)).toBe('uppercase');
+  const sortIconFits = await nameHeader.evaluate((header) => {
+    const icon = header.querySelector('button svg');
+    if (!icon) return false;
+    const headerBox = header.getBoundingClientRect();
+    const iconBox = icon.getBoundingClientRect();
+    return iconBox.left >= headerBox.left && iconBox.right <= headerBox.right;
+  });
+  expect(sortIconFits).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('data-penerima.png'), fullPage: true });
 
   if (testInfo.project.name === 'desktop') {

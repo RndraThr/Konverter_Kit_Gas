@@ -23,7 +23,7 @@ test('shows KUSUKA label for fisherman schedules and locks schedule selection wh
     allocation_id: 'allocation-1', distribution_number: 1, allocation_status: 'ready', distribution_status: null,
     full_name: 'Siti', nik: '', sector_identifier_type: '', sector_identifier: '', address: '', village: '', district: '', phone_number: '',
     program_id: 'program-1', program_name: 'Program Nelayan', program_type: 'fisherman', regency_id: 'regency-1', regency_name: 'Bone',
-    regency_document_code: 'BON', schedule_id: 'schedule-2', schedule_name: 'Bone Tahap 1',
+    regency_document_code: 'BON', schedule_id: 'schedule-2', schedule_name: 'Bone Tahap 1', evidence_slots: [],
   }} onSave={vi.fn()} />);
 
   expect(screen.getByRole('combobox', { name: 'Jadwal' })).toBeDisabled();

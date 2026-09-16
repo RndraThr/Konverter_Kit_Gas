@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 
 type DataTableProps = {
   children: ReactNode;
+  className?: string;
   label: string;
   minimumWidth?: number | string;
 };
@@ -36,10 +37,10 @@ function withTablePrimitives(children: ReactNode): ReactNode {
   });
 }
 
-export function DataTable({ children, label, minimumWidth = 720 }: DataTableProps) {
+export function DataTable({ children, className, label, minimumWidth = 720 }: DataTableProps) {
   return <Table
     aria-label={label}
-    className={cn('min-w-full w-full')}
+    className={cn('min-w-full w-full', className)}
     containerClassName="rounded-lg border bg-card [scrollbar-color:color-mix(in_srgb,var(--muted-foreground)_35%,transparent)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-track]:bg-muted/30 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-muted-foreground/35 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
     containerProps={{ 'aria-label': label, role: 'region', tabIndex: 0 }}
     style={{ minWidth: minimumWidth }}

@@ -7,6 +7,17 @@ import (
 	"konkit/internal/recipients"
 )
 
+func recipientFilterFromRequest(r *http.Request) recipients.Filter {
+	return recipients.Filter{
+		Page: intQuery(r, "page", 1), PageSize: intQuery(r, "page_size", 20),
+		Search: r.URL.Query().Get("search"), RegencyID: r.URL.Query().Get("regency_id"),
+		ProgramID: r.URL.Query().Get("program_id"), ProgramType: r.URL.Query().Get("program_type"),
+		AllocationStatus: r.URL.Query().Get("allocation_status"), DistributionStatus: r.URL.Query().Get("distribution_status"),
+		ScheduleID: r.URL.Query().Get("schedule_id"), District: r.URL.Query().Get("district"),
+		EvidenceStatus: r.URL.Query().Get("evidence_status"), SortBy: r.URL.Query().Get("sort"), SortDirection: r.URL.Query().Get("direction"),
+	}
+}
+
 func (h *Handler) handleRecipients(w http.ResponseWriter, r *http.Request, rc requestContext) {
 	if h.deps.Recipients == nil {
 		writeUnavailable(w)
@@ -21,12 +32,7 @@ func (h *Handler) handleRecipients(w http.ResponseWriter, r *http.Request, rc re
 		if !ok {
 			return
 		}
-		page, err := h.deps.Recipients.List(r.Context(), recipients.Filter{
-			Page: intQuery(r, "page", 1), PageSize: intQuery(r, "page_size", 20),
-			Search: r.URL.Query().Get("search"), RegencyID: r.URL.Query().Get("regency_id"),
-			ProgramID: r.URL.Query().Get("program_id"), ProgramType: r.URL.Query().Get("program_type"),
-			AllocationStatus: r.URL.Query().Get("allocation_status"), DistributionStatus: r.URL.Query().Get("distribution_status"),
-		}, scope)
+		page, err := h.deps.Recipients.List(r.Context(), recipientFilterFromRequest(r), scope)
 		if err != nil {
 			writeServiceError(w, err)
 			return
@@ -71,7 +77,7 @@ func (h *Handler) handleRecipientStats(w http.ResponseWriter, r *http.Request, r
 	if !ok {
 		return
 	}
-	stats, err := h.deps.Recipients.Stats(r.Context(), scope)
+	stats, err := h.deps.Recipients.Stats(r.Context(), recipientFilterFromRequest(r), scope)
 	if err != nil {
 		writeServiceError(w, err)
 		return

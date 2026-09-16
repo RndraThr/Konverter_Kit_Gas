@@ -105,7 +105,7 @@ type ReportsService interface {
 
 type RecipientsService interface {
 	List(context.Context, recipients.Filter, auth.RegencyScope) (recipients.Page, error)
-	Stats(context.Context, auth.RegencyScope) (recipients.Stats, error)
+	Stats(context.Context, recipients.Filter, auth.RegencyScope) (recipients.Stats, error)
 	Create(context.Context, auth.Principal, recipients.CreateInput, auth.ClientMeta, auth.RegencyScope) (recipients.Recipient, error)
 	Update(context.Context, auth.Principal, string, recipients.UpdateInput, auth.ClientMeta, auth.RegencyScope) (recipients.Recipient, error)
 	Cancel(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) error
