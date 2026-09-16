@@ -27,7 +27,7 @@ export const dashboardRoutes: RouteObject[] = [{
   path: '/',
   element: <AppShell />,
   children: [
-    { index: true, element: <DashboardPage /> },
+    { index: true, element: <ProtectedPage permission="recipients.view"><DashboardPage /></ProtectedPage> },
     { path: 'map-distribusi', element: <ProtectedPage permission="distribution.view"><DistributionMapPage /></ProtectedPage> },
     { path: 'persiapan-program', element: <ProtectedPage permission="programs.view"><ProgramSetupPage /></ProtectedPage> },
     { path: 'dcp3', element: <ProtectedPage permission="dcp3.view"><DCP3ImportPage /></ProtectedPage> },

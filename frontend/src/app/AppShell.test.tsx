@@ -12,7 +12,7 @@ const bootstrap = {
     username: 'admin',
     email: 'admin@konkit.test',
     roles: ['super_admin'],
-    permissions: ['dashboard.view', 'dcp3.view', 'distribution.view', 'users.view', 'settings.view'],
+    permissions: ['recipients.view', 'dashboard.view', 'dcp3.view', 'distribution.view', 'users.view', 'settings.view'],
   },
   meta: { csrf_token: 'csrf-token' },
 };

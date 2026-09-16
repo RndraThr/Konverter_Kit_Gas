@@ -24,7 +24,7 @@ const sidebarPreferenceKey = 'konkit.sidebar.collapsed';
 
 const groups: NavGroup[] = [
   { label: 'Dashboard', items: [
-    { label: 'Data Penerima', to: '/', permission: 'dashboard.view', icon: <ListFilter /> },
+    { label: 'Data Penerima', to: '/', permission: 'recipients.view', icon: <ListFilter /> },
     { label: 'Map Distribusi', to: '/map-distribusi', permission: 'distribution.view', icon: <MapPinned /> },
   ] },
   { label: 'Operasional', items: [
