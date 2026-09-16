@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync"
 
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/option"
@@ -84,6 +85,9 @@ type GoogleDriveStorage struct {
 	cache        folderCache
 	rootFolderID string
 	// key -> Drive file ID, populated by Put, consumed by Open/Delete.
+	// Guarded by fileIDsMu since Put/Open/Delete are called concurrently
+	// from per-request goroutines once this backend is wired into the
+	// server (Task 6).
 	//
 	// KNOWN GAP (accepted for this task): this map is in-memory only, so it
 	// only remembers file IDs uploaded during the current process's
@@ -92,7 +96,8 @@ type GoogleDriveStorage struct {
 	// the media-storage-backend plan for the required follow-up: the caller
 	// must persist the real Drive file ID and the Storage interface likely
 	// needs to grow a way to report it back from Put.
-	fileIDs map[string]string
+	fileIDsMu sync.Mutex
+	fileIDs   map[string]string
 }
 
 func NewGoogleDriveStorage(ctx context.Context, credentialsPath, rootFolderID string, cache folderCache) (*GoogleDriveStorage, error) {
@@ -150,15 +155,19 @@ func (s *GoogleDriveStorage) Put(ctx context.Context, key string, folderPath []s
 	if err != nil {
 		return 0, "", err
 	}
+	s.fileIDsMu.Lock()
 	if s.fileIDs == nil {
 		s.fileIDs = map[string]string{}
 	}
 	s.fileIDs[key] = fileID
+	s.fileIDsMu.Unlock()
 	return size, hashing.checksum(), nil
 }
 
 func (s *GoogleDriveStorage) Open(ctx context.Context, key string) (io.ReadCloser, error) {
+	s.fileIDsMu.Lock()
 	fileID, ok := s.fileIDs[key]
+	s.fileIDsMu.Unlock()
 	if !ok {
 		return nil, fmt.Errorf("open drive file: unknown key %q", key)
 	}
@@ -166,14 +175,18 @@ func (s *GoogleDriveStorage) Open(ctx context.Context, key string) (io.ReadClose
 }
 
 func (s *GoogleDriveStorage) Delete(ctx context.Context, key string) error {
+	s.fileIDsMu.Lock()
 	fileID, ok := s.fileIDs[key]
+	s.fileIDsMu.Unlock()
 	if !ok {
 		return nil
 	}
 	if err := s.api.deleteFile(ctx, fileID); err != nil {
 		return err
 	}
+	s.fileIDsMu.Lock()
 	delete(s.fileIDs, key)
+	s.fileIDsMu.Unlock()
 	return nil
 }
 
