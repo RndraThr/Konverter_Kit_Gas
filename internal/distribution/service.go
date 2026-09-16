@@ -182,7 +182,7 @@ func (s *Service) UploadMedia(ctx context.Context, actor auth.Principal, input U
 	if err != nil {
 		return MediaFile{}, err
 	}
-	size, checksum, err := s.storage.Put(ctx, key, bytes.NewReader(input.Data))
+	size, checksum, err := s.storage.Put(ctx, key, nil, bytes.NewReader(input.Data))
 	if err != nil {
 		return MediaFile{}, err
 	}

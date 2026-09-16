@@ -17,7 +17,7 @@ type storageStub struct {
 	putErr, deleteErr  error
 }
 
-func (s *storageStub) Put(_ context.Context, key string, source io.Reader) (int64, string, error) {
+func (s *storageStub) Put(_ context.Context, key string, _ []string, source io.Reader) (int64, string, error) {
 	s.putKey = key
 	s.content, _ = io.ReadAll(source)
 	return int64(len(s.content)), "checksum", s.putErr

@@ -17,7 +17,10 @@ var ErrInvalidKey = errors.New("media storage key is invalid")
 var validKey = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
 
 type Storage interface {
-	Put(context.Context, string, io.Reader) (int64, string, error)
+	// Put stores source under key. folderPath is a hint for backends that
+	// organize content into folders (e.g. Google Drive); LocalStorage
+	// ignores it and always stores flat.
+	Put(ctx context.Context, key string, folderPath []string, source io.Reader) (int64, string, error)
 	Open(context.Context, string) (io.ReadCloser, error)
 	Delete(context.Context, string) error
 }
@@ -42,7 +45,7 @@ func NewLocalStorage(root string) (*LocalStorage, error) {
 	return &LocalStorage{root: absolute}, nil
 }
 
-func (s *LocalStorage) Put(ctx context.Context, key string, source io.Reader) (size int64, checksum string, resultErr error) {
+func (s *LocalStorage) Put(ctx context.Context, key string, folderPath []string, source io.Reader) (size int64, checksum string, resultErr error) {
 	path, err := s.path(key)
 	if err != nil {
 		return 0, "", err
