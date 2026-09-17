@@ -19,6 +19,8 @@ var (
 	ErrSessionTTLInvalid     = errors.New("SESSION_TTL must be a positive duration")
 	ErrBaseURLInvalid        = errors.New("APP_BASE_URL must be an absolute HTTP or HTTPS URL")
 	ErrStoragePathAbsolute   = errors.New("STORAGE_PATH must be absolute outside local environment")
+	ErrStorageBackendInvalid     = errors.New("STORAGE_BACKEND must be 'local' or 'gdrive'")
+	ErrGDriveSettingsIncomplete  = errors.New("GDRIVE_SERVICE_ACCOUNT_JSON and GDRIVE_ROOT_FOLDER_ID are required when STORAGE_BACKEND=gdrive")
 )
 
 type Config struct {
@@ -31,6 +33,9 @@ type Config struct {
 	SessionTTL          time.Duration
 	RememberTTL         time.Duration
 	StoragePath         string
+	StorageBackend           string
+	GDriveServiceAccountJSON string
+	GDriveRootFolderID       string
 }
 
 type lookupFunc func(string) (string, bool)
@@ -52,6 +57,7 @@ func loadFrom(lookup lookupFunc) (Config, error) {
 		SessionTTL:  12 * time.Hour,
 		RememberTTL: 30 * 24 * time.Hour,
 		StoragePath: valueOrDefault(lookup, "STORAGE_PATH", "./storage"),
+		StorageBackend: valueOrDefault(lookup, "STORAGE_BACKEND", "local"),
 	}
 
 	if cfg.DatabaseURL == "" {
@@ -59,6 +65,17 @@ func loadFrom(lookup lookupFunc) (Config, error) {
 	}
 	if cfg.Env != "local" && !filepath.IsAbs(cfg.StoragePath) {
 		return Config{}, ErrStoragePathAbsolute
+	}
+
+	if cfg.StorageBackend != "local" && cfg.StorageBackend != "gdrive" {
+		return Config{}, ErrStorageBackendInvalid
+	}
+	if cfg.StorageBackend == "gdrive" {
+		cfg.GDriveServiceAccountJSON, _ = lookup("GDRIVE_SERVICE_ACCOUNT_JSON")
+		cfg.GDriveRootFolderID, _ = lookup("GDRIVE_ROOT_FOLDER_ID")
+		if cfg.GDriveServiceAccountJSON == "" || cfg.GDriveRootFolderID == "" {
+			return Config{}, ErrGDriveSettingsIncomplete
+		}
 	}
 
 	secret, _ := lookup("SESSION_SECRET")

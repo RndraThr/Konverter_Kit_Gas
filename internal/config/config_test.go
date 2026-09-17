@@ -144,6 +144,56 @@ func mapLookup(values map[string]string) lookupFunc {
 	}
 }
 
+func TestLoadFromDefaultsStorageBackendToLocal(t *testing.T) {
+	cfg, err := loadFrom(mapLookup(map[string]string{
+		"DATABASE_URL":   "postgres://u:p@localhost/db",
+		"SESSION_SECRET": "01234567890123456789012345678901",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.StorageBackend != "local" {
+		t.Fatalf("StorageBackend = %q, expected local", cfg.StorageBackend)
+	}
+}
+
+func TestLoadFromRequiresDriveSettingsWhenBackendIsGDrive(t *testing.T) {
+	base := map[string]string{
+		"DATABASE_URL":   "postgres://u:p@localhost/db",
+		"SESSION_SECRET": "01234567890123456789012345678901",
+		"STORAGE_BACKEND": "gdrive",
+	}
+
+	_, err := loadFrom(mapLookup(base))
+	if err == nil {
+		t.Fatal("expected error when gdrive backend configured without credentials/root folder")
+	}
+	if !errors.Is(err, ErrGDriveSettingsIncomplete) {
+		t.Fatalf("expected ErrGDriveSettingsIncomplete, got %v", err)
+	}
+
+	base["GDRIVE_SERVICE_ACCOUNT_JSON"] = "/etc/konkit/gdrive-credentials.json"
+	base["GDRIVE_ROOT_FOLDER_ID"] = "1AbCdEfGhIjKlMnOpQrStUvWxYz"
+	cfg, err := loadFrom(mapLookup(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.StorageBackend != "gdrive" || cfg.GDriveServiceAccountJSON != "/etc/konkit/gdrive-credentials.json" || cfg.GDriveRootFolderID != "1AbCdEfGhIjKlMnOpQrStUvWxYz" {
+		t.Fatalf("cfg = %+v", cfg)
+	}
+}
+
+func TestLoadFromRejectsUnknownStorageBackend(t *testing.T) {
+	_, err := loadFrom(mapLookup(map[string]string{
+		"DATABASE_URL":    "postgres://u:p@localhost/db",
+		"SESSION_SECRET":  "01234567890123456789012345678901",
+		"STORAGE_BACKEND": "s3",
+	}))
+	if !errors.Is(err, ErrStorageBackendInvalid) {
+		t.Fatalf("expected ErrStorageBackendInvalid, got %v", err)
+	}
+}
+
 func restoreEnvironment(t *testing.T, keys ...string) {
 	t.Helper()
 
