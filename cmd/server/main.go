@@ -51,9 +51,19 @@ func run(ctx context.Context, cfg config.Config) error {
 
 	repository := auth.NewRepository(pool)
 	authService := auth.NewService(repository, cfg.SessionTTL, cfg.RememberTTL)
-	mediaStorage, err := media.NewLocalStorage(cfg.StoragePath)
-	if err != nil {
-		return err
+	var mediaStorage media.Storage
+	switch cfg.StorageBackend {
+	case "gdrive":
+		driveCache := media.NewPostgresFolderCache(pool)
+		mediaStorage, err = media.NewGoogleDriveStorage(ctx, cfg.GDriveServiceAccountJSON, cfg.GDriveRootFolderID, driveCache)
+		if err != nil {
+			return fmt.Errorf("initialize google drive storage: %w", err)
+		}
+	default:
+		mediaStorage, err = media.NewLocalStorage(cfg.StoragePath)
+		if err != nil {
+			return err
+		}
 	}
 	apiHandler := apihttp.NewHandler(apihttp.Dependencies{
 		Auth:           authService,

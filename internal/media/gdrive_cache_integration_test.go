@@ -7,7 +7,7 @@ import (
 
 func TestPostgresFolderCacheGetSetRoundTrip(t *testing.T) {
 	pool := mediaIntegrationPool(t)
-	cache := newPostgresFolderCache(pool)
+	cache := NewPostgresFolderCache(pool)
 	ctx := context.Background()
 
 	_, ok, err := cache.Get(ctx, "wajo/dokumentasi-foto-video/rakor-test")

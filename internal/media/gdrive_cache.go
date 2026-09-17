@@ -17,7 +17,7 @@ type postgresFolderCache struct {
 	pool *pgxpool.Pool
 }
 
-func newPostgresFolderCache(pool *pgxpool.Pool) *postgresFolderCache {
+func NewPostgresFolderCache(pool *pgxpool.Pool) *postgresFolderCache {
 	return &postgresFolderCache{pool: pool}
 }
 
