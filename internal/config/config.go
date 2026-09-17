@@ -13,26 +13,26 @@ import (
 )
 
 var (
-	ErrDatabaseURLRequired   = errors.New("DATABASE_URL is required")
-	ErrSessionSecretTooShort = errors.New("SESSION_SECRET must be at least 32 bytes")
-	ErrCookieSecureInvalid   = errors.New("SESSION_COOKIE_SECURE must be true or false")
-	ErrSessionTTLInvalid     = errors.New("SESSION_TTL must be a positive duration")
-	ErrBaseURLInvalid        = errors.New("APP_BASE_URL must be an absolute HTTP or HTTPS URL")
-	ErrStoragePathAbsolute   = errors.New("STORAGE_PATH must be absolute outside local environment")
-	ErrStorageBackendInvalid     = errors.New("STORAGE_BACKEND must be 'local' or 'gdrive'")
-	ErrGDriveSettingsIncomplete  = errors.New("GDRIVE_SERVICE_ACCOUNT_JSON and GDRIVE_ROOT_FOLDER_ID are required when STORAGE_BACKEND=gdrive")
+	ErrDatabaseURLRequired      = errors.New("DATABASE_URL is required")
+	ErrSessionSecretTooShort    = errors.New("SESSION_SECRET must be at least 32 bytes")
+	ErrCookieSecureInvalid      = errors.New("SESSION_COOKIE_SECURE must be true or false")
+	ErrSessionTTLInvalid        = errors.New("SESSION_TTL must be a positive duration")
+	ErrBaseURLInvalid           = errors.New("APP_BASE_URL must be an absolute HTTP or HTTPS URL")
+	ErrStoragePathAbsolute      = errors.New("STORAGE_PATH must be absolute outside local environment")
+	ErrStorageBackendInvalid    = errors.New("STORAGE_BACKEND must be 'local' or 'gdrive'")
+	ErrGDriveSettingsIncomplete = errors.New("GDRIVE_SERVICE_ACCOUNT_JSON and GDRIVE_ROOT_FOLDER_ID are required when STORAGE_BACKEND=gdrive")
 )
 
 type Config struct {
-	Env                 string
-	Addr                string
-	BaseURL             string
-	DatabaseURL         string
-	SessionSecret       []byte
-	SessionCookieSecure bool
-	SessionTTL          time.Duration
-	RememberTTL         time.Duration
-	StoragePath         string
+	Env                      string
+	Addr                     string
+	BaseURL                  string
+	DatabaseURL              string
+	SessionSecret            []byte
+	SessionCookieSecure      bool
+	SessionTTL               time.Duration
+	RememberTTL              time.Duration
+	StoragePath              string
 	StorageBackend           string
 	GDriveServiceAccountJSON string
 	GDriveRootFolderID       string
@@ -50,13 +50,13 @@ func Load() (Config, error) {
 
 func loadFrom(lookup lookupFunc) (Config, error) {
 	cfg := Config{
-		Env:         valueOrDefault(lookup, "APP_ENV", "local"),
-		Addr:        valueOrDefault(lookup, "APP_ADDR", ":8080"),
-		BaseURL:     valueOrDefault(lookup, "APP_BASE_URL", "http://localhost:8080"),
-		DatabaseURL: valueOrDefault(lookup, "DATABASE_URL", ""),
-		SessionTTL:  12 * time.Hour,
-		RememberTTL: 30 * 24 * time.Hour,
-		StoragePath: valueOrDefault(lookup, "STORAGE_PATH", "./storage"),
+		Env:            valueOrDefault(lookup, "APP_ENV", "local"),
+		Addr:           valueOrDefault(lookup, "APP_ADDR", ":8080"),
+		BaseURL:        valueOrDefault(lookup, "APP_BASE_URL", "http://localhost:8080"),
+		DatabaseURL:    valueOrDefault(lookup, "DATABASE_URL", ""),
+		SessionTTL:     12 * time.Hour,
+		RememberTTL:    30 * 24 * time.Hour,
+		StoragePath:    valueOrDefault(lookup, "STORAGE_PATH", "./storage"),
 		StorageBackend: valueOrDefault(lookup, "STORAGE_BACKEND", "local"),
 	}
 

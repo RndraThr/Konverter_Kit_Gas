@@ -159,8 +159,8 @@ func TestLoadFromDefaultsStorageBackendToLocal(t *testing.T) {
 
 func TestLoadFromRequiresDriveSettingsWhenBackendIsGDrive(t *testing.T) {
 	base := map[string]string{
-		"DATABASE_URL":   "postgres://u:p@localhost/db",
-		"SESSION_SECRET": "01234567890123456789012345678901",
+		"DATABASE_URL":    "postgres://u:p@localhost/db",
+		"SESSION_SECRET":  "01234567890123456789012345678901",
 		"STORAGE_BACKEND": "gdrive",
 	}
 
