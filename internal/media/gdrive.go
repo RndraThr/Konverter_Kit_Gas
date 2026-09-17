@@ -100,7 +100,7 @@ func NewGoogleDriveStorage(ctx context.Context, credentialsPath, rootFolderID st
 func (s *GoogleDriveStorage) resolveFolder(ctx context.Context, folderPath []string) (string, error) {
 	parentID := s.rootFolderID
 	pathKeyParts := make([]string, 0, len(folderPath))
-	for _, name := range folderPath {
+	for i, name := range folderPath {
 		pathKeyParts = append(pathKeyParts, strings.ToLower(strings.ReplaceAll(name, " ", "-")))
 		pathKey := strings.Join(pathKeyParts, "/")
 
@@ -115,7 +115,8 @@ func (s *GoogleDriveStorage) resolveFolder(ctx context.Context, folderPath []str
 		if err != nil {
 			return "", err
 		}
-		if found == "" {
+		isNew := found == ""
+		if isNew {
 			found, err = s.api.createFolder(ctx, name, parentID)
 			if err != nil {
 				return "", err
@@ -125,8 +126,46 @@ func (s *GoogleDriveStorage) resolveFolder(ctx context.Context, folderPath []str
 			return "", err
 		}
 		parentID = found
+
+		// Index 0 is always "Konkit {tahun}"; index 1 is always the
+		// regency-level folder. The first time it's created, also create
+		// its two reserved-for-future-features sibling folders (empty).
+		if isNew && i == 1 {
+			if err := s.ensureRegencyReservedFolders(ctx, pathKey, parentID); err != nil {
+				return "", err
+			}
+		}
 	}
 	return parentID, nil
+}
+
+// ensureRegencyReservedFolders creates the "BERITA ACARA (BA)" and
+// "DOKUMEN PENDUKUNG" folders as empty siblings of "DOKUMENTASI FOTO &
+// VIDEO" under the regency folder, once. Both are reserved for future
+// features (see spec section 2) and are never written to by this plan.
+func (s *GoogleDriveStorage) ensureRegencyReservedFolders(ctx context.Context, regencyPathKey, regencyFolderID string) error {
+	for _, name := range []string{"BERITA ACARA (BA)", "DOKUMEN PENDUKUNG"} {
+		pathKey := regencyPathKey + "/" + strings.ToLower(strings.ReplaceAll(name, " ", "-"))
+		if _, ok, err := s.cache.Get(ctx, pathKey); err != nil {
+			return err
+		} else if ok {
+			continue
+		}
+		found, err := s.api.findFolder(ctx, name, regencyFolderID)
+		if err != nil {
+			return err
+		}
+		if found == "" {
+			found, err = s.api.createFolder(ctx, name, regencyFolderID)
+			if err != nil {
+				return err
+			}
+		}
+		if err := s.cache.Set(ctx, pathKey, found); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *GoogleDriveStorage) Put(ctx context.Context, key string, folderPath []string, source io.Reader) (string, int64, string, error) {

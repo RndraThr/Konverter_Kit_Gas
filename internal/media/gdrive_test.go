@@ -103,19 +103,21 @@ func TestGoogleDriveStoragePutCreatesNestedFoldersAndCachesThem(t *testing.T) {
 	if size != int64(len("photo bytes")) || checksum == "" {
 		t.Fatalf("size=%d checksum=%q", size, checksum)
 	}
-	if len(api.createdFolders) != 4 {
-		t.Fatalf("expected 4 folders created, got %v", api.createdFolders)
+	// First Put creates 4 from the path + 2 reserved folders (BERITA ACARA, DOKUMEN PENDUKUNG)
+	if len(api.createdFolders) != 6 {
+		t.Fatalf("expected 6 folders created (4 path + 2 reserved), got %v", api.createdFolders)
 	}
-	if cache.sets != 4 {
-		t.Fatalf("expected 4 cache writes (one per folder level), got %d", cache.sets)
+	// Cache gets 4 from the path + 2 from the reserved folders
+	if cache.sets != 6 {
+		t.Fatalf("expected 6 cache writes (4 path + 2 reserved), got %d", cache.sets)
 	}
 
 	// Second Put with the SAME folderPath must reuse cached folder IDs, not create new ones.
 	if _, _, _, err := storage.Put(context.Background(), "file-key-2", []string{"Konkit 2026", "Wajo", "Dokumentasi Foto & Video", "Rakor"}, bytes.NewBufferString("more bytes")); err != nil {
 		t.Fatal(err)
 	}
-	if len(api.createdFolders) != 4 {
-		t.Fatalf("expected still 4 folders created after reusing cached path, got %v", api.createdFolders)
+	if len(api.createdFolders) != 6 {
+		t.Fatalf("expected still 6 folders created after reusing cached path, got %v", api.createdFolders)
 	}
 }
 
@@ -147,5 +149,37 @@ func TestGoogleDriveStorageOpenAndDelete(t *testing.T) {
 	}
 	if _, err := storage.Open(context.Background(), storageKey); err == nil {
 		t.Fatal("expected Open after Delete to fail")
+	}
+}
+
+func TestGoogleDriveStoragePutCreatesReservedRegencyFoldersOnce(t *testing.T) {
+	api := newFakeDriveFilesAPI()
+	cache := newFakeFolderCache()
+	storage := &GoogleDriveStorage{api: api, cache: cache, rootFolderID: "root-1"}
+
+	if _, _, _, err := storage.Put(context.Background(), "file-key-1", []string{"Konkit 2026", "Wajo", "Dokumentasi Foto & Video", "Rakor"}, bytes.NewBufferString("photo")); err != nil {
+		t.Fatal(err)
+	}
+	wantReserved := map[string]bool{"BERITA ACARA (BA)": false, "DOKUMEN PENDUKUNG": false}
+	for _, name := range api.createdFolders {
+		if _, ok := wantReserved[name]; ok {
+			wantReserved[name] = true
+		}
+	}
+	for name, created := range wantReserved {
+		if !created {
+			t.Fatalf("expected reserved folder %q to be created alongside the regency folder, created folders: %v", name, api.createdFolders)
+		}
+	}
+	countBefore := len(api.createdFolders)
+
+	// A second Put for a DIFFERENT activity type under the SAME regency must
+	// reuse the cached regency folder and must NOT recreate the reserved
+	// siblings.
+	if _, _, _, err := storage.Put(context.Background(), "file-key-2", []string{"Konkit 2026", "Wajo", "Dokumentasi Foto & Video", "Pelatihan Teknis"}, bytes.NewBufferString("photo 2")); err != nil {
+		t.Fatal(err)
+	}
+	if len(api.createdFolders) != countBefore+1 { // +1 for the new "Pelatihan Teknis" activity folder only
+		t.Fatalf("expected no reserved-folder recreation, createdFolders after second Put: %v", api.createdFolders)
 	}
 }
