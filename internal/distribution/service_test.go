@@ -17,10 +17,10 @@ type storageStub struct {
 	putErr, deleteErr  error
 }
 
-func (s *storageStub) Put(_ context.Context, key string, _ []string, source io.Reader) (int64, string, error) {
+func (s *storageStub) Put(_ context.Context, key string, _ []string, source io.Reader) (string, int64, string, error) {
 	s.putKey = key
 	s.content, _ = io.ReadAll(source)
-	return int64(len(s.content)), "checksum", s.putErr
+	return key, int64(len(s.content)), "checksum", s.putErr
 }
 func (s *storageStub) Open(context.Context, string) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(s.content)), nil

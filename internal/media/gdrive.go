@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"sync"
 
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/option"
@@ -84,20 +83,6 @@ type GoogleDriveStorage struct {
 	api          driveFilesAPI
 	cache        folderCache
 	rootFolderID string
-	// key -> Drive file ID, populated by Put, consumed by Open/Delete.
-	// Guarded by fileIDsMu since Put/Open/Delete are called concurrently
-	// from per-request goroutines once this backend is wired into the
-	// server (Task 6).
-	//
-	// KNOWN GAP (accepted for this task): this map is in-memory only, so it
-	// only remembers file IDs uploaded during the current process's
-	// lifetime. Open/Delete for a key uploaded in a different process (e.g.
-	// after a server restart) will fail to resolve. See task-4-report.md /
-	// the media-storage-backend plan for the required follow-up: the caller
-	// must persist the real Drive file ID and the Storage interface likely
-	// needs to grow a way to report it back from Put.
-	fileIDsMu sync.Mutex
-	fileIDs   map[string]string
 }
 
 func NewGoogleDriveStorage(ctx context.Context, credentialsPath, rootFolderID string, cache folderCache) (*GoogleDriveStorage, error) {
@@ -109,7 +94,6 @@ func NewGoogleDriveStorage(ctx context.Context, credentialsPath, rootFolderID st
 		api:          &realDriveFilesAPI{service: service},
 		cache:        cache,
 		rootFolderID: rootFolderID,
-		fileIDs:      map[string]string{},
 	}, nil
 }
 
@@ -145,49 +129,28 @@ func (s *GoogleDriveStorage) resolveFolder(ctx context.Context, folderPath []str
 	return parentID, nil
 }
 
-func (s *GoogleDriveStorage) Put(ctx context.Context, key string, folderPath []string, source io.Reader) (int64, string, error) {
+func (s *GoogleDriveStorage) Put(ctx context.Context, key string, folderPath []string, source io.Reader) (string, int64, string, error) {
 	folderID, err := s.resolveFolder(ctx, folderPath)
 	if err != nil {
-		return 0, "", fmt.Errorf("resolve drive folder: %w", err)
+		return "", 0, "", fmt.Errorf("resolve drive folder: %w", err)
 	}
 	hashing := newHashingReader(source)
 	fileID, size, err := s.api.uploadFile(ctx, key, folderID, hashing)
 	if err != nil {
-		return 0, "", err
+		return "", 0, "", err
 	}
-	s.fileIDsMu.Lock()
-	if s.fileIDs == nil {
-		s.fileIDs = map[string]string{}
-	}
-	s.fileIDs[key] = fileID
-	s.fileIDsMu.Unlock()
-	return size, hashing.checksum(), nil
+	return fileID, size, hashing.checksum(), nil
 }
 
-func (s *GoogleDriveStorage) Open(ctx context.Context, key string) (io.ReadCloser, error) {
-	s.fileIDsMu.Lock()
-	fileID, ok := s.fileIDs[key]
-	s.fileIDsMu.Unlock()
-	if !ok {
-		return nil, fmt.Errorf("open drive file: unknown key %q", key)
-	}
-	return s.api.downloadFile(ctx, fileID)
+// Open and Delete take the real Drive file ID (the storageKey returned by
+// Put) directly, so they need no in-memory bookkeeping and work correctly
+// even after a server restart.
+func (s *GoogleDriveStorage) Open(ctx context.Context, storageKey string) (io.ReadCloser, error) {
+	return s.api.downloadFile(ctx, storageKey)
 }
 
-func (s *GoogleDriveStorage) Delete(ctx context.Context, key string) error {
-	s.fileIDsMu.Lock()
-	fileID, ok := s.fileIDs[key]
-	s.fileIDsMu.Unlock()
-	if !ok {
-		return nil
-	}
-	if err := s.api.deleteFile(ctx, fileID); err != nil {
-		return err
-	}
-	s.fileIDsMu.Lock()
-	delete(s.fileIDs, key)
-	s.fileIDsMu.Unlock()
-	return nil
+func (s *GoogleDriveStorage) Delete(ctx context.Context, storageKey string) error {
+	return s.api.deleteFile(ctx, storageKey)
 }
 
 // hashingReader wraps an io.Reader and computes a SHA-256 checksum of

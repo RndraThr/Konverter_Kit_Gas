@@ -19,8 +19,11 @@ var validKey = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
 type Storage interface {
 	// Put stores source under key. folderPath is a hint for backends that
 	// organize content into folders (e.g. Google Drive); LocalStorage
-	// ignores it and always stores flat.
-	Put(ctx context.Context, key string, folderPath []string, source io.Reader) (int64, string, error)
+	// ignores it and always stores flat. The returned storageKey is what
+	// callers must persist and pass to Open/Delete afterwards — for
+	// LocalStorage this is always the same as key; for backends with their
+	// own identity scheme (e.g. Google Drive file IDs) it is not.
+	Put(ctx context.Context, key string, folderPath []string, source io.Reader) (storageKey string, size int64, checksum string, err error)
 	Open(context.Context, string) (io.ReadCloser, error)
 	Delete(context.Context, string) error
 }
@@ -45,17 +48,17 @@ func NewLocalStorage(root string) (*LocalStorage, error) {
 	return &LocalStorage{root: absolute}, nil
 }
 
-func (s *LocalStorage) Put(ctx context.Context, key string, folderPath []string, source io.Reader) (size int64, checksum string, resultErr error) {
+func (s *LocalStorage) Put(ctx context.Context, key string, folderPath []string, source io.Reader) (storageKey string, size int64, checksum string, resultErr error) {
 	path, err := s.path(key)
 	if err != nil {
-		return 0, "", err
+		return "", 0, "", err
 	}
 	if err := ctx.Err(); err != nil {
-		return 0, "", err
+		return "", 0, "", err
 	}
 	temporary, err := os.CreateTemp(s.root, ".upload-*")
 	if err != nil {
-		return 0, "", fmt.Errorf("create temporary media file: %w", err)
+		return "", 0, "", fmt.Errorf("create temporary media file: %w", err)
 	}
 	temporaryName := temporary.Name()
 	defer func() {
@@ -65,23 +68,23 @@ func (s *LocalStorage) Put(ctx context.Context, key string, folderPath []string,
 		}
 	}()
 	if err := temporary.Chmod(0o640); err != nil {
-		return 0, "", fmt.Errorf("secure temporary media file: %w", err)
+		return "", 0, "", fmt.Errorf("secure temporary media file: %w", err)
 	}
 	hash := sha256.New()
 	size, err = io.Copy(io.MultiWriter(temporary, hash), source)
 	if err != nil {
-		return 0, "", fmt.Errorf("write media file: %w", err)
+		return "", 0, "", fmt.Errorf("write media file: %w", err)
 	}
 	if err := temporary.Sync(); err != nil {
-		return 0, "", fmt.Errorf("sync media file: %w", err)
+		return "", 0, "", fmt.Errorf("sync media file: %w", err)
 	}
 	if err := temporary.Close(); err != nil {
-		return 0, "", fmt.Errorf("close media file: %w", err)
+		return "", 0, "", fmt.Errorf("close media file: %w", err)
 	}
 	if err := os.Rename(temporaryName, path); err != nil {
-		return 0, "", fmt.Errorf("commit media file: %w", err)
+		return "", 0, "", fmt.Errorf("commit media file: %w", err)
 	}
-	return size, hex.EncodeToString(hash.Sum(nil)), nil
+	return key, size, hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func (s *LocalStorage) Open(ctx context.Context, key string) (io.ReadCloser, error) {

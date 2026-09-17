@@ -182,13 +182,13 @@ func (s *Service) UploadMedia(ctx context.Context, actor auth.Principal, input U
 	if err != nil {
 		return MediaFile{}, err
 	}
-	size, checksum, err := s.storage.Put(ctx, key, nil, bytes.NewReader(input.Data))
+	storageKey, size, checksum, err := s.storage.Put(ctx, key, nil, bytes.NewReader(input.Data))
 	if err != nil {
 		return MediaFile{}, err
 	}
-	stored, err := s.mediaRepository.SaveMedia(ctx, actor, MediaFileInput{SlotID: slot.ID, StorageKey: key, OriginalFilename: strings.TrimSpace(input.OriginalFilename), MimeType: mimeType, Checksum: checksum, Source: input.Source, ByteSize: size, CapturedAt: input.CapturedAt, Latitude: input.Latitude, Longitude: input.Longitude}, meta)
+	stored, err := s.mediaRepository.SaveMedia(ctx, actor, MediaFileInput{SlotID: slot.ID, StorageKey: storageKey, OriginalFilename: strings.TrimSpace(input.OriginalFilename), MimeType: mimeType, Checksum: checksum, Source: input.Source, ByteSize: size, CapturedAt: input.CapturedAt, Latitude: input.Latitude, Longitude: input.Longitude}, meta)
 	if err != nil {
-		_ = s.storage.Delete(context.Background(), key)
+		_ = s.storage.Delete(context.Background(), storageKey)
 		return MediaFile{}, err
 	}
 	stored.ContentURL = "/api/v1/distribution/media/" + stored.ID + "/content"

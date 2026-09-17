@@ -96,7 +96,7 @@ func TestGoogleDriveStoragePutCreatesNestedFoldersAndCachesThem(t *testing.T) {
 	cache := newFakeFolderCache()
 	storage := &GoogleDriveStorage{api: api, cache: cache, rootFolderID: "root-1"}
 
-	size, checksum, err := storage.Put(context.Background(), "file-key-1", []string{"Konkit 2026", "Wajo", "Dokumentasi Foto & Video", "Rakor"}, bytes.NewBufferString("photo bytes"))
+	_, size, checksum, err := storage.Put(context.Background(), "file-key-1", []string{"Konkit 2026", "Wajo", "Dokumentasi Foto & Video", "Rakor"}, bytes.NewBufferString("photo bytes"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestGoogleDriveStoragePutCreatesNestedFoldersAndCachesThem(t *testing.T) {
 	}
 
 	// Second Put with the SAME folderPath must reuse cached folder IDs, not create new ones.
-	if _, _, err := storage.Put(context.Background(), "file-key-2", []string{"Konkit 2026", "Wajo", "Dokumentasi Foto & Video", "Rakor"}, bytes.NewBufferString("more bytes")); err != nil {
+	if _, _, _, err := storage.Put(context.Background(), "file-key-2", []string{"Konkit 2026", "Wajo", "Dokumentasi Foto & Video", "Rakor"}, bytes.NewBufferString("more bytes")); err != nil {
 		t.Fatal(err)
 	}
 	if len(api.createdFolders) != 4 {
@@ -124,12 +124,15 @@ func TestGoogleDriveStorageOpenAndDelete(t *testing.T) {
 	cache := newFakeFolderCache()
 	storage := &GoogleDriveStorage{api: api, cache: cache, rootFolderID: "root-1"}
 
-	_, _, err := storage.Put(context.Background(), "file-key-3", []string{"Konkit 2026", "Wajo"}, bytes.NewBufferString("hello drive"))
+	storageKey, _, _, err := storage.Put(context.Background(), "file-key-3", []string{"Konkit 2026", "Wajo"}, bytes.NewBufferString("hello drive"))
 	if err != nil {
 		t.Fatal(err)
 	}
+	if storageKey == "file-key-3" {
+		t.Fatal("expected storageKey to be the fake API's assigned file ID, not the caller-supplied key")
+	}
 
-	reader, err := storage.Open(context.Background(), "file-key-3")
+	reader, err := storage.Open(context.Background(), storageKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,10 +142,10 @@ func TestGoogleDriveStorageOpenAndDelete(t *testing.T) {
 		t.Fatalf("content=%q", content)
 	}
 
-	if err := storage.Delete(context.Background(), "file-key-3"); err != nil {
+	if err := storage.Delete(context.Background(), storageKey); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := storage.Open(context.Background(), "file-key-3"); err == nil {
+	if _, err := storage.Open(context.Background(), storageKey); err == nil {
 		t.Fatal("expected Open after Delete to fail")
 	}
 }

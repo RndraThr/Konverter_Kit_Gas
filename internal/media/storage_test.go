@@ -27,17 +27,17 @@ func TestLocalStorageRejectsTraversalAndWritesAtomically(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, key := range []string{"../secret", "folder/file", `folder\file`, ""} {
-		if _, _, err := storage.Put(context.Background(), key, nil, bytes.NewBufferString("secret")); !errors.Is(err, ErrInvalidKey) {
+		if _, _, _, err := storage.Put(context.Background(), key, nil, bytes.NewBufferString("secret")); !errors.Is(err, ErrInvalidKey) {
 			t.Fatalf("key=%q err=%v", key, err)
 		}
 	}
 
-	size, checksum, err := storage.Put(context.Background(), "550e8400-e29b-41d4-a716-446655440000", nil, bytes.NewBufferString("photo"))
+	storageKey, size, checksum, err := storage.Put(context.Background(), "550e8400-e29b-41d4-a716-446655440000", nil, bytes.NewBufferString("photo"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if size != 5 || checksum != "55c64d0fcd6f9d5f7c828093857e3fdfda68478bb4e9bd24d481ef391c7804e8" {
-		t.Fatalf("size=%d checksum=%s", size, checksum)
+	if storageKey != "550e8400-e29b-41d4-a716-446655440000" || size != 5 || checksum != "55c64d0fcd6f9d5f7c828093857e3fdfda68478bb4e9bd24d481ef391c7804e8" {
+		t.Fatalf("storageKey=%q size=%d checksum=%s", storageKey, size, checksum)
 	}
 	reader, err := storage.Open(context.Background(), "550e8400-e29b-41d4-a716-446655440000")
 	if err != nil {
@@ -49,7 +49,7 @@ func TestLocalStorageRejectsTraversalAndWritesAtomically(t *testing.T) {
 		t.Fatalf("content=%q", content)
 	}
 
-	if _, _, err := storage.Put(context.Background(), "550e8400-e29b-41d4-a716-446655440001", nil, &failingReader{}); err == nil {
+	if _, _, _, err := storage.Put(context.Background(), "550e8400-e29b-41d4-a716-446655440001", nil, &failingReader{}); err == nil {
 		t.Fatal("expected interrupted write to fail")
 	}
 	entries, err := os.ReadDir(root)
