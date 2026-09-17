@@ -15,6 +15,9 @@ SESSION_SECRET=<RAHASIA_ACAK>
 SESSION_COOKIE_SECURE=false
 SESSION_TTL=12h
 STORAGE_PATH=./storage
+STORAGE_BACKEND=local
+GDRIVE_SERVICE_ACCOUNT_JSON=
+GDRIVE_ROOT_FOLDER_ID=
 ```
 
 Nilai environment dari sistem atau Docker tidak akan ditimpa oleh `.env`. File `.env` berisi rahasia lokal dan sudah dikecualikan melalui `.gitignore`; jangan memasukkannya ke repository atau Docker image. FlyEnv tetap dapat menyediakan runtime Go dan PostgreSQL tanpa menyimpan rahasia aplikasi di Project Environment.
@@ -87,7 +90,9 @@ Data DCP3 diproses melalui halaman `DCP3`: pilih jadwal aktif, unggah workbook, 
 
 Workbook DCP3 tidak harus mengikuti template baku — nama kolom dicocokkan manual di step "Cocokkan kolom". Satu syarat struktural: baris header harus rata satu baris tanpa sel kosong/duplikat. Jika workbook punya baris judul/kop di atas header (format umum dari sebagian kabupaten), sistem menampilkan galat khusus beserta opsi "Lihat & pilih baris header" yang menampilkan pratinjau baris mentah agar pengguna dapat memilih baris header yang benar sebelum mencoba lagi.
 
-Foto disimpan di `STORAGE_PATH`. Nilai relatif seperti `./storage` diperbolehkan untuk `APP_ENV=local`; gunakan path absolut di environment test, staging, dan production. Input `Buka kamera` bergantung pada dukungan browser/perangkat, sedangkan `Pilih galeri` dapat digunakan pada desktop maupun mobile.
+Foto disimpan di `STORAGE_PATH` ketika `STORAGE_BACKEND=local` (default). Nilai relatif seperti `./storage` diperbolehkan untuk `APP_ENV=local`; gunakan path absolut di environment test, staging, dan production. Input `Buka kamera` bergantung pada dukungan browser/perangkat, sedangkan `Pilih galeri` dapat digunakan pada desktop maupun mobile.
+
+`STORAGE_BACKEND=gdrive` (dengan `GDRIVE_SERVICE_ACCOUNT_JSON` dan `GDRIVE_ROOT_FOLDER_ID`) mengaktifkan penyimpanan media di Google Drive via Service Account. **Belum aman dipakai untuk fitur Pendistribusian yang sudah berjalan**: `GoogleDriveStorage` hanya mengingat ID file Drive di memori proses, sehingga membuka/menghapus foto akan gagal setelah server di-restart, dan upload dari Pendistribusian saat ini belum diorganisir ke folder per kabupaten. Backend ini disiapkan sebagai fondasi untuk modul dokumentasi kegiatan mendatang — jangan diaktifkan di production sebelum modul tersebut menyelesaikan penyimpanan ID file yang persisten.
 
 Halaman `Laporan` menampilkan ringkasan dan tabel alokasi/distribusi/dokumentasi untuk satu jadwal terpilih, dengan export Excel dan PDF, memakai permission `distribution.view` yang sama dengan Pendistribusian.
 
