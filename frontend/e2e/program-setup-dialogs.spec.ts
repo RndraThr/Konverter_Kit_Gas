@@ -164,8 +164,11 @@ test('repeatable template actions stack safely and add editable rows on narrow w
   ] as const) {
     const button = dialog.getByRole('button', { name });
     const header = button.locator('xpath=ancestor::div[contains(@class,"slotEditorHead")]');
-    const [buttonBox, headerBox] = await Promise.all([button.boundingBox(), header.boundingBox()]);
-    expect(buttonBox?.width ?? 0, `${name} harus selebar area editor`).toBeGreaterThanOrEqual((headerBox?.width ?? 0) - 2);
+    const widthDifference = await header.evaluate((element) => {
+      const button = element.querySelector('button');
+      return button ? Math.abs(element.getBoundingClientRect().width - button.getBoundingClientRect().width) : Number.POSITIVE_INFINITY;
+    });
+    expect(widthDifference, `${name} harus selebar area editor`).toBeLessThanOrEqual(2);
     await button.click();
     const newField = dialog.getByLabel(fieldPattern).last();
     await expect(newField, `${name} harus menampilkan kolom baru`).toBeInViewport();
@@ -182,8 +185,11 @@ test('repeatable template actions stack safely and add editable rows on narrow w
   dialog = page.getByRole('dialog', { name: /^Edit / });
   const addSlot = dialog.getByRole('button', { name: 'Tambah slot' });
   const slotHeader = addSlot.locator('xpath=ancestor::div[contains(@class,"slotEditorHead")]');
-  const [buttonBox, headerBox] = await Promise.all([addSlot.boundingBox(), slotHeader.boundingBox()]);
-  expect(buttonBox?.width ?? 0, 'Tambah slot harus selebar area editor').toBeGreaterThanOrEqual((headerBox?.width ?? 0) - 1);
+  const widthDifference = await slotHeader.evaluate((element) => {
+    const button = element.querySelector('button');
+    return button ? Math.abs(element.getBoundingClientRect().width - button.getBoundingClientRect().width) : Number.POSITIVE_INFINITY;
+  });
+  expect(widthDifference, 'Tambah slot harus selebar area editor').toBeLessThanOrEqual(2);
   await addSlot.click();
   const newSlot = dialog.getByLabel('Kode slot').last();
   await expect(newSlot).toBeEditable();
