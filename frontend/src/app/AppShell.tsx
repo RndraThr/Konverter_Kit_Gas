@@ -1,17 +1,17 @@
 import { useQuery } from '@tanstack/react-query';
 import {
   Activity, CalendarClock, CalendarRange, Camera, ChevronDown, FileClock, FileSpreadsheet, FileText, ListFilter, MapPinned, Menu,
-  PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, UserRound, UsersRound,
+  PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, UsersRound, X,
 } from 'lucide-react';
-import { ReactNode, useEffect, useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { ReactNode, useEffect, useId, useState } from 'react';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Separator } from '@/components/ui/separator';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -21,6 +21,7 @@ import { PermissionsProvider } from '../lib/permissions';
 type NavItem = { label: string; to: string; permission?: string; icon: ReactNode };
 type NavGroup = { label: string; items: NavItem[] };
 const sidebarPreferenceKey = 'konkit.sidebar.collapsed';
+const closedGroupsPreferenceKey = 'konkit.sidebar.closed-groups';
 
 const groups: NavGroup[] = [
   { label: 'Dashboard', items: [
@@ -44,9 +45,6 @@ const groups: NavGroup[] = [
     { label: 'Kesehatan sistem', to: '/kesehatan', permission: 'health.view', icon: <Activity /> },
     { label: 'Riwayat aktivitas', to: '/riwayat', permission: 'audit.view', icon: <FileClock /> },
   ] },
-  { label: 'Akun', items: [
-    { label: 'Profil saya', to: '/profil', icon: <UserRound /> },
-  ] },
 ];
 
 function canSee(permissions: string[], permission?: string) {
@@ -54,7 +52,7 @@ function canSee(permissions: string[], permission?: string) {
 }
 
 function Brand() {
-  return <div className="flex min-h-20 items-center gap-3 px-5 py-4">
+  return <div className="flex min-h-20 items-center gap-3 py-4 pr-16 pl-5">
     <img className="h-8 w-20 object-contain" src="/static/images/logo-ergas.png" alt="Ergas" />
     <Separator orientation="vertical" className="h-7 bg-sidebar-foreground/20" />
     <img className="h-8 w-25 object-contain" src="/static/images/logo-ksm-cropped.png" alt="PT Kian Santang Mulitama Tbk" />
@@ -64,12 +62,18 @@ function Brand() {
 function NavigationLink({ item, collapsed, onNavigate }: { item: NavItem; collapsed: boolean; onNavigate?: () => void }) {
   const content = <>
     <span aria-hidden="true" className="shrink-0 [&_svg]:size-4.5">{item.icon}</span>
-    <span className={cn(collapsed && 'sr-only')}>{item.label}</span>
+    <span
+      aria-hidden={collapsed}
+      className={cn(
+        'min-w-0 overflow-hidden whitespace-nowrap transition-[max-width,opacity,transform] duration-200 motion-reduce:transition-none',
+        collapsed ? 'max-w-0 -translate-x-1 opacity-0' : 'max-w-48 translate-x-0 opacity-100',
+      )}
+    >{item.label}</span>
   </>;
   const link = <NavLink
     aria-label={collapsed ? item.label : undefined}
     className={({ isActive }) => cn(
-      'relative flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground/85 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sidebar-ring',
+      'relative flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground/85 transition-[color,background-color,padding,gap] duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sidebar-ring motion-reduce:transition-none',
       collapsed && 'justify-center px-0',
       isActive && 'bg-sidebar-accent text-sidebar-accent-foreground before:absolute before:inset-y-2 before:left-0 before:w-1 before:rounded-r before:bg-sidebar-primary',
     )}
@@ -83,14 +87,50 @@ function NavigationLink({ item, collapsed, onNavigate }: { item: NavItem; collap
 }
 
 function Navigation({ permissions, collapsed = false, onNavigate }: { permissions: string[]; collapsed?: boolean; onNavigate?: () => void }) {
+  const { pathname } = useLocation();
+  const navigationId = useId();
+  const [closedGroups, setClosedGroups] = useState<Set<string>>(() => {
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(closedGroupsPreferenceKey) ?? '[]');
+      return new Set(Array.isArray(stored) ? stored.filter((value): value is string => typeof value === 'string') : []);
+    } catch {
+      return new Set();
+    }
+  });
+  const isItemActive = (to: string) => to === '/' ? pathname === '/' : pathname === to || pathname.startsWith(`${to}/`);
+
+  const toggleGroup = (label: string) => {
+    setClosedGroups((current) => {
+      const next = new Set(current);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      try { window.localStorage.setItem(closedGroupsPreferenceKey, JSON.stringify([...next])); } catch { /* Preference storage may be unavailable. */ }
+      return next;
+    });
+  };
+
   return <nav className={cn('min-h-0 flex-1 overflow-y-auto py-4', collapsed ? 'px-2' : 'px-3')} aria-label="Navigasi utama">
     {groups.map((group) => {
       const items = group.items.filter((item) => canSee(permissions, item.permission));
       if (!items.length) return null;
+      const hasActiveItem = items.some((item) => isItemActive(item.to));
+      const isOpen = collapsed || hasActiveItem || !closedGroups.has(group.label);
+      const contentId = `${navigationId}-${group.label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
 
-      return <section className="mb-5" key={group.label}>
-        <h2 className={cn('mb-1 px-3 text-xs font-semibold tracking-wide text-sidebar-foreground/65', collapsed && 'sr-only')}>{group.label}</h2>
-        <div className="space-y-0.5">
+      return <section className={cn(collapsed ? 'mb-2 border-t border-sidebar-border/75 pt-2 first:border-t-0 first:pt-0' : 'mb-5')} key={group.label}>
+        {collapsed
+          ? <h2 className="sr-only">{group.label}</h2>
+          : <button
+            aria-controls={contentId}
+            aria-expanded={isOpen}
+            className="mb-1 flex min-h-8 w-full items-center justify-between rounded-md px-3 text-left text-xs font-semibold tracking-wide text-sidebar-foreground/65 transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sidebar-ring"
+            onClick={() => toggleGroup(group.label)}
+            type="button"
+          >
+            <span>{group.label}</span>
+            <ChevronDown aria-hidden="true" className={cn('size-3.5 transition-transform duration-200 motion-reduce:transition-none', !isOpen && '-rotate-90')} />
+          </button>}
+        <div className="space-y-0.5" hidden={!isOpen} id={contentId}>
           {items.map((item) => <NavigationLink item={item} collapsed={collapsed} onNavigate={onNavigate} key={item.to} />)}
         </div>
       </section>;
@@ -109,12 +149,21 @@ function SystemConnectionStatus({ collapsed = false }: { collapsed?: boolean }) 
 }
 
 function DesktopBrand({ collapsed }: { collapsed: boolean }) {
-  return <div className={cn('flex items-center', collapsed ? 'min-h-24 justify-center px-2 pb-12' : 'min-h-20 gap-2 px-4 pr-7')}>
-    {collapsed ? <img className="h-6 w-12 object-contain" src="/static/images/logo-ergas.png" alt="Ergas" /> : <div className="flex min-w-0 flex-1 items-center gap-2">
-      <img className="h-8 w-20 object-contain" src="/static/images/logo-ergas.png" alt="Ergas" />
+  return <div className="relative flex min-h-20 items-center overflow-hidden px-4">
+    <div
+      aria-hidden={collapsed}
+      className={cn('absolute inset-y-0 left-4 flex items-center gap-2 transition-[opacity,transform] duration-200 motion-reduce:transition-none', collapsed ? 'pointer-events-none translate-x-2 opacity-0' : 'translate-x-0 opacity-100')}
+    >
+      <img aria-hidden={collapsed} className="h-8 w-20 object-contain" src="/static/images/logo-ergas.png" alt={collapsed ? '' : 'Ergas'} />
       <Separator orientation="vertical" className="h-6 bg-sidebar-foreground/20" />
-      <img className="h-8 w-25 object-contain" src="/static/images/logo-ksm-cropped.png" alt="PT Kian Santang Mulitama Tbk" />
-    </div>}
+      <img aria-hidden={collapsed} className="h-8 w-25 object-contain" src="/static/images/logo-ksm-cropped.png" alt={collapsed ? '' : 'PT Kian Santang Mulitama Tbk'} />
+    </div>
+    <img
+      aria-hidden={!collapsed}
+      className={cn('absolute left-0.5 h-6 w-12 object-contain transition-opacity duration-200 motion-reduce:transition-none', collapsed ? 'opacity-100' : 'pointer-events-none opacity-0')}
+      src="/static/images/logo-ergas.png"
+      alt={collapsed ? 'Ergas' : ''}
+    />
   </div>;
 }
 
@@ -123,12 +172,13 @@ function SidebarToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: 
   return <Tooltip>
     <TooltipTrigger render={<Button
       aria-label={label}
+      aria-controls="primary-sidebar"
       aria-expanded={!collapsed}
       variant="outline"
       size="icon"
       className={cn(
         'absolute right-0 z-40 touch-manipulation rounded-full border-sidebar-border bg-background text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground',
-        collapsed ? 'top-12' : 'top-5',
+        'top-5',
       )}
       style={{ transform: 'translateX(50%)' }}
       onClick={onToggle}
@@ -152,9 +202,10 @@ function MobileNavigation({ permissions }: { permissions: string[] }) {
       <span className="sr-only">Buka navigasi</span>
     </SheetTrigger>
     <SheetContent side="left" aria-label="Navigasi utama" className="w-[min(304px,88vw)] gap-0 border-sidebar-border bg-sidebar p-0 text-sidebar-foreground sm:max-w-none" showCloseButton={false}>
-      <SheetHeader className="border-b border-sidebar-border p-0">
+      <SheetHeader className="relative border-b border-sidebar-border p-0">
         <SheetTitle className="sr-only">Navigasi utama</SheetTitle>
         <Brand />
+        <SheetClose aria-label="Tutup navigasi" render={<Button type="button" variant="ghost" size="icon" className="absolute top-4 right-3 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" />}><X aria-hidden="true" /></SheetClose>
       </SheetHeader>
       <Navigation permissions={permissions} onNavigate={() => setOpen(false)} />
       <SystemConnectionStatus />
@@ -174,7 +225,7 @@ function LiveClock() {
   const shortDate = now.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
   const time = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
-  return <div className="flex min-w-0 flex-1 items-center">
+  return <div className="hidden shrink-0 items-center xl:flex">
     <div className="flex min-w-0 items-center gap-2 rounded-full border border-border bg-muted/40 px-3.5 py-1.5">
       <CalendarClock aria-hidden="true" className="hidden size-4 shrink-0 text-muted-foreground sm:block" />
       <p className="truncate text-sm font-medium text-foreground">
@@ -184,6 +235,23 @@ function LiveClock() {
         {time}
       </p>
     </div>
+  </div>;
+}
+
+function PageContext() {
+  const { pathname } = useLocation();
+  const matchedGroup = groups.find((group) => group.items.some((item) => item.to === '/' ? pathname === '/' : pathname === item.to || pathname.startsWith(`${item.to}/`)));
+  const matchedItem = matchedGroup?.items.find((item) => item.to === '/' ? pathname === '/' : pathname === item.to || pathname.startsWith(`${item.to}/`));
+  const title = pathname.startsWith('/profil') ? 'Profil saya' : matchedItem?.label ?? 'Dashboard';
+  const section = pathname.startsWith('/profil') ? 'Akun' : matchedGroup?.label ?? 'Dashboard';
+
+  return <div aria-label="Konteks halaman" className="min-w-0 flex-1" role="group">
+    <nav aria-label="Breadcrumb" className="hidden items-center gap-1 text-xs text-muted-foreground sm:flex">
+      {section === 'Dashboard'
+        ? <span>Dashboard</span>
+        : <><Link className="hover:text-foreground hover:underline" to="/">Dashboard</Link><span aria-hidden="true">/</span><span className="truncate">{section}</span></>}
+    </nav>
+    <p className="truncate text-sm font-semibold text-foreground sm:text-base">{title}</p>
   </div>;
 }
 
@@ -252,7 +320,7 @@ export function AppShell() {
 
   return <TooltipProvider>
     <div className={cn('min-h-svh bg-background md:grid md:transition-[grid-template-columns] md:duration-200 motion-reduce:transition-none', sidebarCollapsed ? 'md:grid-cols-[76px_minmax(0,1fr)]' : 'md:grid-cols-[264px_minmax(0,1fr)]')}>
-      <aside aria-label="Sidebar utama" data-state={sidebarCollapsed ? 'collapsed' : 'expanded'} className="sticky top-0 z-40 hidden h-svh flex-col overflow-visible border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex">
+      <aside id="primary-sidebar" aria-label="Sidebar utama" data-state={sidebarCollapsed ? 'collapsed' : 'expanded'} className="sticky top-0 z-40 hidden h-svh flex-col overflow-visible border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex">
         <DesktopBrand collapsed={sidebarCollapsed} />
         <Separator className="bg-sidebar-border" />
         <Navigation permissions={user.permissions} collapsed={sidebarCollapsed} />
@@ -262,6 +330,7 @@ export function AppShell() {
       <div className="min-w-0">
         <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur sm:px-6">
           <MobileNavigation permissions={user.permissions} />
+          <PageContext />
           <LiveClock />
           <AccountMenu user={user} csrfToken={bootstrap.data.meta.csrf_token} />
         </header>
