@@ -109,6 +109,24 @@ func TestUploadRejectsUnrecognizedFileType(t *testing.T) {
 	}
 }
 
+func TestUploadShortCircuitsOnRegencyScopeFailure(t *testing.T) {
+	repository := &repositoryStub{regencyErr: ErrRegencyNotFound}
+	storage := &storageStub{}
+	service := NewService(repository, storage)
+
+	_, err := service.Upload(context.Background(), auth.Principal{}, UploadInput{
+		RegencyID: "regency-1", ActivityType: "rakor", Source: "camera", OriginalFilename: "a.jpg",
+		Data: []byte{0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0, 0, 0, 0, 0},
+	}, auth.ClientMeta{}, auth.RegencyScope{RegencyIDs: []string{"other-regency"}})
+
+	if !errors.Is(err, ErrRegencyNotFound) {
+		t.Fatalf("err = %v", err)
+	}
+	if storage.putKey != "" {
+		t.Fatal("expected storage.Put to never be called when GetRegency fails")
+	}
+}
+
 func TestUploadGeneratesAKeyAndPersistsTheReturnedStorageKey(t *testing.T) {
 	repository := &repositoryStub{regency: regencyInfo{ID: "regency-1", Name: "Wajo", DocumentCode: "WJO"}}
 	storage := &storageStub{}
