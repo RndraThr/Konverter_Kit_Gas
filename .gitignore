@@ -8,3 +8,7 @@ frontend/node_modules/
 frontend/test-results/
 frontend/playwright-report/
 *.exe
+
+# Python-generated cache files
+__pycache__/
+*.py[cod]
