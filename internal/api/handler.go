@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"konkit/internal/activities"
 	"konkit/internal/administration"
 	"konkit/internal/audit"
 	"konkit/internal/auth"
@@ -112,6 +113,13 @@ type RecipientsService interface {
 	Restore(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) error
 }
 
+type ActivitiesService interface {
+	List(context.Context, activities.Filter, auth.RegencyScope) (activities.Page, error)
+	Upload(context.Context, auth.Principal, activities.UploadInput, auth.ClientMeta, auth.RegencyScope) (activities.ActivityMedia, error)
+	Delete(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) error
+	OpenContent(context.Context, string, auth.RegencyScope) (activities.MediaContent, error)
+}
+
 type Dependencies struct {
 	Auth           AuthService
 	Profile        ProfileService
@@ -124,6 +132,7 @@ type Dependencies struct {
 	Distribution   DistributionService
 	Reports        ReportsService
 	Recipients     RecipientsService
+	Activities     ActivitiesService
 	SessionSecret  []byte
 }
 
@@ -243,6 +252,10 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleRecipientStats(w, r, rc)
 	case strings.HasPrefix(path, "recipients/"):
 		h.handleRecipient(w, r, rc, strings.TrimPrefix(path, "recipients/"))
+	case path == "activities/media":
+		h.handleActivitiesMedia(w, r, rc)
+	case strings.HasPrefix(path, "activities/media/"):
+		h.handleActivityMediaItem(w, r, rc, strings.TrimPrefix(path, "activities/media/"))
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
 	}

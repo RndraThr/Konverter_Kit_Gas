@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"konkit/internal/activities"
 	"konkit/internal/administration"
 	apihttp "konkit/internal/api"
 	"konkit/internal/audit"
@@ -77,6 +78,7 @@ func run(ctx context.Context, cfg config.Config) error {
 		Distribution:   distribution.NewService(distribution.NewRepository(pool), mediaStorage),
 		Reports:        reports.NewService(reports.NewRepository(pool)),
 		Recipients:     recipients.NewService(recipients.NewRepository(pool)),
+		Activities:     activities.NewService(activities.NewRepository(pool), mediaStorage),
 		SessionSecret:  cfg.SessionSecret,
 	})
 	handler := web.NewHandler(web.Dependencies{
