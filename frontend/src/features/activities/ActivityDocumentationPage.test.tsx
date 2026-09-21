@@ -67,3 +67,88 @@ test('uploads a photo via the gallery picker', async () => {
   fireEvent.change(await screen.findByLabelText('Pilih galeri'), { target: { files: [file] } });
   expect(await screen.findByAltText('Preview unggahan')).toHaveAttribute('src', 'blob:preview');
 });
+
+test('renders a video element while a video upload is pending', async () => {
+  vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
+    if (path === '/api/v1/program-setup/regencies') return Promise.resolve({ data: [{ id: 'regency-1', name: 'Wajo', document_code: 'WJO' }] });
+    if (path === '/api/v1/activities/media' && init?.method === 'POST') return new Promise(() => undefined);
+    if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
+    return Promise.reject(new Error(`Unexpected request: ${path}`));
+  });
+  vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:video-preview'), revokeObjectURL: vi.fn() });
+  renderPage(['activities.view', 'activities.manage'], ['/dokumentasi/rakor?regency_id=regency-1']);
+
+  fireEvent.change(await screen.findByLabelText('Pilih galeri'), { target: { files: [new File(['video'], 'rakor.mp4', { type: 'video/mp4' })] } });
+
+  expect(await screen.findByLabelText('Preview unggahan video')).toHaveAttribute('src', 'blob:video-preview');
+  expect(screen.getByRole('combobox', { name: 'Kabupaten' })).toBeDisabled();
+});
+
+test('offers retry and cancel actions after an upload fails', async () => {
+  let uploadAttempts = 0;
+  vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
+    if (path === '/api/v1/program-setup/regencies') return Promise.resolve({ data: [{ id: 'regency-1', name: 'Wajo', document_code: 'WJO' }] });
+    if (path === '/api/v1/activities/media' && init?.method === 'POST') {
+      uploadAttempts += 1;
+      if (uploadAttempts === 1) return Promise.reject(new Error('upload failed'));
+      expect((init.body as FormData).get('regency_id')).toBe('regency-1');
+      return Promise.resolve({ data: { id: 'media-2' } });
+    }
+    if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
+    return Promise.reject(new Error(`Unexpected request: ${path}`));
+  });
+  vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:failed-preview'), revokeObjectURL: vi.fn() });
+  renderPage(['activities.view', 'activities.manage'], ['/dokumentasi/rakor?regency_id=regency-1']);
+
+  fireEvent.change(await screen.findByLabelText('Pilih galeri'), { target: { files: [new File(['photo'], 'foto.jpg', { type: 'image/jpeg' })] } });
+
+  expect(await screen.findByRole('button', { name: 'Coba unggah lagi' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Batalkan unggahan' })).toBeVisible();
+  expect(screen.getByRole('combobox', { name: 'Kabupaten' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Coba unggah lagi' }));
+  expect(await screen.findByText('Belum ada dokumentasi')).toBeVisible();
+  expect(uploadAttempts).toBe(2);
+});
+
+test('shows a retryable error when regencies cannot be loaded', async () => {
+  let regencyAttempts = 0;
+  vi.mocked(apiRequest).mockImplementation((path: string) => {
+    if (path === '/api/v1/program-setup/regencies') {
+      regencyAttempts += 1;
+      if (regencyAttempts === 1) return Promise.reject(new Error('regencies unavailable'));
+      return Promise.resolve({ data: [{ id: 'regency-1', name: 'Wajo', document_code: 'WJO' }] });
+    }
+    return Promise.reject(new Error(`Unexpected request: ${path}`));
+  });
+
+  renderPage(['activities.view']);
+
+  expect(await screen.findByRole('heading', { name: 'Daftar kabupaten belum dapat dimuat' })).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Coba lagi' }));
+  expect(await screen.findByRole('combobox', { name: 'Kabupaten' })).toBeVisible();
+  expect(regencyAttempts).toBe(2);
+});
+
+test('clears a failed upload when navigating to another activity type', async () => {
+  vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
+    if (path === '/api/v1/program-setup/regencies') return Promise.resolve({ data: [{ id: 'regency-1', name: 'Wajo', document_code: 'WJO' }] });
+    if (path === '/api/v1/activities/media' && init?.method === 'POST') return Promise.reject(new Error('upload failed'));
+    if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
+    return Promise.reject(new Error(`Unexpected request: ${path}`));
+  });
+  vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:failed-preview'), revokeObjectURL: vi.fn() });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  const wrapper = (activityType: 'rakor' | 'training_10', label: string) => (
+    <QueryClientProvider client={client}><PermissionsProvider permissions={['activities.view', 'activities.manage']}><MemoryRouter initialEntries={['/dokumentasi/rakor?regency_id=regency-1']}><ActivityDocumentationPage activityType={activityType} label={label} /></MemoryRouter></PermissionsProvider></QueryClientProvider>
+  );
+  const view = render(wrapper('rakor', 'Rakor'));
+
+  fireEvent.change(await screen.findByLabelText('Pilih galeri'), { target: { files: [new File(['photo'], 'foto.jpg', { type: 'image/jpeg' })] } });
+  expect(await screen.findByRole('button', { name: 'Coba unggah lagi' })).toBeVisible();
+
+  view.rerender(wrapper('training_10', 'Training 10%'));
+
+  expect(await screen.findByRole('heading', { name: 'Training 10%' })).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Coba unggah lagi' })).not.toBeInTheDocument();
+  expect(screen.queryByAltText('Preview unggahan')).not.toBeInTheDocument();
+});

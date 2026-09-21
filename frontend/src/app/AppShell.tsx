@@ -4,7 +4,7 @@ import {
   FileSpreadsheet, FileText, GraduationCap, ListFilter, MapPinned, Menu, PackageOpen, PanelLeftClose, PanelLeftOpen,
   PartyPopper, Settings, ShieldCheck, Users, UsersRound, Waves, X,
 } from 'lucide-react';
-import { ReactNode, useEffect, useId, useState } from 'react';
+import { Fragment, ReactNode, useEffect, useId, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -16,11 +16,12 @@ import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetTrigger 
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { getBootstrap, type BootstrapUser } from '../lib/api';
+import { apiRequest, getBootstrap, type BootstrapUser } from '../lib/api';
 import { PermissionsProvider } from '../lib/permissions';
 
-type NavItem = { label: string; to: string; permission?: string; icon: ReactNode };
+type NavItem = { label: string; pageTitle?: string; section?: string; to: string; permission?: string; icon: ReactNode };
 type NavGroup = { label: string; items: NavItem[] };
+type ConnectionState = 'checking' | 'connected' | 'disconnected';
 const sidebarPreferenceKey = 'konkit.sidebar.collapsed';
 const closedGroupsPreferenceKey = 'konkit.sidebar.closed-groups';
 
@@ -35,16 +36,16 @@ const groups: NavGroup[] = [
   ] },
   { label: 'Dokumentasi', items: [
     { label: 'Pendistribusian', to: '/dokumentasi/pendistribusian', permission: 'distribution.view', icon: <Camera /> },
-    { label: 'Ceremony & Sosialisasi', to: '/dokumentasi/ceremony-sosialisasi', permission: 'activities.view', icon: <PartyPopper /> },
-    { label: 'Pelatihan Teknis', to: '/dokumentasi/pelatihan-teknis', permission: 'activities.view', icon: <GraduationCap /> },
-    { label: 'Rakor', to: '/dokumentasi/rakor', permission: 'activities.view', icon: <Users /> },
-    { label: 'Training 10%', to: '/dokumentasi/training-10', permission: 'activities.view', icon: <BookOpen /> },
-    { label: 'Training 100%', to: '/dokumentasi/training-100', permission: 'activities.view', icon: <BookOpenCheck /> },
-    { label: 'Unloading Konkit', to: '/dokumentasi/unloading-konkit', permission: 'activities.view', icon: <PackageOpen /> },
-    { label: 'Unloading Mesin Pompa', to: '/dokumentasi/unloading-mesin-pompa', permission: 'activities.view', icon: <Cog /> },
-    { label: 'Unloading Oli', to: '/dokumentasi/unloading-oli', permission: 'activities.view', icon: <Droplet /> },
-    { label: 'Unloading Selang Hisap & Buang', to: '/dokumentasi/unloading-selang', permission: 'activities.view', icon: <Waves /> },
-    { label: 'Unloading Tabung Gas', to: '/dokumentasi/unloading-tabung-gas', permission: 'activities.view', icon: <Cylinder /> },
+    { label: 'Ceremony & Sosialisasi', section: 'Kegiatan', to: '/dokumentasi/ceremony-sosialisasi', permission: 'activities.view', icon: <PartyPopper /> },
+    { label: 'Pelatihan Teknis', section: 'Kegiatan', to: '/dokumentasi/pelatihan-teknis', permission: 'activities.view', icon: <GraduationCap /> },
+    { label: 'Rakor', section: 'Kegiatan', to: '/dokumentasi/rakor', permission: 'activities.view', icon: <Users /> },
+    { label: 'Training 10%', section: 'Kegiatan', to: '/dokumentasi/training-10', permission: 'activities.view', icon: <BookOpen /> },
+    { label: 'Training 100%', section: 'Kegiatan', to: '/dokumentasi/training-100', permission: 'activities.view', icon: <BookOpenCheck /> },
+    { label: 'Konkit', pageTitle: 'Unloading Konkit', section: 'Unloading', to: '/dokumentasi/unloading-konkit', permission: 'activities.view', icon: <PackageOpen /> },
+    { label: 'Mesin Pompa', pageTitle: 'Unloading Mesin Pompa', section: 'Unloading', to: '/dokumentasi/unloading-mesin-pompa', permission: 'activities.view', icon: <Cog /> },
+    { label: 'Oli', pageTitle: 'Unloading Oli', section: 'Unloading', to: '/dokumentasi/unloading-oli', permission: 'activities.view', icon: <Droplet /> },
+    { label: 'Selang Hisap & Buang', pageTitle: 'Unloading Selang Hisap & Buang', section: 'Unloading', to: '/dokumentasi/unloading-selang', permission: 'activities.view', icon: <Waves /> },
+    { label: 'Tabung Gas', pageTitle: 'Unloading Tabung Gas', section: 'Unloading', to: '/dokumentasi/unloading-tabung-gas', permission: 'activities.view', icon: <Cylinder /> },
   ] },
   { label: 'Laporan', items: [
     { label: 'Laporan', to: '/laporan', permission: 'distribution.view', icon: <FileText /> },
@@ -73,6 +74,7 @@ function Brand() {
 }
 
 function NavigationLink({ item, collapsed, onNavigate }: { item: NavItem; collapsed: boolean; onNavigate?: () => void }) {
+  const accessibleLabel = item.pageTitle ?? item.label;
   const content = <>
     <span aria-hidden="true" className="shrink-0 [&_svg]:size-4.5">{item.icon}</span>
     <span
@@ -84,7 +86,7 @@ function NavigationLink({ item, collapsed, onNavigate }: { item: NavItem; collap
     >{item.label}</span>
   </>;
   const link = <NavLink
-    aria-label={collapsed ? item.label : undefined}
+    aria-label={collapsed ? accessibleLabel : undefined}
     className={({ isActive }) => cn(
       'relative flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground/85 transition-[color,background-color,padding,gap] duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sidebar-ring motion-reduce:transition-none',
       collapsed && 'justify-center px-0',
@@ -96,7 +98,7 @@ function NavigationLink({ item, collapsed, onNavigate }: { item: NavItem; collap
   >{content}</NavLink>;
 
   if (!collapsed) return link;
-  return <Tooltip><TooltipTrigger render={link} /><TooltipContent side="right">{item.label}</TooltipContent></Tooltip>;
+  return <Tooltip><TooltipTrigger render={link} /><TooltipContent side="right">{accessibleLabel}</TooltipContent></Tooltip>;
 }
 
 function Navigation({ permissions, collapsed = false, onNavigate }: { permissions: string[]; collapsed?: boolean; onNavigate?: () => void }) {
@@ -104,10 +106,12 @@ function Navigation({ permissions, collapsed = false, onNavigate }: { permission
   const navigationId = useId();
   const [closedGroups, setClosedGroups] = useState<Set<string>>(() => {
     try {
-      const stored = JSON.parse(window.localStorage.getItem(closedGroupsPreferenceKey) ?? '[]');
+      const raw = window.localStorage.getItem(closedGroupsPreferenceKey);
+      if (raw === null) return new Set(groups.map((group) => group.label));
+      const stored = JSON.parse(raw);
       return new Set(Array.isArray(stored) ? stored.filter((value): value is string => typeof value === 'string') : []);
     } catch {
-      return new Set();
+      return new Set(groups.map((group) => group.label));
     }
   });
   const isItemActive = (to: string) => to === '/' ? pathname === '/' : pathname === to || pathname.startsWith(`${to}/`);
@@ -144,20 +148,26 @@ function Navigation({ permissions, collapsed = false, onNavigate }: { permission
             <ChevronDown aria-hidden="true" className={cn('size-3.5 transition-transform duration-200 motion-reduce:transition-none', !isOpen && '-rotate-90')} />
           </button>}
         <div className="space-y-0.5" hidden={!isOpen} id={contentId}>
-          {items.map((item) => <NavigationLink item={item} collapsed={collapsed} onNavigate={onNavigate} key={item.to} />)}
+          {items.map((item, index) => <Fragment key={item.to}>
+            {!collapsed && item.section && item.section !== items[index - 1]?.section
+              ? <p className="px-3 pt-3 pb-1 text-[0.68rem] font-semibold tracking-[0.08em] text-sidebar-foreground/50 uppercase">{item.section}</p>
+              : null}
+            <NavigationLink item={item} collapsed={collapsed} onNavigate={onNavigate} />
+          </Fragment>)}
         </div>
       </section>;
     })}
   </nav>;
 }
 
-function SystemConnectionStatus({ collapsed = false }: { collapsed?: boolean }) {
+function SystemConnectionStatus({ collapsed = false, state }: { collapsed?: boolean; state: ConnectionState }) {
+  const label = state === 'checking' ? 'Memeriksa koneksi' : state === 'disconnected' ? 'Koneksi terganggu' : 'Sistem terhubung';
   return <Tooltip>
-    <TooltipTrigger render={<div className={cn('flex min-h-16 items-center gap-3 border-t border-sidebar-border text-xs text-sidebar-foreground/75', collapsed ? 'justify-center px-0' : 'px-5')} />}>
-      <span aria-hidden="true" className="size-2 rounded-full bg-primary shadow-[0_0_0_3px_rgb(79_173_66/0.15)]" />
-      <span className={cn(collapsed && 'sr-only')}>Sistem terhubung</span>
+    <TooltipTrigger render={<div aria-live="polite" role="status" className={cn('flex min-h-16 items-center gap-3 border-t border-sidebar-border text-xs text-sidebar-foreground/75', collapsed ? 'justify-center px-0' : 'px-5')} />}>
+      <span aria-hidden="true" className={cn('size-2 rounded-full', state === 'checking' ? 'bg-sidebar-primary' : state === 'disconnected' ? 'bg-destructive' : 'bg-primary shadow-[0_0_0_3px_rgb(79_173_66/0.15)]')} />
+      <span className={cn(collapsed && 'sr-only')}>{label}</span>
     </TooltipTrigger>
-    <TooltipContent>Dashboard tersambung ke sistem</TooltipContent>
+    <TooltipContent>{state === 'disconnected' ? 'Dashboard tidak dapat menjangkau layanan' : label}</TooltipContent>
   </Tooltip>;
 }
 
@@ -202,13 +212,13 @@ function SidebarToggle({ collapsed, onToggle }: { collapsed: boolean; onToggle: 
   </Tooltip>;
 }
 
-function MobileNavigation({ permissions }: { permissions: string[] }) {
+function MobileNavigation({ permissions, connectionState }: { permissions: string[]; connectionState: ConnectionState }) {
   const [open, setOpen] = useState(false);
 
   return <Sheet open={open} onOpenChange={setOpen}>
     <SheetTrigger
       aria-label="Buka navigasi"
-      className="mr-2 md:hidden"
+      className="mr-2 lg:hidden"
       render={<Button variant="ghost" size="icon" />}
     >
       <Menu aria-hidden="true" />
@@ -221,7 +231,7 @@ function MobileNavigation({ permissions }: { permissions: string[] }) {
         <SheetClose aria-label="Tutup navigasi" render={<Button type="button" variant="ghost" size="icon" className="absolute top-4 right-3 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" />}><X aria-hidden="true" /></SheetClose>
       </SheetHeader>
       <Navigation permissions={permissions} onNavigate={() => setOpen(false)} />
-      <SystemConnectionStatus />
+      <SystemConnectionStatus state={connectionState} />
     </SheetContent>
   </Sheet>;
 }
@@ -255,7 +265,7 @@ function PageContext() {
   const { pathname } = useLocation();
   const matchedGroup = groups.find((group) => group.items.some((item) => item.to === '/' ? pathname === '/' : pathname === item.to || pathname.startsWith(`${item.to}/`)));
   const matchedItem = matchedGroup?.items.find((item) => item.to === '/' ? pathname === '/' : pathname === item.to || pathname.startsWith(`${item.to}/`));
-  const title = pathname.startsWith('/profil') ? 'Profil saya' : matchedItem?.label ?? 'Dashboard';
+  const title = pathname.startsWith('/profil') ? 'Profil saya' : matchedItem?.pageTitle ?? matchedItem?.label ?? 'Dashboard';
   const section = pathname.startsWith('/profil') ? 'Akun' : matchedGroup?.label ?? 'Dashboard';
 
   return <div aria-label="Konteks halaman" className="min-w-0 flex-1" role="group">
@@ -294,11 +304,11 @@ function AccountMenu({ user, csrfToken }: { user: BootstrapUser; csrfToken: stri
 }
 
 function AppShellSkeleton({ collapsed }: { collapsed: boolean }) {
-  return <div className={cn('min-h-svh bg-background md:grid', collapsed ? 'md:grid-cols-[76px_minmax(0,1fr)]' : 'md:grid-cols-[264px_minmax(0,1fr)]')}>
+  return <div className={cn('min-h-svh bg-background lg:grid', collapsed ? 'lg:grid-cols-[76px_minmax(0,1fr)]' : 'lg:grid-cols-[264px_minmax(0,1fr)]')}>
     <aside
       aria-label="Sidebar utama"
       data-state={collapsed ? 'collapsed' : 'expanded'}
-      className={cn('hidden h-svh border-r border-sidebar-border bg-sidebar md:block', collapsed ? 'p-2' : 'p-5')}
+      className={cn('hidden h-svh border-r border-sidebar-border bg-sidebar lg:block', collapsed ? 'p-2' : 'p-5')}
     >
       <Skeleton className={cn('bg-sidebar-foreground/15', collapsed ? 'mx-auto h-8 w-8' : 'h-10 w-48')} />
       <div className={cn('mt-10 space-y-3', collapsed && 'px-1')}><Skeleton className="h-11 bg-sidebar-foreground/10" /><Skeleton className="h-11 bg-sidebar-foreground/10" /><Skeleton className="h-11 bg-sidebar-foreground/10" /></div>
@@ -312,6 +322,21 @@ export function AppShell() {
     try { return window.localStorage.getItem(sidebarPreferenceKey) === 'true'; } catch { return false; }
   });
   const bootstrap = useQuery({ queryKey: ['bootstrap'], queryFn: getBootstrap });
+  const liveness = useQuery({
+    queryKey: ['liveness'],
+    queryFn: async () => {
+      const controller = new AbortController();
+      const timeoutID = window.setTimeout(() => controller.abort(), 5_000);
+      try {
+        return await apiRequest<{ status: string }>('/api/v1/health', { signal: controller.signal });
+      } finally {
+        window.clearTimeout(timeoutID);
+      }
+    },
+    enabled: Boolean(bootstrap.data),
+    retry: false,
+    refetchInterval: 60_000,
+  });
 
   if (bootstrap.isPending) return <AppShellSkeleton collapsed={sidebarCollapsed} />;
   if (bootstrap.isError || !bootstrap.data) {
@@ -325,6 +350,7 @@ export function AppShell() {
   }
 
   const { data: user } = bootstrap.data;
+  const connectionState: ConnectionState = liveness.isFetching ? 'checking' : liveness.isError ? 'disconnected' : liveness.isSuccess ? 'connected' : 'checking';
   const toggleSidebar = () => setSidebarCollapsed((collapsed) => {
     const next = !collapsed;
     try { window.localStorage.setItem(sidebarPreferenceKey, String(next)); } catch { /* Preference storage may be unavailable. */ }
@@ -332,17 +358,17 @@ export function AppShell() {
   });
 
   return <TooltipProvider>
-    <div className={cn('min-h-svh bg-background md:grid md:transition-[grid-template-columns] md:duration-200 motion-reduce:transition-none', sidebarCollapsed ? 'md:grid-cols-[76px_minmax(0,1fr)]' : 'md:grid-cols-[264px_minmax(0,1fr)]')}>
-      <aside id="primary-sidebar" aria-label="Sidebar utama" data-state={sidebarCollapsed ? 'collapsed' : 'expanded'} className="sticky top-0 z-40 hidden h-svh flex-col overflow-visible border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex">
+    <div className={cn('min-h-svh bg-background lg:grid lg:transition-[grid-template-columns] lg:duration-200 motion-reduce:transition-none', sidebarCollapsed ? 'lg:grid-cols-[76px_minmax(0,1fr)]' : 'lg:grid-cols-[264px_minmax(0,1fr)]')}>
+      <aside id="primary-sidebar" aria-label="Sidebar utama" data-state={sidebarCollapsed ? 'collapsed' : 'expanded'} className="sticky top-0 z-40 hidden h-svh flex-col overflow-visible border-r border-sidebar-border bg-sidebar text-sidebar-foreground lg:flex">
         <DesktopBrand collapsed={sidebarCollapsed} />
         <Separator className="bg-sidebar-border" />
         <Navigation permissions={user.permissions} collapsed={sidebarCollapsed} />
-        <SystemConnectionStatus collapsed={sidebarCollapsed} />
+        <SystemConnectionStatus collapsed={sidebarCollapsed} state={connectionState} />
         <SidebarToggle collapsed={sidebarCollapsed} onToggle={toggleSidebar} />
       </aside>
       <div className="min-w-0">
         <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur sm:px-6">
-          <MobileNavigation permissions={user.permissions} />
+          <MobileNavigation permissions={user.permissions} connectionState={connectionState} />
           <PageContext />
           <LiveClock />
           <AccountMenu user={user} csrfToken={bootstrap.data.meta.csrf_token} />

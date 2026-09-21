@@ -12,20 +12,20 @@ const bootstrap = {
     username: 'admin',
     email: 'admin@konkit.test',
     roles: ['super_admin'],
-    permissions: ['recipients.view', 'dashboard.view', 'programs.view', 'dcp3.view', 'distribution.view', 'users.view', 'settings.view'],
+    permissions: ['recipients.view', 'dashboard.view', 'programs.view', 'dcp3.view', 'distribution.view', 'activities.view', 'users.view', 'settings.view'],
   },
   meta: { csrf_token: 'csrf-token' },
 };
 
 function renderShell(initialEntry = '/') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  return { ...render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[initialEntry]}>
         <AppShell />
       </MemoryRouter>
     </QueryClientProvider>,
-  );
+  ), queryClient };
 }
 
 afterEach(() => {
@@ -51,8 +51,11 @@ describe('AppShell', () => {
     expect(screen.getByRole('link', { name: 'Data Penerima' })).toHaveAttribute('href', '/');
     expect(screen.getByRole('link', { name: 'Map Distribusi' })).toHaveAttribute('href', '/map-distribusi');
     expect(screen.queryByRole('link', { name: 'Ringkasan' })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Operasional' }));
     expect(screen.getByRole('link', { name: 'DCP3' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Dokumentasi' }));
     expect(screen.getByRole('link', { name: 'Pendistribusian' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Administrasi' }));
     expect(screen.getByRole('link', { name: 'Pengguna' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Profil saya' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Ubah password' })).not.toBeInTheDocument();
@@ -91,6 +94,8 @@ describe('AppShell', () => {
     await screen.findByText('Admin Konkit');
 
     const operational = screen.getByRole('button', { name: 'Operasional' });
+    expect(operational).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(operational);
     expect(operational).toHaveAttribute('aria-expanded', 'true');
     await userEvent.click(operational);
 
@@ -104,6 +109,73 @@ describe('AppShell', () => {
 
     expect(screen.getByRole('button', { name: 'Operasional' })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByRole('link', { name: 'Persiapan program' })).toBeInTheDocument();
+  });
+
+  it('keeps drawer navigation available through tablet widths', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(bootstrap), { status: 200 }));
+    renderShell();
+    await screen.findByText('Admin Konkit');
+
+    expect(screen.getByRole('button', { name: 'Buka navigasi' })).toHaveClass('lg:hidden');
+    expect(screen.getByLabelText('Sidebar utama')).toHaveClass('lg:flex');
+  });
+
+  it('keeps inactive navigation groups closed by default and opens the active documentation group', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify(bootstrap), { status: 200 }));
+    const firstRender = renderShell('/');
+    await screen.findByText('Admin Konkit');
+
+    expect(screen.getByRole('button', { name: 'Dokumentasi' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('link', { name: 'Ceremony & Sosialisasi' })).not.toBeInTheDocument();
+
+    firstRender.unmount();
+    renderShell('/dokumentasi/unloading-selang');
+    await screen.findByText('Admin Konkit');
+
+    expect(screen.getByRole('button', { name: 'Dokumentasi' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Kegiatan')).toBeInTheDocument();
+    expect(screen.getByText('Unloading')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Selang Hisap & Buang' })).toHaveAttribute('href', '/dokumentasi/unloading-selang');
+    expect(within(screen.getByRole('group', { name: 'Konteks halaman' })).getByText('Unloading Selang Hisap & Buang')).toBeInTheDocument();
+  });
+
+  it('falls back to closed navigation groups when the saved preference is corrupt', async () => {
+    localStorage.setItem('konkit.sidebar.closed-groups', '{invalid');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(bootstrap), { status: 200 }));
+
+    renderShell();
+
+    expect(await screen.findByRole('button', { name: 'Operasional' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('reports a disrupted connection when the liveness check fails', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      if (String(input).endsWith('/api/v1/health')) throw new TypeError('network unavailable');
+      return new Response(JSON.stringify(bootstrap), { status: 200 });
+    });
+
+    renderShell();
+
+    expect(await screen.findByText('Koneksi terganggu')).toBeInTheDocument();
+    expect(screen.queryByText('Sistem terhubung')).not.toBeInTheDocument();
+  });
+
+  it('shows a checking state while refreshing a previously successful connection', async () => {
+    let healthChecks = 0;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      if (String(input).endsWith('/api/v1/health')) {
+        healthChecks += 1;
+        if (healthChecks === 1) return new Response(JSON.stringify({ status: 'ok' }), { status: 200 });
+        return new Promise(() => undefined);
+      }
+      return new Response(JSON.stringify(bootstrap), { status: 200 });
+    });
+
+    const { queryClient } = renderShell();
+    expect(await screen.findByText('Sistem terhubung')).toBeInTheDocument();
+
+    void queryClient.invalidateQueries({ queryKey: ['liveness'] });
+    expect(await screen.findByText('Memeriksa koneksi')).toBeInTheDocument();
   });
 
   it('minimizes the desktop sidebar and remembers the preference', async () => {
@@ -139,6 +211,15 @@ describe('AppShell', () => {
     await screen.findByText('Admin Konkit');
     expect(screen.getByLabelText('Sidebar utama')).toHaveAttribute('data-state', 'collapsed');
     expect(screen.getByRole('button', { name: 'Maksimalkan sidebar' })).toBeInTheDocument();
+  });
+
+  it('keeps the full unloading context in collapsed navigation labels', async () => {
+    localStorage.setItem('konkit.sidebar.collapsed', 'true');
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(bootstrap), { status: 200 }));
+
+    renderShell('/dokumentasi/unloading-selang');
+
+    expect(await screen.findByRole('link', { name: 'Unloading Selang Hisap & Buang' })).toHaveAttribute('href', '/dokumentasi/unloading-selang');
   });
 
   it('keeps the loading sidebar compact when the collapsed preference is restored', () => {

@@ -51,6 +51,23 @@ test('desktop sidebar collapses without moving its toggle', async ({ page }, tes
   await expect(page.getByRole('button', { name: 'Maksimalkan sidebar' })).toBeVisible();
 });
 
+test('tablet uses drawer navigation instead of the fixed sidebar', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== 'desktop');
+  await page.setViewportSize({ width: 1023, height: 900 });
+
+  await expect(page.getByLabel('Sidebar utama')).toBeHidden();
+  const trigger = page.getByRole('button', { name: 'Buka navigasi' });
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  const drawer = page.getByRole('dialog', { name: 'Navigasi utama' });
+  await expect(drawer).toBeVisible();
+  await drawer.getByRole('button', { name: 'Tutup navigasi' }).click();
+
+  await page.setViewportSize({ width: 1024, height: 900 });
+  await expect(page.getByLabel('Sidebar utama')).toBeVisible();
+  await expect(trigger).toBeHidden();
+});
+
 test('mobile navigation has an explicit close action and restores focus', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'mobile');
 
