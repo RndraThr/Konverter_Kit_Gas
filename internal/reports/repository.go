@@ -31,7 +31,7 @@ func (r *Repository) ScheduleRegency(ctx context.Context, scheduleID string) (st
 const reportsBaseCTE = `
 WITH base AS (
 	SELECT a.distribution_number, a.status AS allocation_status,
-		COALESCE(dr.status,'draft') AS distribution_status,
+		CASE WHEN dr.status IN ('completed','cancelled') THEN dr.status ELSE 'draft' END AS distribution_status,
 		COALESCE(p.full_name,'Data perlu ditinjau') AS full_name,
 		COALESCE(p.nik,'') AS nik,
 		COALESCE(psi.display_value,'') AS sector_identifier,
@@ -40,13 +40,13 @@ WITH base AS (
 		dr.completed_at,
 		NOT EXISTS (
 			SELECT 1 FROM documentation_slots ds
-			WHERE ds.distribution_id = dr.id AND ds.is_required AND ds.status <> 'complete'
+			WHERE ds.distribution_slot_id = dr.id AND ds.is_required AND ds.status <> 'complete'
 		) AS documentation_complete
 	FROM package_allocations a
 	JOIN candidate_nominations n ON n.id = a.nomination_id
 	JOIN program_schedules ps ON ps.id = a.schedule_id
 	JOIN programs pr ON pr.id = ps.program_id
-	LEFT JOIN distribution_records dr ON dr.allocation_id = a.id
+	LEFT JOIN distribution_slots dr ON dr.allocation_id = a.id
 	LEFT JOIN people p ON p.id = COALESCE(a.actual_recipient_person_id, a.intended_person_id, n.person_id)
 	LEFT JOIN LATERAL (
 		SELECT display_value FROM person_sector_identifiers

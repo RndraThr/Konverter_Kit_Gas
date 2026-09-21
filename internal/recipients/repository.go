@@ -29,7 +29,7 @@ END`
 const recipientSelect = `
 SELECT
 	pa.id::text, pa.distribution_number, pa.status,
-	dr.status,
+	CASE WHEN dr.status IN ('completed','cancelled') THEN dr.status WHEN dr.status IS NOT NULL THEN 'draft' ELSE NULL END,
 	p.full_name, COALESCE(p.nik,''), COALESCE(psi.identifier_type,''), COALESCE(psi.normalized_value,''),
 	COALESCE(p.address,''), COALESCE(p.village,''), COALESCE(p.district,''), COALESCE(p.phone_number,''),
 	prog.id::text, prog.name, prog.program_type,
@@ -45,7 +45,7 @@ JOIN program_schedules ps ON ps.id = pa.schedule_id
 JOIN programs prog ON prog.id = ps.program_id
 JOIN regencies r ON r.id = ps.regency_id
 JOIN people p ON p.id = COALESCE(pa.actual_recipient_person_id, pa.intended_person_id, cn.person_id)
-LEFT JOIN distribution_records dr ON dr.allocation_id = pa.id
+LEFT JOIN distribution_slots dr ON dr.allocation_id = pa.id
 LEFT JOIN person_sector_identifiers psi ON psi.person_id = p.id
 	AND psi.identifier_type = CASE prog.program_type WHEN 'farmer' THEN 'farmer_card' ELSE 'kusuka' END
 LEFT JOIN LATERAL (
@@ -70,7 +70,7 @@ LEFT JOIN LATERAL (
 			count(m.id) FILTER (WHERE m.status = 'accepted')::int AS accepted_files
 		FROM documentation_slots s
 		LEFT JOIN media_files m ON m.documentation_slot_id = s.id
-		WHERE s.distribution_id = dr.id
+		WHERE s.distribution_slot_id = dr.id
 		GROUP BY s.id, s.slot_code, s.label_snapshot, s.is_required, s.min_files, s.sort_order
 	) slot
 ) evidence ON true`
@@ -81,7 +81,7 @@ WHERE ($1 = '%%' OR p.full_name ILIKE $1 OR p.nik ILIKE $1 OR psi.normalized_val
   AND ($3 = '' OR prog.id::text = $3)
   AND ($4 = '' OR prog.program_type = $4)
   AND (($5 = '' AND pa.status != 'cancelled') OR ($5 != '' AND pa.status = $5))
-  AND ($6 = '' OR dr.status = $6)
+  AND ($6 = '' OR ($6 = 'draft' AND (dr.status IS NULL OR dr.status NOT IN ('completed','cancelled'))) OR dr.status = $6)
   AND ($7 = '' OR ps.id::text = $7)
   AND ($8 = '' OR p.district ILIKE $8)
   AND ($9 = '' OR (` + evidenceStatusSQL + `) = $9)

@@ -153,17 +153,17 @@ func TestListIncludesOrderedEvidenceSlotCompleteness(t *testing.T) {
 	ctx := context.Background()
 
 	var distributionID string
-	must(t, pool.QueryRow(ctx, `INSERT INTO distribution_records(allocation_id,status) VALUES($1,'draft') RETURNING id::text`, fixture.needsReviewAllocID).Scan(&distributionID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO distribution_slots(allocation_id,schedule_id,slot_number,status) VALUES($1,$2,1,'linked') RETURNING id::text`, fixture.needsReviewAllocID, fixture.scheduleID).Scan(&distributionID))
 	t.Cleanup(func() {
-		if _, err := pool.Exec(context.Background(), `DELETE FROM distribution_records WHERE id=$1`, distributionID); err != nil {
-			t.Logf("cleanup: delete distribution record failed: %v", err)
+		if _, err := pool.Exec(context.Background(), `DELETE FROM distribution_slots WHERE id=$1`, distributionID); err != nil {
+			t.Logf("cleanup: delete distribution slot failed: %v", err)
 		}
 	})
 
 	var portraitSlotID, handoverSlotID, optionalSlotID string
-	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_slots(distribution_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,status,sort_order) VALUES($1,'recipient_portrait','Foto penerima',true,1,2,'both','complete',10) RETURNING id::text`, distributionID).Scan(&portraitSlotID))
-	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_slots(distribution_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,status,sort_order) VALUES($1,'signed_handover','BAST bertanda tangan',true,1,1,'both','missing',20) RETURNING id::text`, distributionID).Scan(&handoverSlotID))
-	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_slots(distribution_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,status,sort_order) VALUES($1,'package_detail','Detail paket',false,1,2,'both','complete',30) RETURNING id::text`, distributionID).Scan(&optionalSlotID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_slots(distribution_slot_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,status,sort_order) VALUES($1,'recipient_portrait','Foto penerima',true,1,2,'both','complete',10) RETURNING id::text`, distributionID).Scan(&portraitSlotID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_slots(distribution_slot_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,status,sort_order) VALUES($1,'signed_handover','BAST bertanda tangan',true,1,1,'both','missing',20) RETURNING id::text`, distributionID).Scan(&handoverSlotID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_slots(distribution_slot_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,status,sort_order) VALUES($1,'package_detail','Detail paket',false,1,2,'both','complete',30) RETURNING id::text`, distributionID).Scan(&optionalSlotID))
 
 	const checksum = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	must(t, func() error {
@@ -216,15 +216,15 @@ func TestListAndStatsApplyTheSameCombinedScheduleDistrictAndEvidenceFilters(t *t
 		return err
 	}())
 	var distributionID, completeSlotID string
-	must(t, pool.QueryRow(ctx, `INSERT INTO distribution_records(allocation_id,status) VALUES($1,'draft') RETURNING id::text`, fixture.needsReviewAllocID).Scan(&distributionID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO distribution_slots(allocation_id,schedule_id,slot_number,status) VALUES($1,$2,1,'linked') RETURNING id::text`, fixture.needsReviewAllocID, fixture.scheduleID).Scan(&distributionID))
 	t.Cleanup(func() {
-		if _, err := pool.Exec(context.Background(), `DELETE FROM distribution_records WHERE id=$1`, distributionID); err != nil {
-			t.Logf("cleanup: delete distribution record failed: %v", err)
+		if _, err := pool.Exec(context.Background(), `DELETE FROM distribution_slots WHERE id=$1`, distributionID); err != nil {
+			t.Logf("cleanup: delete distribution slot failed: %v", err)
 		}
 	})
-	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_slots(distribution_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,status,sort_order) VALUES($1,'portrait','Foto penerima',true,1,1,'both','complete',10) RETURNING id::text`, distributionID).Scan(&completeSlotID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_slots(distribution_slot_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,status,sort_order) VALUES($1,'portrait','Foto penerima',true,1,1,'both','complete',10) RETURNING id::text`, distributionID).Scan(&completeSlotID))
 	must(t, func() error {
-		_, err := pool.Exec(ctx, `INSERT INTO documentation_slots(distribution_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,status,sort_order) VALUES($1,'handover','BAST',true,1,1,'both','missing',20)`, distributionID)
+		_, err := pool.Exec(ctx, `INSERT INTO documentation_slots(distribution_slot_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,status,sort_order) VALUES($1,'handover','BAST',true,1,1,'both','missing',20)`, distributionID)
 		return err
 	}())
 	const checksum = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"

@@ -178,15 +178,21 @@ func createReportsFixture(t *testing.T, pool *pgxpool.Pool) reportsFixture {
 		if err := pool.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,distribution_number,status,package_snapshot_json) VALUES($1,$2,$3,$4,$5,'{}') RETURNING id::text`, scheduleID, nominationID, personID, number, allocationStatus).Scan(&allocationID); err != nil {
 			t.Fatal(err)
 		}
+		// distribution_slots.status has no 'draft' value (superseded by open/linked/completed/cancelled);
+		// "draft" here means "not yet completed," which reportsBaseCTE maps back to 'draft' for callers.
+		slotDBStatus := distributionStatus
+		if slotDBStatus == "draft" {
+			slotDBStatus = "linked"
+		}
 		var distributionID string
-		if err := pool.QueryRow(ctx, `INSERT INTO distribution_records(allocation_id,recipient_person_id,status) VALUES($1,$2,$3) RETURNING id::text`, allocationID, personID, distributionStatus).Scan(&distributionID); err != nil {
+		if err := pool.QueryRow(ctx, `INSERT INTO distribution_slots(allocation_id,recipient_person_id,schedule_id,slot_number,status) VALUES($1,$2,$3,$4,$5) RETURNING id::text`, allocationID, personID, scheduleID, number, slotDBStatus).Scan(&distributionID); err != nil {
 			t.Fatal(err)
 		}
 		slotStatus := "missing"
 		if documentationComplete {
 			slotStatus = "complete"
 		}
-		if _, err := pool.Exec(ctx, `INSERT INTO documentation_slots(distribution_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,status) VALUES($1,'recipient_package','Penerima dan paket',true,1,1,'both',$2)`, distributionID, slotStatus); err != nil {
+		if _, err := pool.Exec(ctx, `INSERT INTO documentation_slots(distribution_slot_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,status) VALUES($1,'recipient_package','Penerima dan paket',true,1,1,'both',$2)`, distributionID, slotStatus); err != nil {
 			t.Fatal(err)
 		}
 		return personID, nik
@@ -197,9 +203,9 @@ func createReportsFixture(t *testing.T, pool *pgxpool.Pool) reportsFixture {
 	insertAllocation(3, "Aminah Wati", "needs_review", "draft", false)
 
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM documentation_slots WHERE distribution_id IN (SELECT d.id FROM distribution_records d JOIN package_allocations a ON a.id=d.allocation_id WHERE a.schedule_id=$1)`, scheduleID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM documentation_slots WHERE distribution_slot_id IN (SELECT d.id FROM distribution_slots d JOIN package_allocations a ON a.id=d.allocation_id WHERE a.schedule_id=$1)`, scheduleID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM audit_logs WHERE resource_id=$1`, scheduleID)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM distribution_records WHERE allocation_id IN (SELECT id FROM package_allocations WHERE schedule_id=$1)`, scheduleID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM distribution_slots WHERE allocation_id IN (SELECT id FROM package_allocations WHERE schedule_id=$1)`, scheduleID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM package_allocations WHERE schedule_id=$1`, scheduleID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM candidate_nominations WHERE batch_id IN (SELECT id FROM dcp3_import_batches WHERE schedule_id=$1)`, scheduleID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM dcp3_import_batches WHERE schedule_id=$1`, scheduleID)
