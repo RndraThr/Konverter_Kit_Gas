@@ -8,10 +8,12 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
+func ptrInt(v int) *int { return &v }
+
 func TestBuildExcelWritesHeaderAndRows(t *testing.T) {
 	completedAt := time.Date(2026, 9, 10, 8, 30, 0, 0, time.UTC)
 	data, err := buildExcel([]Row{
-		{DistributionNumber: 7, FullName: "Siti Aminah", NIK: "7306014101900001", SectorIdentifier: "KP01", Village: "Tempe", District: "Sabbangparu", AllocationStatus: "distributed", DistributionStatus: "completed", DocumentationComplete: true, CompletedAt: &completedAt},
+		{DistributionNumber: ptrInt(7), FullName: "Siti Aminah", NIK: "7306014101900001", SectorIdentifier: "KP01", Village: "Tempe", District: "Sabbangparu", AllocationStatus: "distributed", DistributionStatus: "completed", DocumentationComplete: true, CompletedAt: &completedAt},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -38,7 +40,7 @@ func TestBuildExcelWritesHeaderAndRows(t *testing.T) {
 
 func TestBuildPDFProducesNonEmptyDocument(t *testing.T) {
 	summary := Summary{TotalAllocations: 1, AllocationStatusCounts: []StatusCount{{Status: "distributed", Count: 1}}, DistributionStatusCounts: []StatusCount{{Status: "completed", Count: 1}}}
-	data, err := buildPDF(summary, []Row{{DistributionNumber: 7, FullName: "Siti Aminah", NIK: "7306014101900001"}})
+	data, err := buildPDF(summary, []Row{{DistributionNumber: ptrInt(7), FullName: "Siti Aminah", NIK: "7306014101900001"}})
 	if err != nil {
 		t.Fatal(err)
 	}

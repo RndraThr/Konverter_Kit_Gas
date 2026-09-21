@@ -67,7 +67,8 @@ func TestRowsRequiresScheduleAndTrimsInput(t *testing.T) {
 }
 
 func TestRowsPassesTrimmedScheduleAndFilterToRepository(t *testing.T) {
-	repository := &repositoryStub{rows: []Row{{DistributionNumber: 7, FullName: "Siti Aminah"}}}
+	ptrInt := func(v int) *int { return &v }
+	repository := &repositoryStub{rows: []Row{{DistributionNumber: ptrInt(7), FullName: "Siti Aminah"}}}
 	service := NewService(repository)
 
 	rows, err := service.Rows(context.Background(), " schedule-1 ", Filter{AllocationStatus: "ready"}, auth.RegencyScope{Unrestricted: true})
@@ -99,7 +100,8 @@ func TestSummaryPassesTrimmedScheduleAndFilterToRepository(t *testing.T) {
 }
 
 func TestExportExcelRecordsAuditEventAfterBuildingFile(t *testing.T) {
-	repository := &repositoryStub{rows: []Row{{DistributionNumber: 7, FullName: "Siti Aminah"}}}
+	ptrInt := func(v int) *int { return &v }
+	repository := &repositoryStub{rows: []Row{{DistributionNumber: ptrInt(7), FullName: "Siti Aminah"}}}
 	service := NewService(repository)
 
 	data, err := service.ExportExcel(context.Background(), auth.Principal{UserID: "user-1"}, "schedule-1", Filter{AllocationStatus: "ready"}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
@@ -115,7 +117,8 @@ func TestExportExcelRecordsAuditEventAfterBuildingFile(t *testing.T) {
 }
 
 func TestExportPDFRecordsAuditEventAfterBuildingFile(t *testing.T) {
-	repository := &repositoryStub{summary: Summary{TotalAllocations: 1}, rows: []Row{{DistributionNumber: 7, FullName: "Siti Aminah"}}}
+	ptrInt := func(v int) *int { return &v }
+	repository := &repositoryStub{summary: Summary{TotalAllocations: 1}, rows: []Row{{DistributionNumber: ptrInt(7), FullName: "Siti Aminah"}}}
 	service := NewService(repository)
 
 	data, err := service.ExportPDF(context.Background(), auth.Principal{UserID: "user-1"}, "schedule-1", Filter{}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
@@ -131,7 +134,8 @@ func TestExportPDFRecordsAuditEventAfterBuildingFile(t *testing.T) {
 }
 
 func TestSummaryAndRowsRejectScheduleOutsideRegencyScope(t *testing.T) {
-	repository := &repositoryStub{regencyID: "regency-1", summary: Summary{TotalAllocations: 3}, rows: []Row{{DistributionNumber: 7}}}
+	ptrInt := func(v int) *int { return &v }
+	repository := &repositoryStub{regencyID: "regency-1", summary: Summary{TotalAllocations: 3}, rows: []Row{{DistributionNumber: ptrInt(7)}}}
 	service := NewService(repository)
 	outOfScope := auth.RegencyScope{RegencyIDs: []string{"regency-2"}}
 	inScope := auth.RegencyScope{RegencyIDs: []string{"regency-1"}}
@@ -159,7 +163,8 @@ func TestScheduleRegencyLookupErrorPropagates(t *testing.T) {
 }
 
 func TestExportExcelAndExportPDFRejectScheduleOutsideRegencyScope(t *testing.T) {
-	repository := &repositoryStub{regencyID: "regency-1", summary: Summary{TotalAllocations: 1}, rows: []Row{{DistributionNumber: 7, FullName: "Siti Aminah"}}}
+	ptrInt := func(v int) *int { return &v }
+	repository := &repositoryStub{regencyID: "regency-1", summary: Summary{TotalAllocations: 1}, rows: []Row{{DistributionNumber: ptrInt(7), FullName: "Siti Aminah"}}}
 	service := NewService(repository)
 	outOfScope := auth.RegencyScope{RegencyIDs: []string{"regency-2"}}
 

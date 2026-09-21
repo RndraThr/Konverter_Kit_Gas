@@ -56,7 +56,7 @@ type Summary struct {
 }
 
 type Row struct {
-	DistributionNumber    int        `json:"distribution_number"`
+	DistributionNumber    *int       `json:"distribution_number"`
 	FullName              string     `json:"full_name"`
 	NIK                   string     `json:"nik"`
 	SectorIdentifier      string     `json:"sector_identifier"`

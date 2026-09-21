@@ -43,7 +43,7 @@ func TestIntegrationSummaryAndRowsReflectAllocationsAndFilters(t *testing.T) {
 	if len(rows) != 3 {
 		t.Fatalf("rows=%+v", rows)
 	}
-	if rows[0].DistributionNumber != 1 || rows[0].NIK != fixture.primaryNIK {
+	if rows[0].DistributionNumber == nil || *rows[0].DistributionNumber != 1 || rows[0].NIK != fixture.primaryNIK {
 		t.Fatalf("first row=%+v want nik=%q", rows[0], fixture.primaryNIK)
 	}
 	if !rows[1].DocumentationComplete || rows[1].DistributionStatus != "completed" {
@@ -54,7 +54,7 @@ func TestIntegrationSummaryAndRowsReflectAllocationsAndFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(filtered) != 1 || filtered[0].DistributionNumber != 2 {
+	if len(filtered) != 1 || filtered[0].DistributionNumber == nil || *filtered[0].DistributionNumber != 2 {
 		t.Fatalf("filtered rows=%+v", filtered)
 	}
 
@@ -62,7 +62,7 @@ func TestIntegrationSummaryAndRowsReflectAllocationsAndFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(byAllocation) != 1 || byAllocation[0].DistributionNumber != 3 {
+	if len(byAllocation) != 1 || byAllocation[0].DistributionNumber == nil || *byAllocation[0].DistributionNumber != 3 {
 		t.Fatalf("allocation-filtered rows=%+v", byAllocation)
 	}
 }
@@ -215,6 +215,8 @@ func createReportsFixture(t *testing.T, pool *pgxpool.Pool) reportsFixture {
 func codeFromSuffix(prefix, suffix string) string {
 	return prefix + string(rune('A'+suffix[len(suffix)-2]%20)) + string(rune('A'+suffix[len(suffix)-1]%20))
 }
+
+func intPtr(v int) *int { return &v }
 
 func reportsIntegrationPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()

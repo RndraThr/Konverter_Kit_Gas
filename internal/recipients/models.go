@@ -19,7 +19,7 @@ var (
 
 type Recipient struct {
 	AllocationID         string                `json:"allocation_id"`
-	DistributionNumber   int                   `json:"distribution_number"`
+	DistributionNumber   *int                  `json:"distribution_number"`
 	AllocationStatus     string                `json:"allocation_status"`
 	DistributionStatus   *string               `json:"distribution_status"`
 	FullName             string                `json:"full_name"`

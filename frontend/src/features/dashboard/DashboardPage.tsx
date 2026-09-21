@@ -248,7 +248,7 @@ export function DashboardPage() {
         {canManage && <th className={`${stickyHeader} border-l text-center shadow-[-6px_0_10px_-10px_rgba(15,23,42,0.55)] md:sticky md:right-0`}>Aksi</th>}
       </tr></thead>
       <tbody>{list.data?.data.items.map((item) => <tr key={item.allocation_id} className="group hover:bg-muted">
-        <td className={`${stickyNumber} font-semibold tabular-nums`}>{item.distribution_number}</td>
+        <td className={`${stickyNumber} font-semibold tabular-nums`}>{item.distribution_number ?? '-'}</td>
         <td className={stickyName}><strong className="block truncate" title={item.full_name}>{item.full_name}</strong></td>
         <td className={`${stickyNIK} tabular-nums`}>{item.nik || '-'}</td>
         <td><EvidenceCell slots={item.evidence_slots ?? []} /></td>

@@ -9,7 +9,7 @@ export type EvidenceSlot = {
 
 export type Recipient = {
   allocation_id: string;
-  distribution_number: number;
+  distribution_number: number | null;
   allocation_status: 'candidate' | 'ready' | 'needs_review' | 'distributed' | 'replaced' | 'cancelled';
   distribution_status: 'draft' | 'completed' | 'cancelled' | null;
   full_name: string;

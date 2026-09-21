@@ -15,8 +15,12 @@ var reportColumnHeaders = []string{
 }
 
 func reportRowValues(row Row) []string {
+	distributionNumberStr := "-"
+	if row.DistributionNumber != nil {
+		distributionNumberStr = fmt.Sprint(*row.DistributionNumber)
+	}
 	return []string{
-		fmt.Sprint(row.DistributionNumber), row.FullName, row.NIK, row.SectorIdentifier,
+		distributionNumberStr, row.FullName, row.NIK, row.SectorIdentifier,
 		row.Village, row.District, row.AllocationStatus, row.DistributionStatus,
 		documentationLabel(row.DocumentationComplete), formatCompletedAt(row.CompletedAt),
 	}
