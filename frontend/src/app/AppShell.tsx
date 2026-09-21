@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import {
-  Activity, BookOpen, BookOpenCheck, CalendarClock, CalendarRange, Camera, ChevronDown, FileClock,
+  Activity, BookOpen, BookOpenCheck, CalendarClock, CalendarRange, Camera, ChevronDown, Cog, Cylinder, Droplet, FileClock,
   FileSpreadsheet, FileText, GraduationCap, ListFilter, MapPinned, Menu, PackageOpen, PanelLeftClose, PanelLeftOpen,
-  PartyPopper, Settings, ShieldCheck, Users, UsersRound, X,
+  PartyPopper, Settings, ShieldCheck, Users, UsersRound, Waves, X,
 } from 'lucide-react';
-import { Fragment, ReactNode, useEffect, useId, useState } from 'react';
+import { ReactNode, useEffect, useId, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils';
 import { apiRequest, getBootstrap, type BootstrapUser } from '../lib/api';
 import { PermissionsProvider } from '../lib/permissions';
 
-type NavItem = { label: string; pageTitle?: string; section?: string; to: string; permission?: string; icon: ReactNode };
+type NavItem = { label: string; pageTitle?: string; to: string; permission?: string; icon: ReactNode };
 type NavGroup = { label: string; items: NavItem[] };
 type ConnectionState = 'checking' | 'connected' | 'disconnected';
 const sidebarPreferenceKey = 'konkit.sidebar.collapsed';
@@ -36,12 +36,16 @@ const groups: NavGroup[] = [
   ] },
   { label: 'Dokumentasi', items: [
     { label: 'Pendistribusian', to: '/dokumentasi/pendistribusian', permission: 'distribution.view', icon: <Camera /> },
-    { label: 'Ceremony & Sosialisasi', section: 'Kegiatan', to: '/dokumentasi/ceremony-sosialisasi', permission: 'activities.view', icon: <PartyPopper /> },
-    { label: 'Pelatihan Teknis', section: 'Kegiatan', to: '/dokumentasi/pelatihan-teknis', permission: 'activities.view', icon: <GraduationCap /> },
-    { label: 'Rakor', section: 'Kegiatan', to: '/dokumentasi/rakor', permission: 'activities.view', icon: <Users /> },
-    { label: 'Training 10%', section: 'Kegiatan', to: '/dokumentasi/training-10', permission: 'activities.view', icon: <BookOpen /> },
-    { label: 'Training 100%', section: 'Kegiatan', to: '/dokumentasi/training-100', permission: 'activities.view', icon: <BookOpenCheck /> },
-    { label: 'Unloading', section: 'Kegiatan', to: '/dokumentasi/unloading', permission: 'activities.view', icon: <PackageOpen /> },
+    { label: 'Ceremony & Sosialisasi', to: '/dokumentasi/ceremony-sosialisasi', permission: 'activities.view', icon: <PartyPopper /> },
+    { label: 'Pelatihan Teknis', to: '/dokumentasi/pelatihan-teknis', permission: 'activities.view', icon: <GraduationCap /> },
+    { label: 'Rakor', to: '/dokumentasi/rakor', permission: 'activities.view', icon: <Users /> },
+    { label: 'Training 10%', to: '/dokumentasi/training-10', permission: 'activities.view', icon: <BookOpen /> },
+    { label: 'Training 100%', to: '/dokumentasi/training-100', permission: 'activities.view', icon: <BookOpenCheck /> },
+    { label: 'Unloading Konkit', to: '/dokumentasi/unloading?type=unloading_konkit', permission: 'activities.view', icon: <PackageOpen /> },
+    { label: 'Unloading Mesin Pompa', to: '/dokumentasi/unloading?type=unloading_mesin_pompa', permission: 'activities.view', icon: <Cog /> },
+    { label: 'Unloading Oli', to: '/dokumentasi/unloading?type=unloading_oli', permission: 'activities.view', icon: <Droplet /> },
+    { label: 'Unloading Selang Hisap & Buang', to: '/dokumentasi/unloading?type=unloading_selang', permission: 'activities.view', icon: <Waves /> },
+    { label: 'Unloading Tabung Gas', to: '/dokumentasi/unloading?type=unloading_tabung_gas', permission: 'activities.view', icon: <Cylinder /> },
   ] },
   { label: 'Laporan', items: [
     { label: 'Laporan', to: '/laporan', permission: 'distribution.view', icon: <FileText /> },
@@ -61,6 +65,14 @@ function canSee(permissions: string[], permission?: string) {
   return !permission || permissions.includes('*') || permissions.includes(permission);
 }
 
+function isNavigationTargetActive(to: string, pathname: string, search: string) {
+  const target = new URL(to, window.location.origin);
+  const pathMatches = target.pathname === '/' ? pathname === '/' : pathname === target.pathname || pathname.startsWith(`${target.pathname}/`);
+  if (!pathMatches) return false;
+  const currentParams = new URLSearchParams(search);
+  return [...target.searchParams].every(([key, value]) => currentParams.get(key) === value);
+}
+
 function Brand() {
   return <div className="flex min-h-20 items-center gap-3 py-4 pr-16 pl-5">
     <img className="h-8 w-20 object-contain" src="/static/images/logo-ergas.png" alt="Ergas" />
@@ -69,7 +81,7 @@ function Brand() {
   </div>;
 }
 
-function NavigationLink({ item, collapsed, onNavigate }: { item: NavItem; collapsed: boolean; onNavigate?: () => void }) {
+function NavigationLink({ item, collapsed, active, onNavigate }: { item: NavItem; collapsed: boolean; active: boolean; onNavigate?: () => void }) {
   const accessibleLabel = item.pageTitle ?? item.label;
   const content = <>
     <span aria-hidden="true" className="shrink-0 [&_svg]:size-4.5">{item.icon}</span>
@@ -83,10 +95,10 @@ function NavigationLink({ item, collapsed, onNavigate }: { item: NavItem; collap
   </>;
   const link = <NavLink
     aria-label={collapsed ? accessibleLabel : undefined}
-    className={({ isActive }) => cn(
+    className={() => cn(
       'relative flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground/85 transition-[color,background-color,padding,gap] duration-200 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sidebar-ring motion-reduce:transition-none',
       collapsed && 'justify-center px-0',
-      isActive && 'bg-sidebar-accent text-sidebar-accent-foreground before:absolute before:inset-y-2 before:left-0 before:w-1 before:rounded-r before:bg-sidebar-primary',
+      active && 'bg-sidebar-accent text-sidebar-accent-foreground before:absolute before:inset-y-2 before:left-0 before:w-1 before:rounded-r before:bg-sidebar-primary',
     )}
     end={item.to === '/'}
     onClick={onNavigate}
@@ -98,7 +110,7 @@ function NavigationLink({ item, collapsed, onNavigate }: { item: NavItem; collap
 }
 
 function Navigation({ permissions, collapsed = false, onNavigate }: { permissions: string[]; collapsed?: boolean; onNavigate?: () => void }) {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const navigationId = useId();
   const [closedGroups, setClosedGroups] = useState<Set<string>>(() => {
     try {
@@ -110,7 +122,7 @@ function Navigation({ permissions, collapsed = false, onNavigate }: { permission
       return new Set(groups.map((group) => group.label));
     }
   });
-  const isItemActive = (to: string) => to === '/' ? pathname === '/' : pathname === to || pathname.startsWith(`${to}/`);
+  const isItemActive = (to: string) => isNavigationTargetActive(to, pathname, search);
 
   const toggleGroup = (label: string) => {
     setClosedGroups((current) => {
@@ -144,12 +156,7 @@ function Navigation({ permissions, collapsed = false, onNavigate }: { permission
             <ChevronDown aria-hidden="true" className={cn('size-3.5 transition-transform duration-200 motion-reduce:transition-none', !isOpen && '-rotate-90')} />
           </button>}
         <div className="space-y-0.5" hidden={!isOpen} id={contentId}>
-          {items.map((item, index) => <Fragment key={item.to}>
-            {!collapsed && item.section && item.section !== items[index - 1]?.section
-              ? <p className="px-3 pt-3 pb-1 text-[0.68rem] font-semibold tracking-[0.08em] text-sidebar-foreground/50 uppercase">{item.section}</p>
-              : null}
-            <NavigationLink item={item} collapsed={collapsed} onNavigate={onNavigate} />
-          </Fragment>)}
+          {items.map((item) => <NavigationLink key={item.to} item={item} collapsed={collapsed} active={isItemActive(item.to)} onNavigate={onNavigate} />)}
         </div>
       </section>;
     })}
@@ -258,9 +265,9 @@ function LiveClock() {
 }
 
 function PageContext() {
-  const { pathname } = useLocation();
-  const matchedGroup = groups.find((group) => group.items.some((item) => item.to === '/' ? pathname === '/' : pathname === item.to || pathname.startsWith(`${item.to}/`)));
-  const matchedItem = matchedGroup?.items.find((item) => item.to === '/' ? pathname === '/' : pathname === item.to || pathname.startsWith(`${item.to}/`));
+  const { pathname, search } = useLocation();
+  const matchedGroup = groups.find((group) => group.items.some((item) => isNavigationTargetActive(item.to, pathname, search)));
+  const matchedItem = matchedGroup?.items.find((item) => isNavigationTargetActive(item.to, pathname, search));
   const title = pathname.startsWith('/profil') ? 'Profil saya' : matchedItem?.pageTitle ?? matchedItem?.label ?? 'Dashboard';
   const section = pathname.startsWith('/profil') ? 'Akun' : matchedGroup?.label ?? 'Dashboard';
 
