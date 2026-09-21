@@ -56,8 +56,7 @@ describe('AppShell', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Dokumentasi' }));
     expect(screen.getByRole('link', { name: 'Pendistribusian' })).toHaveAttribute('href', '/dokumentasi/pendistribusian');
     expect(screen.getByRole('link', { name: 'Ceremony & Sosialisasi' })).toHaveAttribute('href', '/dokumentasi/ceremony-sosialisasi');
-    expect(screen.getByRole('link', { name: 'Unloading Konkit' })).toHaveAttribute('href', '/dokumentasi/unloading?type=unloading_konkit');
-    expect(screen.getByRole('link', { name: 'Unloading Tabung Gas' })).toHaveAttribute('href', '/dokumentasi/unloading?type=unloading_tabung_gas');
+    expect(screen.getByRole('link', { name: 'Unloading' })).toHaveAttribute('href', '/dokumentasi/unloading');
     await userEvent.click(screen.getByRole('button', { name: 'Administrasi' }));
     expect(screen.getByRole('link', { name: 'Pengguna' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Profil saya' })).not.toBeInTheDocument();
@@ -137,10 +136,8 @@ describe('AppShell', () => {
 
     expect(screen.getByRole('button', { name: 'Dokumentasi' })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.queryByText('Kegiatan')).not.toBeInTheDocument();
-    expect(screen.queryByText('Unloading')).not.toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Unloading Konkit' })).toHaveClass('bg-sidebar-accent');
-    expect(screen.getByRole('link', { name: 'Unloading Oli' })).not.toHaveClass('bg-sidebar-accent');
-    expect(within(screen.getByRole('group', { name: 'Konteks halaman' })).getByText('Unloading Konkit', { selector: 'p' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Unloading' })).toHaveClass('bg-sidebar-accent');
+    expect(within(screen.getByRole('group', { name: 'Konteks halaman' })).getByText('Unloading', { selector: 'p' })).toBeInTheDocument();
   });
 
   it('falls back to closed navigation groups when the saved preference is corrupt', async () => {
@@ -217,13 +214,13 @@ describe('AppShell', () => {
     expect(screen.getByRole('button', { name: 'Maksimalkan sidebar' })).toBeInTheDocument();
   });
 
-  it('keeps each documentation feature available in collapsed navigation', async () => {
+  it('keeps unloading available as one item in collapsed navigation', async () => {
     localStorage.setItem('konkit.sidebar.collapsed', 'true');
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(bootstrap), { status: 200 }));
 
     renderShell('/dokumentasi/unloading?type=unloading_mesin_pompa');
 
-    expect(await screen.findByRole('link', { name: 'Unloading Mesin Pompa' })).toHaveAttribute('href', '/dokumentasi/unloading?type=unloading_mesin_pompa');
+    expect(await screen.findByRole('link', { name: 'Unloading' })).toHaveAttribute('href', '/dokumentasi/unloading');
   });
 
   it('keeps the loading sidebar compact when the collapsed preference is restored', () => {
