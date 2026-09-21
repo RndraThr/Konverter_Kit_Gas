@@ -497,7 +497,8 @@ func TestReportsEndpointsRequireDistributionViewPermission(t *testing.T) {
 
 func TestReportsRowsAppliesFilterAndReturnsFullNIK(t *testing.T) {
 	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.view": true}}
-	service := &fakeReportsService{rows: []reports.Row{{DistributionNumber: 7, FullName: "Siti Aminah", NIK: "7306014101900001"}}}
+	distributionNumber := 7
+	service := &fakeReportsService{rows: []reports.Row{{DistributionNumber: &distributionNumber, FullName: "Siti Aminah", NIK: "7306014101900001"}}}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/reports/schedule/schedule-1/rows?allocation_status=ready", nil)
 	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
 	rec := httptest.NewRecorder()
