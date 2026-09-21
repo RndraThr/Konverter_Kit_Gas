@@ -15,6 +15,7 @@ import { ProgramSetupPage } from '../features/programs/ProgramSetupPage';
 import { DCP3ImportPage } from '../features/dcp3/DCP3ImportPage';
 import { DistributionPage } from '../features/distribution/DistributionPage';
 import { ReportsPage } from '../features/reports/ReportsPage';
+import { ActivityDocumentationPage } from '../features/activities/ActivityDocumentationPage';
 
 function ProtectedPage({ permission, children }: { permission: string; children: ReactNode }) {
   const bootstrap = useQuery({ queryKey: ['bootstrap'], queryFn: getBootstrap });
@@ -32,6 +33,16 @@ export const dashboardRoutes: RouteObject[] = [{
     { path: 'persiapan-program', element: <ProtectedPage permission="programs.view"><ProgramSetupPage /></ProtectedPage> },
     { path: 'dcp3', element: <ProtectedPage permission="dcp3.view"><DCP3ImportPage /></ProtectedPage> },
     { path: 'dokumentasi/pendistribusian', element: <ProtectedPage permission="distribution.view"><DistributionPage /></ProtectedPage> },
+    { path: 'dokumentasi/ceremony-sosialisasi', element: <ProtectedPage permission="activities.view"><ActivityDocumentationPage activityType="ceremony_sosialisasi" label="Ceremony & Sosialisasi" /></ProtectedPage> },
+    { path: 'dokumentasi/pelatihan-teknis', element: <ProtectedPage permission="activities.view"><ActivityDocumentationPage activityType="pelatihan_teknis" label="Pelatihan Teknis" /></ProtectedPage> },
+    { path: 'dokumentasi/rakor', element: <ProtectedPage permission="activities.view"><ActivityDocumentationPage activityType="rakor" label="Rakor" /></ProtectedPage> },
+    { path: 'dokumentasi/training-10', element: <ProtectedPage permission="activities.view"><ActivityDocumentationPage activityType="training_10" label="Training 10%" /></ProtectedPage> },
+    { path: 'dokumentasi/training-100', element: <ProtectedPage permission="activities.view"><ActivityDocumentationPage activityType="training_100" label="Training 100%" /></ProtectedPage> },
+    { path: 'dokumentasi/unloading-konkit', element: <ProtectedPage permission="activities.view"><ActivityDocumentationPage activityType="unloading_konkit" label="Unloading Konkit" /></ProtectedPage> },
+    { path: 'dokumentasi/unloading-mesin-pompa', element: <ProtectedPage permission="activities.view"><ActivityDocumentationPage activityType="unloading_mesin_pompa" label="Unloading Mesin Pompa" /></ProtectedPage> },
+    { path: 'dokumentasi/unloading-oli', element: <ProtectedPage permission="activities.view"><ActivityDocumentationPage activityType="unloading_oli" label="Unloading Oli" /></ProtectedPage> },
+    { path: 'dokumentasi/unloading-selang', element: <ProtectedPage permission="activities.view"><ActivityDocumentationPage activityType="unloading_selang" label="Unloading Selang Hisap & Buang" /></ProtectedPage> },
+    { path: 'dokumentasi/unloading-tabung-gas', element: <ProtectedPage permission="activities.view"><ActivityDocumentationPage activityType="unloading_tabung_gas" label="Unloading Tabung Gas" /></ProtectedPage> },
     { path: 'laporan', element: <ProtectedPage permission="distribution.view"><ReportsPage /></ProtectedPage> },
     { path: 'pengguna', element: <ProtectedPage permission="users.view"><UsersPage /></ProtectedPage> },
     { path: 'role', element: <ProtectedPage permission="roles.view"><RolesPage /></ProtectedPage> },

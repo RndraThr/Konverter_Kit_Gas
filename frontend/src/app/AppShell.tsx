@@ -1,7 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import {
-  Activity, CalendarClock, CalendarRange, Camera, ChevronDown, FileClock, FileSpreadsheet, FileText, ListFilter, MapPinned, Menu,
-  PanelLeftClose, PanelLeftOpen, Settings, ShieldCheck, UsersRound, X,
+  Activity, BookOpen, BookOpenCheck, CalendarClock, CalendarRange, Camera, ChevronDown, Cog, Cylinder, Droplet, FileClock,
+  FileSpreadsheet, FileText, GraduationCap, ListFilter, MapPinned, Menu, PackageOpen, PanelLeftClose, PanelLeftOpen,
+  PartyPopper, Settings, ShieldCheck, Users, UsersRound, Waves, X,
 } from 'lucide-react';
 import { ReactNode, useEffect, useId, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
@@ -34,6 +35,18 @@ const groups: NavGroup[] = [
   ] },
   { label: 'Dokumentasi', items: [
     { label: 'Pendistribusian', to: '/dokumentasi/pendistribusian', permission: 'distribution.view', icon: <Camera /> },
+    { label: 'Ceremony & Sosialisasi', to: '/dokumentasi/ceremony-sosialisasi', permission: 'activities.view', icon: <PartyPopper /> },
+    { label: 'Pelatihan Teknis', to: '/dokumentasi/pelatihan-teknis', permission: 'activities.view', icon: <GraduationCap /> },
+    { label: 'Rakor', to: '/dokumentasi/rakor', permission: 'activities.view', icon: <Users /> },
+    { label: 'Training 10%', to: '/dokumentasi/training-10', permission: 'activities.view', icon: <BookOpen /> },
+    { label: 'Training 100%', to: '/dokumentasi/training-100', permission: 'activities.view', icon: <BookOpenCheck /> },
+    { label: 'Unloading Konkit', to: '/dokumentasi/unloading-konkit', permission: 'activities.view', icon: <PackageOpen /> },
+    { label: 'Unloading Mesin Pompa', to: '/dokumentasi/unloading-mesin-pompa', permission: 'activities.view', icon: <Cog /> },
+    { label: 'Unloading Oli', to: '/dokumentasi/unloading-oli', permission: 'activities.view', icon: <Droplet /> },
+    { label: 'Unloading Selang Hisap & Buang', to: '/dokumentasi/unloading-selang', permission: 'activities.view', icon: <Waves /> },
+    { label: 'Unloading Tabung Gas', to: '/dokumentasi/unloading-tabung-gas', permission: 'activities.view', icon: <Cylinder /> },
+  ] },
+  { label: 'Laporan', items: [
     { label: 'Laporan', to: '/laporan', permission: 'distribution.view', icon: <FileText /> },
   ] },
   { label: 'Administrasi', items: [
