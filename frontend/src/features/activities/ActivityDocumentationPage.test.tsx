@@ -14,6 +14,16 @@ function renderPage(permissions: string[], initialEntries: string[] = ['/dokumen
   return render(<QueryClientProvider client={client}><PermissionsProvider permissions={permissions}><MemoryRouter initialEntries={initialEntries}><ActivityDocumentationPage activityType="rakor" label="Rakor" /></MemoryRouter></PermissionsProvider></QueryClientProvider>);
 }
 
+const unloadingOptions = [
+  { value: 'unloading_konkit' as const, label: 'Konkit' },
+  { value: 'unloading_oli' as const, label: 'Oli' },
+];
+
+function renderGroupedPage(permissions: string[], initialEntries: string[] = ['/dokumentasi/unloading?regency_id=regency-1']) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  return render(<QueryClientProvider client={client}><PermissionsProvider permissions={permissions}><MemoryRouter initialEntries={initialEntries}><ActivityDocumentationPage label="Unloading" activityTypes={unloadingOptions} /></MemoryRouter></PermissionsProvider></QueryClientProvider>);
+}
+
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 function mockApi(gallery: ActivityMediaPage = { items: [], page: 1, page_size: 24, total: 0 }) {
@@ -127,6 +137,76 @@ test('shows a retryable error when regencies cannot be loaded', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Coba lagi' }));
   expect(await screen.findByRole('combobox', { name: 'Kabupaten' })).toBeVisible();
   expect(regencyAttempts).toBe(2);
+});
+
+test('grouped mode defaults to the first tab and loads its gallery', async () => {
+  vi.mocked(apiRequest).mockImplementation((path: string) => {
+    if (path === '/api/v1/program-setup/regencies') return Promise.resolve({ data: [{ id: 'regency-1', name: 'Wajo', document_code: 'WJO' }] });
+    if (path.startsWith('/api/v1/activities/media?')) {
+      const params = new URLSearchParams(path.split('?')[1]);
+      expect(params.get('activity_type')).toBe('unloading_konkit');
+      return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
+    }
+    return Promise.reject(new Error(`Unexpected request: ${path}`));
+  });
+  renderGroupedPage(['activities.view']);
+
+  const konkitTab = await screen.findByRole('tab', { name: 'Konkit' });
+  expect(konkitTab).toHaveAttribute('aria-selected', 'true');
+  expect(screen.getByRole('tab', { name: 'Oli' })).toHaveAttribute('aria-selected', 'false');
+  await screen.findByText('Belum ada dokumentasi');
+});
+
+test('switching tabs refetches the gallery for the newly selected activity type', async () => {
+  const seenTypes: string[] = [];
+  vi.mocked(apiRequest).mockImplementation((path: string) => {
+    if (path === '/api/v1/program-setup/regencies') return Promise.resolve({ data: [{ id: 'regency-1', name: 'Wajo', document_code: 'WJO' }] });
+    if (path.startsWith('/api/v1/activities/media?')) {
+      const params = new URLSearchParams(path.split('?')[1]);
+      seenTypes.push(params.get('activity_type') ?? '');
+      return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
+    }
+    return Promise.reject(new Error(`Unexpected request: ${path}`));
+  });
+  renderGroupedPage(['activities.view']);
+  await screen.findByText('Belum ada dokumentasi');
+
+  fireEvent.click(screen.getByRole('tab', { name: 'Oli' }));
+
+  await screen.findByText('Belum ada dokumentasi');
+  expect(seenTypes).toContain('unloading_konkit');
+  expect(seenTypes).toContain('unloading_oli');
+});
+
+test('uploads to the currently active tab, not the first option', async () => {
+  let sentActivityType: string | null = null;
+  vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
+    if (path === '/api/v1/program-setup/regencies') return Promise.resolve({ data: [{ id: 'regency-1', name: 'Wajo', document_code: 'WJO' }] });
+    if (path === '/api/v1/activities/media' && init?.method === 'POST') {
+      sentActivityType = (init.body as FormData).get('activity_type') as string;
+      return new Promise(() => undefined);
+    }
+    if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
+    return Promise.reject(new Error(`Unexpected request: ${path}`));
+  });
+  vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:preview'), revokeObjectURL: vi.fn() }));
+  renderGroupedPage(['activities.view', 'activities.manage']);
+  await screen.findByText('Belum ada dokumentasi');
+
+  fireEvent.click(screen.getByRole('tab', { name: 'Oli' }));
+  await screen.findByText('Belum ada dokumentasi');
+
+  const file = new File(['photo'], 'foto.jpg', { type: 'image/jpeg' });
+  fireEvent.change(await screen.findByLabelText('Pilih galeri'), { target: { files: [file] } });
+  await screen.findByAltText('Preview unggahan');
+  expect(sentActivityType).toBe('unloading_oli');
+});
+
+test('does not render tabs in single-activity-type mode', async () => {
+  mockApi();
+  renderPage(['activities.view'], ['/dokumentasi/rakor?regency_id=regency-1']);
+  await screen.findByText('Belum ada dokumentasi');
+  expect(screen.queryByRole('tab')).not.toBeInTheDocument();
 });
 
 test('clears a failed upload when navigating to another activity type', async () => {

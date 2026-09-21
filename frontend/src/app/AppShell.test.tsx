@@ -129,14 +129,13 @@ describe('AppShell', () => {
     expect(screen.queryByRole('link', { name: 'Ceremony & Sosialisasi' })).not.toBeInTheDocument();
 
     firstRender.unmount();
-    renderShell('/dokumentasi/unloading-selang');
+    renderShell('/dokumentasi/unloading');
     await screen.findByText('Admin Konkit');
 
     expect(screen.getByRole('button', { name: 'Dokumentasi' })).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByText('Kegiatan')).toBeInTheDocument();
-    expect(screen.getByText('Unloading')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Selang Hisap & Buang' })).toHaveAttribute('href', '/dokumentasi/unloading-selang');
-    expect(within(screen.getByRole('group', { name: 'Konteks halaman' })).getByText('Unloading Selang Hisap & Buang')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Unloading' })).toHaveAttribute('href', '/dokumentasi/unloading');
+    expect(within(screen.getByRole('group', { name: 'Konteks halaman' })).getByText('Unloading')).toBeInTheDocument();
   });
 
   it('falls back to closed navigation groups when the saved preference is corrupt', async () => {
@@ -213,13 +212,13 @@ describe('AppShell', () => {
     expect(screen.getByRole('button', { name: 'Maksimalkan sidebar' })).toBeInTheDocument();
   });
 
-  it('keeps the full unloading context in collapsed navigation labels', async () => {
+  it('keeps documentation labels in collapsed navigation', async () => {
     localStorage.setItem('konkit.sidebar.collapsed', 'true');
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(bootstrap), { status: 200 }));
 
-    renderShell('/dokumentasi/unloading-selang');
+    renderShell('/dokumentasi/unloading');
 
-    expect(await screen.findByRole('link', { name: 'Unloading Selang Hisap & Buang' })).toHaveAttribute('href', '/dokumentasi/unloading-selang');
+    expect(await screen.findByRole('link', { name: 'Unloading' })).toHaveAttribute('href', '/dokumentasi/unloading');
   });
 
   it('keeps the loading sidebar compact when the collapsed preference is restored', () => {

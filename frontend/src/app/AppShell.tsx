@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import {
-  Activity, BookOpen, BookOpenCheck, CalendarClock, CalendarRange, Camera, ChevronDown, Cog, Cylinder, Droplet, FileClock,
+  Activity, BookOpen, BookOpenCheck, CalendarClock, CalendarRange, Camera, ChevronDown, FileClock,
   FileSpreadsheet, FileText, GraduationCap, ListFilter, MapPinned, Menu, PackageOpen, PanelLeftClose, PanelLeftOpen,
-  PartyPopper, Settings, ShieldCheck, Users, UsersRound, Waves, X,
+  PartyPopper, Settings, ShieldCheck, Users, UsersRound, X,
 } from 'lucide-react';
 import { Fragment, ReactNode, useEffect, useId, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
@@ -41,11 +41,7 @@ const groups: NavGroup[] = [
     { label: 'Rakor', section: 'Kegiatan', to: '/dokumentasi/rakor', permission: 'activities.view', icon: <Users /> },
     { label: 'Training 10%', section: 'Kegiatan', to: '/dokumentasi/training-10', permission: 'activities.view', icon: <BookOpen /> },
     { label: 'Training 100%', section: 'Kegiatan', to: '/dokumentasi/training-100', permission: 'activities.view', icon: <BookOpenCheck /> },
-    { label: 'Konkit', pageTitle: 'Unloading Konkit', section: 'Unloading', to: '/dokumentasi/unloading-konkit', permission: 'activities.view', icon: <PackageOpen /> },
-    { label: 'Mesin Pompa', pageTitle: 'Unloading Mesin Pompa', section: 'Unloading', to: '/dokumentasi/unloading-mesin-pompa', permission: 'activities.view', icon: <Cog /> },
-    { label: 'Oli', pageTitle: 'Unloading Oli', section: 'Unloading', to: '/dokumentasi/unloading-oli', permission: 'activities.view', icon: <Droplet /> },
-    { label: 'Selang Hisap & Buang', pageTitle: 'Unloading Selang Hisap & Buang', section: 'Unloading', to: '/dokumentasi/unloading-selang', permission: 'activities.view', icon: <Waves /> },
-    { label: 'Tabung Gas', pageTitle: 'Unloading Tabung Gas', section: 'Unloading', to: '/dokumentasi/unloading-tabung-gas', permission: 'activities.view', icon: <Cylinder /> },
+    { label: 'Unloading', section: 'Kegiatan', to: '/dokumentasi/unloading', permission: 'activities.view', icon: <PackageOpen /> },
   ] },
   { label: 'Laporan', items: [
     { label: 'Laporan', to: '/laporan', permission: 'distribution.view', icon: <FileText /> },

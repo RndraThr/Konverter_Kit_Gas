@@ -10,19 +10,29 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Label } from '@/components/ui/label';
 import { PageHeader } from '@/components/PageHeader';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { apiRequest } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
 import { buildPageItems } from './pagination';
 import type { ActivityMedia, ActivityMediaPage, ActivityType, RegencyOption } from './types';
 
 type PendingFile = { file: File; source: 'camera' | 'gallery'; previewURL: string; regencyID: string; activityType: ActivityType };
+type ActivityTypeOption = { value: ActivityType; label: string };
 const acceptedTypes = 'image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime';
 const uploadButtonClass = 'inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-md border bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 has-[:disabled]:pointer-events-none has-[:disabled]:opacity-50';
 
-export function ActivityDocumentationPage({ activityType, label }: { activityType: ActivityType; label: string }) {
+type Props =
+  | { label: string; activityType: ActivityType; activityTypes?: undefined }
+  | { label: string; activityType?: undefined; activityTypes: ActivityTypeOption[] };
+
+export function ActivityDocumentationPage({ label, ...props }: Props) {
   const canManage = useCan('activities.manage');
   const client = useQueryClient();
   const [params, setParams] = useSearchParams();
+  const options: ActivityTypeOption[] = props.activityTypes ?? [{ value: props.activityType, label }];
+  const activeOption = options.find((option) => option.value === params.get('type')) ?? options[0];
+  const activityType = activeOption.value;
+  const setActivityType = (value: string | number) => setParams((prev) => { const next = new URLSearchParams(prev); next.set('type', String(value)); next.delete('page'); return next; });
   const regencyID = params.get('regency_id') ?? '';
   const page = Number(params.get('page') ?? '1') || 1;
   const [pending, setPending] = useState<PendingFile | null>(null);
@@ -83,6 +93,12 @@ export function ActivityDocumentationPage({ activityType, label }: { activityTyp
 
   return <div className="space-y-6">
     <PageHeader title={label} description="Dokumentasi foto/video kegiatan lapangan, tidak terikat jadwal." />
+
+    {options.length > 1 && <Tabs value={activityType} onValueChange={setActivityType}>
+      <TabsList variant="line" aria-label={`Jenis ${label}`}>
+        {options.map((option) => <TabsTrigger key={option.value} value={option.value} disabled={Boolean(pending)}>{option.label}</TabsTrigger>)}
+      </TabsList>
+    </Tabs>}
 
     {regencies.isError
       ? <DataState kind="error" title="Daftar kabupaten belum dapat dimuat" description="Periksa koneksi, lalu coba muat kembali daftar kabupaten." action={{ label: 'Coba lagi', onClick: () => regencies.refetch() }} />
