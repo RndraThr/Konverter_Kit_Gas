@@ -70,21 +70,19 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 		t.Fatalf("committed preview lost its source metadata: %+v", committedPreview)
 	}
 
-	var allocationCount, distributionCount, slotCount int
-	if err := pool.QueryRow(ctx, `SELECT count(*), count(DISTINCT distribution_number) FROM package_allocations WHERE schedule_id=$1`, scheduleID).Scan(&allocationCount, &distributionCount); err != nil {
+	var allocationCount, numberedAllocations int
+	if err := pool.QueryRow(ctx, `SELECT count(*), count(distribution_number) FROM package_allocations WHERE schedule_id=$1`, scheduleID).Scan(&allocationCount, &numberedAllocations); err != nil {
 		t.Fatal(err)
 	}
-	if allocationCount != 3 || distributionCount != 3 {
-		t.Fatalf("allocations=%d distinct_numbers=%d", allocationCount, distributionCount)
+	if allocationCount != 3 || numberedAllocations != 0 {
+		t.Fatalf("allocations=%d numbered=%d (import must leave distribution_number NULL)", allocationCount, numberedAllocations)
 	}
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM distribution_records d JOIN package_allocations a ON a.id=d.allocation_id WHERE a.schedule_id=$1`, scheduleID).Scan(&distributionCount); err != nil {
+	var slotCount int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM distribution_slots WHERE schedule_id=$1`, scheduleID).Scan(&slotCount); err != nil {
 		t.Fatal(err)
 	}
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM documentation_slots s JOIN distribution_records d ON d.id=s.distribution_id JOIN package_allocations a ON a.id=d.allocation_id WHERE a.schedule_id=$1`, scheduleID).Scan(&slotCount); err != nil {
-		t.Fatal(err)
-	}
-	if distributionCount != 3 || slotCount != 12 {
-		t.Fatalf("distributions=%d slots=%d", distributionCount, slotCount)
+	if slotCount != 0 {
+		t.Fatalf("import must not create distribution_slots rows, got %d", slotCount)
 	}
 
 	var reviewRows, packageSnapshots int
@@ -174,10 +172,10 @@ func createDCP3ScheduleFixture(t *testing.T, pool *pgxpool.Pool) (string, string
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM media_files WHERE documentation_slot_id IN (SELECT s.id FROM documentation_slots s JOIN distribution_records d ON d.id=s.distribution_id JOIN package_allocations a ON a.id=d.allocation_id WHERE a.schedule_id=$1)`, scheduleID)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM documentation_slots WHERE distribution_id IN (SELECT d.id FROM distribution_records d JOIN package_allocations a ON a.id=d.allocation_id WHERE a.schedule_id=$1)`, scheduleID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM media_files WHERE documentation_slot_id IN (SELECT s.id FROM documentation_slots s JOIN distribution_slots ds ON ds.id=s.distribution_slot_id WHERE ds.schedule_id=$1)`, scheduleID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM documentation_slots WHERE distribution_slot_id IN (SELECT id FROM distribution_slots WHERE schedule_id=$1)`, scheduleID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM eligibility_checks WHERE schedule_id=$1`, scheduleID)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM distribution_records WHERE allocation_id IN (SELECT id FROM package_allocations WHERE schedule_id=$1)`, scheduleID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM distribution_slots WHERE schedule_id=$1`, scheduleID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM package_allocations WHERE schedule_id=$1`, scheduleID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM candidate_nominations WHERE batch_id IN (SELECT id FROM dcp3_import_batches WHERE schedule_id=$1)`, scheduleID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM dcp3_import_batches WHERE schedule_id=$1`, scheduleID)

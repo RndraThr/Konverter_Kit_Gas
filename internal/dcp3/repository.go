@@ -113,16 +113,16 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 	defer func() { _ = tx.Rollback(ctx) }()
 	var status string
 	var programType programs.ProgramType
-	var scheduleID, documentationTemplateID string
+	var scheduleID string
 	var packageSnapshot, previewMetadata []byte
 	err = tx.QueryRow(ctx, `
-		SELECT b.status,p.program_type,b.schedule_id::text,s.documentation_template_version_id::text,pt.values_json,b.mapping_json
+		SELECT b.status,p.program_type,b.schedule_id::text,pt.values_json,b.mapping_json
 		FROM dcp3_import_batches b
 		JOIN program_schedules s ON s.id=b.schedule_id
 		JOIN programs p ON p.id=s.program_id
 		JOIN package_template_versions pt ON pt.id=s.package_template_version_id
 		WHERE b.id=$1 FOR UPDATE OF b
-	`, batchID).Scan(&status, &programType, &scheduleID, &documentationTemplateID, &packageSnapshot, &previewMetadata)
+	`, batchID).Scan(&status, &programType, &scheduleID, &packageSnapshot, &previewMetadata)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ImportResult{}, ErrPreviewNotFound
 	}
@@ -179,7 +179,7 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 		}
 		if personID != "" && !identityConflict {
 			var previouslyReceived bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM distribution_records WHERE recipient_person_id=$1 AND status='completed')`, personID).Scan(&previouslyReceived); err != nil {
+			if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM distribution_slots WHERE recipient_person_id=$1 AND status='completed')`, personID).Scan(&previouslyReceived); err != nil {
 				return ImportResult{}, fmt.Errorf("check prior distribution: %w", err)
 			}
 			if previouslyReceived {
@@ -203,25 +203,9 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 		if err := tx.QueryRow(ctx, `INSERT INTO candidate_nominations(batch_id,import_row_id,person_id,program_type,source_snapshot_json,status) VALUES($1,$2,NULLIF($3,'')::uuid,$4,$5,$6) RETURNING id::text`, batchID, raw.ID, personID, programType, sourceSnapshot, nominationStatus).Scan(&nominationID); err != nil {
 			return ImportResult{}, fmt.Errorf("insert candidate nomination: %w", err)
 		}
-		distributionNumber, err := nextDistributionNumber(ctx, tx, scheduleID, normalized.SourceSequenceNumber)
-		if err != nil {
-			return ImportResult{}, err
-		}
 		var allocationID string
-		if err := tx.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,distribution_number,status,package_snapshot_json) VALUES($1,$2,NULLIF($3,'')::uuid,$4,$5,$6) RETURNING id::text`, scheduleID, nominationID, personID, distributionNumber, allocationStatus, packageSnapshot).Scan(&allocationID); err != nil {
+		if err := tx.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,status,package_snapshot_json) VALUES($1,$2,NULLIF($3,'')::uuid,$4,$5) RETURNING id::text`, scheduleID, nominationID, personID, allocationStatus, packageSnapshot).Scan(&allocationID); err != nil {
 			return ImportResult{}, fmt.Errorf("insert package allocation: %w", err)
-		}
-		var distributionID string
-		if err := tx.QueryRow(ctx, `INSERT INTO distribution_records(allocation_id,recipient_person_id) VALUES($1,NULLIF($2,'')::uuid) RETURNING id::text`, allocationID, personID).Scan(&distributionID); err != nil {
-			return ImportResult{}, fmt.Errorf("insert distribution draft: %w", err)
-		}
-		_, err = tx.Exec(ctx, `
-			INSERT INTO documentation_slots(distribution_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,require_location,require_captured_at,sort_order)
-			SELECT $1,slot_code,label,is_required,min_files,max_files,input_source,require_location,require_captured_at,sort_order
-			FROM documentation_template_slots WHERE template_version_id=$2
-		`, distributionID, documentationTemplateID)
-		if err != nil {
-			return ImportResult{}, fmt.Errorf("snapshot documentation slots: %w", err)
 		}
 		switch normalized.ValidationStatus {
 		case RowValid:
@@ -309,23 +293,6 @@ func personByIdentifier(ctx context.Context, tx pgx.Tx, identifierType, value st
 		return "", "", nil
 	}
 	return id, nik, err
-}
-
-func nextDistributionNumber(ctx context.Context, tx pgx.Tx, scheduleID string, preferred *int) (int, error) {
-	if preferred != nil {
-		var available bool
-		if err := tx.QueryRow(ctx, `SELECT NOT EXISTS(SELECT 1 FROM package_allocations WHERE schedule_id=$1 AND distribution_number=$2)`, scheduleID, *preferred).Scan(&available); err != nil {
-			return 0, fmt.Errorf("check distribution number: %w", err)
-		}
-		if available {
-			return *preferred, nil
-		}
-	}
-	var next int
-	if err := tx.QueryRow(ctx, `SELECT COALESCE(max(distribution_number),0)+1 FROM package_allocations WHERE schedule_id=$1`, scheduleID).Scan(&next); err != nil {
-		return 0, fmt.Errorf("allocate distribution number: %w", err)
-	}
-	return next, nil
 }
 
 func verificationStatus(status RowStatus) string {
