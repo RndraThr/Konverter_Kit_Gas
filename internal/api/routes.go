@@ -447,7 +447,7 @@ func writeUnavailable(w http.ResponseWriter) {
 
 func writeServiceError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, profile.ErrNotFound), errors.Is(err, administration.ErrNotFound), errors.Is(err, programs.ErrNotFound), errors.Is(err, dcp3.ErrPreviewNotFound), errors.Is(err, distribution.ErrAllocationNotFound), errors.Is(err, distribution.ErrMediaNotFound), errors.Is(err, reports.ErrScheduleNotFound), errors.Is(err, recipients.ErrNotFound), errors.Is(err, recipients.ErrScheduleNotFound), errors.Is(err, activities.ErrNotFound), errors.Is(err, activities.ErrRegencyNotFound):
+	case errors.Is(err, profile.ErrNotFound), errors.Is(err, administration.ErrNotFound), errors.Is(err, programs.ErrNotFound), errors.Is(err, dcp3.ErrPreviewNotFound), errors.Is(err, distribution.ErrSlotNotFound), errors.Is(err, distribution.ErrCandidateNotFound), errors.Is(err, distribution.ErrMediaNotFound), errors.Is(err, reports.ErrScheduleNotFound), errors.Is(err, recipients.ErrNotFound), errors.Is(err, recipients.ErrScheduleNotFound), errors.Is(err, activities.ErrNotFound), errors.Is(err, activities.ErrRegencyNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "Data tidak ditemukan")
 	case errors.Is(err, profile.ErrIdentityInUse), errors.Is(err, administration.ErrIdentityInUse):
 		writeFieldError(w, http.StatusConflict, "conflict", "Data sudah digunakan", map[string]string{"username": err.Error(), "email": err.Error()})
@@ -465,10 +465,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "identity_incomplete", "Identitas wajib penerima belum lengkap")
 	case errors.Is(err, distribution.ErrDocumentationIncomplete):
 		writeError(w, http.StatusConflict, "documentation_incomplete", "Dokumentasi wajib belum lengkap")
-	case errors.Is(err, distribution.ErrPreviouslyReceived):
-		writeError(w, http.StatusConflict, "previously_received", "Penerima tercatat sudah menerima paket")
-	case errors.Is(err, distribution.ErrAlreadyCompleted):
-		writeError(w, http.StatusConflict, "already_completed", "Distribusi sudah pernah diselesaikan")
+	case errors.Is(err, distribution.ErrSlotNotOpen), errors.Is(err, distribution.ErrSlotNotLinked), errors.Is(err, distribution.ErrAlreadyCompleted), errors.Is(err, distribution.ErrPreviouslyReceived):
+		writeError(w, http.StatusConflict, "operation_rejected", err.Error())
 	case errors.Is(err, dcp3.ErrWorkbookTooLarge):
 		writeError(w, http.StatusRequestEntityTooLarge, "workbook_too_large", err.Error())
 	case errors.Is(err, distribution.ErrMediaTooLarge):
@@ -488,8 +486,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		errors.Is(err, programs.ErrInvalidInput), errors.Is(err, programs.ErrDocumentCodeInvalid), errors.Is(err, programs.ErrProgramTypeInvalid),
 		errors.Is(err, programs.ErrScheduleDatesInvalid), errors.Is(err, programs.ErrTemplateSlotInvalid):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), validationFields(err))
-	case errors.Is(err, distribution.ErrScheduleRequired), errors.Is(err, distribution.ErrQueryRequired), errors.Is(err, distribution.ErrQueryTooShort),
-		errors.Is(err, distribution.ErrNIKInvalid), errors.Is(err, distribution.ErrIdentityChangeReasonRequired):
+	case errors.Is(err, distribution.ErrScheduleRequired), errors.Is(err, distribution.ErrQueryRequired),
+		errors.Is(err, distribution.ErrNIKInvalid), errors.Is(err, distribution.ErrIdentityChangeReasonRequired), errors.Is(err, distribution.ErrSlotNumberRequired):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), validationFields(err))
 	case errors.Is(err, reports.ErrScheduleRequired), errors.Is(err, reports.ErrFilterInvalid):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), map[string]string{"request": err.Error()})

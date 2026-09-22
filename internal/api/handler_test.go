@@ -235,10 +235,10 @@ func TestDCP3PreviewEndpointAppliesCallerRegencyScope(t *testing.T) {
 	}
 }
 
-func TestDistributionSearchEndpointAppliesCallerRegencyScope(t *testing.T) {
-	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.view": true}, regencyScope: auth.RegencyScope{RegencyIDs: []string{"regency-1"}}}
+func TestDistributionCandidatesEndpointAppliesCallerRegencyScope(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_dokumen": true}, regencyScope: auth.RegencyScope{RegencyIDs: []string{"regency-1"}}}
 	distributionService := &fakeDistributionService{}
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/distribution/search?schedule_id=schedule-1&q=Siti", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/distribution/candidates?schedule_id=schedule-1&nik=7306014101900001", nil)
 	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
 	rec := httptest.NewRecorder()
 
@@ -403,70 +403,119 @@ func TestDCP3ImportPassesMapping(t *testing.T) {
 	}
 }
 
-func TestDistributionSearchRequiresScheduleAndReturnsOnlyMaskedIdentity(t *testing.T) {
-	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.view": true}}
-	distributionService := &fakeDistributionService{results: []distribution.SearchResult{{AllocationID: "allocation-1", FullName: "Siti Aminah", MaskedNIK: "7306********0001"}}}
-	missing := httptest.NewRequest(http.MethodGet, "/api/v1/distribution/search?q=Siti", nil)
-	missing.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
-	missingRecorder := httptest.NewRecorder()
-	NewHandler(Dependencies{Auth: authService, Distribution: distributionService}).ServeHTTP(missingRecorder, missing)
-	if missingRecorder.Code != http.StatusBadRequest {
-		t.Fatalf("missing schedule status=%d body=%s", missingRecorder.Code, missingRecorder.Body.String())
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/distribution/search?schedule_id=schedule-1&q=Siti&limit=7", nil)
-	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
-	rec := httptest.NewRecorder()
-	NewHandler(Dependencies{Auth: authService, Distribution: distributionService}).ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || distributionService.scheduleID != "schedule-1" || distributionService.limit != 7 {
-		t.Fatalf("status=%d schedule=%q limit=%d body=%s", rec.Code, distributionService.scheduleID, distributionService.limit, rec.Body.String())
-	}
-	if strings.Contains(rec.Body.String(), "7306014101900001") || !strings.Contains(rec.Body.String(), "7306********0001") {
-		t.Fatalf("search identity leak: %s", rec.Body.String())
-	}
-}
-
-func TestDistributionDetailAndDraftUseSeparatePermissions(t *testing.T) {
-	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.view": true}}
-	service := &fakeDistributionService{workspace: distribution.RecipientWorkspace{AllocationID: "allocation-1", FullName: "Siti Aminah"}}
-	getRequest := httptest.NewRequest(http.MethodGet, "/api/v1/distribution/allocations/allocation-1", nil)
-	getRequest.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
-	getRecorder := httptest.NewRecorder()
-	NewHandler(Dependencies{Auth: viewer, Distribution: service}).ServeHTTP(getRecorder, getRequest)
-	if getRecorder.Code != http.StatusOK || service.allocationID != "allocation-1" {
-		t.Fatalf("detail status=%d body=%s", getRecorder.Code, getRecorder.Body.String())
-	}
-
-	patchRequest := httptest.NewRequest(http.MethodPatch, "/api/v1/distribution/allocations/allocation-1/draft", strings.NewReader(`{"nik":"7306014101900001"}`))
-	patchRequest.Header.Set("Content-Type", "application/json")
-	patchRequest.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
-	patchRequest.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
-	patchRecorder := httptest.NewRecorder()
-	NewHandler(Dependencies{Auth: viewer, Distribution: service, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(patchRecorder, patchRequest)
-	if patchRecorder.Code != http.StatusForbidden {
-		t.Fatalf("draft status=%d body=%s", patchRecorder.Code, patchRecorder.Body.String())
-	}
-}
-
-func TestDistributionCompletionRequiresManagePermissionAndReturnsStableConflicts(t *testing.T) {
+func TestDistributionSlotsRequiresPosMesinAndForwardsCreateSlotInput(t *testing.T) {
 	secret := []byte("01234567890123456789012345678901")
-	service := &fakeDistributionService{completed: distribution.DistributionRecord{ID: "distribution-1", AllocationID: "allocation-1", Status: "completed"}}
-	manager := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.manage": true}}
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/distribution/allocations/allocation-1/complete", nil)
+	service := &fakeDistributionService{createdSlot: distribution.DistributionSlot{ID: "slot-1", ScheduleID: "schedule-1", SlotNumber: 1, Status: "open"}}
+	operator := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_mesin": true}}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/distribution/slots", strings.NewReader(`{"schedule_id":"schedule-1","machine_option_code":"M1","machine_serial_number":"SN-1"}`))
+	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
 	req.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
 	rec := httptest.NewRecorder()
-	NewHandler(Dependencies{Auth: manager, Distribution: service, SessionSecret: secret}).ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || service.allocationID != "allocation-1" || !strings.Contains(rec.Body.String(), `"status":"completed"`) {
-		t.Fatalf("status=%d allocation=%q body=%s", rec.Code, service.allocationID, rec.Body.String())
+	NewHandler(Dependencies{Auth: operator, Distribution: service, SessionSecret: secret}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated || service.createInput.ScheduleID != "schedule-1" || service.createInput.MachineOptionCode != "M1" || service.createInput.MachineSerialNumber != "SN-1" {
+		t.Fatalf("status=%d input=%+v body=%s", rec.Code, service.createInput, rec.Body.String())
 	}
 
-	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.view": true}}
-	denied := httptest.NewRequest(http.MethodPost, "/api/v1/distribution/allocations/allocation-1/complete", nil)
-	denied.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
-	denied.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+	denied := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{}}
+	deniedReq := httptest.NewRequest(http.MethodPost, "/api/v1/distribution/slots", strings.NewReader(`{"schedule_id":"schedule-1"}`))
+	deniedReq.Header.Set("Content-Type", "application/json")
+	deniedReq.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	deniedReq.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
 	deniedRecorder := httptest.NewRecorder()
-	NewHandler(Dependencies{Auth: viewer, Distribution: service, SessionSecret: secret}).ServeHTTP(deniedRecorder, denied)
+	NewHandler(Dependencies{Auth: denied, Distribution: service, SessionSecret: secret}).ServeHTTP(deniedRecorder, deniedReq)
+	if deniedRecorder.Code != http.StatusForbidden {
+		t.Fatalf("denied status=%d body=%s", deniedRecorder.Code, deniedRecorder.Body.String())
+	}
+}
+
+func TestDistributionCandidatesRequiresPosDokumen(t *testing.T) {
+	service := &fakeDistributionService{candidate: distribution.CandidateMatch{AllocationID: "allocation-1", FullName: "Siti Aminah", NIK: "7306014101900001"}}
+	operator := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_dokumen": true}}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/distribution/candidates?schedule_id=schedule-1&nik=7306014101900001", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: operator, Distribution: service}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || service.candidateScheduleID != "schedule-1" || service.candidateNIK != "7306014101900001" {
+		t.Fatalf("status=%d schedule=%q nik=%q body=%s", rec.Code, service.candidateScheduleID, service.candidateNIK, rec.Body.String())
+	}
+
+	denied := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{}}
+	deniedReq := httptest.NewRequest(http.MethodGet, "/api/v1/distribution/candidates?schedule_id=schedule-1&nik=7306014101900001", nil)
+	deniedReq.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	deniedRecorder := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: denied, Distribution: service}).ServeHTTP(deniedRecorder, deniedReq)
+	if deniedRecorder.Code != http.StatusForbidden {
+		t.Fatalf("denied status=%d body=%s", deniedRecorder.Code, deniedRecorder.Body.String())
+	}
+}
+
+func TestDistributionSlotLinkRequiresPosDokumenAndForwardsSlotNumber(t *testing.T) {
+	secret := []byte("01234567890123456789012345678901")
+	service := &fakeDistributionService{linkedSlot: distribution.DistributionSlot{ID: "slot-1", ScheduleID: "schedule-1", SlotNumber: 5, Status: "linked"}}
+	operator := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_dokumen": true}}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/distribution/slots/5/link", strings.NewReader(`{"schedule_id":"schedule-1","nik":"7306014101900001"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: operator, Distribution: service, SessionSecret: secret}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || service.linkInput.SlotNumber != 5 || service.linkInput.ScheduleID != "schedule-1" || service.linkInput.NIK != "7306014101900001" {
+		t.Fatalf("status=%d input=%+v body=%s", rec.Code, service.linkInput, rec.Body.String())
+	}
+
+	denied := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{}}
+	deniedReq := httptest.NewRequest(http.MethodPost, "/api/v1/distribution/slots/5/link", strings.NewReader(`{"schedule_id":"schedule-1","nik":"7306014101900001"}`))
+	deniedReq.Header.Set("Content-Type", "application/json")
+	deniedReq.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	deniedReq.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+	deniedRecorder := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: denied, Distribution: service, SessionSecret: secret}).ServeHTTP(deniedRecorder, deniedReq)
+	if deniedRecorder.Code != http.StatusForbidden {
+		t.Fatalf("denied status=%d body=%s", deniedRecorder.Code, deniedRecorder.Body.String())
+	}
+}
+
+func TestDistributionSlotSearchRequiresPosPenyerahan(t *testing.T) {
+	service := &fakeDistributionService{searchedSlot: distribution.DistributionSlot{ID: "slot-1", ScheduleID: "schedule-1", SlotNumber: 5, Status: "linked"}}
+	operator := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_penyerahan": true}}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/distribution/slots/search?schedule_id=schedule-1&q=Siti", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: operator, Distribution: service}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || service.searchScheduleID != "schedule-1" || service.searchQuery != "Siti" {
+		t.Fatalf("status=%d schedule=%q query=%q body=%s", rec.Code, service.searchScheduleID, service.searchQuery, rec.Body.String())
+	}
+
+	denied := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{}}
+	deniedReq := httptest.NewRequest(http.MethodGet, "/api/v1/distribution/slots/search?schedule_id=schedule-1&q=Siti", nil)
+	deniedReq.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	deniedRecorder := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: denied, Distribution: service}).ServeHTTP(deniedRecorder, deniedReq)
+	if deniedRecorder.Code != http.StatusForbidden {
+		t.Fatalf("denied status=%d body=%s", deniedRecorder.Code, deniedRecorder.Body.String())
+	}
+}
+
+func TestDistributionSlotCompleteRequiresPosPenyerahanAndReturnsStableConflicts(t *testing.T) {
+	secret := []byte("01234567890123456789012345678901")
+	service := &fakeDistributionService{completedSlot: distribution.DistributionSlot{ID: "slot-1", ScheduleID: "schedule-1", SlotNumber: 5, Status: "completed"}}
+	operator := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_penyerahan": true}}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/distribution/slots/5/complete?schedule_id=schedule-1", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: operator, Distribution: service, SessionSecret: secret}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || service.completeInput.SlotNumber != 5 || service.completeInput.ScheduleID != "schedule-1" || !strings.Contains(rec.Body.String(), `"status":"completed"`) {
+		t.Fatalf("status=%d input=%+v body=%s", rec.Code, service.completeInput, rec.Body.String())
+	}
+
+	denied := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{}}
+	deniedReq := httptest.NewRequest(http.MethodPost, "/api/v1/distribution/slots/5/complete?schedule_id=schedule-1", nil)
+	deniedReq.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	deniedReq.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+	deniedRecorder := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: denied, Distribution: service, SessionSecret: secret}).ServeHTTP(deniedRecorder, deniedReq)
 	if deniedRecorder.Code != http.StatusForbidden {
 		t.Fatalf("denied status=%d body=%s", deniedRecorder.Code, deniedRecorder.Body.String())
 	}
@@ -474,7 +523,7 @@ func TestDistributionCompletionRequiresManagePermissionAndReturnsStableConflicts
 	conflicts := []struct {
 		err  error
 		code string
-	}{{distribution.ErrIdentityIncomplete, "identity_incomplete"}, {distribution.ErrDocumentationIncomplete, "documentation_incomplete"}, {distribution.ErrPreviouslyReceived, "previously_received"}, {distribution.ErrAlreadyCompleted, "already_completed"}}
+	}{{distribution.ErrIdentityIncomplete, "identity_incomplete"}, {distribution.ErrDocumentationIncomplete, "documentation_incomplete"}, {distribution.ErrPreviouslyReceived, "operation_rejected"}, {distribution.ErrAlreadyCompleted, "operation_rejected"}, {distribution.ErrSlotNotOpen, "operation_rejected"}, {distribution.ErrSlotNotLinked, "operation_rejected"}}
 	for _, item := range conflicts {
 		response := httptest.NewRecorder()
 		writeServiceError(response, item.err)
@@ -710,36 +759,49 @@ type fakeDCP3Service struct {
 
 type fakeDistributionService struct {
 	DistributionService
-	results          []distribution.SearchResult
-	workspace        distribution.RecipientWorkspace
-	scheduleID       string
-	query            string
-	limit            int
-	allocationID     string
-	media            distribution.MediaFile
-	mediaContent     []byte
-	slotID           string
-	upload           distribution.UploadMediaInput
-	completed        distribution.DistributionRecord
-	completeErr      error
-	seenRegencyScope auth.RegencyScope
+	createInput          distribution.CreateSlotInput
+	createdSlot          distribution.DistributionSlot
+	createErr            error
+	candidateScheduleID  string
+	candidateNIK         string
+	candidate            distribution.CandidateMatch
+	candidateErr         error
+	linkInput            distribution.LinkSlotInput
+	linkedSlot           distribution.DistributionSlot
+	linkErr              error
+	searchScheduleID     string
+	searchQuery          string
+	searchedSlot         distribution.DistributionSlot
+	searchErr            error
+	completeInput        distribution.CompleteSlotInput
+	completedSlot        distribution.DistributionSlot
+	completeErr          error
+	media                distribution.MediaFile
+	mediaContent         []byte
+	slotID               string
+	upload               distribution.UploadMediaInput
+	seenRegencyScope     auth.RegencyScope
 }
 
-func (f *fakeDistributionService) Search(_ context.Context, scheduleID, query string, limit int, scope auth.RegencyScope) ([]distribution.SearchResult, error) {
-	f.scheduleID, f.query, f.limit, f.seenRegencyScope = scheduleID, query, limit, scope
-	return f.results, nil
+func (f *fakeDistributionService) CreateSlot(_ context.Context, _ auth.Principal, input distribution.CreateSlotInput, _ auth.ClientMeta) (distribution.DistributionSlot, error) {
+	f.createInput = input
+	return f.createdSlot, f.createErr
 }
-func (f *fakeDistributionService) GetWorkspace(_ context.Context, allocationID string, scope auth.RegencyScope) (distribution.RecipientWorkspace, error) {
-	f.allocationID, f.seenRegencyScope = allocationID, scope
-	return f.workspace, nil
+func (f *fakeDistributionService) SearchCandidate(_ context.Context, scheduleID, nik string, scope auth.RegencyScope) (distribution.CandidateMatch, error) {
+	f.candidateScheduleID, f.candidateNIK, f.seenRegencyScope = scheduleID, nik, scope
+	return f.candidate, f.candidateErr
 }
-func (f *fakeDistributionService) SaveDraft(_ context.Context, _ auth.Principal, allocationID string, _ distribution.DraftInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.RecipientWorkspace, error) {
-	f.allocationID, f.seenRegencyScope = allocationID, scope
-	return f.workspace, nil
+func (f *fakeDistributionService) LinkSlot(_ context.Context, _ auth.Principal, input distribution.LinkSlotInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.DistributionSlot, error) {
+	f.linkInput, f.seenRegencyScope = input, scope
+	return f.linkedSlot, f.linkErr
 }
-func (f *fakeDistributionService) Complete(_ context.Context, _ auth.Principal, allocationID string, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.DistributionRecord, error) {
-	f.allocationID, f.seenRegencyScope = allocationID, scope
-	return f.completed, f.completeErr
+func (f *fakeDistributionService) SearchLinkedSlot(_ context.Context, scheduleID, query string, scope auth.RegencyScope) (distribution.DistributionSlot, error) {
+	f.searchScheduleID, f.searchQuery, f.seenRegencyScope = scheduleID, query, scope
+	return f.searchedSlot, f.searchErr
+}
+func (f *fakeDistributionService) CompleteSlot(_ context.Context, _ auth.Principal, input distribution.CompleteSlotInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.DistributionSlot, error) {
+	f.completeInput, f.seenRegencyScope = input, scope
+	return f.completedSlot, f.completeErr
 }
 func (f *fakeDistributionService) UploadMedia(_ context.Context, _ auth.Principal, input distribution.UploadMediaInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.MediaFile, error) {
 	f.slotID, f.upload, f.seenRegencyScope = input.SlotID, input, scope
@@ -922,6 +984,20 @@ func TestRecipientsListRequiresViewPermissionAndForwardsFilters(t *testing.T) {
 	NewHandler(Dependencies{Auth: noPerm, Recipients: service}).ServeHTTP(deniedRecorder, denied)
 	if deniedRecorder.Code != http.StatusForbidden {
 		t.Fatalf("expected forbidden without recipients.view, got %d", deniedRecorder.Code)
+	}
+}
+
+func TestRecipientsListForwardsAllPageSize(t *testing.T) {
+	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"recipients.view": true}}
+	service := &fakeRecipientsService{page: recipients.Page{Page: 1, All: true, Total: 240}}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/recipients?page=7&page_size=all", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+
+	NewHandler(Dependencies{Auth: viewer, Recipients: service}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || !service.seenFilter.All {
+		t.Fatalf("expected page_size=all to be forwarded, status=%d filter=%+v body=%s", rec.Code, service.seenFilter, rec.Body.String())
 	}
 }
 

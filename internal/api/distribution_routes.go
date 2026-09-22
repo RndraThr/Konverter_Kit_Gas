@@ -13,38 +13,47 @@ import (
 
 const maxMediaRequestBody = 11 << 20
 
-func (h *Handler) handleDistributionSearch(w http.ResponseWriter, r *http.Request, rc requestContext) {
-	if r.Method != http.MethodGet {
-		methodNotAllowed(w, http.MethodGet)
-		return
-	}
+func (h *Handler) handleDistributionSlots(w http.ResponseWriter, r *http.Request, rc requestContext) {
 	if h.deps.Distribution == nil {
 		writeUnavailable(w)
 		return
 	}
-	if !h.authorize(w, r, rc.principal, "distribution.view") {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
 		return
 	}
-	scheduleID := strings.TrimSpace(r.URL.Query().Get("schedule_id"))
-	query := strings.TrimSpace(r.URL.Query().Get("q"))
-	if scheduleID == "" || query == "" {
-		writeFieldError(w, http.StatusBadRequest, "validation_failed", "Jadwal dan kata pencarian wajib diisi", map[string]string{"schedule_id": "Jadwal wajib dipilih", "q": "Kata pencarian wajib diisi"})
+	if !h.authorize(w, r, rc.principal, "distribution.pos_mesin") {
 		return
 	}
-	limit := 20
-	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
-		parsed, err := strconv.Atoi(raw)
-		if err != nil {
-			writeFieldError(w, http.StatusBadRequest, "validation_failed", "Batas hasil tidak valid", map[string]string{"limit": "Gunakan angka 1 sampai 20"})
-			return
-		}
-		limit = parsed
+	var input distribution.CreateSlotInput
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	result, err := h.deps.Distribution.CreateSlot(r.Context(), rc.principal, input, clientMeta(r))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusCreated, result)
+}
+
+func (h *Handler) handleDistributionCandidates(w http.ResponseWriter, r *http.Request, rc requestContext) {
+	if h.deps.Distribution == nil {
+		writeUnavailable(w)
+		return
+	}
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if !h.authorize(w, r, rc.principal, "distribution.pos_dokumen") {
+		return
 	}
 	scope, ok := h.regencyScope(w, r, rc.principal)
 	if !ok {
 		return
 	}
-	result, err := h.deps.Distribution.Search(r.Context(), scheduleID, query, limit, scope)
+	result, err := h.deps.Distribution.SearchCandidate(r.Context(), r.URL.Query().Get("schedule_id"), r.URL.Query().Get("nik"), scope)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -52,85 +61,100 @@ func (h *Handler) handleDistributionSearch(w http.ResponseWriter, r *http.Reques
 	writeData(w, http.StatusOK, result)
 }
 
-func (h *Handler) handleDistributionAllocation(w http.ResponseWriter, r *http.Request, rc requestContext, path string) {
+func (h *Handler) handleDistributionSlotLink(w http.ResponseWriter, r *http.Request, rc requestContext, slotNumber int) {
+	if !h.authorize(w, r, rc.principal, "distribution.pos_dokumen") {
+		return
+	}
+	var input distribution.LinkSlotInput
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	input.SlotNumber = slotNumber
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := h.deps.Distribution.LinkSlot(r.Context(), rc.principal, input, clientMeta(r), scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
+}
+
+func (h *Handler) handleDistributionSlotSearch(w http.ResponseWriter, r *http.Request, rc requestContext) {
+	if h.deps.Distribution == nil {
+		writeUnavailable(w)
+		return
+	}
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if !h.authorize(w, r, rc.principal, "distribution.pos_penyerahan") {
+		return
+	}
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := h.deps.Distribution.SearchLinkedSlot(r.Context(), r.URL.Query().Get("schedule_id"), r.URL.Query().Get("q"), scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
+}
+
+func (h *Handler) handleDistributionSlotComplete(w http.ResponseWriter, r *http.Request, rc requestContext, slotNumber int) {
+	if !h.authorize(w, r, rc.principal, "distribution.pos_penyerahan") {
+		return
+	}
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := h.deps.Distribution.CompleteSlot(r.Context(), rc.principal, distribution.CompleteSlotInput{ScheduleID: r.URL.Query().Get("schedule_id"), SlotNumber: slotNumber}, clientMeta(r), scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
+}
+
+func (h *Handler) handleDistributionSlot(w http.ResponseWriter, r *http.Request, rc requestContext, path string) {
 	if h.deps.Distribution == nil {
 		writeUnavailable(w)
 		return
 	}
 	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) == 1 && r.Method == http.MethodGet {
-		if !h.authorize(w, r, rc.principal, "distribution.view") {
-			return
-		}
-		scope, ok := h.regencyScope(w, r, rc.principal)
-		if !ok {
-			return
-		}
-		result, err := h.deps.Distribution.GetWorkspace(r.Context(), parts[0], scope)
+	if len(parts) == 1 && parts[0] == "search" && r.Method == http.MethodGet {
+		h.handleDistributionSlotSearch(w, r, rc)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "media" && r.Method == http.MethodPost {
+		h.handleDistributionSlotMediaUpload(w, r, rc, parts[0])
+		return
+	}
+	if len(parts) == 2 {
+		slotNumber, err := strconv.Atoi(parts[0])
 		if err != nil {
-			writeServiceError(w, err)
+			writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
 			return
 		}
-		writeData(w, http.StatusOK, result)
-		return
-	}
-	if len(parts) == 2 && parts[1] == "draft" && r.Method == http.MethodPatch {
-		if !h.authorize(w, r, rc.principal, "distribution.manage") {
+		switch {
+		case parts[1] == "link" && r.Method == http.MethodPost:
+			h.handleDistributionSlotLink(w, r, rc, slotNumber)
+			return
+		case parts[1] == "complete" && r.Method == http.MethodPost:
+			h.handleDistributionSlotComplete(w, r, rc, slotNumber)
 			return
 		}
-		var input distribution.DraftInput
-		if !decodeJSON(w, r, &input) {
-			return
-		}
-		scope, ok := h.regencyScope(w, r, rc.principal)
-		if !ok {
-			return
-		}
-		result, err := h.deps.Distribution.SaveDraft(r.Context(), rc.principal, parts[0], input, clientMeta(r), scope)
-		if err != nil {
-			writeServiceError(w, err)
-			return
-		}
-		writeData(w, http.StatusOK, result)
-		return
-	}
-	if len(parts) == 2 && parts[1] == "complete" && r.Method == http.MethodPost {
-		if !h.authorize(w, r, rc.principal, "distribution.manage") {
-			return
-		}
-		scope, ok := h.regencyScope(w, r, rc.principal)
-		if !ok {
-			return
-		}
-		result, err := h.deps.Distribution.Complete(r.Context(), rc.principal, parts[0], clientMeta(r), scope)
-		if err != nil {
-			writeServiceError(w, err)
-			return
-		}
-		writeData(w, http.StatusOK, result)
-		return
-	}
-	if len(parts) == 2 && parts[1] == "draft" {
-		methodNotAllowed(w, http.MethodPatch)
-		return
-	}
-	if len(parts) == 2 && parts[1] == "complete" {
-		methodNotAllowed(w, http.MethodPost)
-		return
 	}
 	writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
 }
 
-func (h *Handler) handleDistributionSlot(w http.ResponseWriter, r *http.Request, rc requestContext, path string) {
-	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) != 2 || parts[1] != "media" {
-		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
-		return
-	}
-	if r.Method != http.MethodPost {
-		methodNotAllowed(w, http.MethodPost)
-		return
-	}
+func (h *Handler) handleDistributionSlotMediaUpload(w http.ResponseWriter, r *http.Request, rc requestContext, slotID string) {
 	if h.deps.Distribution == nil {
 		writeUnavailable(w)
 		return
@@ -161,7 +185,7 @@ func (h *Handler) handleDistributionSlot(w http.ResponseWriter, r *http.Request,
 		writeError(w, http.StatusRequestEntityTooLarge, "media_too_large", "Foto melebihi batas 10 MiB")
 		return
 	}
-	input := distribution.UploadMediaInput{SlotID: parts[0], OriginalFilename: header.Filename, Source: strings.TrimSpace(r.FormValue("source")), Data: data}
+	input := distribution.UploadMediaInput{SlotID: slotID, OriginalFilename: header.Filename, Source: strings.TrimSpace(r.FormValue("source")), Data: data}
 	if raw := strings.TrimSpace(r.FormValue("captured_at")); raw != "" {
 		value, err := time.Parse(time.RFC3339, raw)
 		if err != nil {
