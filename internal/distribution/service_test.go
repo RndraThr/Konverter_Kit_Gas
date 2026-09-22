@@ -31,7 +31,6 @@ func (s *storageStub) Delete(_ context.Context, key string) error {
 }
 
 type mediaRepositoryStub struct {
-	repositoryStub
 	slot       MediaSlot
 	media      MediaFile
 	saveErr    error
@@ -61,114 +60,6 @@ func (r *mediaRepositoryStub) DeleteMedia(_ context.Context, _ auth.Principal, _
 func (r *mediaRepositoryStub) RestoreMedia(_ context.Context, id string) error {
 	r.restoredID = id
 	return nil
-}
-
-type repositoryStub struct {
-	searchRecords []SearchRecord
-	searchQuery   string
-	searchLimit   int
-	workspace     RecipientWorkspace
-	saved         DraftInput
-	seenScope     auth.RegencyScope
-	completed     DistributionRecord
-	completeErr   error
-}
-
-func (r *repositoryStub) Search(_ context.Context, _ string, query string, limit int, scope auth.RegencyScope) ([]SearchRecord, error) {
-	r.searchQuery, r.searchLimit, r.seenScope = query, limit, scope
-	return r.searchRecords, nil
-}
-func (r *repositoryStub) GetWorkspace(_ context.Context, _ string, scope auth.RegencyScope) (RecipientWorkspace, error) {
-	r.seenScope = scope
-	return r.workspace, nil
-}
-func (r *repositoryStub) SaveDraft(_ context.Context, _ auth.Principal, _ string, input DraftInput, _ auth.ClientMeta) (RecipientWorkspace, error) {
-	r.saved = input
-	return r.workspace, nil
-}
-func (r *repositoryStub) Complete(_ context.Context, _ auth.Principal, _ string, _ auth.ClientMeta, scope auth.RegencyScope) (DistributionRecord, error) {
-	r.seenScope = scope
-	if r.completeErr != nil {
-		return DistributionRecord{}, r.completeErr
-	}
-	return r.completed, nil
-}
-
-func TestSearchValidatesContextAndNameLength(t *testing.T) {
-	service := NewService(&repositoryStub{})
-	if _, err := service.Search(context.Background(), "", "Siti", 20, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrScheduleRequired) {
-		t.Fatalf("missing schedule err=%v", err)
-	}
-	if _, err := service.Search(context.Background(), "schedule-1", "S", 20, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrQueryTooShort) {
-		t.Fatalf("short name err=%v", err)
-	}
-	if _, err := service.Search(context.Background(), "schedule-1", "", 20, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrQueryRequired) {
-		t.Fatalf("empty query err=%v", err)
-	}
-}
-
-func TestSearchAllowsSingleDistributionNumberMasksNIKAndCapsResults(t *testing.T) {
-	repository := &repositoryStub{searchRecords: []SearchRecord{{
-		AllocationID: "allocation-1", DistributionNumber: 7, FullName: "Siti Aminah",
-		NIK: "7306014101900001", Location: "Tempe, Wajo", ProgramType: "farmer", Eligibility: "eligible",
-	}}}
-	service := NewService(repository)
-
-	results, err := service.Search(context.Background(), " schedule-1 ", " 7 ", 200, auth.RegencyScope{Unrestricted: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if repository.searchQuery != "7" || repository.searchLimit != 20 {
-		t.Fatalf("query=%q limit=%d", repository.searchQuery, repository.searchLimit)
-	}
-	if len(results) != 1 || results[0].MaskedNIK != "7306********0001" {
-		t.Fatalf("results=%+v", results)
-	}
-}
-
-func TestSaveDraftRequiresReasonWhenNIKChanges(t *testing.T) {
-	repository := &repositoryStub{workspace: RecipientWorkspace{NIK: "7306014101900001"}}
-	service := NewService(repository)
-	input := DraftInput{NIK: "7306014101900002"}
-
-	_, err := service.SaveDraft(context.Background(), auth.Principal{UserID: "user-1"}, "allocation-1", input, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
-	if !errors.Is(err, ErrIdentityChangeReasonRequired) {
-		t.Fatalf("err=%v", err)
-	}
-	input.IdentityChangeReason = "Perbaikan berdasarkan KTP asli"
-	if _, err := service.SaveDraft(context.Background(), auth.Principal{UserID: "user-1"}, "allocation-1", input, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
-		t.Fatal(err)
-	}
-	if repository.saved.IdentityChangeReason == "" {
-		t.Fatal("identity change reason was not persisted")
-	}
-}
-
-func TestSaveDraftPassesEquipmentFieldsThrough(t *testing.T) {
-	repository := &repositoryStub{workspace: RecipientWorkspace{NIK: "7306014101900001"}}
-	service := NewService(repository)
-	input := DraftInput{
-		NIK:                   "7306014101900001",
-		MachineOptionCode:     " shark-spwp8030 ",
-		MachineSerialNumber:   " SP 06IABD 421291 ",
-		HoseOptionCode:        " triliunhose ",
-		HoseSerialNumber:      "",
-		ConverterSerialNumber: " 240A005582 ",
-	}
-
-	_, err := service.SaveDraft(context.Background(), auth.Principal{UserID: "user-1"}, "allocation-1", input, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if repository.saved.MachineOptionCode != "shark-spwp8030" || repository.saved.MachineSerialNumber != "SP 06IABD 421291" {
-		t.Fatalf("machine fields not trimmed/passed: %+v", repository.saved)
-	}
-	if repository.saved.HoseOptionCode != "triliunhose" || repository.saved.HoseSerialNumber != "" {
-		t.Fatalf("hose fields not trimmed/passed: %+v", repository.saved)
-	}
-	if repository.saved.ConverterSerialNumber != "240A005582" {
-		t.Fatalf("converter serial not trimmed/passed: %+v", repository.saved)
-	}
 }
 
 func TestUploadMediaDetectsImageAndCleansStorageWhenMetadataFails(t *testing.T) {
@@ -248,52 +139,5 @@ func TestUploadDeleteAndOpenMediaForwardRegencyScope(t *testing.T) {
 	}
 	if len(repository.mediaScope.RegencyIDs) != 1 || repository.mediaScope.RegencyIDs[0] != "regency-1" {
 		t.Fatalf("DeleteMedia scope=%+v", repository.mediaScope)
-	}
-}
-
-func TestSearchGetWorkspaceSaveDraftAndCompleteForwardRegencyScope(t *testing.T) {
-	scope := auth.RegencyScope{RegencyIDs: []string{"regency-1"}}
-	repository := &repositoryStub{workspace: RecipientWorkspace{NIK: "7306014101900001"}}
-	service := NewService(repository)
-
-	if _, err := service.Search(context.Background(), "schedule-1", "Siti", 20, scope); err != nil {
-		t.Fatal(err)
-	}
-	if len(repository.seenScope.RegencyIDs) != 1 || repository.seenScope.RegencyIDs[0] != "regency-1" {
-		t.Fatalf("Search scope=%+v", repository.seenScope)
-	}
-
-	repository.seenScope = auth.RegencyScope{}
-	if _, err := service.GetWorkspace(context.Background(), "allocation-1", scope); err != nil {
-		t.Fatal(err)
-	}
-	if len(repository.seenScope.RegencyIDs) != 1 || repository.seenScope.RegencyIDs[0] != "regency-1" {
-		t.Fatalf("GetWorkspace scope=%+v", repository.seenScope)
-	}
-
-	repository.seenScope = auth.RegencyScope{}
-	input := DraftInput{NIK: "7306014101900001"}
-	if _, err := service.SaveDraft(context.Background(), auth.Principal{UserID: "user-1"}, "allocation-1", input, auth.ClientMeta{}, scope); err != nil {
-		t.Fatal(err)
-	}
-	if len(repository.seenScope.RegencyIDs) != 1 || repository.seenScope.RegencyIDs[0] != "regency-1" {
-		t.Fatalf("SaveDraft did not forward scope through its internal GetWorkspace call: %+v", repository.seenScope)
-	}
-
-	repository.seenScope = auth.RegencyScope{}
-	if _, err := service.Complete(context.Background(), auth.Principal{UserID: "user-1"}, "allocation-1", auth.ClientMeta{}, scope); err != nil {
-		t.Fatal(err)
-	}
-	if len(repository.seenScope.RegencyIDs) != 1 || repository.seenScope.RegencyIDs[0] != "regency-1" {
-		t.Fatalf("Complete scope=%+v", repository.seenScope)
-	}
-}
-
-func TestCompleteReturnsRepositoryErrorForOutOfScopeAllocation(t *testing.T) {
-	repository := &repositoryStub{}
-	service := NewService(repository)
-	repository.completeErr = ErrAllocationNotFound
-	if _, err := service.Complete(context.Background(), auth.Principal{}, "allocation-1", auth.ClientMeta{}, auth.RegencyScope{}); !errors.Is(err, ErrAllocationNotFound) {
-		t.Fatalf("err=%v", err)
 	}
 }

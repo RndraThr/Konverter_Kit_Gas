@@ -19,12 +19,6 @@ import (
 var onlyDigits = regexp.MustCompile(`^[0-9]+$`)
 var stripNonDigits = regexp.MustCompile(`[^0-9]+`)
 
-type repository interface {
-	Search(context.Context, string, string, int, auth.RegencyScope) ([]SearchRecord, error)
-	GetWorkspace(context.Context, string, auth.RegencyScope) (RecipientWorkspace, error)
-	SaveDraft(context.Context, auth.Principal, string, DraftInput, auth.ClientMeta) (RecipientWorkspace, error)
-}
-
 type mediaRepository interface {
 	GetMediaSlot(context.Context, string, auth.RegencyScope) (MediaSlot, error)
 	SaveMedia(context.Context, auth.Principal, MediaFileInput, auth.ClientMeta) (MediaFile, error)
@@ -33,99 +27,40 @@ type mediaRepository interface {
 	RestoreMedia(context.Context, string) error
 }
 
-type completionRepository interface {
-	Complete(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) (DistributionRecord, error)
+type posMesinRepository interface {
+	CreateSlot(ctx context.Context, actor auth.Principal, input CreateSlotInput, meta auth.ClientMeta) (DistributionSlot, error)
 }
 
 type Service struct {
-	repository      repository
-	mediaRepository mediaRepository
-	completion      completionRepository
-	storage         media.Storage
+	mediaRepository    mediaRepository
+	posMesinRepository posMesinRepository
+	storage            media.Storage
 }
 
-func NewService(repository repository, storage ...media.Storage) *Service {
-	service := &Service{repository: repository}
+func NewService(repository any, storage ...media.Storage) *Service {
+	service := &Service{}
 	service.mediaRepository, _ = repository.(mediaRepository)
-	service.completion, _ = repository.(completionRepository)
+	service.posMesinRepository, _ = repository.(posMesinRepository)
 	if len(storage) > 0 {
 		service.storage = storage[0]
 	}
 	return service
 }
 
-func (s *Service) Complete(ctx context.Context, actor auth.Principal, allocationID string, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionRecord, error) {
-	allocationID = strings.TrimSpace(allocationID)
-	if allocationID == "" {
-		return DistributionRecord{}, ErrAllocationNotFound
+func (s *Service) CreateSlot(ctx context.Context, actor auth.Principal, input CreateSlotInput, meta auth.ClientMeta) (DistributionSlot, error) {
+	input.ScheduleID = strings.TrimSpace(input.ScheduleID)
+	if input.ScheduleID == "" {
+		return DistributionSlot{}, ErrScheduleRequired
 	}
-	if s.completion == nil {
-		return DistributionRecord{}, errors.New("distribution completion is unavailable")
-	}
-	return s.completion.Complete(ctx, actor, allocationID, meta, scope)
-}
-
-func (s *Service) Search(ctx context.Context, scheduleID, query string, limit int, scope auth.RegencyScope) ([]SearchResult, error) {
-	scheduleID, query = strings.TrimSpace(scheduleID), strings.TrimSpace(query)
-	if scheduleID == "" {
-		return nil, ErrScheduleRequired
-	}
-	if query == "" {
-		return nil, ErrQueryRequired
-	}
-	if len([]rune(query)) < 2 && !onlyDigits.MatchString(query) {
-		return nil, ErrQueryTooShort
-	}
-	if limit < 1 || limit > 20 {
-		limit = 20
-	}
-	records, err := s.repository.Search(ctx, scheduleID, query, limit, scope)
-	if err != nil {
-		return nil, err
-	}
-	results := make([]SearchResult, 0, len(records))
-	for _, record := range records {
-		results = append(results, SearchResult{
-			AllocationID: record.AllocationID, DistributionNumber: record.DistributionNumber,
-			FullName: record.FullName, MaskedNIK: maskNIK(record.NIK), Location: record.Location,
-			ProgramType: record.ProgramType, Eligibility: record.Eligibility,
-			AllocationStatus: record.AllocationStatus, Documentation: record.Documentation,
-		})
-	}
-	return results, nil
-}
-
-func (s *Service) GetWorkspace(ctx context.Context, allocationID string, scope auth.RegencyScope) (RecipientWorkspace, error) {
-	if strings.TrimSpace(allocationID) == "" {
-		return RecipientWorkspace{}, ErrAllocationNotFound
-	}
-	return s.repository.GetWorkspace(ctx, strings.TrimSpace(allocationID), scope)
-}
-
-func (s *Service) SaveDraft(ctx context.Context, actor auth.Principal, allocationID string, input DraftInput, meta auth.ClientMeta, scope auth.RegencyScope) (RecipientWorkspace, error) {
-	current, err := s.GetWorkspace(ctx, allocationID, scope)
-	if err != nil {
-		return RecipientWorkspace{}, err
-	}
-	input.NIK = stripNonDigits.ReplaceAllString(input.NIK, "")
-	input.Address = strings.TrimSpace(input.Address)
-	input.Village = strings.TrimSpace(input.Village)
-	input.District = strings.TrimSpace(input.District)
-	input.PhoneNumber = stripNonDigits.ReplaceAllString(input.PhoneNumber, "")
-	input.SectorIdentifier = normalizeIdentifier(input.SectorIdentifier)
-	input.IdentityChangeReason = strings.TrimSpace(input.IdentityChangeReason)
 	input.MachineOptionCode = strings.TrimSpace(input.MachineOptionCode)
 	input.MachineSerialNumber = strings.TrimSpace(input.MachineSerialNumber)
 	input.HoseOptionCode = strings.TrimSpace(input.HoseOptionCode)
 	input.HoseSerialNumber = strings.TrimSpace(input.HoseSerialNumber)
 	input.ConverterSerialNumber = strings.TrimSpace(input.ConverterSerialNumber)
-	if input.NIK != "" && len(input.NIK) != 16 {
-		return RecipientWorkspace{}, ErrNIKInvalid
+	if s.posMesinRepository == nil {
+		return DistributionSlot{}, errors.New("distribution POS Mesin is unavailable")
 	}
-	if input.NIK != current.NIK && input.IdentityChangeReason == "" {
-		return RecipientWorkspace{}, ErrIdentityChangeReasonRequired
-	}
-	return s.repository.SaveDraft(ctx, actor, strings.TrimSpace(allocationID), input, meta)
+	return s.posMesinRepository.CreateSlot(ctx, actor, input, meta)
 }
 
 func maskNIK(value string) string {
