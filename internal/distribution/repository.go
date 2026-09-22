@@ -24,9 +24,8 @@ func (r *Repository) GetMediaSlot(ctx context.Context, slotID string, scope auth
 		SELECT s.id::text,s.input_source,s.require_location,s.require_captured_at,s.min_files,s.max_files,count(m.id) FILTER(WHERE m.status='accepted')
 		FROM documentation_slots s
 		LEFT JOIN media_files m ON m.documentation_slot_id=s.id
-		JOIN distribution_records dr ON dr.id=s.distribution_id
-		JOIN package_allocations a ON a.id=dr.allocation_id
-		JOIN program_schedules ps ON ps.id=a.schedule_id
+		JOIN distribution_slots dsl ON dsl.id=s.distribution_slot_id
+		JOIN program_schedules ps ON ps.id=dsl.schedule_id
 		WHERE s.id=$1 AND ($2 OR ps.regency_id::text = ANY($3))
 		GROUP BY s.id
 	`, slotID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.InputSource, &result.RequireLocation, &result.RequireCapturedAt, &result.MinFiles, &result.MaxFiles, &result.AcceptedFiles)
@@ -68,9 +67,8 @@ func (r *Repository) GetMedia(ctx context.Context, mediaID string, scope auth.Re
 		SELECT m.id::text,m.documentation_slot_id::text,m.storage_key::text,m.original_filename,m.mime_type,m.byte_size,m.source,m.captured_at,m.latitude::float8,m.longitude::float8,m.status,m.uploaded_at
 		FROM media_files m
 		JOIN documentation_slots s ON s.id=m.documentation_slot_id
-		JOIN distribution_records dr ON dr.id=s.distribution_id
-		JOIN package_allocations a ON a.id=dr.allocation_id
-		JOIN program_schedules ps ON ps.id=a.schedule_id
+		JOIN distribution_slots dsl ON dsl.id=s.distribution_slot_id
+		JOIN program_schedules ps ON ps.id=dsl.schedule_id
 		WHERE m.id=$1 AND m.status='accepted' AND ($2 OR ps.regency_id::text = ANY($3))
 	`, mediaID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.SlotID, &result.StorageKey, &result.OriginalFilename, &result.MimeType, &result.ByteSize, &result.Source, &result.CapturedAt, &result.Latitude, &result.Longitude, &result.Status, &result.UploadedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -94,9 +92,8 @@ func (r *Repository) DeleteMedia(ctx context.Context, actor auth.Principal, medi
 		UPDATE media_files m
 		SET status='deleted', updated_at=now()
 		FROM documentation_slots s
-		JOIN distribution_records dr ON dr.id=s.distribution_id
-		JOIN package_allocations a ON a.id=dr.allocation_id
-		JOIN program_schedules ps ON ps.id=a.schedule_id
+		JOIN distribution_slots dsl ON dsl.id=s.distribution_slot_id
+		JOIN program_schedules ps ON ps.id=dsl.schedule_id
 		WHERE m.documentation_slot_id=s.id
 			AND m.id=$1 AND m.status='accepted'
 			AND ($2 OR ps.regency_id::text = ANY($3))
