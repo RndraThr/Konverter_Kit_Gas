@@ -166,6 +166,14 @@ func isUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
+func uniqueViolationConstraint(err error) (string, bool) {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return pgErr.ConstraintName, true
+	}
+	return "", false
+}
+
 func (r *Repository) CreateSlot(ctx context.Context, actor auth.Principal, input CreateSlotInput, meta auth.ClientMeta) (DistributionSlot, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -293,4 +301,110 @@ func (r *Repository) listMediaFiles(ctx context.Context, documentationSlotID str
 		files = append(files, file)
 	}
 	return files, rows.Err()
+}
+
+func (r *Repository) SearchCandidate(ctx context.Context, scheduleID, nik string, scope auth.RegencyScope) (CandidateMatch, error) {
+	var match CandidateMatch
+	err := r.pool.QueryRow(ctx, `
+		SELECT pa.id::text, p.full_name, COALESCE(p.nik,''), COALESCE(psi.identifier_type,''), COALESCE(psi.normalized_value,''),
+			COALESCE(p.address,''), COALESCE(p.village,''), COALESCE(p.district,''), COALESCE(p.phone_number,''), cn.program_type
+		FROM package_allocations pa
+		JOIN candidate_nominations cn ON cn.id = pa.nomination_id
+		JOIN program_schedules ps ON ps.id = pa.schedule_id
+		JOIN people p ON p.id = cn.person_id
+		LEFT JOIN LATERAL (SELECT identifier_type, normalized_value FROM person_sector_identifiers WHERE person_id = p.id LIMIT 1) psi ON true
+		WHERE pa.schedule_id = $1 AND p.nik = $2 AND pa.distribution_number IS NULL
+			AND ($3 OR ps.regency_id::text = ANY($4))
+	`, scheduleID, nik, scope.Unrestricted, scope.RegencyIDs).Scan(&match.AllocationID, &match.FullName, &match.NIK, &match.SectorIdentifierType, &match.SectorIdentifier, &match.Address, &match.Village, &match.District, &match.PhoneNumber, &match.ProgramType)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return CandidateMatch{}, ErrCandidateNotFound
+	}
+	if err != nil {
+		return CandidateMatch{}, fmt.Errorf("search candidate: %w", err)
+	}
+	return match, nil
+}
+
+func (r *Repository) LinkSlot(ctx context.Context, actor auth.Principal, input LinkSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return DistributionSlot{}, fmt.Errorf("begin link slot: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var slotID, slotStatus string
+	if err := tx.QueryRow(ctx, `
+		SELECT ds.id::text, ds.status FROM distribution_slots ds
+		JOIN program_schedules ps ON ps.id = ds.schedule_id
+		WHERE ds.schedule_id=$1 AND ds.slot_number=$2 AND ($3 OR ps.regency_id::text = ANY($4))
+		FOR UPDATE OF ds
+	`, input.ScheduleID, input.SlotNumber, scope.Unrestricted, scope.RegencyIDs).Scan(&slotID, &slotStatus); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return DistributionSlot{}, ErrSlotNotFound
+		}
+		return DistributionSlot{}, fmt.Errorf("lock distribution slot: %w", err)
+	}
+	if slotStatus != "open" {
+		return DistributionSlot{}, ErrSlotNotOpen
+	}
+
+	var allocationID, personID, programType string
+	if err := tx.QueryRow(ctx, `
+		SELECT pa.id::text, p.id::text, cn.program_type
+		FROM package_allocations pa
+		JOIN candidate_nominations cn ON cn.id = pa.nomination_id
+		JOIN people p ON p.id = cn.person_id
+		WHERE pa.schedule_id=$1 AND p.nik=$2 AND pa.distribution_number IS NULL
+		FOR UPDATE OF pa
+	`, input.ScheduleID, input.NIK).Scan(&allocationID, &personID, &programType); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return DistributionSlot{}, ErrCandidateNotFound
+		}
+		return DistributionSlot{}, fmt.Errorf("lock candidate: %w", err)
+	}
+
+	var previouslyReceived bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM distribution_slots WHERE recipient_person_id=$1 AND status='completed')`, personID).Scan(&previouslyReceived); err != nil {
+		return DistributionSlot{}, fmt.Errorf("check previously received: %w", err)
+	}
+	if previouslyReceived {
+		return DistributionSlot{}, ErrPreviouslyReceived
+	}
+
+	if _, err := tx.Exec(ctx, `UPDATE people SET address=COALESCE(NULLIF($2,''),address), village=COALESCE(NULLIF($3,''),village), district=COALESCE(NULLIF($4,''),district), phone_number=COALESCE(NULLIF($5,''),phone_number), updated_at=now() WHERE id=$1`, personID, input.Address, input.Village, input.District, input.PhoneNumber); err != nil {
+		return DistributionSlot{}, fmt.Errorf("update person: %w", err)
+	}
+	if input.SectorIdentifier != "" {
+		identifierType := "kusuka"
+		if programType == "farmer" {
+			identifierType = "farmer_card"
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO person_sector_identifiers(person_id,identifier_type,normalized_value,display_value) VALUES($1,$2,$3,$3)
+			ON CONFLICT (person_id,identifier_type) DO UPDATE SET normalized_value=EXCLUDED.normalized_value, display_value=EXCLUDED.display_value, updated_at=now()
+		`, personID, identifierType, input.SectorIdentifier); err != nil {
+			if code, ok := uniqueViolationConstraint(err); ok && code != "" {
+				return DistributionSlot{}, ErrIdentifierConflict
+			}
+			return DistributionSlot{}, fmt.Errorf("upsert sector identifier: %w", err)
+		}
+	}
+
+	if _, err := tx.Exec(ctx, `UPDATE package_allocations SET distribution_number=$2, status='ready', updated_at=now() WHERE id=$1`, allocationID, input.SlotNumber); err != nil {
+		if code, ok := uniqueViolationConstraint(err); ok && code != "" {
+			return DistributionSlot{}, ErrIdentifierConflict
+		}
+		return DistributionSlot{}, fmt.Errorf("update package allocation: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE distribution_slots SET allocation_id=$2, recipient_person_id=$3, status='linked', updated_at=now() WHERE id=$1`, slotID, allocationID, personID); err != nil {
+		return DistributionSlot{}, fmt.Errorf("link distribution slot: %w", err)
+	}
+
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "distribution.slot_linked", ResourceType: "distribution_slot", ResourceID: slotID, Metadata: map[string]any{"allocation_id": allocationID, "slot_number": input.SlotNumber}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+		return DistributionSlot{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return DistributionSlot{}, fmt.Errorf("commit link slot: %w", err)
+	}
+	return r.getSlotByID(ctx, slotID)
 }

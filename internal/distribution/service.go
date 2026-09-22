@@ -31,16 +31,23 @@ type posMesinRepository interface {
 	CreateSlot(ctx context.Context, actor auth.Principal, input CreateSlotInput, meta auth.ClientMeta) (DistributionSlot, error)
 }
 
+type posDokumenRepository interface {
+	SearchCandidate(ctx context.Context, scheduleID, nik string, scope auth.RegencyScope) (CandidateMatch, error)
+	LinkSlot(ctx context.Context, actor auth.Principal, input LinkSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
+}
+
 type Service struct {
-	mediaRepository    mediaRepository
-	posMesinRepository posMesinRepository
-	storage            media.Storage
+	mediaRepository      mediaRepository
+	posMesinRepository   posMesinRepository
+	posDokumenRepository posDokumenRepository
+	storage              media.Storage
 }
 
 func NewService(repository any, storage ...media.Storage) *Service {
 	service := &Service{}
 	service.mediaRepository, _ = repository.(mediaRepository)
 	service.posMesinRepository, _ = repository.(posMesinRepository)
+	service.posDokumenRepository, _ = repository.(posDokumenRepository)
 	if len(storage) > 0 {
 		service.storage = storage[0]
 	}
@@ -61,6 +68,44 @@ func (s *Service) CreateSlot(ctx context.Context, actor auth.Principal, input Cr
 		return DistributionSlot{}, errors.New("distribution POS Mesin is unavailable")
 	}
 	return s.posMesinRepository.CreateSlot(ctx, actor, input, meta)
+}
+
+func (s *Service) SearchCandidate(ctx context.Context, scheduleID, nik string, scope auth.RegencyScope) (CandidateMatch, error) {
+	scheduleID, nik = strings.TrimSpace(scheduleID), stripNonDigits.ReplaceAllString(nik, "")
+	if scheduleID == "" {
+		return CandidateMatch{}, ErrScheduleRequired
+	}
+	if len(nik) != 16 {
+		return CandidateMatch{}, ErrNIKInvalid
+	}
+	if s.posDokumenRepository == nil {
+		return CandidateMatch{}, errors.New("distribution POS Dokumen is unavailable")
+	}
+	return s.posDokumenRepository.SearchCandidate(ctx, scheduleID, nik, scope)
+}
+
+func (s *Service) LinkSlot(ctx context.Context, actor auth.Principal, input LinkSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
+	input.ScheduleID = strings.TrimSpace(input.ScheduleID)
+	if input.ScheduleID == "" {
+		return DistributionSlot{}, ErrScheduleRequired
+	}
+	if input.SlotNumber <= 0 {
+		return DistributionSlot{}, ErrSlotNumberRequired
+	}
+	input.NIK = stripNonDigits.ReplaceAllString(input.NIK, "")
+	if len(input.NIK) != 16 {
+		return DistributionSlot{}, ErrNIKInvalid
+	}
+	input.Address = strings.TrimSpace(input.Address)
+	input.Village = strings.TrimSpace(input.Village)
+	input.District = strings.TrimSpace(input.District)
+	input.PhoneNumber = stripNonDigits.ReplaceAllString(input.PhoneNumber, "")
+	input.SectorIdentifier = normalizeIdentifier(input.SectorIdentifier)
+	input.IdentityChangeReason = strings.TrimSpace(input.IdentityChangeReason)
+	if s.posDokumenRepository == nil {
+		return DistributionSlot{}, errors.New("distribution POS Dokumen is unavailable")
+	}
+	return s.posDokumenRepository.LinkSlot(ctx, actor, input, meta, scope)
 }
 
 func maskNIK(value string) string {
