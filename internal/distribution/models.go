@@ -9,8 +9,6 @@ import (
 var (
 	ErrScheduleRequired             = errors.New("distribution schedule is required")
 	ErrQueryRequired                = errors.New("recipient search query is required")
-	ErrQueryTooShort                = errors.New("recipient name search requires at least two characters")
-	ErrAllocationNotFound           = errors.New("distribution allocation not found")
 	ErrNIKInvalid                   = errors.New("NIK must contain 16 digits")
 	ErrIdentityChangeReasonRequired = errors.New("identity change reason is required")
 	ErrIdentifierConflict           = errors.New("recipient identifier is already in use")
@@ -26,6 +24,11 @@ var (
 	ErrDocumentationIncomplete      = errors.New("required documentation is incomplete")
 	ErrPreviouslyReceived           = errors.New("recipient has previously received a package")
 	ErrAlreadyCompleted             = errors.New("distribution is already completed")
+	ErrSlotNotFound                 = errors.New("distribution slot not found")
+	ErrSlotNotOpen                  = errors.New("distribution slot is not open")
+	ErrSlotNotLinked                = errors.New("distribution slot is not linked to a recipient")
+	ErrCandidateNotFound            = errors.New("no unlinked DCP3 candidate matches this NIK for this schedule")
+	ErrSlotNumberRequired           = errors.New("slot_number is required")
 )
 
 type SlotSummary struct {
@@ -42,76 +45,27 @@ type SlotSummary struct {
 	RequireCapturedAt bool        `json:"require_captured_at,omitempty"`
 }
 
-type SearchRecord struct {
-	AllocationID       string
-	DistributionNumber int
-	FullName           string
-	NIK                string
-	Location           string
-	ProgramType        string
-	Eligibility        string
-	AllocationStatus   string
-	Documentation      []SlotSummary
+type DistributionSlot struct {
+	ID                    string        `json:"id"`
+	ScheduleID            string        `json:"schedule_id"`
+	SlotNumber            int           `json:"slot_number"`
+	Status                string        `json:"status"`
+	AllocationID          *string       `json:"allocation_id,omitempty"`
+	FullName              string        `json:"full_name,omitempty"`
+	NIK                   string        `json:"nik,omitempty"`
+	MachineOptionCode     string        `json:"machine_option_code,omitempty"`
+	MachineSerialNumber   string        `json:"machine_serial_number,omitempty"`
+	HoseOptionCode        string        `json:"hose_option_code,omitempty"`
+	HoseSerialNumber      string        `json:"hose_serial_number,omitempty"`
+	ConverterSerialNumber string        `json:"converter_serial_number,omitempty"`
+	Documentation         []SlotSummary `json:"documentation"`
+	DistributedAt         *time.Time    `json:"distributed_at,omitempty"`
+	CreatedAt             time.Time     `json:"created_at"`
+	UpdatedAt             time.Time     `json:"updated_at"`
 }
 
-type SearchResult struct {
-	AllocationID       string        `json:"allocation_id"`
-	DistributionNumber int           `json:"distribution_number"`
-	FullName           string        `json:"full_name"`
-	MaskedNIK          string        `json:"masked_nik"`
-	Location           string        `json:"location"`
-	ProgramType        string        `json:"program_type"`
-	Eligibility        string        `json:"eligibility"`
-	AllocationStatus   string        `json:"allocation_status"`
-	Documentation      []SlotSummary `json:"documentation"`
-}
-
-type ReceiptHistory struct {
-	CompletedAt time.Time `json:"completed_at"`
-	Regency     string    `json:"regency"`
-	Program     string    `json:"program"`
-	BASTNumber  string    `json:"bast_number,omitempty"`
-}
-
-type RecipientWorkspace struct {
-	AllocationID         string           `json:"allocation_id"`
-	DistributionID       string           `json:"distribution_id"`
-	ScheduleID           string           `json:"schedule_id"`
-	DistributionNumber   int              `json:"distribution_number"`
-	AllocationStatus     string           `json:"allocation_status"`
-	DistributionStatus   string           `json:"distribution_status"`
-	ProgramType          string           `json:"program_type"`
-	ProgramName          string           `json:"program_name"`
-	RegencyName          string           `json:"regency_name"`
-	FullName             string           `json:"full_name"`
-	NIK                  string           `json:"nik,omitempty"`
-	SectorIdentifier     string           `json:"sector_identifier,omitempty"`
-	SectorIdentifierType string           `json:"sector_identifier_type,omitempty"`
-	Address              string           `json:"address,omitempty"`
-	Village              string           `json:"village,omitempty"`
-	District             string           `json:"district,omitempty"`
-	PhoneNumber          string           `json:"phone_number,omitempty"`
-	MachineOptionCode    string           `json:"machine_option_code,omitempty"`
-	MachineSerialNumber  string           `json:"machine_serial_number,omitempty"`
-	HoseOptionCode       string           `json:"hose_option_code,omitempty"`
-	HoseSerialNumber     string           `json:"hose_serial_number,omitempty"`
-	ConverterSerialNumber string          `json:"converter_serial_number,omitempty"`
-	Eligibility          string           `json:"eligibility"`
-	EligibilityReasons   []string         `json:"eligibility_reasons"`
-	SourceSnapshot       map[string]any   `json:"source_snapshot"`
-	PackageSnapshot      map[string]any   `json:"package_snapshot"`
-	ReceiptHistory       []ReceiptHistory `json:"receipt_history"`
-	Documentation        []SlotSummary    `json:"documentation"`
-}
-
-type DraftInput struct {
-	NIK                   string `json:"nik"`
-	Address               string `json:"address"`
-	Village               string `json:"village"`
-	District              string `json:"district"`
-	PhoneNumber           string `json:"phone_number"`
-	SectorIdentifier      string `json:"sector_identifier"`
-	IdentityChangeReason  string `json:"identity_change_reason"`
+type CreateSlotInput struct {
+	ScheduleID            string `json:"schedule_id"`
 	MachineOptionCode     string `json:"machine_option_code"`
 	MachineSerialNumber   string `json:"machine_serial_number"`
 	HoseOptionCode        string `json:"hose_option_code"`
@@ -119,11 +73,34 @@ type DraftInput struct {
 	ConverterSerialNumber string `json:"converter_serial_number"`
 }
 
-type DistributionRecord struct {
-	ID           string    `json:"id"`
-	AllocationID string    `json:"allocation_id"`
-	Status       string    `json:"status"`
-	CompletedAt  time.Time `json:"completed_at"`
+type CandidateMatch struct {
+	AllocationID         string `json:"allocation_id"`
+	FullName             string `json:"full_name"`
+	NIK                  string `json:"nik"`
+	SectorIdentifier     string `json:"sector_identifier"`
+	SectorIdentifierType string `json:"sector_identifier_type"`
+	Address              string `json:"address"`
+	Village              string `json:"village"`
+	District             string `json:"district"`
+	PhoneNumber          string `json:"phone_number"`
+	ProgramType          string `json:"program_type"`
+}
+
+type LinkSlotInput struct {
+	ScheduleID           string `json:"schedule_id"`
+	SlotNumber           int    `json:"slot_number"`
+	NIK                  string `json:"nik"`
+	Address              string `json:"address"`
+	Village              string `json:"village"`
+	District             string `json:"district"`
+	PhoneNumber          string `json:"phone_number"`
+	SectorIdentifier     string `json:"sector_identifier"`
+	IdentityChangeReason string `json:"identity_change_reason"`
+}
+
+type CompleteSlotInput struct {
+	ScheduleID string `json:"schedule_id"`
+	SlotNumber int    `json:"slot_number"`
 }
 
 type MediaSlot struct {
