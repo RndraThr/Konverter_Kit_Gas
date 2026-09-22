@@ -457,7 +457,7 @@ func (r *Repository) CompleteSlot(ctx context.Context, actor auth.Principal, inp
 		LEFT JOIN people p ON p.id = ds.recipient_person_id
 		LEFT JOIN LATERAL (SELECT normalized_value FROM person_sector_identifiers WHERE person_id = p.id LIMIT 1) psi ON true
 		WHERE ds.schedule_id=$1 AND ds.slot_number=$2 AND ($3 OR ps.regency_id::text = ANY($4))
-		FOR UPDATE OF ds, pa, p
+		FOR UPDATE OF ds
 	`, input.ScheduleID, input.SlotNumber, scope.Unrestricted, scope.RegencyIDs).Scan(&slotID, &status, &allocationIDPtr, &personIDPtr, &fullName, &nik, &sectorIdentifier)
 	// pa and p are LEFT JOINed (not INNER JOINed) because a freshly-created 'open' slot has
 	// NULL allocation_id/recipient_person_id — an INNER JOIN would silently drop that row before
