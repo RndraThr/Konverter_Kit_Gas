@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"konkit/internal/audit"
 	"konkit/internal/auth"
@@ -414,6 +415,99 @@ func (r *Repository) LinkSlot(ctx context.Context, actor auth.Principal, input L
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return DistributionSlot{}, fmt.Errorf("commit link slot: %w", err)
+	}
+	return r.getSlotByID(ctx, slotID)
+}
+
+func (r *Repository) SearchLinkedSlot(ctx context.Context, scheduleID, query string, scope auth.RegencyScope) (DistributionSlot, error) {
+	digits := stripNonDigits.ReplaceAllString(query, "")
+	var id string
+	err := r.pool.QueryRow(ctx, `
+		SELECT ds.id::text FROM distribution_slots ds
+		JOIN program_schedules ps ON ps.id = ds.schedule_id
+		LEFT JOIN people p ON p.id = ds.recipient_person_id
+		WHERE ds.schedule_id=$1 AND ds.status='linked' AND ($4 OR ps.regency_id::text = ANY($5))
+			AND (ds.slot_number::text = $2 OR (p.nik IS NOT NULL AND p.nik = NULLIF($3,'')))
+		LIMIT 1
+	`, scheduleID, query, digits, scope.Unrestricted, scope.RegencyIDs).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return DistributionSlot{}, ErrSlotNotFound
+	}
+	if err != nil {
+		return DistributionSlot{}, fmt.Errorf("search linked slot: %w", err)
+	}
+	return r.getSlotByID(ctx, id)
+}
+
+func (r *Repository) CompleteSlot(ctx context.Context, actor auth.Principal, input CompleteSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return DistributionSlot{}, fmt.Errorf("begin complete slot: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var slotID, status, allocationID, personID string
+	var fullName, nik, sectorIdentifier string
+	err = tx.QueryRow(ctx, `
+		SELECT ds.id::text, ds.status, pa.id::text, p.id::text, p.full_name, COALESCE(p.nik,''), COALESCE(psi.normalized_value,'')
+		FROM distribution_slots ds
+		JOIN program_schedules ps ON ps.id = ds.schedule_id
+		JOIN package_allocations pa ON pa.id = ds.allocation_id
+		JOIN people p ON p.id = ds.recipient_person_id
+		LEFT JOIN LATERAL (SELECT normalized_value FROM person_sector_identifiers WHERE person_id = p.id LIMIT 1) psi ON true
+		WHERE ds.schedule_id=$1 AND ds.slot_number=$2 AND ($3 OR ps.regency_id::text = ANY($4))
+		FOR UPDATE OF ds, pa, p
+	`, input.ScheduleID, input.SlotNumber, scope.Unrestricted, scope.RegencyIDs).Scan(&slotID, &status, &allocationID, &personID, &fullName, &nik, &sectorIdentifier)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return DistributionSlot{}, ErrSlotNotFound
+	}
+	if err != nil {
+		return DistributionSlot{}, fmt.Errorf("lock distribution slot: %w", err)
+	}
+	if status == "completed" {
+		return DistributionSlot{}, ErrAlreadyCompleted
+	}
+	if status != "linked" {
+		return DistributionSlot{}, ErrSlotNotLinked
+	}
+	if strings.TrimSpace(fullName) == "" || len(nik) != 16 || sectorIdentifier == "" {
+		return DistributionSlot{}, ErrIdentityIncomplete
+	}
+
+	var previouslyReceived bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM distribution_slots WHERE recipient_person_id=$1 AND status='completed' AND id<>$2)`, personID, slotID).Scan(&previouslyReceived); err != nil {
+		return DistributionSlot{}, fmt.Errorf("check previously received: %w", err)
+	}
+	if previouslyReceived {
+		return DistributionSlot{}, ErrPreviouslyReceived
+	}
+
+	var incomplete bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM documentation_slots ds
+			LEFT JOIN (SELECT documentation_slot_id, count(*) AS accepted FROM media_files WHERE status='accepted' GROUP BY documentation_slot_id) m ON m.documentation_slot_id = ds.id
+			WHERE ds.distribution_slot_id=$1 AND ds.is_required AND COALESCE(m.accepted,0) < ds.min_files
+		)
+	`, slotID).Scan(&incomplete); err != nil {
+		return DistributionSlot{}, fmt.Errorf("check documentation completeness: %w", err)
+	}
+	if incomplete {
+		return DistributionSlot{}, ErrDocumentationIncomplete
+	}
+
+	if _, err := tx.Exec(ctx, `UPDATE package_allocations SET actual_recipient_person_id=$2, status='distributed', updated_at=now() WHERE id=$1`, allocationID, personID); err != nil {
+		return DistributionSlot{}, fmt.Errorf("update package allocation: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE distribution_slots SET status='completed', distributed_at=now(), distributed_by=$2, completed_at=now(), updated_at=now() WHERE id=$1`, slotID, actor.UserID); err != nil {
+		return DistributionSlot{}, fmt.Errorf("complete distribution slot: %w", err)
+	}
+
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "distribution.slot_completed", ResourceType: "distribution_slot", ResourceID: slotID, Metadata: map[string]any{"allocation_id": allocationID, "person_id": personID}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+		return DistributionSlot{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return DistributionSlot{}, fmt.Errorf("commit complete slot: %w", err)
 	}
 	return r.getSlotByID(ctx, slotID)
 }

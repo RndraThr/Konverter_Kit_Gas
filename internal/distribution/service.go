@@ -36,11 +36,17 @@ type posDokumenRepository interface {
 	LinkSlot(ctx context.Context, actor auth.Principal, input LinkSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
 }
 
+type posPenyerahanRepository interface {
+	SearchLinkedSlot(ctx context.Context, scheduleID, query string, scope auth.RegencyScope) (DistributionSlot, error)
+	CompleteSlot(ctx context.Context, actor auth.Principal, input CompleteSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
+}
+
 type Service struct {
-	mediaRepository      mediaRepository
-	posMesinRepository   posMesinRepository
-	posDokumenRepository posDokumenRepository
-	storage              media.Storage
+	mediaRepository         mediaRepository
+	posMesinRepository      posMesinRepository
+	posDokumenRepository    posDokumenRepository
+	posPenyerahanRepository posPenyerahanRepository
+	storage                 media.Storage
 }
 
 func NewService(repository any, storage ...media.Storage) *Service {
@@ -48,6 +54,7 @@ func NewService(repository any, storage ...media.Storage) *Service {
 	service.mediaRepository, _ = repository.(mediaRepository)
 	service.posMesinRepository, _ = repository.(posMesinRepository)
 	service.posDokumenRepository, _ = repository.(posDokumenRepository)
+	service.posPenyerahanRepository, _ = repository.(posPenyerahanRepository)
 	if len(storage) > 0 {
 		service.storage = storage[0]
 	}
@@ -106,6 +113,34 @@ func (s *Service) LinkSlot(ctx context.Context, actor auth.Principal, input Link
 		return DistributionSlot{}, errors.New("distribution POS Dokumen is unavailable")
 	}
 	return s.posDokumenRepository.LinkSlot(ctx, actor, input, meta, scope)
+}
+
+func (s *Service) SearchLinkedSlot(ctx context.Context, scheduleID, query string, scope auth.RegencyScope) (DistributionSlot, error) {
+	scheduleID, query = strings.TrimSpace(scheduleID), strings.TrimSpace(query)
+	if scheduleID == "" {
+		return DistributionSlot{}, ErrScheduleRequired
+	}
+	if query == "" {
+		return DistributionSlot{}, ErrQueryRequired
+	}
+	if s.posPenyerahanRepository == nil {
+		return DistributionSlot{}, errors.New("distribution POS Penyerahan is unavailable")
+	}
+	return s.posPenyerahanRepository.SearchLinkedSlot(ctx, scheduleID, query, scope)
+}
+
+func (s *Service) CompleteSlot(ctx context.Context, actor auth.Principal, input CompleteSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
+	input.ScheduleID = strings.TrimSpace(input.ScheduleID)
+	if input.ScheduleID == "" {
+		return DistributionSlot{}, ErrScheduleRequired
+	}
+	if input.SlotNumber <= 0 {
+		return DistributionSlot{}, ErrSlotNumberRequired
+	}
+	if s.posPenyerahanRepository == nil {
+		return DistributionSlot{}, errors.New("distribution POS Penyerahan is unavailable")
+	}
+	return s.posPenyerahanRepository.CompleteSlot(ctx, actor, input, meta, scope)
 }
 
 func maskNIK(value string) string {
