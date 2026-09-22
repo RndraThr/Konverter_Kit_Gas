@@ -174,6 +174,12 @@ func uniqueViolationConstraint(err error) (string, bool) {
 	return "", false
 }
 
+// packageAllocationsScheduleDistributionNumberUniqueIndex is the auto-generated name of
+// package_allocations' UNIQUE (schedule_id, distribution_number) constraint. It has nothing to do
+// with a recipient's NIK or sector identifier, so a violation of it must not be reported as
+// ErrIdentifierConflict.
+const packageAllocationsScheduleDistributionNumberUniqueIndex = "package_allocations_schedule_id_distribution_number_key"
+
 func (r *Repository) CreateSlot(ctx context.Context, actor auth.Principal, input CreateSlotInput, meta auth.ClientMeta) (DistributionSlot, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -391,8 +397,11 @@ func (r *Repository) LinkSlot(ctx context.Context, actor auth.Principal, input L
 	}
 
 	if _, err := tx.Exec(ctx, `UPDATE package_allocations SET distribution_number=$2, status='ready', updated_at=now() WHERE id=$1`, allocationID, input.SlotNumber); err != nil {
-		if code, ok := uniqueViolationConstraint(err); ok && code != "" {
-			return DistributionSlot{}, ErrIdentifierConflict
+		if constraint, ok := uniqueViolationConstraint(err); ok && constraint == packageAllocationsScheduleDistributionNumberUniqueIndex {
+			// This constraint is (schedule_id, distribution_number), not an identifier — the slot's own
+			// FOR UPDATE lock above should make this unreachable in normal operation, so treat it as an
+			// unexpected infrastructure-level failure rather than a user-facing identifier conflict.
+			return DistributionSlot{}, fmt.Errorf("distribution number %d already allocated for schedule %s: %w", input.SlotNumber, input.ScheduleID, err)
 		}
 		return DistributionSlot{}, fmt.Errorf("update package allocation: %w", err)
 	}
