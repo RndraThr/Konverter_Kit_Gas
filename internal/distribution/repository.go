@@ -446,18 +446,25 @@ func (r *Repository) CompleteSlot(ctx context.Context, actor auth.Principal, inp
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	var slotID, status, allocationID, personID string
+	var slotID, status string
+	var allocationIDPtr, personIDPtr *string
 	var fullName, nik, sectorIdentifier string
 	err = tx.QueryRow(ctx, `
-		SELECT ds.id::text, ds.status, pa.id::text, p.id::text, p.full_name, COALESCE(p.nik,''), COALESCE(psi.normalized_value,'')
+		SELECT ds.id::text, ds.status, pa.id::text, p.id::text, COALESCE(p.full_name,''), COALESCE(p.nik,''), COALESCE(psi.normalized_value,'')
 		FROM distribution_slots ds
 		JOIN program_schedules ps ON ps.id = ds.schedule_id
-		JOIN package_allocations pa ON pa.id = ds.allocation_id
-		JOIN people p ON p.id = ds.recipient_person_id
+		LEFT JOIN package_allocations pa ON pa.id = ds.allocation_id
+		LEFT JOIN people p ON p.id = ds.recipient_person_id
 		LEFT JOIN LATERAL (SELECT normalized_value FROM person_sector_identifiers WHERE person_id = p.id LIMIT 1) psi ON true
 		WHERE ds.schedule_id=$1 AND ds.slot_number=$2 AND ($3 OR ps.regency_id::text = ANY($4))
 		FOR UPDATE OF ds, pa, p
-	`, input.ScheduleID, input.SlotNumber, scope.Unrestricted, scope.RegencyIDs).Scan(&slotID, &status, &allocationID, &personID, &fullName, &nik, &sectorIdentifier)
+	`, input.ScheduleID, input.SlotNumber, scope.Unrestricted, scope.RegencyIDs).Scan(&slotID, &status, &allocationIDPtr, &personIDPtr, &fullName, &nik, &sectorIdentifier)
+	// pa and p are LEFT JOINed (not INNER JOINed) because a freshly-created 'open' slot has
+	// NULL allocation_id/recipient_person_id — an INNER JOIN would silently drop that row before
+	// the WHERE clause or FOR UPDATE lock ever apply, turning a legitimate ErrSlotNotLinked case
+	// into a misleading ErrSlotNotFound. We must lock+fetch the slot row regardless of link state,
+	// decide ErrSlotNotFound/ErrAlreadyCompleted/ErrSlotNotLinked from ds.status alone, and only
+	// dereference allocationIDPtr/personIDPtr once status=='linked' guarantees they are non-null.
 	if errors.Is(err, pgx.ErrNoRows) {
 		return DistributionSlot{}, ErrSlotNotFound
 	}
@@ -470,6 +477,10 @@ func (r *Repository) CompleteSlot(ctx context.Context, actor auth.Principal, inp
 	if status != "linked" {
 		return DistributionSlot{}, ErrSlotNotLinked
 	}
+	if allocationIDPtr == nil || personIDPtr == nil {
+		return DistributionSlot{}, fmt.Errorf("linked distribution slot %s is missing its allocation or recipient link", slotID)
+	}
+	allocationID, personID := *allocationIDPtr, *personIDPtr
 	if strings.TrimSpace(fullName) == "" || len(nik) != 16 || sectorIdentifier == "" {
 		return DistributionSlot{}, ErrIdentityIncomplete
 	}
