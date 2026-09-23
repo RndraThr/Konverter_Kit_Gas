@@ -1,9 +1,11 @@
 .page { --green: #2f713b; --green-soft: #edf6ed; --blue: #24718b; --amber: #9a6817; --red: #a64138; min-width: 0; overflow-x: clip; }
 .context { display: inline-flex; align-items: center; gap: 9px; color: var(--dashboard-muted); font-size: 12px; font-weight: 700; }
 .context strong { display: grid; width: 38px; height: 28px; place-items: center; border: 1px solid #d5bd7f; border-radius: 4px; color: #745718; background: #fffaf0; }
-.lookup { display: grid; grid-template-columns: minmax(230px, .72fr) minmax(400px, 1.7fr); align-items: end; gap: 16px; padding: 18px 0 24px; border-top: 1px solid var(--dashboard-line); border-bottom: 1px solid var(--dashboard-line); }
+.lookup { display: grid; grid-template-columns: minmax(230px, .5fr) minmax(320px, 1fr); align-items: end; gap: 16px; padding: 18px 0 24px; border-top: 1px solid var(--dashboard-line); border-bottom: 1px solid var(--dashboard-line); }
 .scheduleField { display: grid; min-width: 0; gap: 7px; }
-.searchArea { position: relative; min-width: 0; }
+.searchArea { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.lookupActions { display: flex; gap: 10px; }
+.slotSections { display: grid; gap: 20px; margin-top: 28px; }
 .searchField { height: 45px; display: flex; align-items: center; gap: 9px; padding: 0 12px; border: 1px solid #aab9aa; border-radius: 6px; background: white; }
 .searchField:focus-within { outline: 2px solid var(--dashboard-focus); outline-offset: 1px; }
 .searchField svg { width: 18px; color: var(--green); }
