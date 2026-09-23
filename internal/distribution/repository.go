@@ -416,14 +416,14 @@ func (r *Repository) LinkSlot(ctx context.Context, actor auth.Principal, input L
 	return r.getSlotByID(ctx, slotID)
 }
 
-func (r *Repository) SearchLinkedSlot(ctx context.Context, scheduleID, query string, scope auth.RegencyScope) (DistributionSlot, error) {
+func (r *Repository) SearchSlot(ctx context.Context, scheduleID, query string, scope auth.RegencyScope) (DistributionSlot, error) {
 	digits := stripNonDigits.ReplaceAllString(query, "")
 	var id string
 	err := r.pool.QueryRow(ctx, `
 		SELECT ds.id::text FROM distribution_slots ds
 		JOIN program_schedules ps ON ps.id = ds.schedule_id
 		LEFT JOIN people p ON p.id = ds.recipient_person_id
-		WHERE ds.schedule_id=$1 AND ds.status='linked' AND ($4 OR ps.regency_id::text = ANY($5))
+		WHERE ds.schedule_id=$1 AND ($4 OR ps.regency_id::text = ANY($5))
 			AND (ds.slot_number::text = $2 OR (p.nik IS NOT NULL AND p.nik = NULLIF($3,'')))
 		LIMIT 1
 	`, scheduleID, query, digits, scope.Unrestricted, scope.RegencyIDs).Scan(&id)
@@ -431,7 +431,7 @@ func (r *Repository) SearchLinkedSlot(ctx context.Context, scheduleID, query str
 		return DistributionSlot{}, ErrSlotNotFound
 	}
 	if err != nil {
-		return DistributionSlot{}, fmt.Errorf("search linked slot: %w", err)
+		return DistributionSlot{}, fmt.Errorf("search slot: %w", err)
 	}
 	return r.getSlotByID(ctx, id)
 }

@@ -37,7 +37,7 @@ type posDokumenRepository interface {
 }
 
 type posPenyerahanRepository interface {
-	SearchLinkedSlot(ctx context.Context, scheduleID, query string, scope auth.RegencyScope) (DistributionSlot, error)
+	SearchSlot(ctx context.Context, scheduleID, query string, scope auth.RegencyScope) (DistributionSlot, error)
 	CompleteSlot(ctx context.Context, actor auth.Principal, input CompleteSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
 }
 
@@ -114,7 +114,7 @@ func (s *Service) LinkSlot(ctx context.Context, actor auth.Principal, input Link
 	return s.posDokumenRepository.LinkSlot(ctx, actor, input, meta, scope)
 }
 
-func (s *Service) SearchLinkedSlot(ctx context.Context, scheduleID, query string, scope auth.RegencyScope) (DistributionSlot, error) {
+func (s *Service) SearchSlot(ctx context.Context, scheduleID, query string, scope auth.RegencyScope) (DistributionSlot, error) {
 	scheduleID, query = strings.TrimSpace(scheduleID), strings.TrimSpace(query)
 	if scheduleID == "" {
 		return DistributionSlot{}, ErrScheduleRequired
@@ -125,7 +125,7 @@ func (s *Service) SearchLinkedSlot(ctx context.Context, scheduleID, query string
 	if s.posPenyerahanRepository == nil {
 		return DistributionSlot{}, errors.New("distribution POS Penyerahan is unavailable")
 	}
-	return s.posPenyerahanRepository.SearchLinkedSlot(ctx, scheduleID, query, scope)
+	return s.posPenyerahanRepository.SearchSlot(ctx, scheduleID, query, scope)
 }
 
 func (s *Service) CompleteSlot(ctx context.Context, actor auth.Principal, input CompleteSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {

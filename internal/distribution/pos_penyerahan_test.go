@@ -15,7 +15,7 @@ type penyerahanRepositoryStub struct {
 	completeErr error
 }
 
-func (r *penyerahanRepositoryStub) SearchLinkedSlot(_ context.Context, _, _ string, _ auth.RegencyScope) (DistributionSlot, error) {
+func (r *penyerahanRepositoryStub) SearchSlot(_ context.Context, _, _ string, _ auth.RegencyScope) (DistributionSlot, error) {
 	return r.found, r.searchErr
 }
 func (r *penyerahanRepositoryStub) CompleteSlot(_ context.Context, _ auth.Principal, _ CompleteSlotInput, _ auth.ClientMeta, _ auth.RegencyScope) (DistributionSlot, error) {

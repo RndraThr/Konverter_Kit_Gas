@@ -91,14 +91,14 @@ func (h *Handler) handleDistributionSlotSearch(w http.ResponseWriter, r *http.Re
 		methodNotAllowed(w, http.MethodGet)
 		return
 	}
-	if !h.authorize(w, r, rc.principal, "distribution.pos_penyerahan") {
+	if !h.authorize(w, r, rc.principal, "distribution.view") {
 		return
 	}
 	scope, ok := h.regencyScope(w, r, rc.principal)
 	if !ok {
 		return
 	}
-	result, err := h.deps.Distribution.SearchLinkedSlot(r.Context(), r.URL.Query().Get("schedule_id"), r.URL.Query().Get("q"), scope)
+	result, err := h.deps.Distribution.SearchSlot(r.Context(), r.URL.Query().Get("schedule_id"), r.URL.Query().Get("q"), scope)
 	if err != nil {
 		writeServiceError(w, err)
 		return

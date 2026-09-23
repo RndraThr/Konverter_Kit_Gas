@@ -91,7 +91,7 @@ type DistributionService interface {
 	CreateSlot(context.Context, auth.Principal, distribution.CreateSlotInput, auth.ClientMeta) (distribution.DistributionSlot, error)
 	SearchCandidate(context.Context, string, string, auth.RegencyScope) (distribution.CandidateMatch, error)
 	LinkSlot(context.Context, auth.Principal, distribution.LinkSlotInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
-	SearchLinkedSlot(context.Context, string, string, auth.RegencyScope) (distribution.DistributionSlot, error)
+	SearchSlot(context.Context, string, string, auth.RegencyScope) (distribution.DistributionSlot, error)
 	CompleteSlot(context.Context, auth.Principal, distribution.CompleteSlotInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
 	UploadMedia(context.Context, auth.Principal, distribution.UploadMediaInput, auth.ClientMeta, auth.RegencyScope) (distribution.MediaFile, error)
 	DeleteMedia(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) error

@@ -476,15 +476,18 @@ func TestDistributionSlotLinkRequiresPosDokumenAndForwardsSlotNumber(t *testing.
 	}
 }
 
-func TestDistributionSlotSearchRequiresPosPenyerahan(t *testing.T) {
+func TestDistributionSlotSearchRequiresDistributionView(t *testing.T) {
 	service := &fakeDistributionService{searchedSlot: distribution.DistributionSlot{ID: "slot-1", ScheduleID: "schedule-1", SlotNumber: 5, Status: "linked"}}
-	operator := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_penyerahan": true}}
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/distribution/slots/search?schedule_id=schedule-1&q=Siti", nil)
-	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
-	rec := httptest.NewRecorder()
-	NewHandler(Dependencies{Auth: operator, Distribution: service}).ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK || service.searchScheduleID != "schedule-1" || service.searchQuery != "Siti" {
-		t.Fatalf("status=%d schedule=%q query=%q body=%s", rec.Code, service.searchScheduleID, service.searchQuery, rec.Body.String())
+
+	// distribution.pos_penyerahan alone no longer suffices: the lookup is now
+	// gated on the broader distribution.view permission.
+	posPenyerahanOnly := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_penyerahan": true}}
+	posPenyerahanReq := httptest.NewRequest(http.MethodGet, "/api/v1/distribution/slots/search?schedule_id=schedule-1&q=Siti", nil)
+	posPenyerahanReq.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	posPenyerahanRecorder := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: posPenyerahanOnly, Distribution: service}).ServeHTTP(posPenyerahanRecorder, posPenyerahanReq)
+	if posPenyerahanRecorder.Code != http.StatusForbidden {
+		t.Fatalf("pos_penyerahan-only status=%d body=%s", posPenyerahanRecorder.Code, posPenyerahanRecorder.Body.String())
 	}
 
 	denied := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{}}
@@ -494,6 +497,24 @@ func TestDistributionSlotSearchRequiresPosPenyerahan(t *testing.T) {
 	NewHandler(Dependencies{Auth: denied, Distribution: service}).ServeHTTP(deniedRecorder, deniedReq)
 	if deniedRecorder.Code != http.StatusForbidden {
 		t.Fatalf("denied status=%d body=%s", deniedRecorder.Code, deniedRecorder.Body.String())
+	}
+}
+
+func TestDistributionSlotSearchAllowsViewOnlyPermissionAndAnyStatus(t *testing.T) {
+	// The behavior change this task exists to make: a caller with only
+	// distribution.view (no distribution.pos_penyerahan) can look up a slot
+	// of any status, not just "linked".
+	service := &fakeDistributionService{searchedSlot: distribution.DistributionSlot{ID: "slot-1", ScheduleID: "schedule-1", SlotNumber: 5, Status: "completed"}}
+	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.view": true}}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/distribution/slots/search?schedule_id=schedule-1&q=Siti", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: viewer, Distribution: service}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || service.searchScheduleID != "schedule-1" || service.searchQuery != "Siti" {
+		t.Fatalf("status=%d schedule=%q query=%q body=%s", rec.Code, service.searchScheduleID, service.searchQuery, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"status":"completed"`) {
+		t.Fatalf("expected non-linked status in body: %s", rec.Body.String())
 	}
 }
 
@@ -795,7 +816,7 @@ func (f *fakeDistributionService) LinkSlot(_ context.Context, _ auth.Principal, 
 	f.linkInput, f.seenRegencyScope = input, scope
 	return f.linkedSlot, f.linkErr
 }
-func (f *fakeDistributionService) SearchLinkedSlot(_ context.Context, scheduleID, query string, scope auth.RegencyScope) (distribution.DistributionSlot, error) {
+func (f *fakeDistributionService) SearchSlot(_ context.Context, scheduleID, query string, scope auth.RegencyScope) (distribution.DistributionSlot, error) {
 	f.searchScheduleID, f.searchQuery, f.seenRegencyScope = scheduleID, query, scope
 	return f.searchedSlot, f.searchErr
 }
