@@ -12,7 +12,7 @@ vi.mock('../../lib/api', () => ({ apiRequest: vi.fn() }));
 function renderSlot(files: MediaFile[] = []) {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   return render(<QueryClientProvider client={client}><PermissionsProvider permissions={['documentation.manage']}><DocumentationSlot slot={{
-    id: 'slot-1', code: 'signed_bast', label: 'BAST bertanda tangan', status: 'missing', required: true, min_files: 1, max_files: 2, files,
+    id: 'slot-1', code: 'signed_bast', label: 'BAST bertanda tangan', stage: 'penyerahan', status: 'missing', required: true, min_files: 1, max_files: 2, files,
   }} onChanged={vi.fn()} /></PermissionsProvider></QueryClientProvider>);
 }
 
