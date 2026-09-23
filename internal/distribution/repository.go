@@ -226,11 +226,13 @@ func (r *Repository) CreateSlot(ctx context.Context, actor auth.Principal, input
 
 func (r *Repository) getSlotByID(ctx context.Context, id string) (DistributionSlot, error) {
 	var slot DistributionSlot
-	var machineOption, machineSerial, hoseOption, hoseSerial, converterSerial *string
+	var machineOption, machineSerial, hoseOption, hoseSerial, converterSerial, fullName, nik *string
 	err := r.pool.QueryRow(ctx, `
-		SELECT id::text, schedule_id::text, slot_number, status, allocation_id::text, machine_option_code, machine_serial_number, hose_option_code, hose_serial_number, converter_serial_number, distributed_at, created_at, updated_at
-		FROM distribution_slots WHERE id=$1
-	`, id).Scan(&slot.ID, &slot.ScheduleID, &slot.SlotNumber, &slot.Status, &slot.AllocationID, &machineOption, &machineSerial, &hoseOption, &hoseSerial, &converterSerial, &slot.DistributedAt, &slot.CreatedAt, &slot.UpdatedAt)
+		SELECT ds.id::text, ds.schedule_id::text, ds.slot_number, ds.status, ds.allocation_id::text, ds.machine_option_code, ds.machine_serial_number, ds.hose_option_code, ds.hose_serial_number, ds.converter_serial_number, ds.distributed_at, ds.created_at, ds.updated_at, p.full_name, p.nik
+		FROM distribution_slots ds
+		LEFT JOIN people p ON p.id = ds.recipient_person_id
+		WHERE ds.id=$1
+	`, id).Scan(&slot.ID, &slot.ScheduleID, &slot.SlotNumber, &slot.Status, &slot.AllocationID, &machineOption, &machineSerial, &hoseOption, &hoseSerial, &converterSerial, &slot.DistributedAt, &slot.CreatedAt, &slot.UpdatedAt, &fullName, &nik)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return DistributionSlot{}, ErrSlotNotFound
 	}
@@ -251,6 +253,12 @@ func (r *Repository) getSlotByID(ctx context.Context, id string) (DistributionSl
 	}
 	if converterSerial != nil {
 		slot.ConverterSerialNumber = *converterSerial
+	}
+	if fullName != nil {
+		slot.FullName = *fullName
+	}
+	if nik != nil {
+		slot.NIK = *nik
 	}
 	slot.Documentation, err = r.listSlotDocumentation(ctx, id)
 	if err != nil {

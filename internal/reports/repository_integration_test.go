@@ -192,7 +192,7 @@ func createReportsFixture(t *testing.T, pool *pgxpool.Pool) reportsFixture {
 		if documentationComplete {
 			slotStatus = "complete"
 		}
-		if _, err := pool.Exec(ctx, `INSERT INTO documentation_slots(distribution_slot_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,status) VALUES($1,'recipient_package','Penerima dan paket',true,1,1,'both',$2)`, distributionID, slotStatus); err != nil {
+		if _, err := pool.Exec(ctx, `INSERT INTO documentation_slots(distribution_slot_id,slot_code,label_snapshot,stage,is_required,min_files,max_files,input_source,status) VALUES($1,'recipient_package','Penerima dan paket','penyerahan',true,1,1,'both',$2)`, distributionID, slotStatus); err != nil {
 			t.Fatal(err)
 		}
 		return personID, nik

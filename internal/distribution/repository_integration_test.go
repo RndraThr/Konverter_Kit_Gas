@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"konkit/internal/auth"
 	"konkit/internal/database"
@@ -298,5 +300,53 @@ func TestDeleteMediaWithinScopeSucceeds(t *testing.T) {
 	}
 	if deleted.Status != "deleted" {
 		t.Fatalf("deleted.Status = %q, want deleted", deleted.Status)
+	}
+}
+
+// TestLinkSlotReturnsRecipientIdentity proves getSlotByID's SELECT (the single read path every
+// mutating POS method returns through) joins distribution_slots -> people on recipient_person_id and
+// surfaces full_name/nik on the returned DistributionSlot. Without that join, DistributionSlot.FullName
+// and .NIK are always empty even after a real link, and SlotDokumenSection's "Terhubung" summary
+// silently renders a blank name/NIK for every linked/completed slot.
+func TestLinkSlotReturnsRecipientIdentity(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	ctx := context.Background()
+
+	var regencyID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan','Identity Test','IDT',true) RETURNING id::text`).Scan(&regencyID))
+	var programID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES('IDT-TEST','Program Test Identity','farmer',2026,'active') RETURNING id::text`).Scan(&programID))
+	var packageTemplateID, docTemplateID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES('PKG-IDT',1,'Paket Test Identity','farmer','{}'::jsonb,'published') RETURNING id::text`).Scan(&packageTemplateID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES('DOC-IDT',1,'Dok Test Identity','farmer','published') RETURNING id::text`).Scan(&docTemplateID))
+	var scheduleID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,distribution_number_padding,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal Test Identity','2026-01-01','2026-12-31','active',4,'{}'::jsonb) RETURNING id::text`, programID, regencyID, packageTemplateID, docTemplateID).Scan(&scheduleID))
+
+	const wantName = "Identity Candidate"
+	// Generated rather than a fixed literal: internal/recipients's integration tests already use
+	// fixed NIKs against the same shared konkit_test database, and go test ./... runs different
+	// packages' tests in parallel by default -- a hardcoded NIK here would intermittently collide
+	// with the unique index on people.nik (see internal/reports/repository_integration_test.go's
+	// insertAllocation for the same rationale).
+	wantNIK := fmt.Sprintf("%016d", time.Now().UnixNano()%1e16)
+	var personID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO people(full_name,nik) VALUES($1,$2) RETURNING id::text`, wantName, wantNIK).Scan(&personID))
+	var nominationID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO candidate_nominations(person_id,program_type,source_snapshot_json,status) VALUES($1,'farmer','{}'::jsonb,'ready') RETURNING id::text`, personID).Scan(&nominationID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,status,package_snapshot_json) VALUES($1,$2,$3,'candidate','{}'::jsonb) RETURNING id::text`, scheduleID, nominationID, personID).Scan(new(string)))
+
+	repo := NewRepository(pool)
+	created, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.ClientMeta{})
+	must(t, err)
+
+	linked, err := repo.LinkSlot(ctx, auth.Principal{}, LinkSlotInput{ScheduleID: scheduleID, SlotNumber: created.SlotNumber, NIK: wantNIK}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if linked.FullName != wantName {
+		t.Fatalf("linked.FullName = %q, want %q", linked.FullName, wantName)
+	}
+	if linked.NIK != wantNIK {
+		t.Fatalf("linked.NIK = %q, want %q", linked.NIK, wantNIK)
 	}
 }

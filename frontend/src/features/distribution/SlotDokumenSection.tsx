@@ -1,5 +1,5 @@
 import { FormEvent, useState } from 'react';
-import { CheckCircle2, Lock, Search, UserCheck } from 'lucide-react';
+import { CheckCircle2, Lock, UserCheck } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { apiRequest, ApiError } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
