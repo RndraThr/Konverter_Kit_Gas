@@ -10,7 +10,6 @@ var (
 	ErrScheduleRequired             = errors.New("distribution schedule is required")
 	ErrQueryRequired                = errors.New("recipient search query is required")
 	ErrNIKInvalid                   = errors.New("NIK must contain 16 digits")
-	ErrIdentityChangeReasonRequired = errors.New("identity change reason is required")
 	ErrIdentifierConflict           = errors.New("recipient identifier is already in use")
 	ErrMediaUnavailable             = errors.New("media storage is unavailable")
 	ErrMediaNotFound                = errors.New("documentation media not found")
@@ -35,6 +34,7 @@ type SlotSummary struct {
 	ID                string      `json:"id,omitempty"`
 	Code              string      `json:"code"`
 	Label             string      `json:"label"`
+	Stage             string      `json:"stage"`
 	Status            string      `json:"status"`
 	Required          bool        `json:"required,omitempty"`
 	MinFiles          int         `json:"min_files,omitempty"`
@@ -87,15 +87,14 @@ type CandidateMatch struct {
 }
 
 type LinkSlotInput struct {
-	ScheduleID           string `json:"schedule_id"`
-	SlotNumber           int    `json:"slot_number"`
-	NIK                  string `json:"nik"`
-	Address              string `json:"address"`
-	Village              string `json:"village"`
-	District             string `json:"district"`
-	PhoneNumber          string `json:"phone_number"`
-	SectorIdentifier     string `json:"sector_identifier"`
-	IdentityChangeReason string `json:"identity_change_reason"`
+	ScheduleID       string `json:"schedule_id"`
+	SlotNumber       int    `json:"slot_number"`
+	NIK              string `json:"nik"`
+	Address          string `json:"address"`
+	Village          string `json:"village"`
+	District         string `json:"district"`
+	PhoneNumber      string `json:"phone_number"`
+	SectorIdentifier string `json:"sector_identifier"`
 }
 
 type CompleteSlotInput struct {

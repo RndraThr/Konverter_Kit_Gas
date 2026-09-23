@@ -92,6 +92,46 @@ func TestCompleteSlotOpenSlotReturnsErrSlotNotLinked(t *testing.T) {
 	}
 }
 
+// TestCreateSlotSnapshotsDocumentationStage proves CreateSlot's snapshot INSERT and
+// listSlotDocumentation's read-back SELECT both carry documentation_template_slots.stage through to
+// SlotSummary.Stage on the live schema, not just that the query compiles.
+func TestCreateSlotSnapshotsDocumentationStage(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	ctx := context.Background()
+
+	var regencyID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan','Stage Test','STG',true) RETURNING id::text`).Scan(&regencyID))
+	var programID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES('STG-TEST','Program Test Stage','farmer',2026,'active') RETURNING id::text`).Scan(&programID))
+	var packageTemplateID, docTemplateID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES('PKG-STG',1,'Paket Test Stage','farmer','{}'::jsonb,'published') RETURNING id::text`).Scan(&packageTemplateID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES('DOC-STG',1,'Dok Test Stage','farmer','published') RETURNING id::text`).Scan(&docTemplateID))
+	must(t, pool.QueryRow(ctx, `
+		INSERT INTO documentation_template_slots(template_version_id,slot_code,label,stage,is_required,min_files,max_files,input_source,require_location,require_captured_at,sort_order)
+		VALUES($1,'foto-mesin','Foto Mesin','mesin',true,1,3,'both',false,false,1) RETURNING id::text
+	`, docTemplateID).Scan(new(string)))
+	var scheduleID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,distribution_number_padding,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal Test Stage','2026-01-01','2026-12-31','active',4,'{}'::jsonb) RETURNING id::text`, programID, regencyID, packageTemplateID, docTemplateID).Scan(&scheduleID))
+
+	repo := NewRepository(pool)
+	slot, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.ClientMeta{})
+	must(t, err)
+
+	if len(slot.Documentation) == 0 {
+		t.Fatal("slot.Documentation is empty, want at least one snapshotted documentation slot")
+	}
+	var found bool
+	for _, summary := range slot.Documentation {
+		if summary.Stage == "mesin" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("no SlotSummary with Stage=mesin among %+v", slot.Documentation)
+	}
+}
+
 // mediaFixture seeds a distribution_slot with a documentation_slot and one accepted media_files row,
 // scoped under regencyID, plus a sibling otherRegencyID with no data — used to prove GetMediaSlot/
 // GetMedia/DeleteMedia's re-scoped joins (documentation_slots -> distribution_slots ->
@@ -133,8 +173,8 @@ func seedMediaFixture(t *testing.T, pool *pgxpool.Pool) mediaFixture {
 
 	var documentationSlotID string
 	must(t, pool.QueryRow(ctx, `
-		INSERT INTO documentation_slots(distribution_slot_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,require_location,require_captured_at,sort_order)
-		VALUES($1,'foto-alat','Foto Alat',true,1,3,'both',false,false,1) RETURNING id::text
+		INSERT INTO documentation_slots(distribution_slot_id,slot_code,label_snapshot,stage,is_required,min_files,max_files,input_source,require_location,require_captured_at,sort_order)
+		VALUES($1,'foto-alat','Foto Alat','penyerahan',true,1,3,'both',false,false,1) RETURNING id::text
 	`, distributionSlotID).Scan(&documentationSlotID))
 
 	checksum := strings.Repeat("a", 64)

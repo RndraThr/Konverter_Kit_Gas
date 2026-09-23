@@ -108,7 +108,6 @@ func (s *Service) LinkSlot(ctx context.Context, actor auth.Principal, input Link
 	input.District = strings.TrimSpace(input.District)
 	input.PhoneNumber = stripNonDigits.ReplaceAllString(input.PhoneNumber, "")
 	input.SectorIdentifier = normalizeIdentifier(input.SectorIdentifier)
-	input.IdentityChangeReason = strings.TrimSpace(input.IdentityChangeReason)
 	if s.posDokumenRepository == nil {
 		return DistributionSlot{}, errors.New("distribution POS Dokumen is unavailable")
 	}

@@ -208,8 +208,8 @@ func (r *Repository) CreateSlot(ctx context.Context, actor auth.Principal, input
 	}
 
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO documentation_slots(distribution_slot_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,require_location,require_captured_at,sort_order)
-		SELECT $1,slot_code,label,is_required,min_files,max_files,input_source,require_location,require_captured_at,sort_order
+		INSERT INTO documentation_slots(distribution_slot_id,slot_code,label_snapshot,stage,is_required,min_files,max_files,input_source,require_location,require_captured_at,sort_order)
+		SELECT $1,slot_code,label,stage,is_required,min_files,max_files,input_source,require_location,require_captured_at,sort_order
 		FROM documentation_template_slots WHERE template_version_id=$2
 	`, slotID, documentationTemplateID); err != nil {
 		return DistributionSlot{}, fmt.Errorf("snapshot documentation slots: %w", err)
@@ -261,7 +261,7 @@ func (r *Repository) getSlotByID(ctx context.Context, id string) (DistributionSl
 
 func (r *Repository) listSlotDocumentation(ctx context.Context, distributionSlotID string) ([]SlotSummary, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT ds.id::text, ds.slot_code, ds.label_snapshot, ds.status, ds.is_required, ds.min_files, ds.max_files, ds.input_source, ds.require_location, ds.require_captured_at
+		SELECT ds.id::text, ds.slot_code, ds.label_snapshot, ds.stage, ds.status, ds.is_required, ds.min_files, ds.max_files, ds.input_source, ds.require_location, ds.require_captured_at
 		FROM documentation_slots ds WHERE ds.distribution_slot_id=$1 ORDER BY ds.sort_order
 	`, distributionSlotID)
 	if err != nil {
@@ -271,7 +271,7 @@ func (r *Repository) listSlotDocumentation(ctx context.Context, distributionSlot
 	var summaries []SlotSummary
 	for rows.Next() {
 		var summary SlotSummary
-		if err := rows.Scan(&summary.ID, &summary.Code, &summary.Label, &summary.Status, &summary.Required, &summary.MinFiles, &summary.MaxFiles, &summary.InputSource, &summary.RequireLocation, &summary.RequireCapturedAt); err != nil {
+		if err := rows.Scan(&summary.ID, &summary.Code, &summary.Label, &summary.Stage, &summary.Status, &summary.Required, &summary.MinFiles, &summary.MaxFiles, &summary.InputSource, &summary.RequireLocation, &summary.RequireCapturedAt); err != nil {
 			return nil, fmt.Errorf("scan slot documentation: %w", err)
 		}
 		files, err := r.listMediaFiles(ctx, summary.ID)
