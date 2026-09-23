@@ -168,12 +168,25 @@ func TestSaveDocumentationTemplateRejectsDuplicateSlotCodes(t *testing.T) {
 	_, err := service.SaveDocumentationTemplate(context.Background(), auth.Principal{}, DocumentationTemplateInput{
 		TemplateCode: "DOK-PETANI", Name: "Dokumentasi", ProgramType: ProgramFarmer, Status: "draft",
 		Slots: []DocumentationTemplateSlotInput{
-			{SlotCode: "recipient", Label: "Penerima", MinFiles: 1, MaxFiles: 1, InputSource: "both"},
-			{SlotCode: "recipient", Label: "Penerima lagi", MinFiles: 1, MaxFiles: 1, InputSource: "camera"},
+			{SlotCode: "recipient", Label: "Penerima", Stage: "mesin", MinFiles: 1, MaxFiles: 1, InputSource: "both"},
+			{SlotCode: "recipient", Label: "Penerima lagi", Stage: "mesin", MinFiles: 1, MaxFiles: 1, InputSource: "camera"},
 		},
 	}, auth.ClientMeta{})
 	if !errors.Is(err, ErrTemplateSlotInvalid) {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestSaveDocumentationTemplateRejectsInvalidStage(t *testing.T) {
+	service := NewService(&repositoryStub{})
+	_, err := service.SaveDocumentationTemplate(context.Background(), auth.Principal{}, DocumentationTemplateInput{
+		TemplateCode: "DOK-TEST-STAGE", Name: "Uji Stage", ProgramType: ProgramFarmer, Status: "draft",
+		Slots: []DocumentationTemplateSlotInput{
+			{SlotCode: "bukti", Label: "Bukti", Stage: "distribution", MinFiles: 1, MaxFiles: 1, InputSource: "both"},
+		},
+	}, auth.ClientMeta{})
+	if !errors.Is(err, ErrTemplateSlotInvalid) {
+		t.Fatalf("expected ErrTemplateSlotInvalid for stage=%q, got %v", "distribution", err)
 	}
 }
 

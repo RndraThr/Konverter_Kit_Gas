@@ -162,14 +162,11 @@ func (s *Service) SaveDocumentationTemplate(ctx context.Context, actor auth.Prin
 		slot := &input.Slots[index]
 		slot.SlotCode = strings.ToLower(strings.TrimSpace(slot.SlotCode))
 		slot.Label = strings.TrimSpace(slot.Label)
-		slot.Stage = strings.TrimSpace(slot.Stage)
-		if slot.Stage == "" {
-			slot.Stage = "distribution"
-		}
+		slot.Stage = strings.ToLower(strings.TrimSpace(slot.Stage))
 		slot.InputSource = strings.ToLower(strings.TrimSpace(slot.InputSource))
 		slot.Instructions = strings.TrimSpace(slot.Instructions)
 		_, duplicate := seen[slot.SlotCode]
-		if duplicate || !slotCodePattern.MatchString(slot.SlotCode) || slot.Label == "" || slot.MinFiles < 0 || slot.MaxFiles < slot.MinFiles || !oneOf(slot.InputSource, "camera", "gallery", "both") {
+		if duplicate || !slotCodePattern.MatchString(slot.SlotCode) || slot.Label == "" || slot.MinFiles < 0 || slot.MaxFiles < slot.MinFiles || !oneOf(slot.InputSource, "camera", "gallery", "both") || !oneOf(slot.Stage, "mesin", "dokumen", "penyerahan") {
 			return DocumentationTemplate{}, ErrTemplateSlotInvalid
 		}
 		seen[slot.SlotCode] = struct{}{}
