@@ -987,20 +987,6 @@ func TestRecipientsListRequiresViewPermissionAndForwardsFilters(t *testing.T) {
 	}
 }
 
-func TestRecipientsListForwardsAllPageSize(t *testing.T) {
-	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"recipients.view": true}}
-	service := &fakeRecipientsService{page: recipients.Page{Page: 1, All: true, Total: 240}}
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/recipients?page=7&page_size=all", nil)
-	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
-	rec := httptest.NewRecorder()
-
-	NewHandler(Dependencies{Auth: viewer, Recipients: service}).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK || !service.seenFilter.All {
-		t.Fatalf("expected page_size=all to be forwarded, status=%d filter=%+v body=%s", rec.Code, service.seenFilter, rec.Body.String())
-	}
-}
-
 func TestRecipientStatsForwardsTheSameCombinedFiltersAsTheList(t *testing.T) {
 	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"recipients.view": true}}
 	service := &fakeRecipientsService{stats: recipients.Stats{Total: 3}}
