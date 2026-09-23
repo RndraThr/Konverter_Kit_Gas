@@ -253,7 +253,7 @@ func TestIntegrationOperationalMigrationCreatesFoundation(t *testing.T) {
 		"person_sector_identifiers",
 		"candidate_nominations",
 		"package_allocations",
-		"distribution_records",
+		"distribution_slots",
 		"eligibility_checks",
 		"documentation_slots",
 		"media_files",
