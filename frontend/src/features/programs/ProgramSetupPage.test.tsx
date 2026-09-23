@@ -289,3 +289,27 @@ test('manages package template equipment options and components as repeatable ro
   await userEvent.click(screen.getByRole('button', { name: 'Hapus opsi mesin 1' }));
   expect(screen.queryByLabelText('Merk mesin 1')).not.toBeInTheDocument();
 });
+
+test('saves a new documentation slot with a valid Pos stage', async () => {
+  renderPage(['programs.view', 'programs.manage'], { initialEntry: '/dashboard/persiapan-program?tab=templates' });
+  await userEvent.click(await screen.findByRole('tab', { name: 'Template' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Tambah dokumentasi' }));
+
+  await userEvent.type(screen.getByRole('textbox', { name: 'Kode template' }), 'dok-baru');
+  await userEvent.type(screen.getByRole('textbox', { name: 'Nama template' }), 'dok baru');
+  await userEvent.type(screen.getByRole('textbox', { name: 'Kode slot' }), 'bukti_mesin');
+  await userEvent.type(screen.getByRole('textbox', { name: 'Judul' }), 'Bukti mesin');
+
+  let savedBody: { slots: Array<{ stage: string }> } | undefined;
+  vi.mocked(apiRequest).mockImplementation(((path: string, init?: RequestInit) => {
+    if (path === '/api/v1/program-setup/documentation-templates' && init?.method === 'POST') {
+      savedBody = JSON.parse(init.body as string);
+      return Promise.resolve({ data: { id: 'document-2', ...savedBody } });
+    }
+    return Promise.resolve(responses[path] ?? { data: [] });
+  }) as typeof apiRequest);
+
+  await userEvent.click(screen.getByRole('button', { name: 'Simpan' }));
+  await waitFor(() => expect(savedBody).toBeDefined());
+  expect(savedBody!.slots[0].stage).toBe('mesin');
+});
