@@ -544,7 +544,7 @@ func TestDistributionSlotCompleteRequiresPosPenyerahanAndReturnsStableConflicts(
 	conflicts := []struct {
 		err  error
 		code string
-	}{{distribution.ErrIdentityIncomplete, "identity_incomplete"}, {distribution.ErrDocumentationIncomplete, "documentation_incomplete"}, {distribution.ErrPreviouslyReceived, "operation_rejected"}, {distribution.ErrAlreadyCompleted, "operation_rejected"}, {distribution.ErrSlotNotOpen, "operation_rejected"}, {distribution.ErrSlotNotLinked, "operation_rejected"}}
+	}{{distribution.ErrIdentityIncomplete, "identity_incomplete"}, {distribution.ErrDocumentationIncomplete, "documentation_incomplete"}, {distribution.ErrPreviouslyReceived, "previously_received"}, {distribution.ErrAlreadyCompleted, "already_completed"}, {distribution.ErrSlotNotOpen, "slot_not_open"}, {distribution.ErrSlotNotLinked, "slot_not_linked"}}
 	for _, item := range conflicts {
 		response := httptest.NewRecorder()
 		writeServiceError(response, item.err)

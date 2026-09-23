@@ -465,8 +465,14 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "identity_incomplete", "Identitas wajib penerima belum lengkap")
 	case errors.Is(err, distribution.ErrDocumentationIncomplete):
 		writeError(w, http.StatusConflict, "documentation_incomplete", "Dokumentasi wajib belum lengkap")
-	case errors.Is(err, distribution.ErrSlotNotOpen), errors.Is(err, distribution.ErrSlotNotLinked), errors.Is(err, distribution.ErrAlreadyCompleted), errors.Is(err, distribution.ErrPreviouslyReceived):
-		writeError(w, http.StatusConflict, "operation_rejected", err.Error())
+	case errors.Is(err, distribution.ErrPreviouslyReceived):
+		writeError(w, http.StatusConflict, "previously_received", "Penerima sudah pernah menerima paket sebelumnya")
+	case errors.Is(err, distribution.ErrSlotNotOpen):
+		writeError(w, http.StatusConflict, "slot_not_open", "Nomor bagi ini sudah terhubung atau tidak lagi terbuka")
+	case errors.Is(err, distribution.ErrSlotNotLinked):
+		writeError(w, http.StatusConflict, "slot_not_linked", "Nomor bagi ini belum terhubung ke penerima")
+	case errors.Is(err, distribution.ErrAlreadyCompleted):
+		writeError(w, http.StatusConflict, "already_completed", "Distribusi untuk nomor bagi ini sudah selesai")
 	case errors.Is(err, dcp3.ErrWorkbookTooLarge):
 		writeError(w, http.StatusRequestEntityTooLarge, "workbook_too_large", err.Error())
 	case errors.Is(err, distribution.ErrMediaTooLarge):
