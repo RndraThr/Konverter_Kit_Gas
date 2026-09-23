@@ -166,7 +166,7 @@ func seedE2E(ctx context.Context, tx pgx.Tx) error {
 	if err := tx.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,actual_recipient_person_id,distribution_number,status,package_snapshot_json) VALUES($1,$2,$3,$3,1,'distributed',$4) RETURNING id::text`, historyScheduleID, nominationID, personID, packageSnapshot).Scan(&allocationID); err != nil {
 		return fmt.Errorf("seed history allocation: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO distribution_records(allocation_id,recipient_person_id,status,verification_snapshot_json,distributed_at,completed_at) VALUES($1,$2,'completed','{"fixture":"e2e"}','2025-09-10T09:00:00Z','2025-09-10T09:00:00Z')`, allocationID, personID); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO distribution_slots(schedule_id,slot_number,status,allocation_id,recipient_person_id,verification_snapshot_json,distributed_at,completed_at) VALUES($1,1,'completed',$2,$3,'{"fixture":"e2e"}','2025-09-10T09:00:00Z','2025-09-10T09:00:00Z')`, historyScheduleID, allocationID, personID); err != nil {
 		return fmt.Errorf("seed history distribution: %w", err)
 	}
 	return nil
@@ -180,7 +180,7 @@ func cleanupE2E(ctx context.Context, tx pgx.Tx) error {
 	statements := []cleanupStatement{
 		{`DELETE FROM audit_logs WHERE actor_user_id IN (SELECT id FROM users WHERE username=$1)`, []any{seedUsername}},
 		{`DELETE FROM eligibility_checks WHERE schedule_id IN (SELECT ps.id FROM program_schedules ps JOIN programs p ON p.id=ps.program_id WHERE p.code=$1) OR person_id IN (SELECT id FROM people WHERE full_name LIKE '% E2E%')`, []any{seedProgramCode}},
-		{`DELETE FROM distribution_records WHERE allocation_id IN (SELECT a.id FROM package_allocations a JOIN program_schedules ps ON ps.id=a.schedule_id JOIN programs p ON p.id=ps.program_id WHERE p.code=$1)`, []any{seedProgramCode}},
+		{`DELETE FROM distribution_slots WHERE allocation_id IN (SELECT a.id FROM package_allocations a JOIN program_schedules ps ON ps.id=a.schedule_id JOIN programs p ON p.id=ps.program_id WHERE p.code=$1)`, []any{seedProgramCode}},
 		{`DELETE FROM package_allocations WHERE schedule_id IN (SELECT ps.id FROM program_schedules ps JOIN programs p ON p.id=ps.program_id WHERE p.code=$1)`, []any{seedProgramCode}},
 		{`DELETE FROM candidate_nominations WHERE batch_id IN (SELECT b.id FROM dcp3_import_batches b JOIN program_schedules ps ON ps.id=b.schedule_id JOIN programs p ON p.id=ps.program_id WHERE p.code=$1)`, []any{seedProgramCode}},
 		{`DELETE FROM dcp3_import_batches WHERE schedule_id IN (SELECT ps.id FROM program_schedules ps JOIN programs p ON p.id=ps.program_id WHERE p.code=$1)`, []any{seedProgramCode}},
