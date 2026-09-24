@@ -20,7 +20,7 @@ var (
 	ErrBaseURLInvalid           = errors.New("APP_BASE_URL must be an absolute HTTP or HTTPS URL")
 	ErrStoragePathAbsolute      = errors.New("STORAGE_PATH must be absolute outside local environment")
 	ErrStorageBackendInvalid    = errors.New("STORAGE_BACKEND must be 'local' or 'gdrive'")
-	ErrGDriveSettingsIncomplete = errors.New("GDRIVE_SERVICE_ACCOUNT_JSON and GDRIVE_ROOT_FOLDER_ID are required when STORAGE_BACKEND=gdrive")
+	ErrGDriveSettingsIncomplete = errors.New("GDRIVE_OAUTH_CLIENT_ID, GDRIVE_OAUTH_CLIENT_SECRET, GDRIVE_OAUTH_TOKEN_JSON, and GDRIVE_ROOT_FOLDER_ID are required when STORAGE_BACKEND=gdrive")
 )
 
 type Config struct {
@@ -34,7 +34,9 @@ type Config struct {
 	RememberTTL              time.Duration
 	StoragePath              string
 	StorageBackend           string
-	GDriveServiceAccountJSON string
+	GDriveOAuthClientID      string
+	GDriveOAuthClientSecret  string
+	GDriveOAuthTokenJSON     string
 	GDriveRootFolderID       string
 }
 
@@ -71,9 +73,11 @@ func loadFrom(lookup lookupFunc) (Config, error) {
 		return Config{}, ErrStorageBackendInvalid
 	}
 	if cfg.StorageBackend == "gdrive" {
-		cfg.GDriveServiceAccountJSON, _ = lookup("GDRIVE_SERVICE_ACCOUNT_JSON")
+		cfg.GDriveOAuthClientID, _ = lookup("GDRIVE_OAUTH_CLIENT_ID")
+		cfg.GDriveOAuthClientSecret, _ = lookup("GDRIVE_OAUTH_CLIENT_SECRET")
+		cfg.GDriveOAuthTokenJSON, _ = lookup("GDRIVE_OAUTH_TOKEN_JSON")
 		cfg.GDriveRootFolderID, _ = lookup("GDRIVE_ROOT_FOLDER_ID")
-		if cfg.GDriveServiceAccountJSON == "" || cfg.GDriveRootFolderID == "" {
+		if cfg.GDriveOAuthClientID == "" || cfg.GDriveOAuthClientSecret == "" || cfg.GDriveOAuthTokenJSON == "" || cfg.GDriveRootFolderID == "" {
 			return Config{}, ErrGDriveSettingsIncomplete
 		}
 	}

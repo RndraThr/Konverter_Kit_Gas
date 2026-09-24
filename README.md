@@ -16,7 +16,9 @@ SESSION_COOKIE_SECURE=false
 SESSION_TTL=12h
 STORAGE_PATH=./storage
 STORAGE_BACKEND=local
-GDRIVE_SERVICE_ACCOUNT_JSON=
+GDRIVE_OAUTH_CLIENT_ID=
+GDRIVE_OAUTH_CLIENT_SECRET=
+GDRIVE_OAUTH_TOKEN_JSON=
 GDRIVE_ROOT_FOLDER_ID=
 ```
 
@@ -92,7 +94,16 @@ Workbook DCP3 tidak harus mengikuti template baku — nama kolom dicocokkan manu
 
 Foto disimpan di `STORAGE_PATH` ketika `STORAGE_BACKEND=local` (default). Nilai relatif seperti `./storage` diperbolehkan untuk `APP_ENV=local`; gunakan path absolut di environment test, staging, dan production. Input `Buka kamera` bergantung pada dukungan browser/perangkat, sedangkan `Pilih galeri` dapat digunakan pada desktop maupun mobile.
 
-`STORAGE_BACKEND=gdrive` (dengan `GDRIVE_SERVICE_ACCOUNT_JSON` dan `GDRIVE_ROOT_FOLDER_ID`) mengaktifkan penyimpanan media di Google Drive via Service Account. ID file Drive disimpan permanen sebagai `storage_key` di database (bukan di memori proses), sehingga membuka/menghapus foto tetap berfungsi setelah server di-restart. Yang masih menjadi catatan: upload dari fitur Pendistribusian saat ini belum diorganisir ke folder per kabupaten seperti modul dokumentasi kegiatan — seluruh foto Pendistribusian masuk ke folder root Drive yang sama. Pertimbangkan ini sebelum mengaktifkan `gdrive` di production untuk Pendistribusian.
+`STORAGE_BACKEND=gdrive` mengaktifkan penyimpanan media di Google Drive lewat **OAuth2 user-delegated auth** — bukan Service Account. Service Account tidak punya kuota penyimpanan sendiri di akun Google personal/Google One dan tidak bisa upload file sama sekali (`storageQuotaExceeded`, batasan resmi Google, dikonfirmasi lewat percobaan nyata), walau sudah diberi akses Editor ke suatu folder. OAuth memakai kuota akun Google yang benar-benar login, jadi cocok untuk akun personal.
+
+Setup sekali jalan (lokal, di komputer yang punya browser):
+1. Buat OAuth Client ID di Google Cloud Console: APIs & Services → Credentials → Create Credentials → OAuth client ID → tipe **Desktop app**. Kalau project belum pernah pakai OAuth, lengkapi dulu OAuth consent screen (User Type: External, tambahkan email yang akan dipakai sebagai **Test user** — wajib selama app belum diverifikasi publik).
+2. Jalankan: `go run ./cmd/gdrive-oauth-setup -client-id=<CLIENT_ID> -client-secret=<CLIENT_SECRET>`
+3. Buka URL yang dicetak, login dengan akun Google yang kuotanya mau dipakai, izinkan akses (klik lewati peringatan "Google hasn't verified this app" kalau muncul — wajar untuk app internal yang belum diverifikasi).
+4. Tool otomatis menangkap callback, menyimpan token ke `gdrive-oauth-token.json`, membuat folder root baru di Drive, dan mencetak `GDRIVE_ROOT_FOLDER_ID`.
+5. Isi `GDRIVE_OAUTH_CLIENT_ID`/`GDRIVE_OAUTH_CLIENT_SECRET`/`GDRIVE_OAUTH_TOKEN_JSON` (path ke file token itu)/`GDRIVE_ROOT_FOLDER_ID` di `.env`/`.env.staging`. Token di-refresh otomatis oleh aplikasi selama berjalan — tidak perlu login ulang kecuali akses dicabut manual dari akun Google.
+
+Yang masih menjadi catatan: upload dari fitur Pendistribusian saat ini belum diorganisir ke folder per kabupaten seperti modul dokumentasi kegiatan — seluruh foto Pendistribusian masuk ke folder root Drive yang sama.
 
 Halaman `Laporan` menampilkan ringkasan dan tabel alokasi/distribusi/dokumentasi untuk satu jadwal terpilih, dengan export Excel dan PDF, memakai permission `distribution.view` yang sama dengan Pendistribusian.
 
@@ -149,11 +160,11 @@ docker build -t konkit:local .
 
 ### Stack staging (docker compose)
 
-`docker-compose.yml` menyediakan tiga service: `postgres` (data di volume `postgres-data`), `app` (image di atas, mount volume `storage-data` ke `/app/storage` dan file kredensial Google Service Account read-only), dan `caddy` (reverse proxy, HTTPS otomatis via Let's Encrypt berdasarkan domain).
+`docker-compose.yml` menyediakan tiga service: `postgres` (data di volume `postgres-data`), `app` (image di atas, mount volume `storage-data` ke `/app/storage` dan file token OAuth Google Drive read-only), dan `caddy` (reverse proxy, HTTPS otomatis via Let's Encrypt berdasarkan domain).
 
 Ada **dua** file environment yang terpisah dan tidak boleh tertukar:
 - `.env.staging` — dibaca oleh service `app` (lewat `env_file:`) untuk konfigurasi aplikasi Go (`DATABASE_URL`, `SESSION_SECRET`, `STORAGE_BACKEND`, dll). Salin dari `.env.staging.example`.
-- `.env.compose` — dibaca oleh `docker compose` sendiri untuk substitusi variabel di `docker-compose.yml` (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `GDRIVE_CREDENTIALS_HOST_PATH`, `APP_DOMAIN`). **Wajib** diteruskan eksplisit lewat `--env-file .env.compose` di **setiap** perintah `docker compose` (termasuk `ps`/`logs`/`down`) — tanpa flag ini, compose diam-diam memakai default kosong.
+- `.env.compose` — dibaca oleh `docker compose` sendiri untuk substitusi variabel di `docker-compose.yml` (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `GDRIVE_OAUTH_TOKEN_HOST_PATH`, `APP_DOMAIN`). **Wajib** diteruskan eksplisit lewat `--env-file .env.compose` di **setiap** perintah `docker compose` (termasuk `ps`/`logs`/`down`) — tanpa flag ini, compose diam-diam memakai default kosong.
 
 Kedua file ini tidak pernah masuk git (`.gitignore`).
 
@@ -178,17 +189,18 @@ Kedua file ini tidak pernah masuk git (`.gitignore`).
    ```bash
    cp .env.staging.example .env.staging
    ```
-   Edit `.env.staging`: isi `SESSION_SECRET` (`openssl rand -base64 32`), `APP_BASE_URL` (domain HTTPS staging), `DATABASE_URL` (password harus sama dengan `POSTGRES_PASSWORD` di bawah). `STORAGE_BACKEND=local` sudah default — foto disimpan di volume Docker `storage-data`.
+   Edit `.env.staging`: isi `SESSION_SECRET` (`openssl rand -base64 32`), `APP_BASE_URL` (domain HTTPS staging), `DATABASE_URL` (password harus sama dengan `POSTGRES_PASSWORD` di bawah), dan `GDRIVE_OAUTH_CLIENT_ID`/`GDRIVE_OAUTH_CLIENT_SECRET`/`GDRIVE_OAUTH_TOKEN_JSON`/`GDRIVE_ROOT_FOLDER_ID` (lihat bagian OAuth Google Drive di atas untuk cara mendapatkannya — jalankan `cmd/gdrive-oauth-setup` di komputer lokal, lalu upload `gdrive-oauth-token.json` yang dihasilkan ke VPS, di luar folder repo).
 
    Buat `.env.compose` (tidak ada file contoh karena isinya murni operasional, bukan rahasia aplikasi):
    ```
    POSTGRES_USER=konkit
    POSTGRES_PASSWORD=<sama dengan di .env.staging>
    POSTGRES_DB=konkit
+   GDRIVE_OAUTH_TOKEN_HOST_PATH=/root/gdrive-oauth-token.json
    APP_DOMAIN=staging.namadomain.com
    ```
 
-   > **Catatan `STORAGE_BACKEND=gdrive`:** backend ini butuh Google Workspace dengan Shared Drive — Service Account pada akun Google personal/Google One tidak punya kuota penyimpanan sendiri dan tidak bisa upload file sama sekali ke folder biasa, walau sudah diberi akses Editor (`storageQuotaExceeded`, batasan resmi Google, bukan soal konfigurasi). Baru aktifkan `gdrive` kalau organisasi sudah punya Shared Drive; saat itu tambahkan kembali baris `GDRIVE_CREDENTIALS_HOST_PATH` di `.env.compose` dan un-comment volume kredensial di `docker-compose.yml`.
+   Kalau tidak butuh Google Drive (cukup `STORAGE_BACKEND=local`), hapus baris `GDRIVE_OAUTH_TOKEN_HOST_PATH` di atas dan comment-out baris volume token di `docker-compose.yml`.
 
 5. Jalankan stack:
    ```bash

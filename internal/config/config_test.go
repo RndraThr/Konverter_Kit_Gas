@@ -172,13 +172,15 @@ func TestLoadFromRequiresDriveSettingsWhenBackendIsGDrive(t *testing.T) {
 		t.Fatalf("expected ErrGDriveSettingsIncomplete, got %v", err)
 	}
 
-	base["GDRIVE_SERVICE_ACCOUNT_JSON"] = "/etc/konkit/gdrive-credentials.json"
+	base["GDRIVE_OAUTH_CLIENT_ID"] = "client-id-123"
+	base["GDRIVE_OAUTH_CLIENT_SECRET"] = "client-secret-456"
+	base["GDRIVE_OAUTH_TOKEN_JSON"] = "/etc/konkit/gdrive-oauth-token.json"
 	base["GDRIVE_ROOT_FOLDER_ID"] = "1AbCdEfGhIjKlMnOpQrStUvWxYz"
 	cfg, err := loadFrom(mapLookup(base))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.StorageBackend != "gdrive" || cfg.GDriveServiceAccountJSON != "/etc/konkit/gdrive-credentials.json" || cfg.GDriveRootFolderID != "1AbCdEfGhIjKlMnOpQrStUvWxYz" {
+	if cfg.StorageBackend != "gdrive" || cfg.GDriveOAuthClientID != "client-id-123" || cfg.GDriveOAuthClientSecret != "client-secret-456" || cfg.GDriveOAuthTokenJSON != "/etc/konkit/gdrive-oauth-token.json" || cfg.GDriveRootFolderID != "1AbCdEfGhIjKlMnOpQrStUvWxYz" {
 		t.Fatalf("cfg = %+v", cfg)
 	}
 }

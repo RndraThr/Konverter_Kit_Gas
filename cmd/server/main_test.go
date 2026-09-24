@@ -24,14 +24,16 @@ func TestRunFailsFastWhenGoogleDriveCredentialsAreInvalid(t *testing.T) {
 		t.Skip("TEST_DATABASE_URL is not configured")
 	}
 	cfg := config.Config{
-		DatabaseURL:              databaseURL,
-		SessionSecret:            []byte("01234567890123456789012345678901"),
-		StorageBackend:           "gdrive",
-		GDriveServiceAccountJSON: "/nonexistent/path/credentials.json",
-		GDriveRootFolderID:       "irrelevant-for-this-test",
+		DatabaseURL:             databaseURL,
+		SessionSecret:           []byte("01234567890123456789012345678901"),
+		StorageBackend:          "gdrive",
+		GDriveOAuthClientID:     "irrelevant-for-this-test",
+		GDriveOAuthClientSecret: "irrelevant-for-this-test",
+		GDriveOAuthTokenJSON:    "/nonexistent/path/token.json",
+		GDriveRootFolderID:      "irrelevant-for-this-test",
 	}
 	err := run(context.Background(), cfg)
 	if err == nil {
-		t.Fatal("expected an error when Google Drive credentials file does not exist")
+		t.Fatal("expected an error when Google Drive OAuth token file does not exist")
 	}
 }

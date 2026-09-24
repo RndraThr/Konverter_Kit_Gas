@@ -20,9 +20,11 @@ services:
     env_file: .env.staging
     volumes:
       - storage-data:/app/storage
-      # Uncomment if STORAGE_BACKEND=gdrive is ever enabled (requires a
-      # Google Workspace Shared Drive — see .env.staging.example):
-      # - ${GDRIVE_CREDENTIALS_HOST_PATH}:/run/secrets/gdrive-service-account.json:ro
+      # Only needed when STORAGE_BACKEND=gdrive (.env.staging). Set
+      # GDRIVE_OAUTH_TOKEN_HOST_PATH in .env.compose to the token file
+      # produced by `go run ./cmd/gdrive-oauth-setup`. Comment this line
+      # out (and set STORAGE_BACKEND=local instead) if Drive isn't needed.
+      - ${GDRIVE_OAUTH_TOKEN_HOST_PATH}:/run/secrets/gdrive-oauth-token.json:ro
     depends_on:
       postgres:
         condition: service_healthy

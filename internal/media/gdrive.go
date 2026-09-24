@@ -4,10 +4,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 	"google.golang.org/api/drive/v3"
 	"google.golang.org/api/option"
 )
@@ -75,18 +79,39 @@ func (a *realDriveFilesAPI) deleteFile(ctx context.Context, id string) error {
 	return nil
 }
 
-// GoogleDriveStorage implements Storage backed by Google Drive, using a
-// Service Account for authentication. Folder IDs are cached (via
-// folderCache) so repeated uploads to the same folderPath don't re-query
-// the Drive API on every call.
+// GoogleDriveStorage implements Storage backed by Google Drive, using
+// OAuth2 user-delegated authorization (not a Service Account — Service
+// Accounts have no storage quota of their own on a personal Google account
+// and cannot upload files anywhere, even to a folder shared with them).
+// Folder IDs are cached (via folderCache) so repeated uploads to the same
+// folderPath don't re-query the Drive API on every call.
 type GoogleDriveStorage struct {
 	api          driveFilesAPI
 	cache        folderCache
 	rootFolderID string
 }
 
-func NewGoogleDriveStorage(ctx context.Context, credentialsPath, rootFolderID string, cache folderCache) (*GoogleDriveStorage, error) {
-	service, err := drive.NewService(ctx, option.WithCredentialsFile(credentialsPath))
+// NewGoogleDriveStorage authenticates using a previously-issued OAuth2
+// token (see cmd/gdrive-oauth-setup for how to obtain one). The oauth2
+// TokenSource built from clientID/clientSecret/token refreshes the access
+// token automatically using the token's refresh token — no further human
+// interaction is needed at runtime.
+func NewGoogleDriveStorage(ctx context.Context, clientID, clientSecret, tokenJSONPath, rootFolderID string, cache folderCache) (*GoogleDriveStorage, error) {
+	tokenBytes, err := os.ReadFile(tokenJSONPath)
+	if err != nil {
+		return nil, fmt.Errorf("read oauth token file: %w", err)
+	}
+	var token oauth2.Token
+	if err := json.Unmarshal(tokenBytes, &token); err != nil {
+		return nil, fmt.Errorf("parse oauth token file: %w", err)
+	}
+	oauthConfig := &oauth2.Config{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		Endpoint:     google.Endpoint,
+		Scopes:       []string{drive.DriveFileScope},
+	}
+	service, err := drive.NewService(ctx, option.WithTokenSource(oauthConfig.TokenSource(ctx, &token)))
 	if err != nil {
 		return nil, fmt.Errorf("create drive service: %w", err)
 	}

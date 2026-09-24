@@ -2,6 +2,7 @@
 .env
 .env.staging
 *-service-account.json
+gdrive-oauth-token*.json
 .cache/
 .tmp/
 .worktrees/

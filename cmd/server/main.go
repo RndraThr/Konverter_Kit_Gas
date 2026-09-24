@@ -56,7 +56,7 @@ func run(ctx context.Context, cfg config.Config) error {
 	switch cfg.StorageBackend {
 	case "gdrive":
 		driveCache := media.NewPostgresFolderCache(pool)
-		mediaStorage, err = media.NewGoogleDriveStorage(ctx, cfg.GDriveServiceAccountJSON, cfg.GDriveRootFolderID, driveCache)
+		mediaStorage, err = media.NewGoogleDriveStorage(ctx, cfg.GDriveOAuthClientID, cfg.GDriveOAuthClientSecret, cfg.GDriveOAuthTokenJSON, cfg.GDriveRootFolderID, driveCache)
 		if err != nil {
 			return fmt.Errorf("initialize google drive storage: %w", err)
 		}
