@@ -1,5 +1,7 @@
 .flyenv
 .env
+.env.staging
+*-service-account.json
 .cache/
 .tmp/
 .worktrees/
