@@ -178,17 +178,17 @@ Kedua file ini tidak pernah masuk git (`.gitignore`).
    ```bash
    cp .env.staging.example .env.staging
    ```
-   Edit `.env.staging`: isi `SESSION_SECRET` (`openssl rand -base64 32`), `APP_BASE_URL` (domain HTTPS staging), `DATABASE_URL` (password harus sama dengan `POSTGRES_PASSWORD` di bawah), `GDRIVE_ROOT_FOLDER_ID`.
+   Edit `.env.staging`: isi `SESSION_SECRET` (`openssl rand -base64 32`), `APP_BASE_URL` (domain HTTPS staging), `DATABASE_URL` (password harus sama dengan `POSTGRES_PASSWORD` di bawah). `STORAGE_BACKEND=local` sudah default — foto disimpan di volume Docker `storage-data`.
 
    Buat `.env.compose` (tidak ada file contoh karena isinya murni operasional, bukan rahasia aplikasi):
    ```
    POSTGRES_USER=konkit
    POSTGRES_PASSWORD=<sama dengan di .env.staging>
    POSTGRES_DB=konkit
-   GDRIVE_CREDENTIALS_HOST_PATH=/root/gdrive-service-account.json
    APP_DOMAIN=staging.namadomain.com
    ```
-   Taruh file kredensial Google Service Account di path absolut yang disebut `GDRIVE_CREDENTIALS_HOST_PATH` (di luar direktori repo).
+
+   > **Catatan `STORAGE_BACKEND=gdrive`:** backend ini butuh Google Workspace dengan Shared Drive — Service Account pada akun Google personal/Google One tidak punya kuota penyimpanan sendiri dan tidak bisa upload file sama sekali ke folder biasa, walau sudah diberi akses Editor (`storageQuotaExceeded`, batasan resmi Google, bukan soal konfigurasi). Baru aktifkan `gdrive` kalau organisasi sudah punya Shared Drive; saat itu tambahkan kembali baris `GDRIVE_CREDENTIALS_HOST_PATH` di `.env.compose` dan un-comment volume kredensial di `docker-compose.yml`.
 
 5. Jalankan stack:
    ```bash

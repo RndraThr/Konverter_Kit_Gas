@@ -20,7 +20,9 @@ services:
     env_file: .env.staging
     volumes:
       - storage-data:/app/storage
-      - ${GDRIVE_CREDENTIALS_HOST_PATH}:/run/secrets/gdrive-service-account.json:ro
+      # Uncomment if STORAGE_BACKEND=gdrive is ever enabled (requires a
+      # Google Workspace Shared Drive — see .env.staging.example):
+      # - ${GDRIVE_CREDENTIALS_HOST_PATH}:/run/secrets/gdrive-service-account.json:ro
     depends_on:
       postgres:
         condition: service_healthy
