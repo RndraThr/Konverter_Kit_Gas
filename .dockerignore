@@ -1,0 +1,12 @@
+.git
+.env
+.env.staging
+storage/
+frontend/node_modules
+frontend/dist
+web/static/app
+.worktrees/
+.claude/
+.kilo/
+docs/
+*.md
