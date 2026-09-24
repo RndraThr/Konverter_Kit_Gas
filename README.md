@@ -138,3 +138,75 @@ File yang dihasilkan adalah `.cache/e2e/dcp3-desktop.xlsx` dan `.cache/e2e/dcp3-
 ## Alur Git Dan Deployment
 
 Build frontend menghasilkan asset ter-hash di `web/static/app`, lalu binary Go menyajikan halaman, static asset, dan API dari satu origin. Konfigurasi tetap berbasis environment variable sehingga tahap Docker berikutnya tidak memerlukan perubahan kode aplikasi.
+
+### Docker
+
+`Dockerfile` adalah multi-stage build: Node membangun frontend ke `web/static/app`, Go meng-compile tiga binary (`server`, `migrate`, `admin`), lalu image runtime akhir (`debian:bookworm-slim`, non-root) berisi `go.mod` (dipakai kode untuk menemukan folder `web/` relatif terhadap direktori kerja), `web/templates` (halaman login/dashboard sisi server), `web/static/app`, dan ketiga binary. `ENTRYPOINT` menjalankan `./migrate up` lalu `exec ./server`, sehingga migrasi otomatis diterapkan setiap kali container start.
+
+```bash
+docker build -t konkit:local .
+```
+
+### Stack staging (docker compose)
+
+`docker-compose.yml` menyediakan tiga service: `postgres` (data di volume `postgres-data`), `app` (image di atas, mount volume `storage-data` ke `/app/storage` dan file kredensial Google Service Account read-only), dan `caddy` (reverse proxy, HTTPS otomatis via Let's Encrypt berdasarkan domain).
+
+Ada **dua** file environment yang terpisah dan tidak boleh tertukar:
+- `.env.staging` — dibaca oleh service `app` (lewat `env_file:`) untuk konfigurasi aplikasi Go (`DATABASE_URL`, `SESSION_SECRET`, `STORAGE_BACKEND`, dll). Salin dari `.env.staging.example`.
+- `.env.compose` — dibaca oleh `docker compose` sendiri untuk substitusi variabel di `docker-compose.yml` (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `GDRIVE_CREDENTIALS_HOST_PATH`, `APP_DOMAIN`). **Wajib** diteruskan eksplisit lewat `--env-file .env.compose` di **setiap** perintah `docker compose` (termasuk `ps`/`logs`/`down`) — tanpa flag ini, compose diam-diam memakai default kosong.
+
+Kedua file ini tidak pernah masuk git (`.gitignore`).
+
+#### Setup awal di VPS (Ubuntu/Debian)
+
+1. Install Docker Engine + Compose plugin dari repo resmi Docker:
+   ```bash
+   curl -fsSL https://get.docker.com | sudo sh
+   sudo usermod -aG docker $USER
+   ```
+   (logout/login ulang agar keanggotaan grup `docker` aktif)
+
+2. Arahkan DNS domain staging (mis. `staging.namadomain.com`) ke IP publik VPS — buat A record, tunggu propagasi sebelum lanjut ke langkah start (Caddy butuh domain sudah resolve untuk terbitkan sertifikat HTTPS).
+
+3. Clone repo ke VPS:
+   ```bash
+   git clone https://github.com/RndraThr/Konverter_Kit_Gas.git konkit
+   cd konkit
+   ```
+
+4. Siapkan kedua file environment:
+   ```bash
+   cp .env.staging.example .env.staging
+   ```
+   Edit `.env.staging`: isi `SESSION_SECRET` (`openssl rand -base64 32`), `APP_BASE_URL` (domain HTTPS staging), `DATABASE_URL` (password harus sama dengan `POSTGRES_PASSWORD` di bawah), `GDRIVE_ROOT_FOLDER_ID`.
+
+   Buat `.env.compose` (tidak ada file contoh karena isinya murni operasional, bukan rahasia aplikasi):
+   ```
+   POSTGRES_USER=konkit
+   POSTGRES_PASSWORD=<sama dengan di .env.staging>
+   POSTGRES_DB=konkit
+   GDRIVE_CREDENTIALS_HOST_PATH=/root/gdrive-service-account.json
+   APP_DOMAIN=staging.namadomain.com
+   ```
+   Taruh file kredensial Google Service Account di path absolut yang disebut `GDRIVE_CREDENTIALS_HOST_PATH` (di luar direktori repo).
+
+5. Jalankan stack:
+   ```bash
+   docker compose --env-file .env.compose up -d --build
+   ```
+
+6. Buat akun admin pertama:
+   ```bash
+   docker compose --env-file .env.compose exec app ./admin create
+   ```
+
+7. Verifikasi: `curl https://staging.namadomain.com/api/v1/health` harus mengembalikan `{"status":"ok"}`. Buka domain tersebut di browser dan login.
+
+#### Update / redeploy
+
+```bash
+git pull
+docker compose --env-file .env.compose up -d --build
+```
+
+Hanya service `app` yang di-rebuild dan direcreate bila source berubah; data `postgres`/`storage` di volume tetap ada. Migrasi baru otomatis diterapkan lewat `ENTRYPOINT` saat container `app` start ulang.
