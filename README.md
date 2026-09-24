@@ -210,3 +210,58 @@ docker compose --env-file .env.compose up -d --build
 ```
 
 Hanya service `app` yang di-rebuild dan direcreate bila source berubah; data `postgres`/`storage` di volume tetap ada. Migrasi baru otomatis diterapkan lewat `ENTRYPOINT` saat container `app` start ulang.
+
+#### Varian: VPS bersama dengan nginx yang sudah ada
+
+Langkah di atas mengasumsikan VPS kosong/khusus, dengan Caddy sebagai reverse proxy (pegang port 80/443 langsung). Kalau VPS sudah punya nginx aktif untuk situs lain (skenario staging saat ini di `konkit.ptkiansantang.com`, satu server dengan situs-situs `*.ptkiansantang.com` lain), pakai pola berikut — Caddy **tidak** dijalankan sama sekali, nginx yang sudah ada jadi reverse proxy:
+
+1. Clone ke `/opt/konkit` (atau path lain yang konsisten dengan proyek lain di server yang sama).
+2. Siapkan `.env.staging` seperti biasa (lihat langkah 4 di atas).
+3. Tambahkan `docker-compose.override.yml` (Docker Compose otomatis menggabungkannya dengan `docker-compose.yml`) untuk publish port `app` ke `127.0.0.1` saja — bukan port publik, cuma bisa diakses dari nginx di server yang sama:
+   ```yaml
+   services:
+     app:
+       ports:
+         - "127.0.0.1:8090:8080"
+   ```
+   (Ganti `8090` kalau port itu sudah dipakai proyek lain di server yang sama — cek dulu dengan `ss -tlnp`.)
+4. Jalankan **hanya** `postgres` dan `app`, jangan `caddy`:
+   ```bash
+   docker compose --env-file .env.compose up -d --build postgres app
+   ```
+5. Tambahkan site nginx baru, mengikuti pola situs lain di server yang sama (lihat `/etc/nginx/sites-available/` untuk contoh format yang sudah dipakai):
+   ```nginx
+   server {
+       server_name konkit.ptkiansantang.com;
+
+       location / {
+           proxy_pass http://localhost:8090;
+           proxy_http_version 1.1;
+           proxy_set_header Upgrade $http_upgrade;
+           proxy_set_header Connection 'upgrade';
+           proxy_set_header Host $host;
+           proxy_cache_bypass $http_upgrade;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+       }
+
+       listen 80;
+   }
+   ```
+   ```bash
+   ln -sf /etc/nginx/sites-available/konkit.ptkiansantang.com /etc/nginx/sites-enabled/konkit.ptkiansantang.com
+   nginx -t   # WAJIB: cek syntax dulu sebelum reload, supaya kalau ada typo tidak menjatuhkan situs lain di server yang sama
+   systemctl reload nginx
+   ```
+6. Aktifkan HTTPS dengan certbot (server ini sudah pakai certbot untuk domain lain, jadi mengikuti pola yang sama):
+   ```bash
+   certbot --nginx -d konkit.ptkiansantang.com --non-interactive --agree-tos -m <email> --redirect
+   ```
+
+**Update/redeploy untuk varian ini** — selalu sebut service secara eksplisit, JANGAN jalankan `docker compose up -d --build` tanpa argumen (itu akan ikut mencoba menjalankan `caddy`, yang bentrok port 80/443 dengan nginx yang sudah ada):
+```bash
+cd /opt/konkit
+git pull
+docker compose --env-file .env.compose up -d --build app
+```
