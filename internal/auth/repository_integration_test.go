@@ -289,8 +289,8 @@ func TestIntegrationOperationalMigrationCreatesFoundation(t *testing.T) {
 	if err := pool.QueryRow(ctx, "SELECT count(*) FROM package_template_versions WHERE status = 'published'").Scan(&packageTemplateCount); err != nil {
 		t.Fatal(err)
 	}
-	if packageTemplateCount != 2 {
-		t.Fatalf("expected 2 published package templates, got %d", packageTemplateCount)
+	if packageTemplateCount != 3 {
+		t.Fatalf("expected 3 published package templates, got %d", packageTemplateCount)
 	}
 	if err := pool.QueryRow(ctx, "SELECT count(*) FROM documentation_template_slots").Scan(&documentationSlotCount); err != nil {
 		t.Fatal(err)
