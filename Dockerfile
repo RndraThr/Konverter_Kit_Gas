@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 WORKDIR /app
 COPY go.mod ./
 COPY web/templates ./web/templates
+COPY web/static ./web/static
 COPY --from=frontend /app/web/static/app ./web/static/app
 COPY --from=backend /out/server /out/migrate /out/admin ./
 RUN mkdir -p /app/storage && chown -R app:app /app && chmod 0555 /app/server /app/migrate /app/admin
