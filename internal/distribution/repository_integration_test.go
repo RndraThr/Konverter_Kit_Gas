@@ -167,6 +167,58 @@ func TestCreateSlotRejectsSlotBeyondQuota(t *testing.T) {
 	}
 }
 
+// TestListSlotCatalogReportsStatusAndCompleteness proves ListSlotCatalog returns one row per existing
+// distribution_slots, with documentation_complete correctly reflecting whether every required
+// documentation_slots row for that slot has met its min_files — using the same completeness rule as
+// CompleteSlot (repository.go's incomplete check), just aggregated per slot instead of a single EXISTS.
+func TestListSlotCatalogReportsStatusAndCompleteness(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+
+	var regencyID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan','Catalog Test','CTG',true) ON CONFLICT (document_code) DO UPDATE SET is_active=true RETURNING id::text`).Scan(&regencyID))
+	var programID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES($1,'Program Test Catalog','farmer',2026,'active') RETURNING id::text`, "CTG-TEST-"+suffix).Scan(&programID))
+	var packageTemplateID, docTemplateID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES($1,1,'Paket Test Catalog','farmer','{}'::jsonb,'published') RETURNING id::text`, "PKG-CTG-"+suffix).Scan(&packageTemplateID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES($1,1,'Dok Test Catalog','farmer','published') RETURNING id::text`, "DOC-CTG-"+suffix).Scan(&docTemplateID))
+	must(t, pool.QueryRow(ctx, `
+		INSERT INTO documentation_template_slots(template_version_id,slot_code,label,stage,is_required,min_files,max_files,input_source,require_location,require_captured_at,sort_order)
+		VALUES($1,'foto-wajib','Foto Wajib','penyerahan',true,1,1,'both',false,false,1) RETURNING id::text
+	`, docTemplateID).Scan(new(string)))
+	var scheduleID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,distribution_number_padding,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal Test Catalog','2026-01-01','2026-12-31','active',4,'{}'::jsonb) RETURNING id::text`, programID, regencyID, packageTemplateID, docTemplateID).Scan(&scheduleID))
+
+	repo := NewRepository(pool)
+	incomplete, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.ClientMeta{})
+	must(t, err)
+	complete, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.ClientMeta{})
+	must(t, err)
+
+	// Satisfy the "complete" slot's one required documentation_slots row with an accepted media file.
+	var completeDocSlotID string
+	must(t, pool.QueryRow(ctx, `SELECT id::text FROM documentation_slots WHERE distribution_slot_id=(SELECT id FROM distribution_slots WHERE schedule_id=$1 AND slot_number=$2)`, scheduleID, complete.SlotNumber).Scan(&completeDocSlotID))
+	checksum := strings.Repeat("b", 64)
+	must(t, pool.QueryRow(ctx, `INSERT INTO media_files(documentation_slot_id,storage_key,original_filename,mime_type,byte_size,checksum,source,status) VALUES($1,gen_random_uuid(),'f.jpg','image/jpeg',10,$2,'camera','accepted') RETURNING id::text`, completeDocSlotID, checksum).Scan(new(string)))
+
+	entries, err := repo.ListSlotCatalog(ctx, scheduleID, auth.RegencyScope{Unrestricted: true})
+	must(t, err)
+	if len(entries) != 2 {
+		t.Fatalf("len(entries) = %d, want 2", len(entries))
+	}
+	byNumber := map[int]SlotCatalogEntry{}
+	for _, entry := range entries {
+		byNumber[entry.SlotNumber] = entry
+	}
+	if got := byNumber[incomplete.SlotNumber]; got.Status != "open" || got.DocumentationComplete {
+		t.Fatalf("incomplete slot entry = %+v, want status=open documentation_complete=false", got)
+	}
+	if got := byNumber[complete.SlotNumber]; got.Status != "open" || !got.DocumentationComplete {
+		t.Fatalf("complete slot entry = %+v, want status=open documentation_complete=true", got)
+	}
+}
+
 // mediaFixture seeds a distribution_slot with a documentation_slot and one accepted media_files row,
 // scoped under regencyID, plus a sibling otherRegencyID with no data — used to prove GetMediaSlot/
 // GetMedia/DeleteMedia's re-scoped joins (documentation_slots -> distribution_slots ->

@@ -65,6 +65,12 @@ type DistributionSlot struct {
 	UpdatedAt             time.Time     `json:"updated_at"`
 }
 
+type SlotCatalogEntry struct {
+	SlotNumber            int    `json:"slot_number"`
+	Status                string `json:"status"`
+	DocumentationComplete bool   `json:"documentation_complete"`
+}
+
 type CreateSlotInput struct {
 	ScheduleID            string `json:"schedule_id"`
 	MachineOptionCode     string `json:"machine_option_code"`

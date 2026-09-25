@@ -271,6 +271,34 @@ func (r *Repository) getSlotByID(ctx context.Context, id string) (DistributionSl
 	return slot, nil
 }
 
+func (r *Repository) ListSlotCatalog(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]SlotCatalogEntry, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT ds.slot_number, ds.status,
+			NOT EXISTS(
+				SELECT 1 FROM documentation_slots dcs
+				LEFT JOIN (SELECT documentation_slot_id, count(*) AS accepted FROM media_files WHERE status='accepted' GROUP BY documentation_slot_id) m ON m.documentation_slot_id = dcs.id
+				WHERE dcs.distribution_slot_id = ds.id AND dcs.is_required AND COALESCE(m.accepted,0) < dcs.min_files
+			) AS documentation_complete
+		FROM distribution_slots ds
+		JOIN program_schedules ps ON ps.id = ds.schedule_id
+		WHERE ds.schedule_id=$1 AND ($2 OR ps.regency_id::text = ANY($3))
+		ORDER BY ds.slot_number
+	`, scheduleID, scope.Unrestricted, scope.RegencyIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list slot catalog: %w", err)
+	}
+	defer rows.Close()
+	entries := []SlotCatalogEntry{}
+	for rows.Next() {
+		var entry SlotCatalogEntry
+		if err := rows.Scan(&entry.SlotNumber, &entry.Status, &entry.DocumentationComplete); err != nil {
+			return nil, fmt.Errorf("scan slot catalog entry: %w", err)
+		}
+		entries = append(entries, entry)
+	}
+	return entries, rows.Err()
+}
+
 func (r *Repository) listSlotDocumentation(ctx context.Context, distributionSlotID string) ([]SlotSummary, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT ds.id::text, ds.slot_code, ds.label_snapshot, ds.stage, ds.status, ds.is_required, ds.min_files, ds.max_files, ds.input_source, ds.require_location, ds.require_captured_at
