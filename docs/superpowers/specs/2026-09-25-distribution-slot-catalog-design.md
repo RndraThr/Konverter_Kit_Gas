@@ -1,8 +1,8 @@
 # Rancangan Katalog Slot Distribusi, Kuota, Badge Kelengkapan, dan Scan Barcode
 
-Versi: 0.1
+Versi: 0.2
 Tanggal: 2026-09-25
-Status: Draft hasil diskusi — belum disetujui untuk implementasi, belum ada task/plan turunan
+Status: Disetujui untuk implementation plan
 
 ## 1. Latar Belakang
 
@@ -38,6 +38,7 @@ Alih-alih tombol "buat slot baru" yang selalu menambah nomor berikutnya, tampila
 
 - Kuota (jumlah maksimal slot) diikat ke **`program_schedules`**, bukan ke kabupaten (`regencies`) langsung — karena satu kabupaten bisa punya beberapa jadwal lintas fase, dan kuota adalah properti per-fase, bukan properti tetap kabupaten.
 - Kuota bersifat **opsional/nullable**. Kalau diisi → grid tampil sebagai kotak tetap 1..kuota (termasuk kotak kosong yang belum dibuat slot-nya). Kalau kosong → grid tetap berperilaku seperti sekarang, terbuka/tumbuh sesuai slot yang sudah dibuat, tanpa batas atas.
+- **Keputusan:** kalau kuota diisi, sifatnya **batas keras** — `CreateSlot` menolak permintaan slot baru kalau `slot_number` yang diminta/berikutnya akan melebihi `slot_quota`. Validasi ini masuk di backend (`internal/distribution/repository.go` atau `service.go`, dekat alokasi `slot_number`), bukan cuma di frontend, supaya tidak bisa dilewati lewat panggilan API langsung.
 - Perubahan skema yang kemungkinan dibutuhkan: kolom baru (nama sementara `slot_quota integer NULL`) di `program_schedules`. Perlu migrasi baru (menyusul setelah `00014`).
 
 ### 4.3 Addendum / Penambahan Penerima di Tengah Jalan
@@ -47,7 +48,7 @@ Dua jalur, belum diputuskan mana yang jadi jalur utama (atau dua-duanya didukung
 1. **Koreksi kecil, jadwal/fase sama** — cukup naikkan angka kuota pada jadwal yang sama. Grid otomatis menambah kotak kosong baru di ujung, slot yang sudah selesai tidak terganggu.
 2. **Addendum formal** (ada keputusan/berkas terpisah, tanggal berbeda) — buat **jadwal baru** untuk kabupaten yang sama (pola penamaan mengikuti yang sudah ada, mis. `"<KABUPATEN> - KONVERTER KIT 2026 - Tambahan"`), dengan kuota sendiri. Ini tidak butuh perubahan arsitektur — sistem sudah mendukung multi-jadwal per kabupaten.
 
-Rekomendasi (belum final): opsi 2 sebagai jalur utama untuk addendum yang punya alasan/persetujuan formal (riwayat lebih jelas), opsi 1 untuk koreksi teknis biasa.
+**Keputusan:** dua-duanya ditawarkan di UI. Saat petugas mencoba membuat slot melebihi kuota (ditolak backend sesuai §4.2), frontend menampilkan pilihan: "Naikkan kuota jadwal ini" (edit `slot_quota` langsung) atau "Buat jadwal tambahan baru" (form buat jadwal baru untuk kabupaten yang sama, pre-filled nama dengan sufiks "- Tambahan"). Petugas yang memutuskan sesuai konteks (koreksi kecil vs addendum formal).
 
 ### 4.4 Badge Kelengkapan Dokumen
 
@@ -58,7 +59,7 @@ Setiap kotak angka di grid (§4.1) diberi indikator status visual, karena ini be
 - Ada slot, status `linked`, dokumen wajib belum lengkap — perlu perhatian (mis. kuning).
 - Ada slot, status `completed` (semua dokumen wajib lengkap) — selesai (mis. hijau).
 
-Detail visual (warna persis, ikon vs warna, dsb.) belum diputuskan — ini keputusan desain UI, bukan keputusan data. Data yang dibutuhkan untuk menghitung badge sudah tersedia dari kombinasi `distribution_slots.status` + jumlah `documentation_slots` wajib yang sudah terisi (query serupa dengan yang dipakai `CompleteSlot`, `repository.go:501-513`, tapi untuk banyak slot sekaligus — kemungkinan perlu endpoint list baru, bukan query per-slot).
+**Keputusan:** ikut skema warna yang sudah dipakai di modul ini (lihat `2026-09-03-dcp3-distribution-documentation-design.md` §9) supaya konsisten, bukan bikin skema baru — abu-abu (kosong), kuning (ada slot, dokumen belum lengkap), hijau (selesai), merah dipakai kalau nanti ada kebutuhan menandai slot bermasalah/dibatalkan. Data yang dibutuhkan untuk menghitung badge sudah tersedia dari kombinasi `distribution_slots.status` + jumlah `documentation_slots` wajib yang sudah terisi (query serupa dengan yang dipakai `CompleteSlot`, `repository.go:501-513`, tapi untuk banyak slot sekaligus — perlu endpoint list baru, bukan query per-slot, supaya grid tidak memicu N+1 request).
 
 ### 4.5 Scan Barcode untuk Serial Number
 
@@ -71,7 +72,7 @@ Alasan:
 - Field officer sering bekerja di lokasi dengan koneksi tidak stabil; scanning yang bergantung server menambah titik gagal yang tidak perlu.
 - Microservice baru relevan kalau nanti ada kebutuhan lain: decode dari foto yang diunggah belakangan (bukan scan langsung), atau dipakai lintas banyak jenis klien — belum ada kebutuhan itu sekarang.
 
-Belum diputuskan: library fallback spesifik (kandidat: `@zxing/browser` atau `quagga2`), format barcode yang perlu didukung (Code128? QR? tergantung barcode fisik yang tertempel di unit mesin/converter — perlu dicek contoh fisiknya), dan dampak ukuran bundle (CI sudah punya peringatan bundle >500kB, saat ini index.js ~746kB).
+**Keputusan:** pakai `@zxing/browser` sebagai fallback (dukungan format lebih luas — 1D seperti Code128 maupun 2D seperti QR/DataMatrix — dibanding `quagga2` yang fokus 1D saja; format barcode fisik di unit mesin/converter belum tentu seragam). Native `BarcodeDetector` dipakai lebih dulu kalau browser mendukung, `@zxing/browser` jadi fallback. Bundle-size berdampak (CI sudah warning >500kB, saat ini ~746kB) — mitigasinya pakai `React.lazy()`/dynamic import supaya library ini hanya dimuat saat modal scan benar-benar dibuka, bukan ikut bundle awal.
 
 ## 5. Cakupan Perubahan (perkiraan awal, belum plan resmi)
 
@@ -85,16 +86,13 @@ Belum diputuskan: library fallback spesifik (kandidat: `@zxing/browser` atau `qu
 - Microservice barcode — sudah diputuskan tidak diperlukan (§4.5).
 - Mode offline/PWA untuk grid ini — belum dibahas, mengikuti pola umum dukungan offline yang sudah direncanakan di modul lain (lihat `2026-09-03-dcp3-distribution-documentation-design.md` §14) kalau relevan nanti.
 
-## 7. Pertanyaan Terbuka
+## 7. Pertanyaan Terbuka (sudah diputuskan 2026-09-25)
 
-- Apakah kuota bersifat **enforced** (tidak bisa buat slot melebihi kuota) atau cuma **display cap** (grid tampil sampai kuota, tapi tetap bisa override/tambah manual)?
-- Jalur addendum mana yang jadi default di UI — naikkan kuota, buat jadwal baru, atau dua-duanya ditawarkan sebagai pilihan saat petugas mencoba menambah di luar kuota?
-- Format/warna badge yang dipakai — ikuti pola warna yang sudah ada di aplikasi (lihat label ringkas hijau/kuning/merah/biru/abu-abu di `2026-09-03-dcp3-distribution-documentation-design.md` §9) atau bikin skema baru khusus grid ini?
-- Library barcode fallback yang dipakai, dan format barcode fisik yang perlu didukung (perlu sample barcode dari unit mesin/converter nyata).
+Semua keputusan sudah dituliskan langsung di masing-masing bagian §4 di atas (ditandai **Keputusan:**). Satu hal yang masih perlu diverifikasi manual sebelum/selama implementasi scan barcode: format barcode fisik yang benar-benar tertempel di unit mesin/converter di lapangan (Code128, QR, atau lainnya) — `@zxing/browser` mendukung banyak format sekaligus jadi tidak blocking, tapi baiknya dicek contoh fisiknya untuk memastikan UX scan (jarak fokus, ukuran target) pas.
 
 ## 8. Langkah Berikutnya
 
-Dokumen ini belum disetujui untuk implementasi. Sebelum masuk ke implementation plan:
+Spesifikasi ini sudah disetujui untuk implementation plan. Lanjut ke `superpowers:writing-plans` untuk memecah jadi task-task konkret. Kemungkinan dua plan terpisah karena independen satu sama lain:
 
-1. Jawab pertanyaan di §7 (minimal: enforced vs display-cap untuk kuota, jalur addendum default).
-2. Kalau sudah, lanjut ke `superpowers:writing-plans` untuk memecah ini jadi task-task konkret (migrasi skema, endpoint list slot, komponen grid, komponen scan barcode) — kemungkinan besar dua plan terpisah (katalog+kuota+badge sebagai satu paket, scan barcode sebagai paket lain) karena keduanya independen satu sama lain.
+1. **Paket katalog** — migrasi `program_schedules.slot_quota`, validasi batas keras di `CreateSlot`, endpoint list status slot per jadwal (untuk grid + badge sekaligus tanpa N+1), komponen grid/katalog di frontend, alur pilihan "naikkan kuota / jadwal baru" saat kuota tercapai.
+2. **Paket scan barcode** — komponen modal scan kamera (dynamic import `@zxing/browser`), integrasi ke 3 field serial number di `DistributionPage.tsx`.
