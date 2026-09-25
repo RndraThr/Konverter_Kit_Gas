@@ -42,3 +42,27 @@ test('canCreate=false disables the create-next box', () => {
   render(<SlotCatalogGrid entries={[]} onSelect={vi.fn()} onCreateNext={vi.fn()} canCreate={false} />);
   expect(screen.getByRole('button', { name: /Buat Nomor 1/ })).toBeDisabled();
 });
+
+test('a completed slot whose documentation is no longer complete is flagged distinctly from a normal completed slot', () => {
+  const entries: SlotCatalogEntry[] = [
+    { slot_number: 1, status: 'completed', documentation_complete: true },
+    { slot_number: 2, status: 'completed', documentation_complete: false },
+  ];
+  render(<SlotCatalogGrid quota={2} entries={entries} onSelect={vi.fn()} onCreateNext={vi.fn()} canCreate />);
+  const normalCompleted = screen.getByRole('button', { name: /Nomor 1 - Selesai$/ });
+  const flaggedCompleted = screen.getByRole('button', { name: /Nomor 2 - Selesai \(dokumen berkurang\)/ });
+  expect(normalCompleted.className).not.toBe(flaggedCompleted.className);
+});
+
+test('quota lower than the number of existing entries still renders every entry', () => {
+  const entries: SlotCatalogEntry[] = [
+    { slot_number: 1, status: 'open', documentation_complete: false },
+    { slot_number: 2, status: 'open', documentation_complete: false },
+    { slot_number: 3, status: 'open', documentation_complete: false },
+  ];
+  render(<SlotCatalogGrid quota={1} entries={entries} onSelect={vi.fn()} onCreateNext={vi.fn()} canCreate />);
+  expect(screen.getByRole('button', { name: /Nomor 1/ })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /Nomor 2/ })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /Nomor 3/ })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Buat Nomor/ })).not.toBeInTheDocument();
+});

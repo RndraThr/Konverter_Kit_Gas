@@ -49,4 +49,5 @@
 .catalogOpen { border-color: var(--blue); color: var(--blue); }
 .catalogPending { border-color: var(--amber); color: var(--amber); background: #fdf6ea; }
 .catalogCompleted { border-color: var(--green); color: var(--green); background: var(--green-soft); }
+.catalogCompletedWarning { border-color: var(--red); color: var(--red); background: #fbeceb; }
 .catalogNext { border-style: dashed; color: var(--dashboard-muted); }
