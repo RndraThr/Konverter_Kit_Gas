@@ -286,13 +286,13 @@ func TestIntegrationOperationalMigrationCreatesFoundation(t *testing.T) {
 	}
 
 	var packageTemplateCount, documentationSlotCount int
-	if err := pool.QueryRow(ctx, "SELECT count(*) FROM package_template_versions WHERE status = 'published'").Scan(&packageTemplateCount); err != nil {
+	if err := pool.QueryRow(ctx, "SELECT count(*) FROM package_template_versions WHERE status = 'published' AND template_code = ANY($1)", []string{"PETANI-LPG", "NELAYAN-LPG", "KONKIT-2026"}).Scan(&packageTemplateCount); err != nil {
 		t.Fatal(err)
 	}
 	if packageTemplateCount != 3 {
 		t.Fatalf("expected 3 published package templates, got %d", packageTemplateCount)
 	}
-	if err := pool.QueryRow(ctx, "SELECT count(*) FROM documentation_template_slots").Scan(&documentationSlotCount); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM documentation_template_slots slots JOIN documentation_template_versions templates ON templates.id=slots.template_version_id WHERE templates.template_code IN ('DOK-PETANI','DOK-NELAYAN') AND templates.version=1`).Scan(&documentationSlotCount); err != nil {
 		t.Fatal(err)
 	}
 	if documentationSlotCount != 8 {

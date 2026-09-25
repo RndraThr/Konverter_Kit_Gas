@@ -285,8 +285,8 @@ func TestStatsGroupsByAllocationStatusAndExcludesCancelledFromTotal(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.ByAllocationStatus["distributed"] < 1 || stats.ByAllocationStatus["needs_review"] < 1 || stats.ByAllocationStatus["cancelled"] < 1 {
-		t.Fatalf("expected all three statuses represented: %+v", stats.ByAllocationStatus)
+	if stats.ByAllocationStatus["distributed"] < 1 || stats.ByAllocationStatus["needs_review"] < 1 || stats.ByAllocationStatus["cancelled"] != 0 {
+		t.Fatalf("expected active statuses and no cancelled recipients: %+v", stats.ByAllocationStatus)
 	}
 	_ = fixture.distributedAllocID
 }

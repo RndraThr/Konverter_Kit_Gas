@@ -90,7 +90,7 @@ func TestIntegrationLoginDashboardAndLogout(t *testing.T) {
 	logout.AddCookie(sessionCookie)
 	logoutResponse := httptest.NewRecorder()
 	handler.ServeHTTP(logoutResponse, logout)
-	if logoutResponse.Code != http.StatusSeeOther || logoutResponse.Header().Get("Location") != "/login" {
+	if logoutResponse.Code != http.StatusSeeOther || logoutResponse.Header().Get("Location") != "/login?notice=logged_out" {
 		t.Fatalf("logout failed: status=%d location=%q", logoutResponse.Code, logoutResponse.Header().Get("Location"))
 	}
 

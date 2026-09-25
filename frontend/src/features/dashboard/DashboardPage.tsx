@@ -100,7 +100,7 @@ export function DashboardPage() {
 
   const save = useMutation({
     mutationFn: (values: RecipientInput) => {
-      const { schedule_id, ...updateOnly } = values;
+      const { schedule_id: _schedule_id, ...updateOnly } = values;
       return apiRequest(editing ? `/api/v1/recipients/${editing.allocation_id}` : '/api/v1/recipients', {
         method: editing ? 'PATCH' : 'POST', body: JSON.stringify(editing ? updateOnly : values),
       });

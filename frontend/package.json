@@ -1,8 +1,11 @@
 {
+  "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5173",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.e2e.json",
+    "lint": "eslint src e2e --max-warnings 5",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test"
@@ -27,6 +30,7 @@
     "vite": "^7.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@playwright/test": "^1.62.1",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
@@ -34,7 +38,11 @@
     "@types/node": "^22.20.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^15.15.0",
     "jsdom": "^29.1.1",
+    "typescript-eslint": "^8.70.1",
     "vitest": "^4.1.11"
   }
 }

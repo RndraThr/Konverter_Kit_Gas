@@ -160,11 +160,11 @@ docker build -t konkit:local .
 
 ### Stack staging (docker compose)
 
-`docker-compose.yml` menyediakan tiga service: `postgres` (data di volume `postgres-data`), `app` (image di atas, mount volume `storage-data` ke `/app/storage` dan file token OAuth Google Drive read-only), dan `caddy` (reverse proxy, HTTPS otomatis via Let's Encrypt berdasarkan domain).
+`docker-compose.yml` menyediakan tiga service: `postgres` (data di volume `postgres-data`), `app` (image di atas dan volume `storage-data` ke `/app/storage`), dan `caddy` (reverse proxy, HTTPS otomatis via Let's Encrypt berdasarkan domain). Mount token OAuth Google Drive ditambahkan secara eksplisit melalui `docker-compose.gdrive.yml`.
 
 Ada **dua** file environment yang terpisah dan tidak boleh tertukar:
 - `.env.staging` — dibaca oleh service `app` (lewat `env_file:`) untuk konfigurasi aplikasi Go (`DATABASE_URL`, `SESSION_SECRET`, `STORAGE_BACKEND`, dll). Salin dari `.env.staging.example`.
-- `.env.compose` — dibaca oleh `docker compose` sendiri untuk substitusi variabel di `docker-compose.yml` (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `GDRIVE_OAUTH_TOKEN_HOST_PATH`, `APP_DOMAIN`). **Wajib** diteruskan eksplisit lewat `--env-file .env.compose` di **setiap** perintah `docker compose` (termasuk `ps`/`logs`/`down`) — tanpa flag ini, compose diam-diam memakai default kosong.
+- `.env.compose` — dibaca oleh `docker compose` sendiri untuk substitusi variabel di file Compose (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `GDRIVE_OAUTH_TOKEN_HOST_PATH`, `APP_DOMAIN`). **Wajib** diteruskan eksplisit lewat `--env-file .env.compose` di **setiap** perintah `docker compose` (termasuk `ps`/`logs`/`down`).
 
 Kedua file ini tidak pernah masuk git (`.gitignore`).
 
@@ -191,25 +191,33 @@ Kedua file ini tidak pernah masuk git (`.gitignore`).
    ```
    Edit `.env.staging`: isi `SESSION_SECRET` (`openssl rand -base64 32`), `APP_BASE_URL` (domain HTTPS staging), `DATABASE_URL` (password harus sama dengan `POSTGRES_PASSWORD` di bawah), dan `GDRIVE_OAUTH_CLIENT_ID`/`GDRIVE_OAUTH_CLIENT_SECRET`/`GDRIVE_OAUTH_TOKEN_JSON`/`GDRIVE_ROOT_FOLDER_ID` (lihat bagian OAuth Google Drive di atas untuk cara mendapatkannya — jalankan `cmd/gdrive-oauth-setup` di komputer lokal, lalu upload `gdrive-oauth-token.json` yang dihasilkan ke VPS, di luar folder repo).
 
-   Buat `.env.compose` (tidak ada file contoh karena isinya murni operasional, bukan rahasia aplikasi):
-   ```
-   POSTGRES_USER=konkit
-   POSTGRES_PASSWORD=<sama dengan di .env.staging>
-   POSTGRES_DB=konkit
-   GDRIVE_OAUTH_TOKEN_HOST_PATH=/root/gdrive-oauth-token.json
-   APP_DOMAIN=staging.namadomain.com
-   ```
-
-   Kalau tidak butuh Google Drive (cukup `STORAGE_BACKEND=local`), hapus baris `GDRIVE_OAUTH_TOKEN_HOST_PATH` di atas dan comment-out baris volume token di `docker-compose.yml`.
-
-5. Jalankan stack:
+   Buat `.env.compose` dari contoh yang tersedia:
    ```bash
-   docker compose --env-file .env.compose up -d --build
+   cp .env.compose.example .env.compose
+   ```
+   Edit `.env.compose`: isi `POSTGRES_PASSWORD` (harus sama dengan yang ada di `.env.staging`), `APP_DOMAIN` (domain staging tanpa `https://`). Jika memakai Google Drive, isi juga `GDRIVE_OAUTH_TOKEN_HOST_PATH`.
+
+   Variabel kritis (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `APP_DOMAIN`) memiliki validasi wajib — Docker Compose akan berhenti dengan pesan error yang jelas jika salah satu kosong.
+
+   **Mode Google Drive** adalah default contoh staging (`STORAGE_BACKEND=gdrive` di `.env.staging.example`). Isi `GDRIVE_OAUTH_TOKEN_HOST_PATH` dengan path absolut token pada host dan gunakan file override pada setiap perintah yang dapat membuat ulang service `app`:
+
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.gdrive.yml \
+     --env-file .env.compose up -d --build
+   ```
+
+   **Mode penyimpanan lokal**: ubah `.env.staging` menjadi `STORAGE_BACKEND=local`, kosongkan konfigurasi GDrive aplikasi bila tidak digunakan, lalu jalankan hanya file Compose utama tanpa override GDrive.
+
+5. Jalankan stack staging default (Google Drive):
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.gdrive.yml \
+     --env-file .env.compose up -d --build
    ```
 
 6. Buat akun admin pertama:
    ```bash
-   docker compose --env-file .env.compose exec app ./admin create
+   docker compose -f docker-compose.yml -f docker-compose.gdrive.yml \
+     --env-file .env.compose exec app ./admin create
    ```
 
 7. Verifikasi: `curl https://staging.namadomain.com/api/v1/health` harus mengembalikan `{"status":"ok"}`. Buka domain tersebut di browser dan login.
@@ -218,7 +226,8 @@ Kedua file ini tidak pernah masuk git (`.gitignore`).
 
 ```bash
 git pull
-docker compose --env-file .env.compose up -d --build
+docker compose -f docker-compose.yml -f docker-compose.gdrive.yml \
+  --env-file .env.compose up -d --build
 ```
 
 Hanya service `app` yang di-rebuild dan direcreate bila source berubah; data `postgres`/`storage` di volume tetap ada. Migrasi baru otomatis diterapkan lewat `ENTRYPOINT` saat container `app` start ulang.
@@ -237,9 +246,10 @@ Langkah di atas mengasumsikan VPS kosong/khusus, dengan Caddy sebagai reverse pr
          - "127.0.0.1:8090:8080"
    ```
    (Ganti `8090` kalau port itu sudah dipakai proyek lain di server yang sama — cek dulu dengan `ss -tlnp`.)
-4. Jalankan **hanya** `postgres` dan `app`, jangan `caddy`:
+4. Jalankan **hanya** `postgres` dan `app`, jangan `caddy`. Karena perintah memakai file Compose eksplisit, sertakan override nginx lokal dan override GDrive:
    ```bash
-   docker compose --env-file .env.compose up -d --build postgres app
+   docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.gdrive.yml \
+     --env-file .env.compose up -d --build postgres app
    ```
 5. Tambahkan site nginx baru, mengikuti pola situs lain di server yang sama (lihat `/etc/nginx/sites-available/` untuk contoh format yang sudah dipakai):
    ```nginx
@@ -275,5 +285,6 @@ Langkah di atas mengasumsikan VPS kosong/khusus, dengan Caddy sebagai reverse pr
 ```bash
 cd /opt/konkit
 git pull
-docker compose --env-file .env.compose up -d --build app
+docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.gdrive.yml \
+  --env-file .env.compose up -d --build app
 ```

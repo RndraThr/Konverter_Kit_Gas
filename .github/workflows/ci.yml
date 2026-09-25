@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Backend: Go ─────────────────────────────────────────
+  backend:
+    name: Go vet, unit & integration tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: konkit
+          POSTGRES_PASSWORD: konkit
+          POSTGRES_DB: konkit_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U konkit -d konkit_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://konkit:konkit@127.0.0.1:5432/konkit_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: Check Go formatting
+        run: |
+          UNFORMATTED=$(gofmt -l .)
+          if [ -n "$UNFORMATTED" ]; then
+            echo "Files requiring gofmt:"
+            echo "$UNFORMATTED"
+            exit 1
+          fi
+
+      - name: go test (unit and integration)
+        run: go test -p 1 ./...
+
+  # ── Frontend: TypeScript + lint + unit test + build ─────
+  frontend:
+    name: Frontend checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: npm ci
+        run: npm ci
+
+      - name: TypeScript type-check
+        run: npm run typecheck
+
+      - name: ESLint
+        # max-warnings matches the current baseline in package.json.
+        # Lower this number as warnings are resolved.
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test -- --run --maxWorkers=1
+
+      - name: Production build
+        run: npm run build
+
+      - name: Verify tracked frontend bundle
+        run: git diff --exit-code -- ../web/static/app
+
+      - name: Check bundle size (warn if JS chunk > 500 kB)
+        run: |
+          SIZE=$(stat -c%s ../web/static/app/assets/*.js 2>/dev/null | sort -n | tail -1 || echo 0)
+          echo "Largest JS chunk: ${SIZE} bytes"
+          if [ "$SIZE" -gt 512000 ]; then
+            echo "::warning::Bundle JS terbesar ${SIZE} bytes (> 500 kB). Pertimbangkan lazy loading per route."
+          fi
+
+  e2e:
+    name: Playwright E2E
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: konkit
+          POSTGRES_PASSWORD: konkit
+          POSTGRES_DB: konkit_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U konkit -d konkit_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Create E2E environment
+        run: |
+          cat > .env <<'EOF'
+          APP_ENV=test
+          APP_ADDR=:8082
+          APP_BASE_URL=http://127.0.0.1:8082
+          DATABASE_URL=postgres://konkit:konkit@127.0.0.1:5432/konkit_test?sslmode=disable
+          SESSION_SECRET=konkit-ci-session-secret-at-least-32-bytes
+          SESSION_COOKIE_SECURE=false
+          STORAGE_BACKEND=local
+          STORAGE_PATH=./.cache/e2e-storage
+          EOF
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Chrome for Playwright
+        working-directory: frontend
+        run: npm exec playwright install --with-deps chrome
+
+      - name: Run Playwright E2E
+        working-directory: frontend
+        run: npm run e2e

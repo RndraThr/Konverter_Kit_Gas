@@ -5,6 +5,27 @@
 -- natural unique key — a program can legitimately have multiple schedules
 -- per regency across different phases, so this only skips a regency that
 -- already has a schedule with this exact generated name.
+--
+-- The dependency checks below turn a silent zero-row insert into a loud
+-- failure: goose only runs this migration once per database, so if the
+-- rows it depends on (from migrations 00004/00013) were ever wiped by a
+-- manual data reset without also resetting goose's bookkeeping, this
+-- would otherwise insert nothing and report success.
+-- +goose StatementBegin
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM programs WHERE code = 'KONKIT-2026') THEN
+        RAISE EXCEPTION 'seed 00014: program KONKIT-2026 not found (expected from migration 00013)';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM package_template_versions WHERE template_code = 'KONKIT-2026' AND version = 1) THEN
+        RAISE EXCEPTION 'seed 00014: package template KONKIT-2026 v1 not found (expected from migration 00013)';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM documentation_template_versions WHERE template_code = 'DOK-PETANI' AND version = 1) THEN
+        RAISE EXCEPTION 'seed 00014: documentation template DOK-PETANI v1 not found (expected from migration 00004)';
+    END IF;
+END $$;
+-- +goose StatementEnd
+
 INSERT INTO program_schedules (program_id, regency_id, package_template_version_id, documentation_template_version_id, name, start_date, end_date, status, distribution_number_padding)
 SELECT
     p.id,

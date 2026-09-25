@@ -73,14 +73,15 @@ func must(t *testing.T, err error) {
 func TestCompleteSlotOpenSlotReturnsErrSlotNotLinked(t *testing.T) {
 	pool := distributionIntegrationPool(t)
 	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
 
 	var regencyID string
-	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan','Penyerahan Test','PYT',true) RETURNING id::text`).Scan(&regencyID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan','Penyerahan Test','PYT',true) ON CONFLICT (document_code) DO UPDATE SET is_active=true RETURNING id::text`).Scan(&regencyID))
 	var programID string
-	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES('PNY-TEST','Program Test Penyerahan','farmer',2026,'active') RETURNING id::text`).Scan(&programID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES($1,'Program Test Penyerahan','farmer',2026,'active') RETURNING id::text`, "PNY-TEST-"+suffix).Scan(&programID))
 	var packageTemplateID, docTemplateID string
-	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES('PKG-PNY',1,'Paket Test Penyerahan','farmer','{}'::jsonb,'published') RETURNING id::text`).Scan(&packageTemplateID))
-	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES('DOC-PNY',1,'Dok Test Penyerahan','farmer','published') RETURNING id::text`).Scan(&docTemplateID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES($1,1,'Paket Test Penyerahan','farmer','{}'::jsonb,'published') RETURNING id::text`, "PKG-PNY-"+suffix).Scan(&packageTemplateID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES($1,1,'Dok Test Penyerahan','farmer','published') RETURNING id::text`, "DOC-PNY-"+suffix).Scan(&docTemplateID))
 	var scheduleID string
 	must(t, pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,distribution_number_padding,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal Test Penyerahan','2026-01-01','2026-12-31','active',4,'{}'::jsonb) RETURNING id::text`, programID, regencyID, packageTemplateID, docTemplateID).Scan(&scheduleID))
 
@@ -100,14 +101,15 @@ func TestCompleteSlotOpenSlotReturnsErrSlotNotLinked(t *testing.T) {
 func TestCreateSlotSnapshotsDocumentationStage(t *testing.T) {
 	pool := distributionIntegrationPool(t)
 	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
 
 	var regencyID string
-	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan','Stage Test','STG',true) RETURNING id::text`).Scan(&regencyID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan','Stage Test','STG',true) ON CONFLICT (document_code) DO UPDATE SET is_active=true RETURNING id::text`).Scan(&regencyID))
 	var programID string
-	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES('STG-TEST','Program Test Stage','farmer',2026,'active') RETURNING id::text`).Scan(&programID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES($1,'Program Test Stage','farmer',2026,'active') RETURNING id::text`, "STG-TEST-"+suffix).Scan(&programID))
 	var packageTemplateID, docTemplateID string
-	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES('PKG-STG',1,'Paket Test Stage','farmer','{}'::jsonb,'published') RETURNING id::text`).Scan(&packageTemplateID))
-	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES('DOC-STG',1,'Dok Test Stage','farmer','published') RETURNING id::text`).Scan(&docTemplateID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES($1,1,'Paket Test Stage','farmer','{}'::jsonb,'published') RETURNING id::text`, "PKG-STG-"+suffix).Scan(&packageTemplateID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES($1,1,'Dok Test Stage','farmer','published') RETURNING id::text`, "DOC-STG-"+suffix).Scan(&docTemplateID))
 	must(t, pool.QueryRow(ctx, `
 		INSERT INTO documentation_template_slots(template_version_id,slot_code,label,stage,is_required,min_files,max_files,input_source,require_location,require_captured_at,sort_order)
 		VALUES($1,'foto-mesin','Foto Mesin','mesin',true,1,3,'both',false,false,1) RETURNING id::text
@@ -311,14 +313,15 @@ func TestDeleteMediaWithinScopeSucceeds(t *testing.T) {
 func TestLinkSlotReturnsRecipientIdentity(t *testing.T) {
 	pool := distributionIntegrationPool(t)
 	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
 
 	var regencyID string
-	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan','Identity Test','IDT',true) RETURNING id::text`).Scan(&regencyID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan','Identity Test','IDT',true) ON CONFLICT (document_code) DO UPDATE SET is_active=true RETURNING id::text`).Scan(&regencyID))
 	var programID string
-	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES('IDT-TEST','Program Test Identity','farmer',2026,'active') RETURNING id::text`).Scan(&programID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES($1,'Program Test Identity','farmer',2026,'active') RETURNING id::text`, "IDT-TEST-"+suffix).Scan(&programID))
 	var packageTemplateID, docTemplateID string
-	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES('PKG-IDT',1,'Paket Test Identity','farmer','{}'::jsonb,'published') RETURNING id::text`).Scan(&packageTemplateID))
-	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES('DOC-IDT',1,'Dok Test Identity','farmer','published') RETURNING id::text`).Scan(&docTemplateID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES($1,1,'Paket Test Identity','farmer','{}'::jsonb,'published') RETURNING id::text`, "PKG-IDT-"+suffix).Scan(&packageTemplateID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES($1,1,'Dok Test Identity','farmer','published') RETURNING id::text`, "DOC-IDT-"+suffix).Scan(&docTemplateID))
 	var scheduleID string
 	must(t, pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,distribution_number_padding,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal Test Identity','2026-01-01','2026-12-31','active',4,'{}'::jsonb) RETURNING id::text`, programID, regencyID, packageTemplateID, docTemplateID).Scan(&scheduleID))
 

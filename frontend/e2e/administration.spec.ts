@@ -1,15 +1,8 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { navigateDashboard } from './navigation';
 
 const username = 'e2e.admin';
 const password = 'Konkit-E2E-Password-2026';
-
-async function navigate(page: Page, label: string, mobile: boolean) {
-  if (mobile) await page.getByRole('button', { name: 'Buka navigasi' }).click();
-  await page.getByRole('link', { name: label, exact: true }).click();
-  // The mobile Sheet closes with a 150ms opacity transition; screenshotting
-  // before it settles captures the drawer ghosted over the page content.
-  if (mobile) await expect(page.locator('[data-slot="sheet-overlay"]')).not.toBeVisible();
-}
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/login');
@@ -82,12 +75,12 @@ test('administration foundation journey', async ({ page }, testInfo) => {
     await expect(page.getByRole('button', { name: 'Minimalkan sidebar' })).toBeVisible();
   }
 
-  await navigate(page, 'Map Distribusi', testInfo.project.name === 'mobile');
+  await navigateDashboard(page, 'Map Distribusi', testInfo.project.name === 'mobile');
   await expect(page.getByRole('heading', { name: 'Map Distribusi', exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('map-distribusi.png'), fullPage: true });
 
-  await navigate(page, 'Profil saya', testInfo.project.name === 'mobile');
+  await navigateDashboard(page, 'Profil saya', testInfo.project.name === 'mobile');
   await expect(page.getByRole('heading', { name: 'Profil saya', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Informasi profil', exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Keamanan akun', exact: true })).toBeVisible();
@@ -99,13 +92,13 @@ test('administration foundation journey', async ({ page }, testInfo) => {
     ['Pengguna', 'Pengguna'], ['Role & akses', 'Role & akses'],
     ['Pengaturan', 'Pengaturan sistem'], ['Kesehatan sistem', 'Kesehatan sistem'], ['Riwayat aktivitas', 'Riwayat aktivitas'],
   ]) {
-    await navigate(page, link, testInfo.project.name === 'mobile');
+    await navigateDashboard(page, link, testInfo.project.name === 'mobile');
     await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`${link.toLowerCase().replaceAll(' ', '-')}.png`), fullPage: true });
   }
 
-  await navigate(page, 'Pengguna', testInfo.project.name === 'mobile');
+  await navigateDashboard(page, 'Pengguna', testInfo.project.name === 'mobile');
   await page.getByRole('button', { name: 'Tambah pengguna' }).click();
   await page.getByLabel('Nama lengkap').fill(displayName);
   await page.getByLabel('Username').fill(`petugas.e2e.${testInfo.project.name}`);
@@ -121,8 +114,10 @@ test('administration foundation journey', async ({ page }, testInfo) => {
   await page.getByRole('alertdialog', { name: `Nonaktifkan ${displayName}?` }).getByRole('button', { name: 'Nonaktifkan pengguna' }).click();
   await expect(page.getByRole('row').filter({ hasText: displayName }).getByText('Nonaktif')).toBeVisible();
 
-  await navigate(page, 'Riwayat aktivitas', testInfo.project.name === 'mobile');
-  await expect(page.getByText(/user\.(created|updated)/).first()).toBeVisible();
+  await navigateDashboard(page, 'Riwayat aktivitas', testInfo.project.name === 'mobile');
+  await page.getByRole('textbox', { name: 'Filter aksi' }).fill('user.updated');
+  await page.getByRole('button', { name: 'Terapkan filter' }).click();
+  await expect(page.getByText('user.updated').first()).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath(`konkit-${testInfo.project.name}-final.png`), fullPage: true });
 
   await page.getByRole('button', { name: 'Menu akun' }).click();

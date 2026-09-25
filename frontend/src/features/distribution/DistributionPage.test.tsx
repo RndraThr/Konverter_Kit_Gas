@@ -23,11 +23,18 @@ const slot = {
 };
 
 function renderPage(permissions = ['distribution.view', 'distribution.pos_mesin']) {
-  vi.mocked(apiRequest).mockImplementation((path, init) => {
+  vi.mocked(apiRequest).mockImplementation((path, _init) => {
     if (path === '/api/v1/program-setup/schedules') return Promise.resolve({ data: [{
       id: 'schedule-1', name: 'Wajo Tahap 1', status: 'active', start_date: '2026-09-01T00:00:00Z', end_date: '2026-09-30T00:00:00Z',
       program: { id: 'program-1', name: 'Program Petani 2026', program_type: 'farmer' }, regency: { id: 'regency-1', name: 'Wajo', document_code: 'WJO' },
-      package_template: { id: 'pkg-1', template_code: 'PETANI-LPG', version: 1, name: 'Paket Petani', program_type: 'farmer', status: 'published', values: { machine_options: [], hose_options: [] } },
+      package_template_version_id: 'pkg-1',
+    }] });
+    if (path === '/api/v1/program-setup/package-templates') return Promise.resolve({ data: [{
+      id: 'pkg-1', template_code: 'PETANI-LPG', version: 1, name: 'Paket Petani', program_type: 'farmer', status: 'published',
+      values: {
+        machine_options: [{ code: 'machine-1', brand: 'SHARK', type: 'SPWP 80-30' }],
+        hose_options: [{ code: 'hose-1', brand: 'TRILIUNHOSE', spec: '6m / 10m' }],
+      },
     }] });
     if (path.startsWith('/api/v1/distribution/slots/search')) return Promise.resolve({ data: slot });
     return Promise.reject(new Error(`Unexpected request: ${path}`));
@@ -52,4 +59,12 @@ test('hides the create-slot button without distribution.pos_mesin', async () => 
   renderPage(['distribution.view']);
   await chooseSchedule(/Wajo Tahap 1/);
   expect(screen.queryByRole('button', { name: 'Buat Slot Mesin Baru' })).not.toBeInTheDocument();
+});
+
+test('loads equipment options from the schedule package template reference', async () => {
+  renderPage();
+  await chooseSchedule(/Wajo Tahap 1/);
+  await userEvent.click(screen.getByRole('button', { name: 'Buat Slot Mesin Baru' }));
+  await userEvent.click(screen.getByRole('combobox', { name: 'Merk/Tipe Mesin' }));
+  expect(await screen.findByRole('option', { name: /SHARK SPWP 80-30/ })).toBeVisible();
 });

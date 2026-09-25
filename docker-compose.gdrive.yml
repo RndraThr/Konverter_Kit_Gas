@@ -1,0 +1,19 @@
+# docker-compose.gdrive.yml
+# ============================================================
+# Override untuk mengaktifkan Google Drive sebagai backend
+# penyimpanan file. Gunakan HANYA jika STORAGE_BACKEND=gdrive
+# di .env.staging, dan GDRIVE_OAUTH_TOKEN_HOST_PATH sudah
+# diisi di .env.compose.
+#
+# Cara pakai (menambahkan mount token; Caddy tetap digunakan):
+#   docker compose -f docker-compose.yml -f docker-compose.gdrive.yml \
+#     --env-file .env.compose up -d --build
+#
+# Tanpa file ini, service app tidak memiliki volume token
+# sehingga mode local (STORAGE_BACKEND=local) aman dipakai
+# tanpa edit manual file utama.
+# ============================================================
+services:
+  app:
+    volumes:
+      - ${GDRIVE_OAUTH_TOKEN_HOST_PATH:?GDRIVE_OAUTH_TOKEN_HOST_PATH wajib diisi di .env.compose saat memakai gdrive}:/run/secrets/gdrive-oauth-token.json:ro

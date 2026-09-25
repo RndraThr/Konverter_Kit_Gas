@@ -27,14 +27,14 @@ const preview = {
 };
 
 function renderPage(permissions = ['dcp3.view', 'dcp3.import']) {
-  vi.mocked(apiRequest).mockImplementation((path, init) => {
+  vi.mocked(apiRequest).mockImplementation((path, _init) => {
     if (path === '/api/v1/program-setup/schedules') return Promise.resolve({ data: [{
       id: 'schedule-1', name: 'Wajo Tahap 1', status: 'active', start_date: '2026-09-01T00:00:00Z', end_date: '2026-09-30T00:00:00Z',
       program: { id: 'program-1', name: 'Program Petani 2026', program_type: 'farmer' },
       regency: { id: 'regency-1', name: 'Wajo', document_code: 'WJO' },
     }] });
     if (path === '/api/v1/dcp3/previews') return Promise.resolve({ data: preview });
-    if (path === '/api/v1/dcp3/imports' && init?.method === 'POST') return Promise.resolve({ data: {
+    if (path === '/api/v1/dcp3/imports' && _init?.method === 'POST') return Promise.resolve({ data: {
       batch_id: 'batch-1', total_rows: 3, valid_rows: 1, warning_rows: 1, invalid_rows: 1,
     } });
     return Promise.reject(new Error(`Unexpected request: ${path}`));
@@ -94,7 +94,7 @@ test('imports a DCP3 workbook through the four review steps', async () => {
 
 test('lets the user pick the real header row when the workbook has leading title rows', async () => {
   let previewAttempts = 0;
-  vi.mocked(apiRequest).mockImplementation((path, init) => {
+  vi.mocked(apiRequest).mockImplementation((path, _init) => {
     if (path === '/api/v1/program-setup/schedules') return Promise.resolve({ data: [{
       id: 'schedule-1', name: 'Wajo Tahap 1', status: 'active', start_date: '2026-09-01T00:00:00Z', end_date: '2026-09-30T00:00:00Z',
       program: { id: 'program-1', name: 'Program Petani 2026', program_type: 'farmer' },

@@ -1,6 +1,7 @@
 .flyenv
 .env
 .env.staging
+.env.compose
 *-service-account.json
 gdrive-oauth-token*.json
 .cache/
@@ -12,6 +13,7 @@ gdrive-oauth-token*.json
 frontend/node_modules/
 frontend/test-results/
 frontend/playwright-report/
+frontend/*.tsbuildinfo
 *.exe
 
 # Python-generated cache files

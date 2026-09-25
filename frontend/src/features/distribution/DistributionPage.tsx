@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import type { PackageTemplate } from '../programs/types';
 
 const emptyCreateInput = (scheduleID: string): CreateSlotInput => ({ schedule_id: scheduleID, machine_option_code: '', machine_serial_number: '', hose_option_code: '', hose_serial_number: '', converter_serial_number: '' });
 
@@ -29,9 +30,11 @@ export function DistributionPage() {
   const [createInput, setCreateInput] = useState<CreateSlotInput>(() => emptyCreateInput(''));
 
   const schedules = useQuery({ queryKey: ['program-setup', 'schedules'], queryFn: () => apiRequest<ScheduleResponse>('/api/v1/program-setup/schedules') });
+  const packageTemplates = useQuery({ queryKey: ['program-setup', 'package-templates'], queryFn: () => apiRequest<DataResponse<PackageTemplate[]>>('/api/v1/program-setup/package-templates') });
   const selectedSchedule = schedules.data?.data.find((schedule) => schedule.id === scheduleID);
-  const machineOptions = ((selectedSchedule?.package_template?.values as { machine_options?: EquipmentOption[] } | undefined)?.machine_options) ?? [];
-  const hoseOptions = ((selectedSchedule?.package_template?.values as { hose_options?: EquipmentOption[] } | undefined)?.hose_options) ?? [];
+  const selectedPackageTemplate = selectedSchedule?.package_template ?? packageTemplates.data?.data.find((template) => template.id === selectedSchedule?.package_template_version_id);
+  const machineOptions = ((selectedPackageTemplate?.values as { machine_options?: EquipmentOption[] } | undefined)?.machine_options) ?? [];
+  const hoseOptions = ((selectedPackageTemplate?.values as { hose_options?: EquipmentOption[] } | undefined)?.hose_options) ?? [];
 
   const search = useMutation({
     mutationFn: () => apiRequest<DataResponse<DistributionSlot>>(`/api/v1/distribution/slots/search?schedule_id=${encodeURIComponent(scheduleID)}&q=${encodeURIComponent(query)}`),
