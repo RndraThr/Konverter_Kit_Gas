@@ -473,6 +473,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "slot_not_linked", "Nomor bagi ini belum terhubung ke penerima")
 	case errors.Is(err, distribution.ErrAlreadyCompleted):
 		writeError(w, http.StatusConflict, "already_completed", "Distribusi untuk nomor bagi ini sudah selesai")
+	case errors.Is(err, distribution.ErrSlotQuotaExceeded):
+		writeError(w, http.StatusConflict, "slot_quota_exceeded", "Kuota slot untuk jadwal ini sudah tercapai")
 	case errors.Is(err, dcp3.ErrWorkbookTooLarge):
 		writeError(w, http.StatusRequestEntityTooLarge, "workbook_too_large", err.Error())
 	case errors.Is(err, distribution.ErrMediaTooLarge):

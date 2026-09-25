@@ -518,6 +518,45 @@ func TestDistributionSlotSearchAllowsViewOnlyPermissionAndAnyStatus(t *testing.T
 	}
 }
 
+func TestDistributionSlotCatalogRequiresDistributionViewAndForwardsScheduleID(t *testing.T) {
+	service := &fakeDistributionService{catalog: []distribution.SlotCatalogEntry{{SlotNumber: 1, Status: "completed", DocumentationComplete: true}}}
+	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.view": true}}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/distribution/slots/catalog?schedule_id=schedule-1", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: viewer, Distribution: service}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || service.catalogScheduleID != "schedule-1" {
+		t.Fatalf("status=%d schedule=%q body=%s", rec.Code, service.catalogScheduleID, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"documentation_complete":true`) {
+		t.Fatalf("expected documentation_complete in body: %s", rec.Body.String())
+	}
+
+	denied := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{}}
+	deniedReq := httptest.NewRequest(http.MethodGet, "/api/v1/distribution/slots/catalog?schedule_id=schedule-1", nil)
+	deniedReq.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	deniedRecorder := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: denied, Distribution: service}).ServeHTTP(deniedRecorder, deniedReq)
+	if deniedRecorder.Code != http.StatusForbidden {
+		t.Fatalf("denied status=%d body=%s", deniedRecorder.Code, deniedRecorder.Body.String())
+	}
+}
+
+func TestDistributionSlotsQuotaExceededReturnsConflict(t *testing.T) {
+	service := &fakeDistributionService{createErr: distribution.ErrSlotQuotaExceeded}
+	operator := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_mesin": true}}
+	secret := []byte("01234567890123456789012345678901")
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/distribution/slots", strings.NewReader(`{"schedule_id":"schedule-1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: operator, Distribution: service, SessionSecret: secret}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"code":"slot_quota_exceeded"`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestDistributionSlotCompleteRequiresPosPenyerahanAndReturnsStableConflicts(t *testing.T) {
 	secret := []byte("01234567890123456789012345678901")
 	service := &fakeDistributionService{completedSlot: distribution.DistributionSlot{ID: "slot-1", ScheduleID: "schedule-1", SlotNumber: 5, Status: "completed"}}
@@ -780,28 +819,31 @@ type fakeDCP3Service struct {
 
 type fakeDistributionService struct {
 	DistributionService
-	createInput          distribution.CreateSlotInput
-	createdSlot          distribution.DistributionSlot
-	createErr            error
-	candidateScheduleID  string
-	candidateNIK         string
-	candidate            distribution.CandidateMatch
-	candidateErr         error
-	linkInput            distribution.LinkSlotInput
-	linkedSlot           distribution.DistributionSlot
-	linkErr              error
-	searchScheduleID     string
-	searchQuery          string
-	searchedSlot         distribution.DistributionSlot
-	searchErr            error
-	completeInput        distribution.CompleteSlotInput
-	completedSlot        distribution.DistributionSlot
-	completeErr          error
-	media                distribution.MediaFile
-	mediaContent         []byte
-	slotID               string
-	upload               distribution.UploadMediaInput
-	seenRegencyScope     auth.RegencyScope
+	createInput         distribution.CreateSlotInput
+	createdSlot         distribution.DistributionSlot
+	createErr           error
+	candidateScheduleID string
+	candidateNIK        string
+	candidate           distribution.CandidateMatch
+	candidateErr        error
+	linkInput           distribution.LinkSlotInput
+	linkedSlot          distribution.DistributionSlot
+	linkErr             error
+	searchScheduleID    string
+	searchQuery         string
+	searchedSlot        distribution.DistributionSlot
+	searchErr           error
+	completeInput       distribution.CompleteSlotInput
+	completedSlot       distribution.DistributionSlot
+	completeErr         error
+	media               distribution.MediaFile
+	mediaContent        []byte
+	slotID              string
+	upload              distribution.UploadMediaInput
+	seenRegencyScope    auth.RegencyScope
+	catalogScheduleID   string
+	catalog             []distribution.SlotCatalogEntry
+	catalogErr          error
 }
 
 func (f *fakeDistributionService) CreateSlot(_ context.Context, _ auth.Principal, input distribution.CreateSlotInput, _ auth.ClientMeta) (distribution.DistributionSlot, error) {
@@ -835,6 +877,10 @@ func (f *fakeDistributionService) DeleteMedia(_ context.Context, _ auth.Principa
 func (f *fakeDistributionService) OpenMedia(_ context.Context, _ string, scope auth.RegencyScope) (distribution.MediaContent, error) {
 	f.seenRegencyScope = scope
 	return distribution.MediaContent{Reader: io.NopCloser(bytes.NewReader(f.mediaContent)), MimeType: f.media.MimeType, Filename: f.media.OriginalFilename}, nil
+}
+func (f *fakeDistributionService) ListSlotCatalog(_ context.Context, scheduleID string, scope auth.RegencyScope) ([]distribution.SlotCatalogEntry, error) {
+	f.catalogScheduleID, f.seenRegencyScope = scheduleID, scope
+	return f.catalog, f.catalogErr
 }
 
 type fakeReportsService struct {

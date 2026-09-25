@@ -13,6 +13,8 @@ type penyerahanRepositoryStub struct {
 	searchErr   error
 	completed   DistributionSlot
 	completeErr error
+	catalog     []SlotCatalogEntry
+	catalogErr  error
 }
 
 func (r *penyerahanRepositoryStub) SearchSlot(_ context.Context, _, _ string, _ auth.RegencyScope) (DistributionSlot, error) {
@@ -20,6 +22,9 @@ func (r *penyerahanRepositoryStub) SearchSlot(_ context.Context, _, _ string, _ 
 }
 func (r *penyerahanRepositoryStub) CompleteSlot(_ context.Context, _ auth.Principal, _ CompleteSlotInput, _ auth.ClientMeta, _ auth.RegencyScope) (DistributionSlot, error) {
 	return r.completed, r.completeErr
+}
+func (r *penyerahanRepositoryStub) ListSlotCatalog(_ context.Context, _ string, _ auth.RegencyScope) ([]SlotCatalogEntry, error) {
+	return r.catalog, r.catalogErr
 }
 
 func TestCompleteSlotRequiresSlotNumber(t *testing.T) {

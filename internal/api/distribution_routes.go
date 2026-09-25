@@ -106,6 +106,30 @@ func (h *Handler) handleDistributionSlotSearch(w http.ResponseWriter, r *http.Re
 	writeData(w, http.StatusOK, result)
 }
 
+func (h *Handler) handleDistributionSlotCatalog(w http.ResponseWriter, r *http.Request, rc requestContext) {
+	if h.deps.Distribution == nil {
+		writeUnavailable(w)
+		return
+	}
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if !h.authorize(w, r, rc.principal, "distribution.view") {
+		return
+	}
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := h.deps.Distribution.ListSlotCatalog(r.Context(), r.URL.Query().Get("schedule_id"), scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
+}
+
 func (h *Handler) handleDistributionSlotComplete(w http.ResponseWriter, r *http.Request, rc requestContext, slotNumber int) {
 	if !h.authorize(w, r, rc.principal, "distribution.pos_penyerahan") {
 		return
@@ -130,6 +154,10 @@ func (h *Handler) handleDistributionSlot(w http.ResponseWriter, r *http.Request,
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) == 1 && parts[0] == "search" && r.Method == http.MethodGet {
 		h.handleDistributionSlotSearch(w, r, rc)
+		return
+	}
+	if len(parts) == 1 && parts[0] == "catalog" && r.Method == http.MethodGet {
+		h.handleDistributionSlotCatalog(w, r, rc)
 		return
 	}
 	if len(parts) == 2 && parts[1] == "media" && r.Method == http.MethodPost {

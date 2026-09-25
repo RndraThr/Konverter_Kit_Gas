@@ -39,6 +39,7 @@ type posDokumenRepository interface {
 type posPenyerahanRepository interface {
 	SearchSlot(ctx context.Context, scheduleID, query string, scope auth.RegencyScope) (DistributionSlot, error)
 	CompleteSlot(ctx context.Context, actor auth.Principal, input CompleteSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
+	ListSlotCatalog(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]SlotCatalogEntry, error)
 }
 
 type Service struct {
@@ -126,6 +127,17 @@ func (s *Service) SearchSlot(ctx context.Context, scheduleID, query string, scop
 		return DistributionSlot{}, errors.New("distribution POS Penyerahan is unavailable")
 	}
 	return s.posPenyerahanRepository.SearchSlot(ctx, scheduleID, query, scope)
+}
+
+func (s *Service) ListSlotCatalog(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]SlotCatalogEntry, error) {
+	scheduleID = strings.TrimSpace(scheduleID)
+	if scheduleID == "" {
+		return nil, ErrScheduleRequired
+	}
+	if s.posPenyerahanRepository == nil {
+		return nil, errors.New("distribution POS Penyerahan is unavailable")
+	}
+	return s.posPenyerahanRepository.ListSlotCatalog(ctx, scheduleID, scope)
 }
 
 func (s *Service) CompleteSlot(ctx context.Context, actor auth.Principal, input CompleteSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {

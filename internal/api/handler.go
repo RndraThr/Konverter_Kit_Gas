@@ -96,6 +96,7 @@ type DistributionService interface {
 	UploadMedia(context.Context, auth.Principal, distribution.UploadMediaInput, auth.ClientMeta, auth.RegencyScope) (distribution.MediaFile, error)
 	DeleteMedia(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) error
 	OpenMedia(context.Context, string, auth.RegencyScope) (distribution.MediaContent, error)
+	ListSlotCatalog(context.Context, string, auth.RegencyScope) ([]distribution.SlotCatalogEntry, error)
 }
 
 type ReportsService interface {
