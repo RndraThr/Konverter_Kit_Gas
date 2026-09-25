@@ -136,6 +136,37 @@ func TestCreateSlotSnapshotsDocumentationStage(t *testing.T) {
 	}
 }
 
+// TestCreateSlotRejectsSlotBeyondQuota proves CreateSlot enforces program_schedules.slot_quota as a
+// hard limit (spec: docs/superpowers/specs/2026-09-25-distribution-slot-catalog-design.md §4.2) —
+// the (quota+1)th slot must be rejected, not silently created.
+func TestCreateSlotRejectsSlotBeyondQuota(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+
+	var regencyID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan','Quota Test','QTA',true) ON CONFLICT (document_code) DO UPDATE SET is_active=true RETURNING id::text`).Scan(&regencyID))
+	var programID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES($1,'Program Test Quota','farmer',2026,'active') RETURNING id::text`, "QTA-TEST-"+suffix).Scan(&programID))
+	var packageTemplateID, docTemplateID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES($1,1,'Paket Test Quota','farmer','{}'::jsonb,'published') RETURNING id::text`, "PKG-QTA-"+suffix).Scan(&packageTemplateID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES($1,1,'Dok Test Quota','farmer','published') RETURNING id::text`, "DOC-QTA-"+suffix).Scan(&docTemplateID))
+	var scheduleID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,distribution_number_padding,receipt_policy_json,slot_quota) VALUES($1,$2,$3,$4,'Jadwal Test Quota','2026-01-01','2026-12-31','active',4,'{}'::jsonb,1) RETURNING id::text`, programID, regencyID, packageTemplateID, docTemplateID).Scan(&scheduleID))
+
+	repo := NewRepository(pool)
+	first, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.ClientMeta{})
+	must(t, err)
+	if first.SlotNumber != 1 {
+		t.Fatalf("first.SlotNumber = %d, want 1", first.SlotNumber)
+	}
+
+	_, err = repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.ClientMeta{})
+	if !errors.Is(err, ErrSlotQuotaExceeded) {
+		t.Fatalf("err = %v, want ErrSlotQuotaExceeded", err)
+	}
+}
+
 // mediaFixture seeds a distribution_slot with a documentation_slot and one accepted media_files row,
 // scoped under regencyID, plus a sibling otherRegencyID with no data — used to prove GetMediaSlot/
 // GetMedia/DeleteMedia's re-scoped joins (documentation_slots -> distribution_slots ->

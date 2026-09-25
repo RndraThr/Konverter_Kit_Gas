@@ -28,6 +28,7 @@ var (
 	ErrSlotNotLinked                = errors.New("distribution slot is not linked to a recipient")
 	ErrCandidateNotFound            = errors.New("no unlinked DCP3 candidate matches this NIK for this schedule")
 	ErrSlotNumberRequired           = errors.New("slot_number is required")
+	ErrSlotQuotaExceeded            = errors.New("distribution slot quota has been reached for this schedule")
 )
 
 type SlotSummary struct {

@@ -186,7 +186,8 @@ func (r *Repository) CreateSlot(ctx context.Context, actor auth.Principal, input
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var documentationTemplateID string
-	if err := tx.QueryRow(ctx, `SELECT documentation_template_version_id FROM program_schedules WHERE id=$1 FOR UPDATE`, input.ScheduleID).Scan(&documentationTemplateID); err != nil {
+	var slotQuota *int
+	if err := tx.QueryRow(ctx, `SELECT documentation_template_version_id, slot_quota FROM program_schedules WHERE id=$1 FOR UPDATE`, input.ScheduleID).Scan(&documentationTemplateID, &slotQuota); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return DistributionSlot{}, ErrScheduleRequired
 		}
@@ -196,6 +197,9 @@ func (r *Repository) CreateSlot(ctx context.Context, actor auth.Principal, input
 	var nextNumber int
 	if err := tx.QueryRow(ctx, `SELECT COALESCE(max(slot_number),0)+1 FROM distribution_slots WHERE schedule_id=$1`, input.ScheduleID).Scan(&nextNumber); err != nil {
 		return DistributionSlot{}, fmt.Errorf("allocate slot number: %w", err)
+	}
+	if slotQuota != nil && nextNumber > *slotQuota {
+		return DistributionSlot{}, ErrSlotQuotaExceeded
 	}
 
 	var slotID string
