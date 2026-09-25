@@ -43,3 +43,10 @@
 
 @media (max-width: 900px) { .lookup { grid-template-columns: 1fr; align-items: stretch; } }
 @media (max-width: 640px) { .context { display: none; }.fields { grid-template-columns: 1fr; }.fieldWide { grid-column: auto; }.completion { align-items: stretch; flex-direction: column; }.completion button { justify-content: center; width: 100%; }.mediaGrid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+.catalogGrid { display: grid; grid-template-columns: repeat(auto-fill,minmax(48px,1fr)); gap: 8px; margin-top: 16px; }
+.catalogCell { display: grid; place-items: center; height: 44px; padding: 0 4px; border: 1px solid var(--dashboard-line); border-radius: 6px; color: var(--dashboard-ink); font-size: 11px; font-weight: 700; text-align: center; cursor: pointer; background: white; }
+.catalogCell:disabled { cursor: not-allowed; opacity: .5; background: #f4f6f4; }
+.catalogOpen { border-color: var(--blue); color: var(--blue); }
+.catalogPending { border-color: var(--amber); color: var(--amber); background: #fdf6ea; }
+.catalogCompleted { border-color: var(--green); color: var(--green); background: var(--green-soft); }
+.catalogNext { border-style: dashed; color: var(--dashboard-muted); }

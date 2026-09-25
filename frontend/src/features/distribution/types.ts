@@ -36,5 +36,7 @@ export type LinkSlotInput = {
 
 export type EquipmentOption = { code: string; brand: string; type?: string; spec?: string };
 
+export type SlotCatalogEntry = { slot_number: number; status: 'open' | 'linked' | 'completed' | 'cancelled'; documentation_complete: boolean };
+
 export type DataResponse<T> = { data: T };
 export type ScheduleResponse = DataResponse<Schedule[]>;
