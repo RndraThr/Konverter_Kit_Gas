@@ -3,10 +3,11 @@ import { FormEvent, useState } from 'react';
 import { Search } from 'lucide-react';
 import { apiRequest, ApiError } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
-import type { CreateSlotInput, DataResponse, DistributionSlot, EquipmentOption, ScheduleResponse } from './types';
+import type { CreateSlotInput, DataResponse, DistributionSlot, EquipmentOption, ScheduleResponse, SlotCatalogEntry } from './types';
 import { SlotMesinSection } from './SlotMesinSection';
 import { SlotDokumenSection } from './SlotDokumenSection';
 import { SlotPenyerahanSection } from './SlotPenyerahanSection';
+import { SlotCatalogGrid } from './SlotCatalogGrid';
 import styles from './Distribution.module.css';
 import { DataState } from '@/components/DataState';
 import { PageHeader } from '@/components/PageHeader';
@@ -31,13 +32,14 @@ export function DistributionPage() {
 
   const schedules = useQuery({ queryKey: ['program-setup', 'schedules'], queryFn: () => apiRequest<ScheduleResponse>('/api/v1/program-setup/schedules') });
   const packageTemplates = useQuery({ queryKey: ['program-setup', 'package-templates'], queryFn: () => apiRequest<DataResponse<PackageTemplate[]>>('/api/v1/program-setup/package-templates') });
+  const catalog = useQuery({ queryKey: ['distribution', 'slot-catalog', scheduleID], queryFn: () => apiRequest<DataResponse<SlotCatalogEntry[]>>(`/api/v1/distribution/slots/catalog?schedule_id=${encodeURIComponent(scheduleID)}`), enabled: !!scheduleID });
   const selectedSchedule = schedules.data?.data.find((schedule) => schedule.id === scheduleID);
   const selectedPackageTemplate = selectedSchedule?.package_template ?? packageTemplates.data?.data.find((template) => template.id === selectedSchedule?.package_template_version_id);
   const machineOptions = ((selectedPackageTemplate?.values as { machine_options?: EquipmentOption[] } | undefined)?.machine_options) ?? [];
   const hoseOptions = ((selectedPackageTemplate?.values as { hose_options?: EquipmentOption[] } | undefined)?.hose_options) ?? [];
 
   const search = useMutation({
-    mutationFn: () => apiRequest<DataResponse<DistributionSlot>>(`/api/v1/distribution/slots/search?schedule_id=${encodeURIComponent(scheduleID)}&q=${encodeURIComponent(query)}`),
+    mutationFn: (overrideQuery?: string) => apiRequest<DataResponse<DistributionSlot>>(`/api/v1/distribution/slots/search?schedule_id=${encodeURIComponent(scheduleID)}&q=${encodeURIComponent(overrideQuery ?? query)}`),
     onSuccess: ({ data }) => setSlot(data),
   });
 
@@ -49,8 +51,9 @@ export function DistributionPage() {
   const changeSchedule = (value: string) => { setScheduleID(value); setQuery(''); setSlot(null); setCreateInput(emptyCreateInput(value)); };
   const submitSearch = (event: FormEvent) => { event.preventDefault(); setSlot(null); search.mutate(); };
   const openCreate = () => { setCreateInput(emptyCreateInput(scheduleID)); setCreateOpen(true); };
+  const selectBySlotNumber = (slotNumber: number) => { setQuery(String(slotNumber)); setSlot(null); search.mutate(String(slotNumber)); };
   const submitCreate = (event: FormEvent) => { event.preventDefault(); create.mutate(); };
-  const onSlotChanged = (next: DistributionSlot) => setSlot(next);
+  const onSlotChanged = (next: DistributionSlot) => { setSlot(next); void queryClient.invalidateQueries({ queryKey: ['distribution', 'slot-catalog', scheduleID] }); };
 
   return <div className={`page ${styles.page}`}>
     <PageHeader title="Pendistribusian" description="Tandai mesin, hubungkan penerima, dan selesaikan serah terima dalam satu halaman." context={selectedSchedule ? <span className={styles.context}><strong>{selectedSchedule.regency?.document_code}</strong>{selectedSchedule.name}</span> : undefined} />
@@ -73,6 +76,7 @@ export function DistributionPage() {
         </div>
       </form>
     </section>
+    {scheduleID && <SlotCatalogGrid quota={selectedSchedule?.slot_quota} entries={catalog.data?.data ?? []} onSelect={selectBySlotNumber} onCreateNext={openCreate} canCreate={canCreateSlot} />}
     {search.isError && <DataState kind="error" title="Nomor bagi tidak ditemukan" description={search.error instanceof ApiError ? search.error.message : 'Periksa nomor bagi atau NIK, lalu coba lagi.'} />}
     {slot && <div className={styles.slotSections}>
       <SlotMesinSection slot={slot} onChanged={onSlotChanged} />
@@ -89,7 +93,7 @@ export function DistributionPage() {
           <div className="grid min-w-0 gap-2"><Label id="create-hose-label">Merk/Spesifikasi Selang</Label><Select value={createInput.hose_option_code} onValueChange={(value) => setCreateInput({ ...createInput, hose_option_code: value ?? '' })}><SelectTrigger className="w-full" aria-labelledby="create-hose-label"><SelectValue placeholder="Pilih selang" /></SelectTrigger><SelectContent>{hoseOptions.map((option) => <SelectItem key={option.code} value={option.code}>{option.brand} {option.spec}</SelectItem>)}</SelectContent></Select></div>
           <FormField label="Serial Number Selang" name="hose_serial_number" value={createInput.hose_serial_number} onChange={(event) => setCreateInput({ ...createInput, hose_serial_number: event.target.value })} />
           <FormField className="sm:col-span-2" label="Serial Number Konkit/Reducer" name="converter_serial_number" value={createInput.converter_serial_number} onChange={(event) => setCreateInput({ ...createInput, converter_serial_number: event.target.value })} />
-          {create.isError && <Alert className="sm:col-span-2" variant="destructive"><AlertDescription>{create.error instanceof ApiError ? create.error.message : 'Slot belum dapat dibuat.'}</AlertDescription></Alert>}
+          {create.isError && <Alert className="sm:col-span-2" variant="destructive"><AlertDescription>{create.error instanceof ApiError ? create.error.message : 'Slot belum dapat dibuat.'}{create.error instanceof ApiError && create.error.code === 'slot_quota_exceeded' && ' Hubungi admin Program Setup untuk menambah kuota atau membuat jadwal tambahan.'}</AlertDescription></Alert>}
         </div>
         <DialogFooter className="mx-0 mb-0"><DialogClose render={<Button variant="outline" type="button" />}>Batal</DialogClose><Button disabled={create.isPending} type="submit">{create.isPending ? 'Membuat...' : 'Buat Slot'}</Button></DialogFooter>
       </form>

@@ -37,6 +37,7 @@ function renderPage(permissions = ['distribution.view', 'distribution.pos_mesin'
       },
     }] });
     if (path.startsWith('/api/v1/distribution/slots/search')) return Promise.resolve({ data: slot });
+    if (path.startsWith('/api/v1/distribution/slots/catalog')) return Promise.resolve({ data: [] });
     return Promise.reject(new Error(`Unexpected request: ${path}`));
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -67,4 +68,11 @@ test('loads equipment options from the schedule package template reference', asy
   await userEvent.click(screen.getByRole('button', { name: 'Buat Slot Mesin Baru' }));
   await userEvent.click(screen.getByRole('combobox', { name: 'Merk/Tipe Mesin' }));
   expect(await screen.findByRole('option', { name: /SHARK SPWP 80-30/ })).toBeVisible();
+});
+
+test('clicking the next catalog box opens the create-slot dialog', async () => {
+  renderPage();
+  await chooseSchedule(/Wajo Tahap 1/);
+  await userEvent.click(await screen.findByRole('button', { name: /Buat Nomor 1/ }));
+  expect(screen.getByRole('dialog', { name: 'Buat Slot Mesin Baru' })).toBeInTheDocument();
 });
