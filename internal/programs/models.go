@@ -15,6 +15,7 @@ var (
 	ErrScheduleDatesInvalid   = errors.New("schedule end date must not precede start date")
 	ErrTemplateSlotInvalid    = errors.New("documentation template slot is invalid")
 	ErrPackageOptionsRequired = errors.New("package template requires at least one machine option and one hose option when published")
+	ErrSlotQuotaInvalid       = errors.New("slot_quota must be greater than zero when set")
 )
 
 type ProgramType string
@@ -150,6 +151,7 @@ type Schedule struct {
 	EndDate                        time.Time              `json:"end_date"`
 	Status                         string                 `json:"status"`
 	DistributionNumberPadding      int                    `json:"distribution_number_padding"`
+	SlotQuota                      *int                   `json:"slot_quota,omitempty"`
 	ReceiptPolicy                  map[string]any         `json:"receipt_policy"`
 	SupervisorName                 string                 `json:"supervisor_name,omitempty"`
 	Notes                          string                 `json:"notes,omitempty"`
@@ -172,6 +174,7 @@ type ScheduleInput struct {
 	EndDate                        time.Time      `json:"end_date"`
 	Status                         string         `json:"status"`
 	DistributionNumberPadding      int            `json:"distribution_number_padding"`
+	SlotQuota                      *int           `json:"slot_quota,omitempty"`
 	ReceiptPolicy                  map[string]any `json:"receipt_policy"`
 	SupervisorName                 string         `json:"supervisor_name"`
 	Notes                          string         `json:"notes"`

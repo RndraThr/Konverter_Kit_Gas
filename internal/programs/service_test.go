@@ -132,6 +132,20 @@ func TestSaveScheduleNormalizesNameToUppercase(t *testing.T) {
 	}
 }
 
+func TestSaveScheduleRejectsNonPositiveSlotQuota(t *testing.T) {
+	service := NewService(&repositoryStub{})
+	zero := 0
+	_, err := service.SaveSchedule(context.Background(), auth.Principal{}, ScheduleInput{
+		ProgramID: "program", RegencyID: "regency", PackageTemplateVersionID: "package",
+		DocumentationTemplateVersionID: "document", Name: "Test", Status: "draft",
+		StartDate: time.Now(), EndDate: time.Now().Add(24 * time.Hour),
+		SlotQuota: &zero,
+	}, auth.ClientMeta{})
+	if !errors.Is(err, ErrSlotQuotaInvalid) {
+		t.Fatalf("err = %v, want ErrSlotQuotaInvalid", err)
+	}
+}
+
 func TestSavePackageTemplateRequiresEquipmentOptionsWhenPublishing(t *testing.T) {
 	service := NewService(&repositoryStub{})
 	_, err := service.SavePackageTemplate(context.Background(), auth.Principal{}, PackageTemplateInput{
