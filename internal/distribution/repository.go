@@ -8,6 +8,7 @@ import (
 
 	"konkit/internal/audit"
 	"konkit/internal/auth"
+	"konkit/internal/programs"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -20,21 +21,32 @@ func NewRepository(pool *pgxpool.Pool) *Repository { return &Repository{pool: po
 
 func (r *Repository) GetMediaSlot(ctx context.Context, slotID string, scope auth.RegencyScope) (MediaSlot, error) {
 	var result MediaSlot
+	var zoneName *string
+	var isPlaceholder *bool
 	err := r.pool.QueryRow(ctx, `
-		SELECT s.id::text,s.input_source,s.require_location,s.require_captured_at,s.min_files,s.max_files,count(m.id) FILTER(WHERE m.status='accepted')
+		SELECT s.id::text,s.input_source,s.require_location,s.require_captured_at,s.min_files,s.max_files,
+			count(m.id) FILTER(WHERE m.status='accepted'), p.program_type, z.name, r.name, z.is_placeholder
 		FROM documentation_slots s
 		LEFT JOIN media_files m ON m.documentation_slot_id=s.id
 		JOIN distribution_slots dsl ON dsl.id=s.distribution_slot_id
 		JOIN program_schedules ps ON ps.id=dsl.schedule_id
+		JOIN programs p ON p.id=ps.program_id
+		JOIN regencies r ON r.id=ps.regency_id
+		LEFT JOIN program_regency_assignments pra ON pra.program_id=ps.program_id AND pra.regency_id=ps.regency_id
+		LEFT JOIN program_zones z ON z.id=pra.zone_id
 		WHERE s.id=$1 AND ($2 OR ps.regency_id::text = ANY($3))
-		GROUP BY s.id
-	`, slotID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.InputSource, &result.RequireLocation, &result.RequireCapturedAt, &result.MinFiles, &result.MaxFiles, &result.AcceptedFiles)
+		GROUP BY s.id,p.program_type,z.name,r.name,z.is_placeholder
+	`, slotID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.InputSource, &result.RequireLocation, &result.RequireCapturedAt, &result.MinFiles, &result.MaxFiles, &result.AcceptedFiles, &result.ProgramType, &zoneName, &result.RegencyName, &isPlaceholder)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return MediaSlot{}, ErrMediaNotFound
 	}
 	if err != nil {
 		return MediaSlot{}, fmt.Errorf("get documentation slot: %w", err)
 	}
+	if zoneName == nil || isPlaceholder == nil || *isPlaceholder {
+		return MediaSlot{}, programs.ErrZoneNotConfigured
+	}
+	result.ZoneName = *zoneName
 	return result, nil
 }
 

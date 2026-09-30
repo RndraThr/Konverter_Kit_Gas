@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"testing"
 	"time"
@@ -15,12 +16,39 @@ type storageStub struct {
 	putKey, deletedKey string
 	content            []byte
 	putErr, deleteErr  error
+	folderPath         []string
 }
 
-func (s *storageStub) Put(_ context.Context, key string, _ []string, source io.Reader) (string, int64, string, error) {
+func (s *storageStub) Put(_ context.Context, key string, folderPath []string, source io.Reader) (string, int64, string, error) {
 	s.putKey = key
+	s.folderPath = append([]string(nil), folderPath...)
 	s.content, _ = io.ReadAll(source)
 	return key, int64(len(s.content)), "checksum", s.putErr
+}
+
+func configuredMediaSlot() MediaSlot {
+	return MediaSlot{ID: "slot-1", InputSource: "both", MinFiles: 1, MaxFiles: 2, ProgramType: "farmer", ZoneName: "Zona 1", RegencyName: "Kabupaten Wajo"}
+}
+
+func TestUploadMediaUsesProgramZoneFolderAndRejectsPlaceholder(t *testing.T) {
+	jpeg := append([]byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}, bytes.Repeat([]byte{0}, 32)...)
+	storage := &storageStub{}
+	repository := &mediaRepositoryStub{slot: configuredMediaSlot()}
+	service := NewService(repository, storage)
+	if _, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", Source: "camera", Data: jpeg}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"PETANI", "ZONA 1", "KABUPATEN WAJO", "DOKUMENTASI (FOTO)", "PENDISTRIBUSIAN"}
+	if fmt.Sprint(storage.folderPath) != fmt.Sprint(want) {
+		t.Fatalf("folderPath=%v, want %v", storage.folderPath, want)
+	}
+
+	storage = &storageStub{}
+	repository.slot.ZoneName = ""
+	service = NewService(repository, storage)
+	if _, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", Source: "camera", Data: jpeg}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err == nil || storage.putKey != "" {
+		t.Fatalf("placeholder err=%v putKey=%q", err, storage.putKey)
+	}
 }
 func (s *storageStub) Open(context.Context, string) (io.ReadCloser, error) {
 	return io.NopCloser(bytes.NewReader(s.content)), nil
@@ -67,7 +95,7 @@ func (r *mediaRepositoryStub) RestoreMedia(_ context.Context, id string) error {
 
 func TestUploadMediaDetectsImageAndCleansStorageWhenMetadataFails(t *testing.T) {
 	storage := &storageStub{}
-	repository := &mediaRepositoryStub{slot: MediaSlot{ID: "slot-1", InputSource: "both", MinFiles: 1, MaxFiles: 2}}
+	repository := &mediaRepositoryStub{slot: configuredMediaSlot()}
 	service := NewService(repository, storage)
 	jpeg := append([]byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}, bytes.Repeat([]byte{0}, 32)...)
 	media, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", OriginalFilename: "foto.txt", Source: "camera", Data: jpeg}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
@@ -86,7 +114,9 @@ func TestUploadMediaDetectsImageAndCleansStorageWhenMetadataFails(t *testing.T) 
 }
 
 func TestUploadMediaEnforcesTypeSizeAndSlotRequirements(t *testing.T) {
-	locationRequired := &mediaRepositoryStub{slot: MediaSlot{ID: "slot-1", InputSource: "camera", MinFiles: 1, MaxFiles: 1, RequireLocation: true, RequireCapturedAt: true}}
+	slot := configuredMediaSlot()
+	slot.InputSource, slot.MaxFiles, slot.RequireLocation, slot.RequireCapturedAt = "camera", 1, true, true
+	locationRequired := &mediaRepositoryStub{slot: slot}
 	service := NewService(locationRequired, &storageStub{})
 	if _, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", Source: "gallery", Data: []byte("not an image")}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrMediaSourceInvalid) {
 		t.Fatalf("source err=%v", err)
@@ -117,7 +147,9 @@ func TestDeleteMediaRestoresMetadataWhenStorageDeleteFails(t *testing.T) {
 func TestUploadDeleteAndOpenMediaForwardRegencyScope(t *testing.T) {
 	scope := auth.RegencyScope{RegencyIDs: []string{"regency-1"}}
 	storage := &storageStub{}
-	repository := &mediaRepositoryStub{slot: MediaSlot{ID: "slot-1", InputSource: "camera", MinFiles: 1, MaxFiles: 2}, media: MediaFile{ID: "media-1", StorageKey: "opaque-key", Status: "accepted"}}
+	slot := configuredMediaSlot()
+	slot.InputSource = "camera"
+	repository := &mediaRepositoryStub{slot: slot, media: MediaFile{ID: "media-1", StorageKey: "opaque-key", Status: "accepted"}}
 	service := NewService(repository, storage)
 	jpeg := append([]byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}, bytes.Repeat([]byte{0}, 32)...)
 

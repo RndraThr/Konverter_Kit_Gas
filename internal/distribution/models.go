@@ -7,29 +7,29 @@ import (
 )
 
 var (
-	ErrScheduleRequired             = errors.New("distribution schedule is required")
-	ErrQueryRequired                = errors.New("recipient search query is required")
-	ErrNIKInvalid                   = errors.New("NIK must contain 16 digits")
-	ErrIdentifierConflict           = errors.New("recipient identifier is already in use")
-	ErrMediaUnavailable             = errors.New("media storage is unavailable")
-	ErrMediaNotFound                = errors.New("documentation media not found")
-	ErrMediaTypeInvalid             = errors.New("documentation file must be JPEG, PNG, or WebP")
-	ErrMediaTooLarge                = errors.New("documentation file exceeds 10 MiB")
-	ErrMediaSourceInvalid           = errors.New("documentation source is not allowed for this slot")
-	ErrMediaLocationRequired        = errors.New("documentation location is required")
-	ErrMediaCapturedAtRequired      = errors.New("documentation capture time is required")
-	ErrMediaLimitReached            = errors.New("documentation slot has reached its file limit")
-	ErrIdentityIncomplete           = errors.New("recipient identity is incomplete")
-	ErrDocumentationIncomplete      = errors.New("required documentation is incomplete")
-	ErrPreviouslyReceived           = errors.New("recipient has previously received a package")
-	ErrAlreadyCompleted             = errors.New("distribution is already completed")
-	ErrSlotNotFound                 = errors.New("distribution slot not found")
-	ErrSlotNotOpen                  = errors.New("distribution slot is not open")
-	ErrSlotNotLinked                = errors.New("distribution slot is not linked to a recipient")
-	ErrCandidateNotFound            = errors.New("no unlinked DCP3 candidate matches this NIK for this schedule")
-	ErrSlotNumberRequired           = errors.New("slot_number is required")
-	ErrSlotQuotaExceeded            = errors.New("distribution slot quota has been reached for this schedule")
-	ErrSlotNumberTaken              = errors.New("distribution slot number is already used for this schedule")
+	ErrScheduleRequired        = errors.New("distribution schedule is required")
+	ErrQueryRequired           = errors.New("recipient search query is required")
+	ErrNIKInvalid              = errors.New("NIK must contain 16 digits")
+	ErrIdentifierConflict      = errors.New("recipient identifier is already in use")
+	ErrMediaUnavailable        = errors.New("media storage is unavailable")
+	ErrMediaNotFound           = errors.New("documentation media not found")
+	ErrMediaTypeInvalid        = errors.New("documentation file must be JPEG, PNG, or WebP")
+	ErrMediaTooLarge           = errors.New("documentation file exceeds 10 MiB")
+	ErrMediaSourceInvalid      = errors.New("documentation source is not allowed for this slot")
+	ErrMediaLocationRequired   = errors.New("documentation location is required")
+	ErrMediaCapturedAtRequired = errors.New("documentation capture time is required")
+	ErrMediaLimitReached       = errors.New("documentation slot has reached its file limit")
+	ErrIdentityIncomplete      = errors.New("recipient identity is incomplete")
+	ErrDocumentationIncomplete = errors.New("required documentation is incomplete")
+	ErrPreviouslyReceived      = errors.New("recipient has previously received a package")
+	ErrAlreadyCompleted        = errors.New("distribution is already completed")
+	ErrSlotNotFound            = errors.New("distribution slot not found")
+	ErrSlotNotOpen             = errors.New("distribution slot is not open")
+	ErrSlotNotLinked           = errors.New("distribution slot is not linked to a recipient")
+	ErrCandidateNotFound       = errors.New("no unlinked DCP3 candidate matches this NIK for this schedule")
+	ErrSlotNumberRequired      = errors.New("slot_number is required")
+	ErrSlotQuotaExceeded       = errors.New("distribution slot quota has been reached for this schedule")
+	ErrSlotNumberTaken         = errors.New("distribution slot number is already used for this schedule")
 )
 
 type SlotSummary struct {
@@ -115,6 +115,9 @@ type CompleteSlotInput struct {
 
 type MediaSlot struct {
 	ID                string
+	ProgramType       string
+	ZoneName          string
+	RegencyName       string
 	InputSource       string
 	RequireLocation   bool
 	RequireCapturedAt bool

@@ -296,6 +296,9 @@ func seedMediaFixture(t *testing.T, pool *pgxpool.Pool) mediaFixture {
 
 	var programID string
 	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES($1,'Program Test Media','farmer',2026,'active') RETURNING id::text`, "MED-TEST-"+suffix).Scan(&programID))
+	var zoneID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO program_zones(program_id,code,name,sort_order,is_placeholder) VALUES($1,'ZONE-1','Zona 1',1,false) RETURNING id::text`, programID).Scan(&zoneID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO program_regency_assignments(program_id,regency_id,zone_id) VALUES($1,$2,$3) RETURNING zone_id::text`, programID, regencyID, zoneID).Scan(&zoneID))
 	var packageTemplateID, docTemplateID string
 	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES($1,1,'Paket Test Media','farmer','{}'::jsonb,'published') RETURNING id::text`, "PKG-MED-"+suffix).Scan(&packageTemplateID))
 	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES($1,1,'Dok Test Media','farmer','published') RETURNING id::text`, "DOC-MED-"+suffix).Scan(&docTemplateID))
@@ -362,6 +365,9 @@ func TestGetMediaSlotScopedToDistributionSlots(t *testing.T) {
 	}
 	if slot.AcceptedFiles != 1 {
 		t.Fatalf("slot.AcceptedFiles = %d, want 1", slot.AcceptedFiles)
+	}
+	if slot.ProgramType != "farmer" || slot.ZoneName != "Zona 1" || slot.RegencyName != "Media Test "+t.Name() {
+		t.Fatalf("slot storage context = %+v", slot)
 	}
 }
 

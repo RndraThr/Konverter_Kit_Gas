@@ -14,6 +14,7 @@ import (
 
 	"konkit/internal/auth"
 	"konkit/internal/media"
+	"konkit/internal/programs"
 )
 
 var onlyDigits = regexp.MustCompile(`^[0-9]+$`)
@@ -209,7 +210,17 @@ func (s *Service) UploadMedia(ctx context.Context, actor auth.Principal, input U
 	if err != nil {
 		return MediaFile{}, err
 	}
-	storageKey, size, checksum, err := s.storage.Put(ctx, key, nil, bytes.NewReader(input.Data))
+	if strings.TrimSpace(slot.ZoneName) == "" {
+		return MediaFile{}, programs.ErrZoneNotConfigured
+	}
+	folderPath, err := media.BuildFolderPath(media.FolderPathInput{
+		ProgramType: slot.ProgramType, ZoneName: slot.ZoneName, RegencyName: slot.RegencyName,
+		Category: media.FolderPhotos, Child: "PENDISTRIBUSIAN",
+	})
+	if err != nil {
+		return MediaFile{}, err
+	}
+	storageKey, size, checksum, err := s.storage.Put(ctx, key, folderPath, bytes.NewReader(input.Data))
 	if err != nil {
 		return MediaFile{}, err
 	}
