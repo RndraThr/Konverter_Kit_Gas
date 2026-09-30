@@ -64,6 +64,9 @@ func BuildFolderPath(input FolderPathInput) ([]string, error) {
 		return nil, ErrInvalidFolderPath
 	}
 
+	if !validFolderCategory(input.Category) {
+		return nil, ErrInvalidFolderPath
+	}
 	categorySegment, err := sanitizeFolderSegment(string(input.Category))
 	if err != nil {
 		return nil, err
@@ -85,6 +88,15 @@ func BuildFolderPath(input FolderPathInput) ([]string, error) {
 	}
 
 	return path, nil
+}
+
+func validFolderCategory(category FolderCategory) bool {
+	switch category {
+	case FolderBA, FolderSupporting, FolderPhotos:
+		return true
+	default:
+		return false
+	}
 }
 
 func programTypeSegment(programType string) (string, error) {

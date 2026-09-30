@@ -112,6 +112,13 @@ func (r *Repository) SaveProgram(ctx context.Context, actor auth.Principal, inpu
 	if err != nil {
 		return Program{}, fmt.Errorf("save program: %w", err)
 	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO program_zones (program_id, code, name, sort_order, is_placeholder)
+		VALUES ($1, 'UNASSIGNED', 'ZONA BELUM DIATUR', 0, true)
+		ON CONFLICT (program_id, code) DO NOTHING
+	`, id); err != nil {
+		return Program{}, fmt.Errorf("ensure program placeholder zone: %w", err)
+	}
 	if err := recordSetupAudit(ctx, tx, actor, meta, "program.saved", "program", id, map[string]any{"code": input.Code, "program_type": input.ProgramType}); err != nil {
 		return Program{}, err
 	}
@@ -291,6 +298,18 @@ func (r *Repository) SaveSchedule(ctx context.Context, actor auth.Principal, inp
 	if err != nil {
 		return Schedule{}, ErrInvalidInput
 	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO program_regency_assignments (program_id, regency_id, zone_id)
+		SELECT $1::uuid, $2::uuid, z.id
+		FROM program_zones z
+		WHERE z.program_id=$1 AND z.is_placeholder=true
+		ON CONFLICT (program_id, regency_id) DO NOTHING
+	`, input.ProgramID, input.RegencyID); err != nil {
+		if isForeignKeyViolation(err) {
+			return Schedule{}, ErrNotFound
+		}
+		return Schedule{}, fmt.Errorf("ensure schedule regency assignment: %w", err)
+	}
 	id := input.ID
 	if id == "" {
 		err = tx.QueryRow(ctx, `INSERT INTO program_schedules (program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,distribution_number_padding,receipt_policy_json,notes,supervisor_name,slot_quota) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,''),NULLIF($12,''),$13 FROM programs p JOIN package_template_versions pt ON pt.id=$3 JOIN documentation_template_versions dt ON dt.id=$4 WHERE p.id=$1 AND p.program_type=pt.program_type AND p.program_type=dt.program_type RETURNING id::text`, input.ProgramID, input.RegencyID, input.PackageTemplateVersionID, input.DocumentationTemplateVersionID, input.Name, input.StartDate, input.EndDate, input.Status, input.DistributionNumberPadding, policy, input.Notes, input.SupervisorName, input.SlotQuota).Scan(&id)
@@ -377,18 +396,38 @@ func (r *Repository) SaveZone(ctx context.Context, actor auth.Principal, input Z
 		return ProgramZone{}, fmt.Errorf("begin save zone: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	var id string
-	var isPlaceholder bool
-	err = tx.QueryRow(ctx, `
-		INSERT INTO program_zones (program_id, code, name, sort_order, is_placeholder)
-		VALUES ($1,$2,$3,$4,false)
-		ON CONFLICT (program_id, code) DO UPDATE
-			SET name = EXCLUDED.name, sort_order = EXCLUDED.sort_order, updated_at = now()
-			WHERE program_zones.is_placeholder = false
-		RETURNING id::text, is_placeholder
-	`, input.ProgramID, input.Code, input.Name, input.SortOrder).Scan(&id, &isPlaceholder)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return ProgramZone{}, ErrZonePlaceholderImmutable
+	id := input.ID
+	if id == "" {
+		err = tx.QueryRow(ctx, `
+			INSERT INTO program_zones (program_id, code, name, sort_order, is_placeholder)
+			VALUES ($1,$2,$3,$4,false)
+			RETURNING id::text
+		`, input.ProgramID, input.Code, input.Name, input.SortOrder).Scan(&id)
+	} else {
+		var isPlaceholder bool
+		err = tx.QueryRow(ctx, `
+			SELECT is_placeholder FROM program_zones
+			WHERE id=$1 AND program_id=$2
+			FOR UPDATE
+		`, id, input.ProgramID).Scan(&isPlaceholder)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ProgramZone{}, ErrNotFound
+		}
+		if err != nil {
+			return ProgramZone{}, fmt.Errorf("lock zone: %w", err)
+		}
+		if isPlaceholder {
+			return ProgramZone{}, ErrZonePlaceholderImmutable
+		}
+		var tag pgconn.CommandTag
+		tag, err = tx.Exec(ctx, `
+			UPDATE program_zones
+			SET code=$3, name=$4, sort_order=$5, updated_at=now()
+			WHERE id=$1 AND program_id=$2
+		`, id, input.ProgramID, input.Code, input.Name, input.SortOrder)
+		if err == nil && tag.RowsAffected() == 0 {
+			return ProgramZone{}, ErrNotFound
+		}
 	}
 	if isUniqueViolation(err) {
 		return ProgramZone{}, ErrCodeInUse

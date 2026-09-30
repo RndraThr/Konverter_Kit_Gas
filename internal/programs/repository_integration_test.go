@@ -60,6 +60,13 @@ func TestIntegrationRepositoryPersistsProgramSetupAndVersionsPublishedTemplate(t
 	if err != nil {
 		t.Fatal(err)
 	}
+	var placeholderCount int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM program_zones WHERE program_id=$1 AND code='UNASSIGNED' AND is_placeholder=true`, program.ID).Scan(&placeholderCount); err != nil {
+		t.Fatal(err)
+	}
+	if placeholderCount != 1 {
+		t.Fatalf("new program placeholder count=%d, want 1", placeholderCount)
+	}
 
 	template, err := service.SavePackageTemplate(ctx, actor, PackageTemplateInput{
 		TemplateCode: templateCode, Name: "Template Awal", ProgramType: ProgramFarmer,
@@ -110,6 +117,9 @@ func TestIntegrationRepositoryPersistsProgramSetupAndVersionsPublishedTemplate(t
 	}
 	if schedule.Program == nil || schedule.Program.Code != programCode || schedule.Regency == nil || schedule.Regency.DocumentCode != regencyCode {
 		t.Fatalf("schedule context missing: %+v", schedule)
+	}
+	if _, err := service.ResolveStorageContext(ctx, program.ID, regency.ID, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrZoneNotConfigured) {
+		t.Fatalf("new schedule must auto-assign its regency to placeholder zone, got %v", err)
 	}
 
 	scheduleWithSupervisor, err := service.SaveSchedule(ctx, actor, ScheduleInput{
@@ -278,7 +288,7 @@ func TestIntegrationListRegenciesAndSchedulesRespectRegencyScope(t *testing.T) {
 	}
 }
 
-func TestIntegrationZoneLifecycleUpsertsByProgramAndCode(t *testing.T) {
+func TestIntegrationZoneLifecycleUsesIDForUpdates(t *testing.T) {
 	pool := programsIntegrationPool(t)
 	repository := NewRepository(pool)
 	service := NewService(repository)
@@ -331,8 +341,9 @@ func TestIntegrationZoneLifecycleUpsertsByProgramAndCode(t *testing.T) {
 		t.Fatalf("unexpected saved zone: %+v", zone)
 	}
 
-	// Saving again with the same program+code upserts the existing row rather than creating a new one.
-	updated, err := service.SaveZone(ctx, actor, ZoneInput{ProgramID: program.ID, Code: "zone-a", Name: "Zona A Revisi", SortOrder: 5}, meta)
+	// PATCH identity is authoritative: changing the code must update this exact row,
+	// not insert a second zone selected only from the submitted code.
+	updated, err := service.SaveZone(ctx, actor, ZoneInput{ID: zone.ID, ProgramID: program.ID, Code: "zone-a-revisi", Name: "Zona A Revisi", SortOrder: 5}, meta)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,12 +407,12 @@ func TestIntegrationZoneLifecycleUpsertsByProgramAndCode(t *testing.T) {
 		}
 	}
 
-	// Manually create a placeholder zone (as the migration seed does) to verify it is protected.
+	// Every newly-created program owns one protected placeholder zone.
 	var placeholderID string
-	if err := pool.QueryRow(ctx, `INSERT INTO program_zones (program_id, code, name, sort_order, is_placeholder) VALUES ($1,'UNASSIGNED','ZONA BELUM DIATUR',0,true) RETURNING id::text`, program.ID).Scan(&placeholderID); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT id::text FROM program_zones WHERE program_id=$1 AND code='UNASSIGNED' AND is_placeholder=true`, program.ID).Scan(&placeholderID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.SaveZone(ctx, actor, ZoneInput{ProgramID: program.ID, Code: "UNASSIGNED", Name: "Coba Timpa"}, meta); !errors.Is(err, ErrZonePlaceholderImmutable) {
+	if _, err := service.SaveZone(ctx, actor, ZoneInput{ID: placeholderID, ProgramID: program.ID, Code: "UNASSIGNED", Name: "Coba Timpa"}, meta); !errors.Is(err, ErrZonePlaceholderImmutable) {
 		t.Fatalf("expected ErrZonePlaceholderImmutable, got %v", err)
 	}
 

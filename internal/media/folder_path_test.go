@@ -76,6 +76,18 @@ func TestBuildFolderPathRejectsUnknownProgramType(t *testing.T) {
 	}
 }
 
+func TestBuildFolderPathRejectsUnknownCategory(t *testing.T) {
+	_, err := BuildFolderPath(FolderPathInput{
+		ProgramType: "farmer",
+		ZoneName:    "Zona 1",
+		RegencyName: "Wajo",
+		Category:    FolderCategory("BERITA ACARA TYPO"),
+	})
+	if !errors.Is(err, ErrInvalidFolderPath) {
+		t.Fatalf("err=%v, want ErrInvalidFolderPath", err)
+	}
+}
+
 func TestBuildFolderPathRejectsEmptyRequiredFields(t *testing.T) {
 	base := FolderPathInput{ProgramType: "farmer", ZoneName: "Zona 1", RegencyName: "Wajo", Category: FolderPhotos}
 
