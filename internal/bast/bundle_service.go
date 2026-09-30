@@ -37,6 +37,18 @@ func NewBundleService(repository bundleRepository, storage media.Storage, locati
 	return &BundleService{repository: repository, storage: storage, core: NewService(repository, location)}
 }
 
+func (s *BundleService) LockRegencyTotal(ctx context.Context, actor auth.Principal, programID, regencyID string, scope auth.RegencyScope, meta auth.ClientMeta) (LockResult, error) {
+	return s.core.LockRegencyTotal(ctx, actor, programID, regencyID, scope, meta)
+}
+
+func (s *BundleService) ListDates(ctx context.Context, programID, regencyID string, scope auth.RegencyScope) ([]DateSummary, error) {
+	return s.core.ListDates(ctx, programID, regencyID, scope)
+}
+
+func (s *BundleService) ListRecipients(ctx context.Context, programID, regencyID, localDate string, scope auth.RegencyScope) ([]RecipientDocument, error) {
+	return s.core.ListRecipients(ctx, programID, regencyID, localDate, scope)
+}
+
 func (s *BundleService) PreviewBundle(ctx context.Context, request BundleRequest, scope auth.RegencyScope) (BundlePreview, error) {
 	documents, _, _, err := s.prepareDocuments(ctx, auth.Principal{}, request, scope, auth.ClientMeta{}, false)
 	if err != nil {

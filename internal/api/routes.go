@@ -9,6 +9,7 @@ import (
 	"konkit/internal/administration"
 	"konkit/internal/audit"
 	"konkit/internal/auth"
+	"konkit/internal/bast"
 	"konkit/internal/dcp3"
 	"konkit/internal/distribution"
 	apphealth "konkit/internal/health"
@@ -447,7 +448,7 @@ func writeUnavailable(w http.ResponseWriter) {
 
 func writeServiceError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, profile.ErrNotFound), errors.Is(err, administration.ErrNotFound), errors.Is(err, programs.ErrNotFound), errors.Is(err, dcp3.ErrPreviewNotFound), errors.Is(err, distribution.ErrSlotNotFound), errors.Is(err, distribution.ErrCandidateNotFound), errors.Is(err, distribution.ErrMediaNotFound), errors.Is(err, reports.ErrScheduleNotFound), errors.Is(err, recipients.ErrNotFound), errors.Is(err, recipients.ErrScheduleNotFound), errors.Is(err, activities.ErrNotFound), errors.Is(err, activities.ErrRegencyNotFound):
+	case errors.Is(err, profile.ErrNotFound), errors.Is(err, administration.ErrNotFound), errors.Is(err, programs.ErrNotFound), errors.Is(err, dcp3.ErrPreviewNotFound), errors.Is(err, distribution.ErrSlotNotFound), errors.Is(err, distribution.ErrCandidateNotFound), errors.Is(err, distribution.ErrMediaNotFound), errors.Is(err, reports.ErrScheduleNotFound), errors.Is(err, recipients.ErrNotFound), errors.Is(err, recipients.ErrScheduleNotFound), errors.Is(err, activities.ErrNotFound), errors.Is(err, activities.ErrRegencyNotFound), errors.Is(err, bast.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "Data tidak ditemukan")
 	case errors.Is(err, profile.ErrIdentityInUse), errors.Is(err, administration.ErrIdentityInUse):
 		writeFieldError(w, http.StatusConflict, "conflict", "Data sudah digunakan", map[string]string{"username": err.Error(), "email": err.Error()})
@@ -465,6 +466,22 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "document_profile_published", "Profil dokumen yang sudah dipublikasikan tidak dapat diubah")
 	case errors.Is(err, programs.ErrDocumentProfileIncomplete):
 		writeError(w, http.StatusConflict, "document_profile_incomplete", "Lengkapi teks dan minimal satu logo sebelum publikasi")
+	case errors.Is(err, bast.ErrZoneNotConfigured):
+		writeError(w, http.StatusConflict, "zone_not_configured", "Kabupaten belum dikonfigurasi ke zona")
+	case errors.Is(err, bast.ErrProfileNotPublished):
+		writeError(w, http.StatusConflict, "profile_not_published", "Profil dokumen yang dipublikasikan belum tersedia")
+	case errors.Is(err, bast.ErrFinalTotalMissing):
+		writeError(w, http.StatusConflict, "final_total_missing", "Jumlah total pembagian kabupaten belum dikunci")
+	case errors.Is(err, bast.ErrFinalTotalLocked):
+		writeError(w, http.StatusConflict, "final_total_locked", "Jumlah total tidak dapat diubah setelah dokumen difinalisasi")
+	case errors.Is(err, bast.ErrSlotOutOfRange):
+		writeError(w, http.StatusConflict, "slot_out_of_range", "Nomor pembagian melebihi jumlah total kabupaten")
+	case errors.Is(err, bast.ErrTemplateUnavailable):
+		writeError(w, http.StatusConflict, "template_unavailable", "Template BA Perorangan untuk jenis program ini belum tersedia")
+	case errors.Is(err, bast.ErrNoRecipients):
+		writeError(w, http.StatusConflict, "no_recipients", "Belum ada distribusi selesai pada tanggal ini")
+	case errors.Is(err, bast.ErrBundleConflict):
+		writeError(w, http.StatusConflict, "bundle_conflict", "Bundle telah diubah operator lain; muat ulang data")
 	case errors.Is(err, dcp3.ErrDuplicateImport):
 		writeError(w, http.StatusConflict, "duplicate_import", "File DCP3 ini sudah pernah diunggah pada jadwal yang sama")
 	case errors.Is(err, dcp3.ErrImportState):
@@ -527,6 +544,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeFieldError(w, http.StatusBadRequest, "media_invalid", err.Error(), map[string]string{"file": err.Error()})
 	case errors.Is(err, activities.ErrFileTooLarge):
 		writeError(w, http.StatusRequestEntityTooLarge, "media_too_large", err.Error())
+	case errors.Is(err, bast.ErrInvalidInput):
+		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), map[string]string{"request": err.Error()})
 	default:
 		writeError(w, http.StatusInternalServerError, "internal_error", "Terjadi kesalahan pada server")
 	}

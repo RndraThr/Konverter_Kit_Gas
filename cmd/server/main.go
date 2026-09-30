@@ -16,6 +16,7 @@ import (
 	apihttp "konkit/internal/api"
 	"konkit/internal/audit"
 	"konkit/internal/auth"
+	"konkit/internal/bast"
 	"konkit/internal/config"
 	"konkit/internal/database"
 	"konkit/internal/dcp3"
@@ -67,6 +68,12 @@ func run(ctx context.Context, cfg config.Config) error {
 		}
 	}
 	programService := programs.NewService(programs.NewRepository(pool), mediaStorage)
+	applicationLocation, err := time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		return fmt.Errorf("load application timezone: %w", err)
+	}
+	bastRepository := bast.NewRepository(pool)
+	bastService := bast.NewBundleService(bastRepository, mediaStorage, applicationLocation)
 	apiHandler := apihttp.NewHandler(apihttp.Dependencies{
 		Auth:           authService,
 		Profile:        profile.NewService(profile.NewRepository(pool)),
@@ -80,6 +87,7 @@ func run(ctx context.Context, cfg config.Config) error {
 		Reports:        reports.NewService(reports.NewRepository(pool)),
 		Recipients:     recipients.NewService(recipients.NewRepository(pool)),
 		Activities:     activities.NewService(activities.NewRepository(pool), mediaStorage, programService),
+		BAST:           bastService,
 		SessionSecret:  cfg.SessionSecret,
 	})
 	handler := web.NewHandler(web.Dependencies{

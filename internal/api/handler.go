@@ -14,6 +14,7 @@ import (
 	"konkit/internal/administration"
 	"konkit/internal/audit"
 	"konkit/internal/auth"
+	"konkit/internal/bast"
 	"konkit/internal/dcp3"
 	"konkit/internal/distribution"
 	apphealth "konkit/internal/health"
@@ -134,6 +135,15 @@ type ActivitiesService interface {
 	OpenContent(context.Context, string, auth.RegencyScope) (activities.MediaContent, error)
 }
 
+type BASTService interface {
+	ListDates(context.Context, string, string, auth.RegencyScope) ([]bast.DateSummary, error)
+	ListRecipients(context.Context, string, string, string, auth.RegencyScope) ([]bast.RecipientDocument, error)
+	LockRegencyTotal(context.Context, auth.Principal, string, string, auth.RegencyScope, auth.ClientMeta) (bast.LockResult, error)
+	PreviewBundle(context.Context, bast.BundleRequest, auth.RegencyScope) (bast.BundlePreview, error)
+	FinalizeBundle(context.Context, auth.Principal, bast.BundleRequest, auth.RegencyScope, auth.ClientMeta) (bast.DailyBundle, error)
+	OpenBundle(context.Context, string, auth.RegencyScope) (bast.BundleContent, error)
+}
+
 type Dependencies struct {
 	Auth           AuthService
 	Profile        ProfileService
@@ -147,6 +157,7 @@ type Dependencies struct {
 	Reports        ReportsService
 	Recipients     RecipientsService
 	Activities     ActivitiesService
+	BAST           BASTService
 	SessionSecret  []byte
 }
 
@@ -270,6 +281,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleActivitiesMedia(w, r, rc)
 	case strings.HasPrefix(path, "activities/media/"):
 		h.handleActivityMediaItem(w, r, rc, strings.TrimPrefix(path, "activities/media/"))
+	case strings.HasPrefix(path, "bast/individual/"):
+		h.handleBASTIndividual(w, r, rc, strings.TrimPrefix(path, "bast/individual/"))
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
 	}
