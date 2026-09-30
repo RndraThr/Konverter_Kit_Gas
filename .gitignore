@@ -19,3 +19,4 @@ frontend/*.tsbuildinfo
 # Python-generated cache files
 __pycache__/
 *.py[cod]
+.superpowers/
