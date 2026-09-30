@@ -194,20 +194,34 @@ func (r *Repository) CreateSlot(ctx context.Context, actor auth.Principal, input
 		return DistributionSlot{}, fmt.Errorf("lock schedule: %w", err)
 	}
 
-	var nextNumber int
-	if err := tx.QueryRow(ctx, `SELECT COALESCE(max(slot_number),0)+1 FROM distribution_slots WHERE schedule_id=$1`, input.ScheduleID).Scan(&nextNumber); err != nil {
-		return DistributionSlot{}, fmt.Errorf("allocate slot number: %w", err)
+	// The catalog-first flow lets an officer create any empty number within quota, not just the next
+	// sequential one, by passing it explicitly. Omitting it (0) keeps the auto-allocate behavior. The
+	// schedule row is already locked FOR UPDATE above, so the taken-number check and the insert are
+	// serialized against concurrent CreateSlot calls on the same schedule.
+	slotNumber := input.SlotNumber
+	if slotNumber < 1 {
+		if err := tx.QueryRow(ctx, `SELECT COALESCE(max(slot_number),0)+1 FROM distribution_slots WHERE schedule_id=$1`, input.ScheduleID).Scan(&slotNumber); err != nil {
+			return DistributionSlot{}, fmt.Errorf("allocate slot number: %w", err)
+		}
+	} else {
+		var taken bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM distribution_slots WHERE schedule_id=$1 AND slot_number=$2)`, input.ScheduleID, slotNumber).Scan(&taken); err != nil {
+			return DistributionSlot{}, fmt.Errorf("check slot number: %w", err)
+		}
+		if taken {
+			return DistributionSlot{}, ErrSlotNumberTaken
+		}
 	}
-	if slotQuota != nil && nextNumber > *slotQuota {
+	if slotQuota != nil && slotNumber > *slotQuota {
 		return DistributionSlot{}, ErrSlotQuotaExceeded
 	}
 
 	var slotID string
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO distribution_slots (schedule_id, slot_number, machine_option_code, machine_serial_number, hose_option_code, hose_serial_number, converter_serial_number)
-		VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),NULLIF($7,''))
+		INSERT INTO distribution_slots (schedule_id, slot_number, machine_option_code, machine_serial_number, hose_option_code, hose_serial_number, converter_option_code, converter_serial_number)
+		VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''))
 		RETURNING id::text
-	`, input.ScheduleID, nextNumber, input.MachineOptionCode, input.MachineSerialNumber, input.HoseOptionCode, input.HoseSerialNumber, input.ConverterSerialNumber).Scan(&slotID); err != nil {
+	`, input.ScheduleID, slotNumber, input.MachineOptionCode, input.MachineSerialNumber, input.HoseOptionCode, input.HoseSerialNumber, input.ConverterOptionCode, input.ConverterSerialNumber).Scan(&slotID); err != nil {
 		return DistributionSlot{}, fmt.Errorf("insert distribution slot: %w", err)
 	}
 
@@ -219,7 +233,7 @@ func (r *Repository) CreateSlot(ctx context.Context, actor auth.Principal, input
 		return DistributionSlot{}, fmt.Errorf("snapshot documentation slots: %w", err)
 	}
 
-	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "distribution.slot_created", ResourceType: "distribution_slot", ResourceID: slotID, Metadata: map[string]any{"schedule_id": input.ScheduleID, "slot_number": nextNumber}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "distribution.slot_created", ResourceType: "distribution_slot", ResourceID: slotID, Metadata: map[string]any{"schedule_id": input.ScheduleID, "slot_number": slotNumber}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
 		return DistributionSlot{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -230,13 +244,13 @@ func (r *Repository) CreateSlot(ctx context.Context, actor auth.Principal, input
 
 func (r *Repository) getSlotByID(ctx context.Context, id string) (DistributionSlot, error) {
 	var slot DistributionSlot
-	var machineOption, machineSerial, hoseOption, hoseSerial, converterSerial, fullName, nik *string
+	var machineOption, machineSerial, hoseOption, hoseSerial, converterOption, converterSerial, fullName, nik *string
 	err := r.pool.QueryRow(ctx, `
-		SELECT ds.id::text, ds.schedule_id::text, ds.slot_number, ds.status, ds.allocation_id::text, ds.machine_option_code, ds.machine_serial_number, ds.hose_option_code, ds.hose_serial_number, ds.converter_serial_number, ds.distributed_at, ds.created_at, ds.updated_at, p.full_name, p.nik
+		SELECT ds.id::text, ds.schedule_id::text, ds.slot_number, ds.status, ds.allocation_id::text, ds.machine_option_code, ds.machine_serial_number, ds.hose_option_code, ds.hose_serial_number, ds.converter_option_code, ds.converter_serial_number, ds.distributed_at, ds.created_at, ds.updated_at, p.full_name, p.nik
 		FROM distribution_slots ds
 		LEFT JOIN people p ON p.id = ds.recipient_person_id
 		WHERE ds.id=$1
-	`, id).Scan(&slot.ID, &slot.ScheduleID, &slot.SlotNumber, &slot.Status, &slot.AllocationID, &machineOption, &machineSerial, &hoseOption, &hoseSerial, &converterSerial, &slot.DistributedAt, &slot.CreatedAt, &slot.UpdatedAt, &fullName, &nik)
+	`, id).Scan(&slot.ID, &slot.ScheduleID, &slot.SlotNumber, &slot.Status, &slot.AllocationID, &machineOption, &machineSerial, &hoseOption, &hoseSerial, &converterOption, &converterSerial, &slot.DistributedAt, &slot.CreatedAt, &slot.UpdatedAt, &fullName, &nik)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return DistributionSlot{}, ErrSlotNotFound
 	}
@@ -254,6 +268,9 @@ func (r *Repository) getSlotByID(ctx context.Context, id string) (DistributionSl
 	}
 	if hoseSerial != nil {
 		slot.HoseSerialNumber = *hoseSerial
+	}
+	if converterOption != nil {
+		slot.ConverterOptionCode = *converterOption
 	}
 	if converterSerial != nil {
 		slot.ConverterSerialNumber = *converterSerial

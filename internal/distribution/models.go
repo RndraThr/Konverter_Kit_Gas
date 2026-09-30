@@ -29,6 +29,7 @@ var (
 	ErrCandidateNotFound            = errors.New("no unlinked DCP3 candidate matches this NIK for this schedule")
 	ErrSlotNumberRequired           = errors.New("slot_number is required")
 	ErrSlotQuotaExceeded            = errors.New("distribution slot quota has been reached for this schedule")
+	ErrSlotNumberTaken              = errors.New("distribution slot number is already used for this schedule")
 )
 
 type SlotSummary struct {
@@ -58,6 +59,7 @@ type DistributionSlot struct {
 	MachineSerialNumber   string        `json:"machine_serial_number,omitempty"`
 	HoseOptionCode        string        `json:"hose_option_code,omitempty"`
 	HoseSerialNumber      string        `json:"hose_serial_number,omitempty"`
+	ConverterOptionCode   string        `json:"converter_option_code,omitempty"`
 	ConverterSerialNumber string        `json:"converter_serial_number,omitempty"`
 	Documentation         []SlotSummary `json:"documentation"`
 	DistributedAt         *time.Time    `json:"distributed_at,omitempty"`
@@ -73,10 +75,12 @@ type SlotCatalogEntry struct {
 
 type CreateSlotInput struct {
 	ScheduleID            string `json:"schedule_id"`
+	SlotNumber            int    `json:"slot_number"`
 	MachineOptionCode     string `json:"machine_option_code"`
 	MachineSerialNumber   string `json:"machine_serial_number"`
 	HoseOptionCode        string `json:"hose_option_code"`
 	HoseSerialNumber      string `json:"hose_serial_number"`
+	ConverterOptionCode   string `json:"converter_option_code"`
 	ConverterSerialNumber string `json:"converter_serial_number"`
 }
 

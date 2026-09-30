@@ -71,6 +71,7 @@ func (s *Service) CreateSlot(ctx context.Context, actor auth.Principal, input Cr
 	input.MachineSerialNumber = strings.TrimSpace(input.MachineSerialNumber)
 	input.HoseOptionCode = strings.TrimSpace(input.HoseOptionCode)
 	input.HoseSerialNumber = strings.TrimSpace(input.HoseSerialNumber)
+	input.ConverterOptionCode = strings.TrimSpace(input.ConverterOptionCode)
 	input.ConverterSerialNumber = strings.TrimSpace(input.ConverterSerialNumber)
 	if s.posMesinRepository == nil {
 		return DistributionSlot{}, errors.New("distribution POS Mesin is unavailable")

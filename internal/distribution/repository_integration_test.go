@@ -167,6 +167,54 @@ func TestCreateSlotRejectsSlotBeyondQuota(t *testing.T) {
 	}
 }
 
+// TestCreateSlotHonoursExplicitSlotNumber proves the catalog-first flow: a caller may create a slot
+// at an explicit number (any empty number within quota, not just max+1). Creating a second slot at a
+// number already in use returns ErrSlotNumberTaken, and an explicit number above quota returns
+// ErrSlotQuotaExceeded — while omitting the number still auto-allocates the next sequential one.
+func TestCreateSlotHonoursExplicitSlotNumber(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+
+	var regencyID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan','Explicit Test','EXN',true) ON CONFLICT (document_code) DO UPDATE SET is_active=true RETURNING id::text`).Scan(&regencyID))
+	var programID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES($1,'Program Test Explicit','farmer',2026,'active') RETURNING id::text`, "EXN-TEST-"+suffix).Scan(&programID))
+	var packageTemplateID, docTemplateID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES($1,1,'Paket Test Explicit','farmer','{}'::jsonb,'published') RETURNING id::text`, "PKG-EXN-"+suffix).Scan(&packageTemplateID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES($1,1,'Dok Test Explicit','farmer','published') RETURNING id::text`, "DOC-EXN-"+suffix).Scan(&docTemplateID))
+	var scheduleID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,distribution_number_padding,receipt_policy_json,slot_quota) VALUES($1,$2,$3,$4,'Jadwal Test Explicit','2026-01-01','2026-12-31','active',4,'{}'::jsonb,5) RETURNING id::text`, programID, regencyID, packageTemplateID, docTemplateID).Scan(&scheduleID))
+
+	repo := NewRepository(pool)
+
+	// Explicit number 3 is creatable even though no lower-numbered slots exist yet.
+	third, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID, SlotNumber: 3}, auth.ClientMeta{})
+	must(t, err)
+	if third.SlotNumber != 3 {
+		t.Fatalf("third.SlotNumber = %d, want 3", third.SlotNumber)
+	}
+
+	// The same number cannot be created twice.
+	_, err = repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID, SlotNumber: 3}, auth.ClientMeta{})
+	if !errors.Is(err, ErrSlotNumberTaken) {
+		t.Fatalf("err = %v, want ErrSlotNumberTaken", err)
+	}
+
+	// An explicit number above quota is rejected.
+	_, err = repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID, SlotNumber: 6}, auth.ClientMeta{})
+	if !errors.Is(err, ErrSlotQuotaExceeded) {
+		t.Fatalf("err = %v, want ErrSlotQuotaExceeded", err)
+	}
+
+	// Omitting the number still auto-allocates the next sequential slot (max existing is 3 -> 4).
+	auto, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.ClientMeta{})
+	must(t, err)
+	if auto.SlotNumber != 4 {
+		t.Fatalf("auto.SlotNumber = %d, want 4", auto.SlotNumber)
+	}
+}
+
 // TestListSlotCatalogReportsStatusAndCompleteness proves ListSlotCatalog returns one row per existing
 // distribution_slots, with documentation_complete correctly reflecting whether every required
 // documentation_slots row for that slot has met its min_files — using the same completeness rule as
