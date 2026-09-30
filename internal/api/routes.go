@@ -455,6 +455,12 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeFieldError(w, http.StatusConflict, "conflict", "Data sudah digunakan", map[string]string{"code": err.Error()})
 	case errors.Is(err, programs.ErrDocumentCodeInUse), errors.Is(err, programs.ErrCodeInUse):
 		writeFieldError(w, http.StatusConflict, "conflict", "Kode sudah digunakan", map[string]string{"code": err.Error()})
+	case errors.Is(err, programs.ErrZoneNotConfigured):
+		writeError(w, http.StatusConflict, "zone_not_configured", "Kabupaten belum dikonfigurasi ke zona")
+	case errors.Is(err, programs.ErrZonePlaceholderImmutable):
+		writeError(w, http.StatusConflict, "zone_placeholder_immutable", "Zona placeholder tidak dapat diubah")
+	case errors.Is(err, programs.ErrZoneProgramMismatch):
+		writeError(w, http.StatusConflict, "zone_program_mismatch", "Zona tidak termasuk dalam program ini")
 	case errors.Is(err, dcp3.ErrDuplicateImport):
 		writeError(w, http.StatusConflict, "duplicate_import", "File DCP3 ini sudah pernah diunggah pada jadwal yang sama")
 	case errors.Is(err, dcp3.ErrImportState):

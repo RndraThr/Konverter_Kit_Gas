@@ -78,6 +78,9 @@ type ProgramSetupService interface {
 	SavePackageTemplate(context.Context, auth.Principal, programs.PackageTemplateInput, auth.ClientMeta) (programs.PackageTemplate, error)
 	ListDocumentationTemplates(context.Context) ([]programs.DocumentationTemplate, error)
 	SaveDocumentationTemplate(context.Context, auth.Principal, programs.DocumentationTemplateInput, auth.ClientMeta) (programs.DocumentationTemplate, error)
+	ListZones(context.Context, string, auth.RegencyScope) ([]programs.ProgramZone, error)
+	SaveZone(context.Context, auth.Principal, programs.ZoneInput, auth.ClientMeta) (programs.ProgramZone, error)
+	AssignRegency(context.Context, auth.Principal, programs.RegencyAssignmentInput, auth.RegencyScope, auth.ClientMeta) (programs.ProgramZone, error)
 }
 
 type DCP3Service interface {

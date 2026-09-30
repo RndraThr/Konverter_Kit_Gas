@@ -820,8 +820,15 @@ type fakeAuditService struct {
 
 type fakeProgramSetupService struct {
 	ProgramSetupService
-	regencyInput     programs.RegencyInput
-	seenRegencyScope auth.RegencyScope
+	regencyInput      programs.RegencyInput
+	seenRegencyScope  auth.RegencyScope
+	zoneListProgramID string
+	zoneInput         programs.ZoneInput
+	zoneResult        programs.ProgramZone
+	zoneErr           error
+	assignmentInput   programs.RegencyAssignmentInput
+	assignmentResult  programs.ProgramZone
+	assignErr         error
 }
 
 type fakeDCP3Service struct {
@@ -968,6 +975,25 @@ func (f *fakeProgramSetupService) ListPackageTemplates(context.Context) ([]progr
 }
 func (f *fakeProgramSetupService) ListDocumentationTemplates(context.Context) ([]programs.DocumentationTemplate, error) {
 	return []programs.DocumentationTemplate{}, nil
+}
+
+func (f *fakeProgramSetupService) ListZones(_ context.Context, programID string, scope auth.RegencyScope) ([]programs.ProgramZone, error) {
+	f.zoneListProgramID, f.seenRegencyScope = programID, scope
+	return []programs.ProgramZone{}, nil
+}
+func (f *fakeProgramSetupService) SaveZone(_ context.Context, _ auth.Principal, input programs.ZoneInput, _ auth.ClientMeta) (programs.ProgramZone, error) {
+	f.zoneInput = input
+	if f.zoneErr != nil {
+		return programs.ProgramZone{}, f.zoneErr
+	}
+	return programs.ProgramZone{ID: input.ID, ProgramID: input.ProgramID, Code: input.Code, Name: input.Name}, nil
+}
+func (f *fakeProgramSetupService) AssignRegency(_ context.Context, _ auth.Principal, input programs.RegencyAssignmentInput, scope auth.RegencyScope, _ auth.ClientMeta) (programs.ProgramZone, error) {
+	f.assignmentInput, f.seenRegencyScope = input, scope
+	if f.assignErr != nil {
+		return programs.ProgramZone{}, f.assignErr
+	}
+	return f.assignmentResult, nil
 }
 
 func (f *fakeAuditService) List(context.Context, audit.Filter) (audit.Page, error) {

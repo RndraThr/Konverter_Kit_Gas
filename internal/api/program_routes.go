@@ -13,7 +13,15 @@ func (h *Handler) handleProgramSetup(w http.ResponseWriter, r *http.Request, rc 
 		return
 	}
 	parts := strings.Split(strings.Trim(suffix, "/"), "/")
-	if len(parts) < 1 || len(parts) > 2 || parts[0] == "" {
+	if len(parts) < 1 || parts[0] == "" {
+		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
+		return
+	}
+	if parts[0] == "programs" && len(parts) > 2 {
+		h.handleProgramNested(w, r, rc, parts[1:])
+		return
+	}
+	if len(parts) > 2 {
 		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
 		return
 	}
@@ -192,6 +200,101 @@ func (h *Handler) handleDocumentationTemplates(w http.ResponseWriter, r *http.Re
 		return
 	}
 	writeData(w, mutationStatus(r), result)
+}
+
+// handleProgramNested routes the sub-paths nested under programs/{programID}/...
+// (zones, assignments) that don't fit the generic maximum-two-parts resource parser.
+func (h *Handler) handleProgramNested(w http.ResponseWriter, r *http.Request, rc requestContext, parts []string) {
+	if len(parts) < 2 || parts[0] == "" {
+		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
+		return
+	}
+	programID := parts[0]
+	switch parts[1] {
+	case "zones":
+		zoneID := ""
+		switch len(parts) {
+		case 2:
+		case 3:
+			if parts[2] == "" {
+				writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
+				return
+			}
+			zoneID = parts[2]
+		default:
+			writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
+			return
+		}
+		h.handleProgramZones(w, r, rc, programID, zoneID)
+	case "assignments":
+		if len(parts) != 3 || parts[2] == "" {
+			writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
+			return
+		}
+		h.handleRegencyAssignment(w, r, rc, programID, parts[2])
+	default:
+		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
+	}
+}
+
+func (h *Handler) handleProgramZones(w http.ResponseWriter, r *http.Request, rc requestContext, programID, zoneID string) {
+	if r.Method == http.MethodGet && zoneID == "" {
+		if !h.authorize(w, r, rc.principal, "programs.view") {
+			return
+		}
+		scope, ok := h.regencyScope(w, r, rc.principal)
+		if !ok {
+			return
+		}
+		result, err := h.deps.Programs.ListZones(r.Context(), programID, scope)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeData(w, http.StatusOK, result)
+		return
+	}
+	if !programMutationMethod(w, r, zoneID) || !h.authorize(w, r, rc.principal, "programs.manage") {
+		return
+	}
+	var input programs.ZoneInput
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	input.ProgramID = programID
+	input.ID = zoneID
+	result, err := h.deps.Programs.SaveZone(r.Context(), rc.principal, input, clientMeta(r))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, mutationStatus(r), result)
+}
+
+func (h *Handler) handleRegencyAssignment(w http.ResponseWriter, r *http.Request, rc requestContext, programID, regencyID string) {
+	if r.Method != http.MethodPut {
+		methodNotAllowed(w, http.MethodPut)
+		return
+	}
+	if !h.authorize(w, r, rc.principal, "programs.manage") {
+		return
+	}
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	var input programs.RegencyAssignmentInput
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	input.ProgramID = programID
+	input.RegencyID = regencyID
+	result, err := h.deps.Programs.AssignRegency(r.Context(), rc.principal, input, scope, clientMeta(r))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
 }
 
 func programMutationMethod(w http.ResponseWriter, r *http.Request, id string) bool {
