@@ -71,6 +71,21 @@ func TestLocalStorageDeleteIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestPutNamedKeepsSafeLocalKeyAndRejectsInvalidFilename(t *testing.T) {
+	storage, err := NewLocalStorage(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := "550e8400-e29b-41d4-a716-446655440099"
+	storageKey, _, _, err := PutNamed(context.Background(), storage, key, "SELASA, 10 DESEMBER 2024.pdf", nil, bytes.NewBufferString("pdf"))
+	if err != nil || storageKey != key {
+		t.Fatalf("storageKey=%q err=%v", storageKey, err)
+	}
+	if _, _, _, err := PutNamed(context.Background(), storage, key, "folder/file.pdf", nil, bytes.NewBufferString("pdf")); !errors.Is(err, ErrInvalidFilename) {
+		t.Fatalf("invalid filename err=%v", err)
+	}
+}
+
 func TestLocalStorageEnsureFolders(t *testing.T) {
 	storage, err := NewLocalStorage(t.TempDir())
 	if err != nil {

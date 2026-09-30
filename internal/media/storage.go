@@ -14,6 +14,7 @@ import (
 )
 
 var ErrInvalidKey = errors.New("media storage key is invalid")
+var ErrInvalidFilename = errors.New("media storage filename is invalid")
 
 var validKey = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
 
@@ -33,6 +34,30 @@ type Storage interface {
 	// to guarantee a folder hierarchy exists ahead of time (e.g. reserved
 	// document-category folders for a new zone) without uploading a file.
 	EnsureFolders(ctx context.Context, paths [][]string) error
+}
+
+type namedStorage interface {
+	PutNamed(ctx context.Context, key, filename string, folderPath []string, source io.Reader) (storageKey string, size int64, checksum string, err error)
+}
+
+// PutNamed stores an object using a stable internal key while allowing
+// backends with user-visible filenames (such as Google Drive) to display a
+// separate filename. Backends without named-object support safely fall back
+// to Put and continue using the internal key.
+func PutNamed(ctx context.Context, storage Storage, key, filename string, folderPath []string, source io.Reader) (string, int64, string, error) {
+	filename = strings.TrimSpace(filename)
+	if filename == "" || strings.ContainsAny(filename, `/\`) {
+		return "", 0, "", ErrInvalidFilename
+	}
+	for _, r := range filename {
+		if r < 32 || r == 127 {
+			return "", 0, "", ErrInvalidFilename
+		}
+	}
+	if named, ok := storage.(namedStorage); ok {
+		return named.PutNamed(ctx, key, filename, folderPath, source)
+	}
+	return storage.Put(ctx, key, folderPath, source)
 }
 
 type LocalStorage struct{ root string }

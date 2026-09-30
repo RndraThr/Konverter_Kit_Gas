@@ -50,6 +50,7 @@ func (s *BundleService) ListRecipients(ctx context.Context, programID, regencyID
 }
 
 func (s *BundleService) PreviewBundle(ctx context.Context, request BundleRequest, scope auth.RegencyScope) (BundlePreview, error) {
+	request = normalizedBundleRequest(request)
 	documents, _, _, err := s.prepareDocuments(ctx, auth.Principal{}, request, scope, auth.ClientMeta{}, false)
 	if err != nil {
 		return BundlePreview{}, err
@@ -62,6 +63,7 @@ func (s *BundleService) PreviewBundle(ctx context.Context, request BundleRequest
 }
 
 func (s *BundleService) FinalizeBundle(ctx context.Context, actor auth.Principal, request BundleRequest, scope auth.RegencyScope, meta auth.ClientMeta) (DailyBundle, error) {
+	request = normalizedBundleRequest(request)
 	documents, documentIDs, sourceContext, err := s.prepareDocuments(ctx, actor, request, scope, meta, true)
 	if err != nil {
 		return DailyBundle{}, err
@@ -89,7 +91,7 @@ func (s *BundleService) FinalizeBundle(ctx context.Context, actor auth.Principal
 	if err != nil {
 		return DailyBundle{}, err
 	}
-	storageKey, _, _, err := s.storage.Put(ctx, uuid.NewString(), folderPath, bytes.NewReader(rendered.PDF))
+	storageKey, _, _, err := media.PutNamed(ctx, s.storage, uuid.NewString(), rendered.Filename, folderPath, bytes.NewReader(rendered.PDF))
 	if err != nil {
 		return DailyBundle{}, err
 	}
@@ -124,6 +126,13 @@ func (s *BundleService) FinalizeBundle(ctx context.Context, actor auth.Principal
 		}
 	}
 	return activated.Bundle, nil
+}
+
+func normalizedBundleRequest(request BundleRequest) BundleRequest {
+	request.ProgramID = strings.TrimSpace(request.ProgramID)
+	request.RegencyID = strings.TrimSpace(request.RegencyID)
+	request.LocalDate = strings.TrimSpace(request.LocalDate)
+	return request
 }
 
 func (s *BundleService) OpenBundle(ctx context.Context, id string, scope auth.RegencyScope) (BundleContent, error) {

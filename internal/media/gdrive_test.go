@@ -12,6 +12,7 @@ type fakeDriveFilesAPI struct {
 	foldersByParentAndName map[string]string // key: parentID+"/"+name -> folder ID
 	createdFolders         []string          // names, in creation order
 	uploaded               map[string][]byte // key: file ID -> content
+	uploadedNames          []string
 	nextID                 int
 	deleteErr              error
 	deletedIDs             []string
@@ -44,14 +45,27 @@ func (f *fakeDriveFilesAPI) createFolder(_ context.Context, name, parentID strin
 	return id, nil
 }
 
-func (f *fakeDriveFilesAPI) uploadFile(_ context.Context, _ string, _ string, r io.Reader) (string, int64, error) {
+func (f *fakeDriveFilesAPI) uploadFile(_ context.Context, name string, _ string, r io.Reader) (string, int64, error) {
 	content, err := io.ReadAll(r)
 	if err != nil {
 		return "", 0, err
 	}
 	id := f.newID()
 	f.uploaded[id] = content
+	f.uploadedNames = append(f.uploadedNames, name)
 	return id, int64(len(content)), nil
+}
+
+func TestGoogleDriveStoragePutNamedUsesVisibleFilename(t *testing.T) {
+	api := newFakeDriveFilesAPI()
+	storage := &GoogleDriveStorage{api: api, cache: newFakeFolderCache(), rootFolderID: "root-1"}
+	_, _, _, err := PutNamed(context.Background(), storage, "internal-key", "SELASA, 10 DESEMBER 2024.pdf", []string{"PETANI", "2. BA PERORANGAN"}, bytes.NewBufferString("pdf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(api.uploadedNames) != 1 || api.uploadedNames[0] != "SELASA, 10 DESEMBER 2024.pdf" {
+		t.Fatalf("uploaded names=%v", api.uploadedNames)
+	}
 }
 
 func (f *fakeDriveFilesAPI) downloadFile(_ context.Context, id string) (io.ReadCloser, error) {

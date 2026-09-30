@@ -105,6 +105,10 @@ func (h *Handler) handleBASTLockTotal(w http.ResponseWriter, r *http.Request, rc
 	if !decodeJSON(w, r, &input) {
 		return
 	}
+	if strings.TrimSpace(input.ProgramID) == "" || strings.TrimSpace(input.RegencyID) == "" {
+		writeFieldError(w, http.StatusBadRequest, "validation_failed", "Program dan kabupaten wajib dipilih", map[string]string{"program_id": "wajib diisi", "regency_id": "wajib diisi"})
+		return
+	}
 	scope, ok := h.regencyScope(w, r, rc.principal)
 	if !ok {
 		return
@@ -122,7 +126,7 @@ func (h *Handler) handleBASTPreview(w http.ResponseWriter, r *http.Request, rc r
 		methodNotAllowed(w, http.MethodPost)
 		return
 	}
-	if !h.authorize(w, r, rc.principal, "bast.manage") {
+	if !h.authorize(w, r, rc.principal, "bast.view") {
 		return
 	}
 	input, scope, ok := h.decodeBundleRequest(w, r, rc)

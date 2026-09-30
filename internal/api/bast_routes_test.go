@@ -71,7 +71,7 @@ func TestBASTIndividualRecipientsRejectsMalformedDate(t *testing.T) {
 
 func TestBASTIndividualPreviewStreamsPDFWithIndonesianFilename(t *testing.T) {
 	secret := []byte("01234567890123456789012345678901")
-	manager := &fakeAuthService{principal: auth.Principal{UserID: "user"}, allowedPermissions: map[string]bool{"bast.manage": true}}
+	manager := &fakeAuthService{principal: auth.Principal{UserID: "user"}, allowedPermissions: map[string]bool{"bast.view": true}}
 	service := &fakeBASTService{preview: bast.BundlePreview{PDF: []byte("%PDF-preview"), Filename: "SELASA, 10 DESEMBER 2024.pdf", RecipientCount: 2, PageCount: 2}}
 	req := authenticatedRequest(http.MethodPost, "/api/v1/bast/individual/bundles/preview", `{"program_id":"p","regency_id":"r","local_date":"2024-12-10"}`, secret)
 	rec := httptest.NewRecorder()

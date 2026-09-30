@@ -176,12 +176,16 @@ func (s *GoogleDriveStorage) EnsureFolders(ctx context.Context, paths [][]string
 }
 
 func (s *GoogleDriveStorage) Put(ctx context.Context, key string, folderPath []string, source io.Reader) (string, int64, string, error) {
+	return s.PutNamed(ctx, key, key, folderPath, source)
+}
+
+func (s *GoogleDriveStorage) PutNamed(ctx context.Context, key, filename string, folderPath []string, source io.Reader) (string, int64, string, error) {
 	folderID, err := s.resolveFolder(ctx, folderPath)
 	if err != nil {
 		return "", 0, "", fmt.Errorf("resolve drive folder: %w", err)
 	}
 	hashing := newHashingReader(source)
-	fileID, size, err := s.api.uploadFile(ctx, key, folderID, hashing)
+	fileID, size, err := s.api.uploadFile(ctx, filename, folderID, hashing)
 	if err != nil {
 		return "", 0, "", err
 	}

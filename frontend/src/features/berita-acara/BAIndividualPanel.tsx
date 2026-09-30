@@ -112,10 +112,10 @@ export function BAIndividualPanel({ programID, regencyID, regencyName, programTy
             <Button nativeButton={false} render={<a href={`/api/v1/bast/individual/bundles/${selected.bundle.id}/content`} />} variant="outline"><Download />Unduh PDF</Button>
           </div>}
           {operationError && <p className="text-sm text-destructive" role="alert">{operationError}</p>}
-          {canManage && selected?.validation_status !== 'configuration_required' && <div className="flex flex-wrap gap-2">
-            {!ready && <Button disabled={busy} onClick={() => lock.mutate()}><LockKeyhole />{lock.isPending ? 'Mengunci...' : 'Kunci total kabupaten'}</Button>}
+          {selected?.validation_status !== 'configuration_required' && <div className="flex flex-wrap gap-2">
+            {canManage && !ready && <Button disabled={busy} onClick={() => lock.mutate()}><LockKeyhole />{lock.isPending ? 'Mengunci...' : 'Kunci total kabupaten'}</Button>}
             <Button disabled={!ready || busy} onClick={() => preview.mutate()} variant="outline"><Eye />{preview.isPending ? 'Menyiapkan...' : 'Preview PDF'}</Button>
-            <Button disabled={!ready || busy} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>
+            {canManage && <Button disabled={!ready || busy} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
           </div>}
           {ready && <Button className="justify-start" onClick={() => setShowRecipients((value) => !value)} variant="ghost"><Users />{showRecipients ? 'Sembunyikan penerima' : `Lihat ${selected?.recipient_count ?? 0} penerima`}</Button>}
         </CardContent>

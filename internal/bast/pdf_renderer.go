@@ -84,14 +84,23 @@ func RenderPetaniBundle(input BundleRenderInput) (RenderedBundle, error) {
 	pdf.SetCreationDate(creationDate)
 	pdf.SetCatalogSort(true)
 
-	logos, err := registerLogos(pdf, documents[0].Snapshot.Profile.Logos, input.LogoBytes)
-	if err != nil {
-		return RenderedBundle{}, err
+	logosByProfile := make(map[string][]registeredLogo)
+	for _, document := range documents {
+		key := profileLogoKey(document.Snapshot.Profile)
+		if _, exists := logosByProfile[key]; exists {
+			continue
+		}
+		logos, err := registerLogos(pdf, document.Snapshot.Profile.Logos, input.LogoBytes, len(logosByProfile))
+		if err != nil {
+			return RenderedBundle{}, err
+		}
+		logosByProfile[key] = logos
 	}
 
 	events := make([]string, 0, len(documents))
 	pageRanges := make([]RenderedRecipientPages, 0, len(documents))
 	for _, document := range documents {
+		logos := logosByProfile[profileLogoKey(document.Snapshot.Profile)]
 		pdf.AddPage()
 		pageStart := pdf.PageNo()
 		events = append(events, fmt.Sprintf("PAGE %d RECIPIENT %d START", pdf.PageNo(), document.SlotNumber))
@@ -109,7 +118,7 @@ func RenderPetaniBundle(input BundleRenderInput) (RenderedBundle, error) {
 	return RenderedBundle{PDF: output.Bytes(), PageCount: pdf.PageNo(), Filename: filename, Events: events, Recipients: pageRanges}, nil
 }
 
-func registerLogos(pdf *fpdf.Fpdf, snapshots []LogoSnapshot, logoBytes map[string][]byte) ([]registeredLogo, error) {
+func registerLogos(pdf *fpdf.Fpdf, snapshots []LogoSnapshot, logoBytes map[string][]byte, profileIndex int) ([]registeredLogo, error) {
 	if len(snapshots) == 0 {
 		return nil, fmt.Errorf("%w: published profile has no logos", ErrInvalidInput)
 	}
@@ -129,7 +138,7 @@ func registerLogos(pdf *fpdf.Fpdf, snapshots []LogoSnapshot, logoBytes map[strin
 			imageType = "JPG"
 		}
 		options := fpdf.ImageOptions{ImageType: imageType, ReadDpi: true}
-		name := fmt.Sprintf("bast_logo_%d", i)
+		name := fmt.Sprintf("bast_logo_%d_%d", profileIndex, i)
 		info := pdf.RegisterImageOptionsReader(name, options, bytes.NewReader(data))
 		if pdf.Err() || info == nil {
 			return nil, fmt.Errorf("invalid logo %s: %w", logo.AssetID, pdf.Error())
@@ -149,6 +158,17 @@ func registerLogos(pdf *fpdf.Fpdf, snapshots []LogoSnapshot, logoBytes map[strin
 		registered = append(registered, registeredLogo{name: name, options: options, widthMM: width, heightMM: height, maxWidthMM: maxWidth, maxHeightMM: maxHeight})
 	}
 	return registered, nil
+}
+
+func profileLogoKey(profile ProfileSnapshot) string {
+	if profile.VersionID != "" {
+		return profile.VersionID
+	}
+	var key strings.Builder
+	for _, logo := range profile.Logos {
+		fmt.Fprintf(&key, "%s:%s:%d|", logo.AssetID, logo.StorageKey, logo.SortOrder)
+	}
+	return key.String()
 }
 
 func renderRecipient(pdf *fpdf.Fpdf, document RecipientDocument, logos []registeredLogo, events *[]string) {

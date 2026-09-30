@@ -68,3 +68,10 @@ test('keeps the fisherman variant explicitly unavailable', () => {
   expect(screen.getByText('BA Perorangan Nelayan belum tersedia')).toBeVisible();
   expect(apiRequest).not.toHaveBeenCalled();
 });
+
+test('allows a viewer to preview but not finalize a ready bundle', async () => {
+	renderPanel('farmer', ['bast.view']);
+	expect(await screen.findByRole('button', { name: 'Preview PDF' })).toBeEnabled();
+	expect(screen.queryByRole('button', { name: 'Finalisasi & sinkronkan' })).not.toBeInTheDocument();
+	expect(screen.queryByRole('button', { name: 'Kunci total kabupaten' })).not.toBeInTheDocument();
+});

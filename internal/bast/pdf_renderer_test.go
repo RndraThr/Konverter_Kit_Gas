@@ -97,6 +97,23 @@ func TestRenderPetaniBundleRejectsMismatchedDateAndMissingLogo(t *testing.T) {
 	}
 }
 
+func TestRenderPetaniBundleFiftyRecipientsProducesOrderedFiftyPages(t *testing.T) {
+	documents := make([]RecipientDocument, 0, 50)
+	for slot := 50; slot >= 1; slot-- {
+		documents = append(documents, makeRenderDocument(slot, 50))
+	}
+	result, err := RenderPetaniBundle(BundleRenderInput{LocalDate: "2024-12-10", Documents: documents, LogoBytes: map[string][]byte{"logo": testPNG(t)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.PageCount != 50 || len(result.Recipients) != 50 {
+		t.Fatalf("pages=%d recipients=%d", result.PageCount, len(result.Recipients))
+	}
+	if result.Recipients[0].SlotNumber != 1 || result.Recipients[0].PageStart != 1 || result.Recipients[49].SlotNumber != 50 || result.Recipients[49].PageStart != 50 {
+		t.Fatalf("page ranges=%+v ... %+v", result.Recipients[0], result.Recipients[49])
+	}
+}
+
 func makeRenderDocument(slot, total int) RecipientDocument {
 	return RecipientDocument{
 		DistributionSlotID: "slot",

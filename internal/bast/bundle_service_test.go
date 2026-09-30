@@ -19,7 +19,7 @@ func TestFinalizeBundleUploadsToExactPathAndDeletesOldAfterSwap(t *testing.T) {
 	storage.files["logo-key"] = testPNG(t)
 	service := NewBundleService(repository, storage, time.UTC)
 
-	result, err := service.FinalizeBundle(context.Background(), auth.Principal{UserID: "actor"}, BundleRequest{ProgramID: "program", RegencyID: "regency", LocalDate: "2024-12-10"}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
+	result, err := service.FinalizeBundle(context.Background(), auth.Principal{UserID: "actor"}, BundleRequest{ProgramID: " program ", RegencyID: " regency ", LocalDate: " 2024-12-10 "}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,13 +27,16 @@ func TestFinalizeBundleUploadsToExactPathAndDeletesOldAfterSwap(t *testing.T) {
 	if strings.Join(storage.putPath, "/") != wantPath {
 		t.Fatalf("path=%q want=%q", strings.Join(storage.putPath, "/"), wantPath)
 	}
+	if storage.putFilename != "SELASA, 10 DESEMBER 2024.pdf" {
+		t.Fatalf("drive filename=%q", storage.putFilename)
+	}
 	if result.Filename != "SELASA, 10 DESEMBER 2024.pdf" || result.RecipientCount != 2 {
 		t.Fatalf("bundle=%+v", result)
 	}
 	if strings.Join(storage.operations, ",") != "open:logo-key,put,delete:old-key" {
 		t.Fatalf("operations=%v", storage.operations)
 	}
-	if repository.activated.Filename != result.Filename || repository.activated.Items[0].SlotNumber != 1 || repository.activated.Items[1].SlotNumber != 2 {
+	if repository.activated.ProgramID != "program" || repository.activated.RegencyID != "regency" || repository.activated.LocalDate != "2024-12-10" || repository.activated.Filename != result.Filename || repository.activated.Items[0].SlotNumber != 1 || repository.activated.Items[1].SlotNumber != 2 {
 		t.Fatalf("activation=%+v", repository.activated)
 	}
 }
@@ -190,13 +193,14 @@ func renderSource(recipient RecipientDocument) SourceData {
 }
 
 type bundleStorageStub struct {
-	t          *testing.T
-	files      map[string][]byte
-	operations []string
-	putPath    []string
-	putCalls   int
-	putErr     error
-	deleteErr  map[string]error
+	t           *testing.T
+	files       map[string][]byte
+	operations  []string
+	putPath     []string
+	putFilename string
+	putCalls    int
+	putErr      error
+	deleteErr   map[string]error
 }
 
 func newBundleStorageStub(t *testing.T) *bundleStorageStub {
@@ -212,6 +216,10 @@ func (s *bundleStorageStub) Put(_ context.Context, key string, path []string, so
 	data, _ := io.ReadAll(source)
 	s.files[key] = data
 	return key, int64(len(data)), "", nil
+}
+func (s *bundleStorageStub) PutNamed(ctx context.Context, key, filename string, path []string, source io.Reader) (string, int64, string, error) {
+	s.putFilename = filename
+	return s.Put(ctx, key, path, source)
 }
 func (s *bundleStorageStub) Open(_ context.Context, key string) (io.ReadCloser, error) {
 	s.operations = append(s.operations, "open:"+key)
