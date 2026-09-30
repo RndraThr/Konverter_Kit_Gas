@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { apiRequest } from '@/lib/api';
 import type { DataResponse, ProgramType, Schedule } from '../programs/types';
 import { programTypeLabel } from '../programs/types';
+import { BAIndividualPanel } from './BAIndividualPanel';
 
 const documentTypes = [
   { value: 'dp3', label: 'DP3' },
@@ -95,7 +96,9 @@ export function BeritaAcaraPage() {
         </TabsList>
       </div>
       {documentTypes.map((document) => <TabsContent className="pt-3" key={document.value} value={document.value}>
-        <DocumentWorkspace document={document} programType={programType} />
+        {document.value === 'ba-perorangan' && selectedSchedule && programType
+          ? <section aria-label={`BA Perorangan ${programTypeLabel(programType)}`}><BAIndividualPanel programID={selectedSchedule.program_id} regencyID={selectedSchedule.regency_id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} /></section>
+          : <DocumentWorkspace document={document} programType={programType} />}
       </TabsContent>)}
     </Tabs>
   </div>;

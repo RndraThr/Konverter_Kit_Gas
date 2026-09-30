@@ -64,6 +64,24 @@ export async function apiRequest<T>(path: string, init: ApiRequestInit = {}): Pr
   return response.json() as Promise<T>;
 }
 
+export async function apiBlobRequest(path: string, init: ApiRequestInit = {}): Promise<Blob> {
+  const { acceptedStatuses = [], ...requestInit } = init;
+  const method = (requestInit.method ?? 'GET').toUpperCase();
+  const headers = new Headers(requestInit.headers);
+  if (requestInit.body && !(requestInit.body instanceof FormData)) headers.set('Content-Type', 'application/json');
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && csrfToken) headers.set('X-CSRF-Token', csrfToken);
+  const response = await fetch(path, { ...requestInit, headers, credentials: 'same-origin' });
+  if (response.status === 401) {
+    window.location.assign('/login?notice=session_expired');
+    throw new ApiError(401, 'unauthorized', 'Sesi login telah berakhir');
+  }
+  if (!response.ok && !acceptedStatuses.includes(response.status)) {
+    const payload = await response.json().catch(() => ({})) as ErrorResponse;
+    throw new ApiError(response.status, payload.error?.code ?? 'request_failed', payload.error?.message ?? 'Permintaan tidak dapat diproses', payload.error?.fields);
+  }
+  return response.blob();
+}
+
 export async function getBootstrap(): Promise<BootstrapResponse> {
   const result = await apiRequest<BootstrapResponse>('/api/v1/me');
   csrfToken = result.meta.csrf_token;

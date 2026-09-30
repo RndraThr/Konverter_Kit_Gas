@@ -6,7 +6,7 @@ import { expect, test, vi } from 'vitest';
 import { apiRequest } from '@/lib/api';
 import { BeritaAcaraPage } from './BeritaAcaraPage';
 
-vi.mock('@/lib/api', () => ({ apiRequest: vi.fn() }));
+vi.mock('@/lib/api', () => ({ apiRequest: vi.fn(), apiBlobRequest: vi.fn() }));
 
 const schedules = { data: [
   {
@@ -54,7 +54,7 @@ test('derives the Petani or Nelayan document variant from the selected schedule'
   expect(screen.getByRole('combobox', { name: 'Jadwal program' })).toHaveTextContent('Bone Nelayan 2026');
   expect(screen.getByRole('tab', { name: 'BA Perorangan' })).toHaveAttribute('aria-selected', 'true');
   expect(screen.getByRole('region', { name: 'BA Perorangan Nelayan' })).toBeVisible();
-  expect(screen.getByText('Format BA Perorangan untuk program Nelayan akan disiapkan pada tahap berikutnya.')).toBeVisible();
+  expect(screen.getByText('BA Perorangan Nelayan belum tersedia')).toBeVisible();
 });
 
 test('keeps the selected schedule and document tab in the URL', async () => {
