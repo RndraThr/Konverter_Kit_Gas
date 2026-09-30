@@ -122,10 +122,15 @@ func NewGoogleDriveStorage(ctx context.Context, clientID, clientSecret, tokenJSO
 	}, nil
 }
 
+// resolveFolder resolves (creating as needed) the Drive folder identified
+// by folderPath, idempotently. It makes no assumption about what any given
+// path index "means" (e.g. it does not treat any particular index as a
+// regency folder) — callers that need sibling folders to exist ahead of
+// time must request them explicitly via EnsureFolders.
 func (s *GoogleDriveStorage) resolveFolder(ctx context.Context, folderPath []string) (string, error) {
 	parentID := s.rootFolderID
 	pathKeyParts := make([]string, 0, len(folderPath))
-	for i, name := range folderPath {
+	for _, name := range folderPath {
 		pathKeyParts = append(pathKeyParts, strings.ToLower(strings.ReplaceAll(name, " ", "-")))
 		pathKey := strings.Join(pathKeyParts, "/")
 
@@ -140,8 +145,7 @@ func (s *GoogleDriveStorage) resolveFolder(ctx context.Context, folderPath []str
 		if err != nil {
 			return "", err
 		}
-		isNew := found == ""
-		if isNew {
+		if found == "" {
 			found, err = s.api.createFolder(ctx, name, parentID)
 			if err != nil {
 				return "", err
@@ -151,43 +155,21 @@ func (s *GoogleDriveStorage) resolveFolder(ctx context.Context, folderPath []str
 			return "", err
 		}
 		parentID = found
-
-		// Index 0 is always "Konkit {tahun}"; index 1 is always the
-		// regency-level folder. The first time it's created, also create
-		// its two reserved-for-future-features sibling folders (empty).
-		if isNew && i == 1 {
-			if err := s.ensureRegencyReservedFolders(ctx, pathKey, parentID); err != nil {
-				return "", err
-			}
-		}
 	}
 	return parentID, nil
 }
 
-// ensureRegencyReservedFolders creates the "BERITA ACARA (BA)" and
-// "DOKUMEN PENDUKUNG" folders as empty siblings of "DOKUMENTASI FOTO &
-// VIDEO" under the regency folder, once. Both are reserved for future
-// features (see spec section 2) and are never written to by this plan.
-func (s *GoogleDriveStorage) ensureRegencyReservedFolders(ctx context.Context, regencyPathKey, regencyFolderID string) error {
-	for _, name := range []string{"BERITA ACARA (BA)", "DOKUMEN PENDUKUNG"} {
-		pathKey := regencyPathKey + "/" + strings.ToLower(strings.ReplaceAll(name, " ", "-"))
-		if _, ok, err := s.cache.Get(ctx, pathKey); err != nil {
-			return err
-		} else if ok {
-			continue
+// EnsureFolders resolves (creating as needed) each folder path in paths,
+// idempotently, without uploading any file. Used to pre-create folder
+// hierarchies — e.g. the reserved document-category folders for a new
+// program zone — ahead of any upload.
+func (s *GoogleDriveStorage) EnsureFolders(ctx context.Context, paths [][]string) error {
+	for _, folderPath := range paths {
+		if len(folderPath) == 0 {
+			return ErrInvalidFolderPath
 		}
-		found, err := s.api.findFolder(ctx, name, regencyFolderID)
-		if err != nil {
-			return err
-		}
-		if found == "" {
-			found, err = s.api.createFolder(ctx, name, regencyFolderID)
-			if err != nil {
-				return err
-			}
-		}
-		if err := s.cache.Set(ctx, pathKey, found); err != nil {
-			return err
+		if _, err := s.resolveFolder(ctx, folderPath); err != nil {
+			return fmt.Errorf("ensure drive folder %v: %w", folderPath, err)
 		}
 	}
 	return nil

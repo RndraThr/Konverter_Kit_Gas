@@ -71,6 +71,26 @@ func TestLocalStorageDeleteIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestLocalStorageEnsureFolders(t *testing.T) {
+	storage, err := NewLocalStorage(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := storage.EnsureFolders(context.Background(), [][]string{{"PETANI", "ZONA 1", "WAJO", "DOKUMENTASI (FOTO)"}}); err != nil {
+		t.Fatal(err)
+	}
+	for _, paths := range [][][]string{
+		{{}},
+		{{"PETANI", ""}},
+		{{"PETANI", `ZONA\1`}},
+		{{"PETANI", "ZONA/1"}},
+	} {
+		if err := storage.EnsureFolders(context.Background(), paths); !errors.Is(err, ErrInvalidFolderPath) {
+			t.Fatalf("paths=%v err=%v, want ErrInvalidFolderPath", paths, err)
+		}
+	}
+}
+
 func TestLocalStorageRequiresDirectoryPath(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "not-a-directory")

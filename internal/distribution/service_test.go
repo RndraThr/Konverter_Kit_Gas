@@ -29,6 +29,9 @@ func (s *storageStub) Delete(_ context.Context, key string) error {
 	s.deletedKey = key
 	return s.deleteErr
 }
+func (s *storageStub) EnsureFolders(context.Context, [][]string) error {
+	return nil
+}
 
 type mediaRepositoryStub struct {
 	slot       MediaSlot

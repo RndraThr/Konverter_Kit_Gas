@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 )
 
 var ErrInvalidKey = errors.New("media storage key is invalid")
@@ -26,6 +27,12 @@ type Storage interface {
 	Put(ctx context.Context, key string, folderPath []string, source io.Reader) (storageKey string, size int64, checksum string, err error)
 	Open(context.Context, string) (io.ReadCloser, error)
 	Delete(context.Context, string) error
+
+	// EnsureFolders pre-creates (or, for backends that don't need it,
+	// validates) each folder path in paths, idempotently. Callers use this
+	// to guarantee a folder hierarchy exists ahead of time (e.g. reserved
+	// document-category folders for a new zone) without uploading a file.
+	EnsureFolders(ctx context.Context, paths [][]string) error
 }
 
 type LocalStorage struct{ root string }
@@ -108,6 +115,30 @@ func (s *LocalStorage) Delete(ctx context.Context, key string) error {
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("delete media file: %w", err)
+	}
+	return nil
+}
+
+// EnsureFolders validates each folder path's shape. LocalStorage stores
+// files flat (see Put) and has no real folder hierarchy to pre-create, so
+// this is otherwise a no-op — it exists so LocalStorage satisfies Storage
+// and so callers get the same validation errors regardless of backend.
+func (s *LocalStorage) EnsureFolders(ctx context.Context, paths [][]string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	for _, folderPath := range paths {
+		if len(folderPath) == 0 {
+			return ErrInvalidFolderPath
+		}
+		for _, segment := range folderPath {
+			if strings.TrimSpace(segment) == "" {
+				return ErrInvalidFolderPath
+			}
+			if strings.ContainsAny(segment, `/\`) {
+				return ErrInvalidFolderPath
+			}
+		}
 	}
 	return nil
 }
