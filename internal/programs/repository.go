@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"konkit/internal/audit"
 	"konkit/internal/auth"
@@ -313,6 +314,173 @@ func (r *Repository) SaveSchedule(ctx context.Context, actor auth.Principal, inp
 		return Schedule{}, fmt.Errorf("commit schedule: %w", err)
 	}
 	return r.scheduleByID(ctx, id)
+}
+
+func (r *Repository) ListZones(ctx context.Context, programID string, scope auth.RegencyScope) ([]ProgramZone, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id::text, program_id::text, code, name, sort_order, is_placeholder, created_at, updated_at
+		FROM program_zones
+		WHERE program_id = $1
+		ORDER BY sort_order, name
+	`, programID)
+	if err != nil {
+		return nil, fmt.Errorf("list zones: %w", err)
+	}
+	defer rows.Close()
+	items := []ProgramZone{}
+	for rows.Next() {
+		var item ProgramZone
+		if err := rows.Scan(&item.ID, &item.ProgramID, &item.Code, &item.Name, &item.SortOrder, &item.IsPlaceholder, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan zone: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for index := range items {
+		regencies, err := r.zoneRegencies(ctx, r.pool, items[index].ID, scope)
+		if err != nil {
+			return nil, err
+		}
+		items[index].Regencies = regencies
+	}
+	return items, nil
+}
+
+func (r *Repository) zoneRegencies(ctx context.Context, db queryer, zoneID string, scope auth.RegencyScope) ([]Regency, error) {
+	rows, err := db.Query(ctx, `
+		SELECT r.id::text, r.province_name, r.name, r.document_code, r.is_active, COALESCE(r.notes,''), r.created_at, r.updated_at
+		FROM program_regency_assignments a
+		JOIN regencies r ON r.id = a.regency_id
+		WHERE a.zone_id = $1 AND ($2 OR a.regency_id::text = ANY($3))
+		ORDER BY r.province_name, r.name
+	`, zoneID, scope.Unrestricted, scope.RegencyIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list zone regencies: %w", err)
+	}
+	defer rows.Close()
+	items := []Regency{}
+	for rows.Next() {
+		var item Regency
+		if err := rows.Scan(&item.ID, &item.ProvinceName, &item.Name, &item.DocumentCode, &item.IsActive, &item.Notes, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan zone regency: %w", err)
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *Repository) SaveZone(ctx context.Context, actor auth.Principal, input ZoneInput, meta auth.ClientMeta) (ProgramZone, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return ProgramZone{}, fmt.Errorf("begin save zone: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var id string
+	var isPlaceholder bool
+	err = tx.QueryRow(ctx, `
+		INSERT INTO program_zones (program_id, code, name, sort_order, is_placeholder)
+		VALUES ($1,$2,$3,$4,false)
+		ON CONFLICT (program_id, code) DO UPDATE
+			SET name = EXCLUDED.name, sort_order = EXCLUDED.sort_order, updated_at = now()
+			WHERE program_zones.is_placeholder = false
+		RETURNING id::text, is_placeholder
+	`, input.ProgramID, input.Code, input.Name, input.SortOrder).Scan(&id, &isPlaceholder)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ProgramZone{}, ErrZonePlaceholderImmutable
+	}
+	if isUniqueViolation(err) {
+		return ProgramZone{}, ErrCodeInUse
+	}
+	if isForeignKeyViolation(err) {
+		return ProgramZone{}, ErrNotFound
+	}
+	if err != nil {
+		return ProgramZone{}, fmt.Errorf("save zone: %w", err)
+	}
+	if err := recordSetupAudit(ctx, tx, actor, meta, "zone.saved", "program_zone", id, map[string]any{"program_id": input.ProgramID, "code": input.Code}); err != nil {
+		return ProgramZone{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return ProgramZone{}, fmt.Errorf("commit save zone: %w", err)
+	}
+	return r.zoneByID(ctx, id, auth.RegencyScope{Unrestricted: true})
+}
+
+func (r *Repository) zoneByID(ctx context.Context, id string, scope auth.RegencyScope) (ProgramZone, error) {
+	var item ProgramZone
+	err := r.pool.QueryRow(ctx, `SELECT id::text, program_id::text, code, name, sort_order, is_placeholder, created_at, updated_at FROM program_zones WHERE id = $1`, id).
+		Scan(&item.ID, &item.ProgramID, &item.Code, &item.Name, &item.SortOrder, &item.IsPlaceholder, &item.CreatedAt, &item.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ProgramZone{}, ErrNotFound
+	}
+	if err != nil {
+		return ProgramZone{}, fmt.Errorf("zone by id: %w", err)
+	}
+	item.Regencies, err = r.zoneRegencies(ctx, r.pool, item.ID, scope)
+	return item, err
+}
+
+func (r *Repository) AssignRegency(ctx context.Context, actor auth.Principal, input RegencyAssignmentInput, scope auth.RegencyScope, meta auth.ClientMeta) (ProgramZone, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return ProgramZone{}, fmt.Errorf("begin assign regency: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var zoneID string
+	err = tx.QueryRow(ctx, `
+		INSERT INTO program_regency_assignments (program_id, regency_id, zone_id)
+		SELECT $1::uuid, $2::uuid, $3::uuid
+		WHERE ($4 OR $2::text = ANY($5))
+		ON CONFLICT (program_id, regency_id) DO UPDATE
+			SET zone_id = EXCLUDED.zone_id, updated_at = now()
+		RETURNING zone_id::text
+	`, input.ProgramID, input.RegencyID, input.ZoneID, scope.Unrestricted, scope.RegencyIDs).Scan(&zoneID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ProgramZone{}, ErrNotFound
+	}
+	if isForeignKeyViolation(err) {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && strings.Contains(pgErr.ConstraintName, "zone") {
+			return ProgramZone{}, ErrZoneProgramMismatch
+		}
+		return ProgramZone{}, ErrNotFound
+	}
+	if err != nil {
+		return ProgramZone{}, fmt.Errorf("assign regency: %w", err)
+	}
+	if err := recordSetupAudit(ctx, tx, actor, meta, "regency.assigned", "program_regency_assignment", input.ProgramID+":"+input.RegencyID, map[string]any{"program_id": input.ProgramID, "regency_id": input.RegencyID, "zone_id": input.ZoneID}); err != nil {
+		return ProgramZone{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return ProgramZone{}, fmt.Errorf("commit assign regency: %w", err)
+	}
+	return r.zoneByID(ctx, zoneID, scope)
+}
+
+func (r *Repository) ResolveStorageContext(ctx context.Context, programID string, regencyID string, scope auth.RegencyScope) (StorageContext, error) {
+	var item StorageContext
+	var isPlaceholder bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT p.id::text, p.program_type, z.id::text, z.name, z.is_placeholder, r.id::text, r.name
+		FROM program_regency_assignments a
+		JOIN programs p ON p.id = a.program_id
+		JOIN program_zones z ON z.id = a.zone_id
+		JOIN regencies r ON r.id = a.regency_id
+		WHERE a.program_id = $1 AND a.regency_id = $2 AND ($3 OR a.regency_id::text = ANY($4))
+	`, programID, regencyID, scope.Unrestricted, scope.RegencyIDs).
+		Scan(&item.ProgramID, &item.ProgramType, &item.ZoneID, &item.ZoneName, &isPlaceholder, &item.RegencyID, &item.RegencyName)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return StorageContext{}, ErrNotFound
+	}
+	if err != nil {
+		return StorageContext{}, fmt.Errorf("resolve storage context: %w", err)
+	}
+	if isPlaceholder {
+		return StorageContext{}, ErrZoneNotConfigured
+	}
+	return item, nil
 }
 
 func (r *Repository) regencyByID(ctx context.Context, id string) (Regency, error) {

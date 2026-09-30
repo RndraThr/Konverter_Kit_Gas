@@ -10,14 +10,21 @@ import (
 )
 
 type repositoryStub struct {
-	regencyInput  RegencyInput
-	programInput  ProgramInput
-	scheduleInput ScheduleInput
-	actor         auth.Principal
-	meta          auth.ClientMeta
+	regencyInput     RegencyInput
+	programInput     ProgramInput
+	scheduleInput    ScheduleInput
+	zoneInput        ZoneInput
+	assignmentInput  RegencyAssignmentInput
+	resolveProgramID string
+	resolveRegencyID string
+	seenScope        auth.RegencyScope
+	actor            auth.Principal
+	meta             auth.ClientMeta
 }
 
-func (r *repositoryStub) ListRegencies(context.Context, auth.RegencyScope) ([]Regency, error) { return nil, nil }
+func (r *repositoryStub) ListRegencies(context.Context, auth.RegencyScope) ([]Regency, error) {
+	return nil, nil
+}
 func (r *repositoryStub) SaveRegency(_ context.Context, actor auth.Principal, input RegencyInput, meta auth.ClientMeta) (Regency, error) {
 	r.regencyInput = input
 	r.actor = actor
@@ -29,7 +36,9 @@ func (r *repositoryStub) SaveProgram(_ context.Context, _ auth.Principal, input 
 	r.programInput = input
 	return Program{ProgramType: input.ProgramType}, nil
 }
-func (r *repositoryStub) ListSchedules(context.Context, auth.RegencyScope) ([]Schedule, error) { return nil, nil }
+func (r *repositoryStub) ListSchedules(context.Context, auth.RegencyScope) ([]Schedule, error) {
+	return nil, nil
+}
 func (r *repositoryStub) SaveSchedule(_ context.Context, _ auth.Principal, input ScheduleInput, _ auth.ClientMeta) (Schedule, error) {
 	r.scheduleInput = input
 	return Schedule{DistributionNumberPadding: input.DistributionNumberPadding}, nil
@@ -45,6 +54,28 @@ func (r *repositoryStub) ListDocumentationTemplates(context.Context) ([]Document
 }
 func (r *repositoryStub) SaveDocumentationTemplate(context.Context, auth.Principal, DocumentationTemplateInput, auth.ClientMeta) (DocumentationTemplate, error) {
 	return DocumentationTemplate{}, nil
+}
+func (r *repositoryStub) ListZones(context.Context, string, auth.RegencyScope) ([]ProgramZone, error) {
+	return nil, nil
+}
+func (r *repositoryStub) SaveZone(_ context.Context, actor auth.Principal, input ZoneInput, meta auth.ClientMeta) (ProgramZone, error) {
+	r.zoneInput = input
+	r.actor = actor
+	r.meta = meta
+	return ProgramZone{ProgramID: input.ProgramID, Code: input.Code, Name: input.Name, SortOrder: input.SortOrder}, nil
+}
+func (r *repositoryStub) AssignRegency(_ context.Context, actor auth.Principal, input RegencyAssignmentInput, scope auth.RegencyScope, meta auth.ClientMeta) (ProgramZone, error) {
+	r.assignmentInput = input
+	r.seenScope = scope
+	r.actor = actor
+	r.meta = meta
+	return ProgramZone{ID: input.ZoneID, ProgramID: input.ProgramID}, nil
+}
+func (r *repositoryStub) ResolveStorageContext(_ context.Context, programID string, regencyID string, scope auth.RegencyScope) (StorageContext, error) {
+	r.resolveProgramID = programID
+	r.resolveRegencyID = regencyID
+	r.seenScope = scope
+	return StorageContext{ProgramID: programID, RegencyID: regencyID}, nil
 }
 
 func TestSaveRegencyNormalizesDocumentCode(t *testing.T) {
@@ -201,6 +232,106 @@ func TestSaveDocumentationTemplateRejectsInvalidStage(t *testing.T) {
 	}, auth.ClientMeta{})
 	if !errors.Is(err, ErrTemplateSlotInvalid) {
 		t.Fatalf("expected ErrTemplateSlotInvalid for stage=%q, got %v", "distribution", err)
+	}
+}
+
+func TestSaveZoneNormalizesCodeAndTrimsName(t *testing.T) {
+	repository := &repositoryStub{}
+	service := NewService(repository)
+	zone, err := service.SaveZone(context.Background(), auth.Principal{}, ZoneInput{
+		ProgramID: "program-1", Code: " zone-a ", Name: "  Zona A  ", SortOrder: 2,
+	}, auth.ClientMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if zone.Code != "ZONE-A" || repository.zoneInput.Code != "ZONE-A" || repository.zoneInput.Name != "Zona A" {
+		t.Fatalf("zone input was not normalized: %+v", repository.zoneInput)
+	}
+}
+
+func TestSaveZoneRejectsBlankName(t *testing.T) {
+	service := NewService(&repositoryStub{})
+	_, err := service.SaveZone(context.Background(), auth.Principal{}, ZoneInput{
+		ProgramID: "program-1", Code: "ZONE-A", Name: "   ", SortOrder: 0,
+	}, auth.ClientMeta{})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestSaveZoneRejectsUnstableCode(t *testing.T) {
+	service := NewService(&repositoryStub{})
+	for _, code := range []string{"", "zone a", "zone/a", "-ZONE"} {
+		_, err := service.SaveZone(context.Background(), auth.Principal{}, ZoneInput{
+			ProgramID: "program-1", Code: code, Name: "Zona A",
+		}, auth.ClientMeta{})
+		if !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("code=%q err=%v", code, err)
+		}
+	}
+}
+
+func TestSaveZoneRejectsNegativeSortOrder(t *testing.T) {
+	service := NewService(&repositoryStub{})
+	_, err := service.SaveZone(context.Background(), auth.Principal{}, ZoneInput{
+		ProgramID: "program-1", Code: "ZONE-A", Name: "Zona A", SortOrder: -1,
+	}, auth.ClientMeta{})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestSaveZoneRejectsMissingProgramID(t *testing.T) {
+	service := NewService(&repositoryStub{})
+	_, err := service.SaveZone(context.Background(), auth.Principal{}, ZoneInput{
+		Code: "ZONE-A", Name: "Zona A",
+	}, auth.ClientMeta{})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestAssignRegencyForwardsScopeAndTrimsInput(t *testing.T) {
+	repository := &repositoryStub{}
+	service := NewService(repository)
+	scope := auth.RegencyScope{RegencyIDs: []string{"regency-1"}}
+	_, err := service.AssignRegency(context.Background(), auth.Principal{}, RegencyAssignmentInput{
+		ProgramID: " program-1 ", RegencyID: " regency-1 ", ZoneID: " zone-1 ",
+	}, scope, auth.ClientMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repository.assignmentInput.ProgramID != "program-1" || repository.assignmentInput.RegencyID != "regency-1" || repository.assignmentInput.ZoneID != "zone-1" {
+		t.Fatalf("assignment input was not trimmed: %+v", repository.assignmentInput)
+	}
+	if len(repository.seenScope.RegencyIDs) != 1 || repository.seenScope.RegencyIDs[0] != "regency-1" {
+		t.Fatalf("scope was not forwarded: %+v", repository.seenScope)
+	}
+}
+
+func TestAssignRegencyRejectsBlankZoneID(t *testing.T) {
+	service := NewService(&repositoryStub{})
+	_, err := service.AssignRegency(context.Background(), auth.Principal{}, RegencyAssignmentInput{
+		ProgramID: "program-1", RegencyID: "regency-1", ZoneID: "  ",
+	}, auth.RegencyScope{}, auth.ClientMeta{})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestResolveStorageContextForwardsScope(t *testing.T) {
+	repository := &repositoryStub{}
+	service := NewService(repository)
+	scope := auth.RegencyScope{RegencyIDs: []string{"regency-1"}}
+	_, err := service.ResolveStorageContext(context.Background(), " program-1 ", " regency-1 ", scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repository.resolveProgramID != "program-1" || repository.resolveRegencyID != "regency-1" {
+		t.Fatalf("ids were not trimmed: program=%q regency=%q", repository.resolveProgramID, repository.resolveRegencyID)
+	}
+	if len(repository.seenScope.RegencyIDs) != 1 || repository.seenScope.RegencyIDs[0] != "regency-1" {
+		t.Fatalf("scope was not forwarded: %+v", repository.seenScope)
 	}
 }
 

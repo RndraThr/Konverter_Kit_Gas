@@ -6,16 +6,19 @@ import (
 )
 
 var (
-	ErrNotFound             = errors.New("program setup resource not found")
-	ErrInvalidInput         = errors.New("program setup input is invalid")
-	ErrDocumentCodeInvalid  = errors.New("regency document code must contain exactly three letters")
-	ErrDocumentCodeInUse    = errors.New("regency document code is already used")
-	ErrCodeInUse            = errors.New("program or template code is already used")
-	ErrProgramTypeInvalid   = errors.New("program type must be farmer or fisherman")
-	ErrScheduleDatesInvalid   = errors.New("schedule end date must not precede start date")
-	ErrTemplateSlotInvalid    = errors.New("documentation template slot is invalid")
-	ErrPackageOptionsRequired = errors.New("package template requires at least one machine option and one hose option when published")
-	ErrSlotQuotaInvalid       = errors.New("slot_quota must be greater than zero when set")
+	ErrNotFound                 = errors.New("program setup resource not found")
+	ErrInvalidInput             = errors.New("program setup input is invalid")
+	ErrDocumentCodeInvalid      = errors.New("regency document code must contain exactly three letters")
+	ErrDocumentCodeInUse        = errors.New("regency document code is already used")
+	ErrCodeInUse                = errors.New("program or template code is already used")
+	ErrProgramTypeInvalid       = errors.New("program type must be farmer or fisherman")
+	ErrScheduleDatesInvalid     = errors.New("schedule end date must not precede start date")
+	ErrTemplateSlotInvalid      = errors.New("documentation template slot is invalid")
+	ErrPackageOptionsRequired   = errors.New("package template requires at least one machine option and one hose option when published")
+	ErrSlotQuotaInvalid         = errors.New("slot_quota must be greater than zero when set")
+	ErrZoneNotConfigured        = errors.New("regency is assigned to the unconfigured placeholder zone")
+	ErrZonePlaceholderImmutable = errors.New("placeholder zone cannot be created or modified")
+	ErrZoneProgramMismatch      = errors.New("zone does not belong to the specified program")
 )
 
 type ProgramType string
@@ -161,6 +164,41 @@ type Schedule struct {
 	DocumentationTemplate          *DocumentationTemplate `json:"documentation_template,omitempty"`
 	CreatedAt                      time.Time              `json:"created_at"`
 	UpdatedAt                      time.Time              `json:"updated_at"`
+}
+
+type ProgramZone struct {
+	ID            string    `json:"id"`
+	ProgramID     string    `json:"program_id"`
+	Code          string    `json:"code"`
+	Name          string    `json:"name"`
+	SortOrder     int       `json:"sort_order"`
+	IsPlaceholder bool      `json:"is_placeholder"`
+	Regencies     []Regency `json:"regencies,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+type ZoneInput struct {
+	ID        string `json:"id,omitempty"`
+	ProgramID string `json:"program_id"`
+	Code      string `json:"code"`
+	Name      string `json:"name"`
+	SortOrder int    `json:"sort_order"`
+}
+
+type RegencyAssignmentInput struct {
+	ProgramID string `json:"program_id"`
+	RegencyID string `json:"regency_id"`
+	ZoneID    string `json:"zone_id"`
+}
+
+type StorageContext struct {
+	ProgramID   string      `json:"program_id"`
+	ProgramType ProgramType `json:"program_type"`
+	ZoneID      string      `json:"zone_id"`
+	ZoneName    string      `json:"zone_name"`
+	RegencyID   string      `json:"regency_id"`
+	RegencyName string      `json:"regency_name"`
 }
 
 type ScheduleInput struct {

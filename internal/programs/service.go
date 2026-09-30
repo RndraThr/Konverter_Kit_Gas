@@ -13,6 +13,7 @@ var (
 	documentCodePattern = regexp.MustCompile(`^[A-Z]{3}$`)
 	stableCodePattern   = regexp.MustCompile(`^[A-Z0-9][A-Z0-9_-]{1,49}$`)
 	slotCodePattern     = regexp.MustCompile(`^[a-z][a-z0-9_]{1,49}$`)
+	zoneCodePattern     = regexp.MustCompile(`^[A-Z0-9][A-Z0-9_-]{0,49}$`)
 )
 
 type repository interface {
@@ -26,6 +27,10 @@ type repository interface {
 	SavePackageTemplate(context.Context, auth.Principal, PackageTemplateInput, auth.ClientMeta) (PackageTemplate, error)
 	ListDocumentationTemplates(context.Context) ([]DocumentationTemplate, error)
 	SaveDocumentationTemplate(context.Context, auth.Principal, DocumentationTemplateInput, auth.ClientMeta) (DocumentationTemplate, error)
+	ListZones(context.Context, string, auth.RegencyScope) ([]ProgramZone, error)
+	SaveZone(context.Context, auth.Principal, ZoneInput, auth.ClientMeta) (ProgramZone, error)
+	AssignRegency(context.Context, auth.Principal, RegencyAssignmentInput, auth.RegencyScope, auth.ClientMeta) (ProgramZone, error)
+	ResolveStorageContext(context.Context, string, string, auth.RegencyScope) (StorageContext, error)
 }
 
 type Service struct{ repository repository }
@@ -175,6 +180,43 @@ func (s *Service) SaveDocumentationTemplate(ctx context.Context, actor auth.Prin
 		seen[slot.SlotCode] = struct{}{}
 	}
 	return s.repository.SaveDocumentationTemplate(ctx, actor, input, meta)
+}
+
+func (s *Service) ListZones(ctx context.Context, programID string, scope auth.RegencyScope) ([]ProgramZone, error) {
+	return s.repository.ListZones(ctx, strings.TrimSpace(programID), scope)
+}
+
+func (s *Service) SaveZone(ctx context.Context, actor auth.Principal, input ZoneInput, meta auth.ClientMeta) (ProgramZone, error) {
+	input.ID = strings.TrimSpace(input.ID)
+	input.ProgramID = strings.TrimSpace(input.ProgramID)
+	input.Code = strings.ToUpper(strings.TrimSpace(input.Code))
+	input.Name = strings.TrimSpace(input.Name)
+	if input.ProgramID == "" || input.Name == "" || input.SortOrder < 0 {
+		return ProgramZone{}, ErrInvalidInput
+	}
+	if !zoneCodePattern.MatchString(input.Code) {
+		return ProgramZone{}, ErrInvalidInput
+	}
+	return s.repository.SaveZone(ctx, actor, input, meta)
+}
+
+func (s *Service) AssignRegency(ctx context.Context, actor auth.Principal, input RegencyAssignmentInput, scope auth.RegencyScope, meta auth.ClientMeta) (ProgramZone, error) {
+	input.ProgramID = strings.TrimSpace(input.ProgramID)
+	input.RegencyID = strings.TrimSpace(input.RegencyID)
+	input.ZoneID = strings.TrimSpace(input.ZoneID)
+	if input.ProgramID == "" || input.RegencyID == "" || input.ZoneID == "" {
+		return ProgramZone{}, ErrInvalidInput
+	}
+	return s.repository.AssignRegency(ctx, actor, input, scope, meta)
+}
+
+func (s *Service) ResolveStorageContext(ctx context.Context, programID string, regencyID string, scope auth.RegencyScope) (StorageContext, error) {
+	programID = strings.TrimSpace(programID)
+	regencyID = strings.TrimSpace(regencyID)
+	if programID == "" || regencyID == "" {
+		return StorageContext{}, ErrInvalidInput
+	}
+	return s.repository.ResolveStorageContext(ctx, programID, regencyID, scope)
 }
 
 func validProgramType(value ProgramType) bool {

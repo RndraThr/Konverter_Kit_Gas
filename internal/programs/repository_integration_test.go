@@ -278,6 +278,168 @@ func TestIntegrationListRegenciesAndSchedulesRespectRegencyScope(t *testing.T) {
 	}
 }
 
+func TestIntegrationZoneLifecycleUpsertsByProgramAndCode(t *testing.T) {
+	pool := programsIntegrationPool(t)
+	repository := NewRepository(pool)
+	service := NewService(repository)
+	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	programCode := "ZNE-" + suffix
+	regencyCode := fmt.Sprintf("%c%c%c", 'A'+suffix[len(suffix)-1]%20, 'A'+suffix[len(suffix)-2]%20, 'A'+suffix[len(suffix)-3]%20)
+	actor := auth.Principal{}
+	meta := auth.ClientMeta{IPAddress: "127.0.0.1", UserAgent: "programs-zone-integration-test-" + suffix}
+
+	program, err := service.SaveProgram(ctx, actor, ProgramInput{
+		Code: programCode, Name: "Program Zona", ProgramType: ProgramFarmer, FiscalYear: 2026, Status: "active",
+	}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherProgram, err := service.SaveProgram(ctx, actor, ProgramInput{
+		Code: "ZNE-OTHER-" + suffix, Name: "Program Zona Lain", ProgramType: ProgramFarmer, FiscalYear: 2026, Status: "active",
+	}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	regency, err := service.SaveRegency(ctx, actor, RegencyInput{
+		ProvinceName: "Sulawesi Selatan", Name: "Kabupaten Zona " + suffix, DocumentCode: regencyCode, IsActive: true,
+	}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM audit_logs WHERE user_agent = $1", meta.UserAgent)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM program_regency_assignments WHERE program_id IN (SELECT id FROM programs WHERE code = $1)", programCode)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM program_zones WHERE program_id IN (SELECT id FROM programs WHERE code = ANY($1))", []string{programCode, "ZNE-OTHER-" + suffix})
+		_, _ = pool.Exec(context.Background(), "DELETE FROM programs WHERE code = ANY($1)", []string{programCode, "ZNE-OTHER-" + suffix})
+		_, _ = pool.Exec(context.Background(), "DELETE FROM regencies WHERE id = $1", regency.ID)
+	})
+
+	// Reject blank names and unstable codes before hitting the database.
+	if _, err := service.SaveZone(ctx, actor, ZoneInput{ProgramID: program.ID, Code: "ZONE-A", Name: "   "}, meta); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("blank name err=%v", err)
+	}
+	if _, err := service.SaveZone(ctx, actor, ZoneInput{ProgramID: program.ID, Code: "zone a!", Name: "Zona A"}, meta); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("unstable code err=%v", err)
+	}
+
+	zone, err := service.SaveZone(ctx, actor, ZoneInput{ProgramID: program.ID, Code: "zone-a", Name: " Zona A ", SortOrder: 1}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if zone.Code != "ZONE-A" || zone.Name != "Zona A" || zone.IsPlaceholder {
+		t.Fatalf("unexpected saved zone: %+v", zone)
+	}
+
+	// Saving again with the same program+code upserts the existing row rather than creating a new one.
+	updated, err := service.SaveZone(ctx, actor, ZoneInput{ProgramID: program.ID, Code: "zone-a", Name: "Zona A Revisi", SortOrder: 5}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ID != zone.ID || updated.Name != "Zona A Revisi" || updated.SortOrder != 5 {
+		t.Fatalf("expected upsert of existing zone, got: %+v", updated)
+	}
+
+	// A zone belonging to another program cannot be assigned to a regency under this program.
+	otherZone, err := service.SaveZone(ctx, actor, ZoneInput{ProgramID: otherProgram.ID, Code: "ZONE-X", Name: "Zona Lain"}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.AssignRegency(ctx, actor, RegencyAssignmentInput{
+		ProgramID: program.ID, RegencyID: regency.ID, ZoneID: otherZone.ID,
+	}, auth.RegencyScope{Unrestricted: true}, meta); !errors.Is(err, ErrZoneProgramMismatch) {
+		t.Fatalf("expected ErrZoneProgramMismatch, got %v", err)
+	}
+
+	// An out-of-scope regency must not be assignable.
+	if _, err := service.AssignRegency(ctx, actor, RegencyAssignmentInput{
+		ProgramID: program.ID, RegencyID: regency.ID, ZoneID: updated.ID,
+	}, auth.RegencyScope{RegencyIDs: []string{"00000000-0000-0000-0000-000000000000"}}, meta); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for out-of-scope regency, got %v", err)
+	}
+
+	assigned, err := service.AssignRegency(ctx, actor, RegencyAssignmentInput{
+		ProgramID: program.ID, RegencyID: regency.ID, ZoneID: updated.ID,
+	}, auth.RegencyScope{Unrestricted: true}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assigned.ID != updated.ID {
+		t.Fatalf("expected assignment to resolve to zone %s, got %+v", updated.ID, assigned)
+	}
+
+	zones, err := service.ListZones(ctx, program.ID, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, z := range zones {
+		if z.ID == updated.ID {
+			found = true
+			if len(z.Regencies) != 1 || z.Regencies[0].ID != regency.ID {
+				t.Fatalf("expected zone to list assigned regency, got %+v", z.Regencies)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("zone %s not found in ListZones result", updated.ID)
+	}
+
+	// Regencies outside scope must not be visible on the zone listing either.
+	scopedZones, err := service.ListZones(ctx, program.ID, auth.RegencyScope{RegencyIDs: []string{"00000000-0000-0000-0000-000000000000"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, z := range scopedZones {
+		if z.ID == updated.ID && len(z.Regencies) != 0 {
+			t.Fatalf("expected no regencies visible out of scope, got %+v", z.Regencies)
+		}
+	}
+
+	// Manually create a placeholder zone (as the migration seed does) to verify it is protected.
+	var placeholderID string
+	if err := pool.QueryRow(ctx, `INSERT INTO program_zones (program_id, code, name, sort_order, is_placeholder) VALUES ($1,'UNASSIGNED','ZONA BELUM DIATUR',0,true) RETURNING id::text`, program.ID).Scan(&placeholderID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SaveZone(ctx, actor, ZoneInput{ProgramID: program.ID, Code: "UNASSIGNED", Name: "Coba Timpa"}, meta); !errors.Is(err, ErrZonePlaceholderImmutable) {
+		t.Fatalf("expected ErrZonePlaceholderImmutable, got %v", err)
+	}
+
+	// ResolveStorageContext must surface ErrZoneNotConfigured while the regency sits on the placeholder.
+	regency2, err := service.SaveRegency(ctx, actor, RegencyInput{
+		ProvinceName: "Sulawesi Selatan", Name: "Kabupaten Zona Dua " + suffix,
+		DocumentCode: fmt.Sprintf("%c%c%c", 'A'+suffix[len(suffix)-4]%20, 'A'+suffix[len(suffix)-5]%20, 'A'+suffix[len(suffix)-6]%20),
+		IsActive:     true,
+	}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM program_regency_assignments WHERE regency_id = $1", regency2.ID)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM regencies WHERE id = $1", regency2.ID)
+	})
+	if _, err := pool.Exec(ctx, `INSERT INTO program_regency_assignments (program_id, regency_id, zone_id) VALUES ($1,$2,$3)`, program.ID, regency2.ID, placeholderID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.ResolveStorageContext(ctx, program.ID, regency2.ID, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrZoneNotConfigured) {
+		t.Fatalf("expected ErrZoneNotConfigured, got %v", err)
+	}
+
+	// Resolving through the real assignment returns a full storage context.
+	resolved, err := service.ResolveStorageContext(ctx, program.ID, regency.ID, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.ProgramID != program.ID || resolved.ZoneID != updated.ID || resolved.RegencyID != regency.ID || resolved.ProgramType != ProgramFarmer {
+		t.Fatalf("unexpected resolved storage context: %+v", resolved)
+	}
+
+	// Out-of-scope resolution must not leak the assignment.
+	if _, err := service.ResolveStorageContext(ctx, program.ID, regency.ID, auth.RegencyScope{RegencyIDs: []string{"00000000-0000-0000-0000-000000000000"}}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound for out-of-scope resolution, got %v", err)
+	}
+}
+
 func containsRegencyID(regencies []Regency, id string) bool {
 	for _, regency := range regencies {
 		if regency.ID == id {
