@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -448,6 +449,58 @@ func TestIntegrationZoneLifecycleUsesIDForUpdates(t *testing.T) {
 	// Out-of-scope resolution must not leak the assignment.
 	if _, err := service.ResolveStorageContext(ctx, program.ID, regency.ID, auth.RegencyScope{RegencyIDs: []string{"00000000-0000-0000-0000-000000000000"}}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound for out-of-scope resolution, got %v", err)
+	}
+}
+
+func TestIntegrationDocumentProfileLifecycleVersionsPublishedProfiles(t *testing.T) {
+	pool := programsIntegrationPool(t)
+	repository := NewRepository(pool)
+	service := NewService(repository)
+	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	actor := auth.Principal{}
+	meta := auth.ClientMeta{IPAddress: "127.0.0.1", UserAgent: "document-profile-integration-" + suffix}
+	program, err := service.SaveProgram(ctx, actor, ProgramInput{Code: "DOC-" + suffix, Name: "Tender Dokumen", ProgramType: ProgramFarmer, FiscalYear: 2026, Status: "active"}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM audit_logs WHERE user_agent=$1", meta.UserAgent)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM programs WHERE id=$1", program.ID)
+	})
+
+	profile, err := service.SaveDocumentProfile(ctx, actor, DocumentProfileInput{ProgramID: program.ID, Title: "Berita Acara Serah Terima", Subtitle: "Form Penerima Paket", ProcurementDescription: "Pengadaan dan pendistribusian paket", DocumentSeries: "KSM-KKT"}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if profile.Version != 1 || profile.Status != "draft" {
+		t.Fatalf("profile=%+v", profile)
+	}
+	if _, err := service.PublishDocumentProfile(ctx, actor, program.ID, profile.ID, meta); !errors.Is(err, ErrDocumentProfileIncomplete) {
+		t.Fatalf("publish without logo err=%v", err)
+	}
+
+	logo, _, err := repository.SaveDocumentLogo(ctx, actor, DocumentLogo{ProfileVersionID: profile.ID, SlotCode: "organizer", StorageKey: "logo-" + suffix, OriginalFilename: "logo.png", MimeType: "image/png", ByteSize: 10, Checksum: strings.Repeat("a", 64), SortOrder: 1, MaxWidthMM: 35, MaxHeightMM: 18, IsVisible: true}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	published, err := service.PublishDocumentProfile(ctx, actor, program.ID, profile.ID, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if published.Status != "published" || published.PublishedAt == nil {
+		t.Fatalf("published=%+v", published)
+	}
+	if _, err := service.UpdateDocumentLogo(ctx, actor, DocumentLogoUpdateInput{ID: logo.ID, ProfileVersionID: profile.ID, SortOrder: 2, MaxWidthMM: 35, MaxHeightMM: 18, IsVisible: false}, meta); !errors.Is(err, ErrDocumentProfilePublished) {
+		t.Fatalf("published logo update err=%v", err)
+	}
+
+	next, err := service.SaveDocumentProfile(ctx, actor, DocumentProfileInput{ID: profile.ID, ProgramID: program.ID, Title: "Berita Acara Revisi", ProcurementDescription: "Pengadaan revisi", DocumentSeries: "KSM-KKT"}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.ID == profile.ID || next.Version != 2 || next.Status != "draft" {
+		t.Fatalf("next=%+v", next)
 	}
 }
 

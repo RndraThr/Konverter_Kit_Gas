@@ -66,7 +66,7 @@ func run(ctx context.Context, cfg config.Config) error {
 			return err
 		}
 	}
-	programService := programs.NewService(programs.NewRepository(pool))
+	programService := programs.NewService(programs.NewRepository(pool), mediaStorage)
 	apiHandler := apihttp.NewHandler(apihttp.Dependencies{
 		Auth:           authService,
 		Profile:        profile.NewService(profile.NewRepository(pool)),

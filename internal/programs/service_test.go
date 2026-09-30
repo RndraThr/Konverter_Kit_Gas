@@ -1,13 +1,75 @@
 package programs
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
+	"strings"
 	"testing"
 	"time"
 
 	"konkit/internal/auth"
+	"konkit/internal/media"
 )
+
+type documentProfileRepositoryStub struct {
+	*repositoryStub
+	saveLogoErr error
+}
+
+func (r *documentProfileRepositoryStub) ListDocumentProfiles(context.Context, string) ([]DocumentProfile, error) {
+	return nil, nil
+}
+func (r *documentProfileRepositoryStub) SaveDocumentProfile(context.Context, auth.Principal, DocumentProfileInput, auth.ClientMeta) (DocumentProfile, error) {
+	return DocumentProfile{}, nil
+}
+func (r *documentProfileRepositoryStub) PublishDocumentProfile(context.Context, auth.Principal, string, string, auth.ClientMeta) (DocumentProfile, error) {
+	return DocumentProfile{}, nil
+}
+func (r *documentProfileRepositoryStub) SaveDocumentLogo(context.Context, auth.Principal, DocumentLogo, auth.ClientMeta) (DocumentLogo, string, error) {
+	return DocumentLogo{}, "", r.saveLogoErr
+}
+func (r *documentProfileRepositoryStub) UpdateDocumentLogo(context.Context, auth.Principal, DocumentLogoUpdateInput, auth.ClientMeta) (DocumentLogo, error) {
+	return DocumentLogo{}, nil
+}
+func (r *documentProfileRepositoryStub) GetDocumentLogo(context.Context, string, string) (DocumentLogo, error) {
+	return DocumentLogo{}, nil
+}
+func (r *documentProfileRepositoryStub) GetDocumentProfile(context.Context, string) (DocumentProfile, error) {
+	return DocumentProfile{ID: "profile-1", ProgramID: "program-1", Version: 1, Status: "draft"}, nil
+}
+func (r *documentProfileRepositoryStub) GetProgram(context.Context, string) (Program, error) {
+	return Program{ID: "program-1", Code: "TENDER-1"}, nil
+}
+
+type documentStorageStub struct{ deleted string }
+
+func (s *documentStorageStub) Put(_ context.Context, key string, _ []string, source io.Reader) (string, int64, string, error) {
+	data, _ := io.ReadAll(source)
+	return "stored-" + key, int64(len(data)), strings.Repeat("a", 64), nil
+}
+func (s *documentStorageStub) Open(context.Context, string) (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(nil)), nil
+}
+func (s *documentStorageStub) Delete(_ context.Context, key string) error {
+	s.deleted = key
+	return nil
+}
+func (s *documentStorageStub) EnsureFolders(context.Context, [][]string) error { return nil }
+
+var _ media.Storage = (*documentStorageStub)(nil)
+
+func TestUploadDocumentLogoDeletesStoredFileWhenMetadataFails(t *testing.T) {
+	repository := &documentProfileRepositoryStub{repositoryStub: &repositoryStub{}, saveLogoErr: errors.New("database unavailable")}
+	storage := &documentStorageStub{}
+	service := NewService(repository, storage)
+	png := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 0, 'I', 'H', 'D', 'R'}
+	_, err := service.UploadDocumentLogo(context.Background(), auth.Principal{}, DocumentLogoInput{ProfileVersionID: "profile-1", SlotCode: "organizer", OriginalFilename: "logo.png", Data: png}, auth.ClientMeta{})
+	if err == nil || storage.deleted == "" {
+		t.Fatalf("err=%v deleted=%q", err, storage.deleted)
+	}
+}
 
 type repositoryStub struct {
 	regencyInput     RegencyInput

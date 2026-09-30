@@ -1,7 +1,10 @@
 package api
 
 import (
+	"io"
+	"mime"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"konkit/internal/programs"
@@ -232,9 +235,174 @@ func (h *Handler) handleProgramNested(w http.ResponseWriter, r *http.Request, rc
 			return
 		}
 		h.handleRegencyAssignment(w, r, rc, programID, parts[2])
+	case "document-profiles":
+		h.handleDocumentProfiles(w, r, rc, programID, parts[2:])
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
 	}
+}
+
+func (h *Handler) handleDocumentProfiles(w http.ResponseWriter, r *http.Request, rc requestContext, programID string, rest []string) {
+	service, ok := h.deps.Programs.(DocumentProfileService)
+	if !ok {
+		writeUnavailable(w)
+		return
+	}
+	if len(rest) == 0 {
+		if r.Method == http.MethodGet {
+			if !h.authorizeAny(w, r, rc.principal, "programs.view", "bast.view") {
+				return
+			}
+			items, err := service.ListDocumentProfiles(r.Context(), programID)
+			if err != nil {
+				writeServiceError(w, err)
+				return
+			}
+			writeData(w, http.StatusOK, items)
+			return
+		}
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodGet+", "+http.MethodPost)
+			return
+		}
+		if !h.authorize(w, r, rc.principal, "programs.manage") {
+			return
+		}
+		var input programs.DocumentProfileInput
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		input.ProgramID = programID
+		item, err := service.SaveDocumentProfile(r.Context(), rc.principal, input, clientMeta(r))
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeData(w, http.StatusCreated, item)
+		return
+	}
+	profileID := rest[0]
+	if len(rest) == 1 {
+		if r.Method != http.MethodPatch {
+			methodNotAllowed(w, http.MethodPatch)
+			return
+		}
+		if !h.authorize(w, r, rc.principal, "programs.manage") {
+			return
+		}
+		var input programs.DocumentProfileInput
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		input.ID = profileID
+		input.ProgramID = programID
+		item, err := service.SaveDocumentProfile(r.Context(), rc.principal, input, clientMeta(r))
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeData(w, http.StatusOK, item)
+		return
+	}
+	if len(rest) == 2 && rest[1] == "publish" {
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		if !h.authorize(w, r, rc.principal, "programs.manage") {
+			return
+		}
+		item, err := service.PublishDocumentProfile(r.Context(), rc.principal, programID, profileID, clientMeta(r))
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeData(w, http.StatusOK, item)
+		return
+	}
+	if len(rest) >= 2 && rest[1] == "logos" {
+		h.handleDocumentLogos(w, r, rc, service, profileID, rest[2:])
+		return
+	}
+	writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
+}
+
+func (h *Handler) handleDocumentLogos(w http.ResponseWriter, r *http.Request, rc requestContext, service DocumentProfileService, profileID string, rest []string) {
+	if len(rest) == 0 {
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		if !h.authorize(w, r, rc.principal, "programs.manage") {
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 11<<20)
+		if err := r.ParseMultipartForm(10 << 20); err != nil {
+			writeError(w, http.StatusRequestEntityTooLarge, "logo_too_large", "Logo melebihi batas 10 MiB")
+			return
+		}
+		if r.MultipartForm != nil {
+			defer r.MultipartForm.RemoveAll()
+		}
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			writeFieldError(w, http.StatusBadRequest, "validation_failed", "Logo wajib dipilih", map[string]string{"file": "Logo wajib dipilih"})
+			return
+		}
+		defer file.Close()
+		data, err := io.ReadAll(io.LimitReader(file, (10<<20)+1))
+		if err != nil || len(data) > 10<<20 {
+			writeError(w, http.StatusRequestEntityTooLarge, "logo_too_large", "Logo melebihi batas 10 MiB")
+			return
+		}
+		sortOrder, _ := strconv.Atoi(r.FormValue("sort_order"))
+		maxWidth, _ := strconv.ParseFloat(r.FormValue("max_width_mm"), 64)
+		maxHeight, _ := strconv.ParseFloat(r.FormValue("max_height_mm"), 64)
+		item, err := service.UploadDocumentLogo(r.Context(), rc.principal, programs.DocumentLogoInput{ProfileVersionID: profileID, SlotCode: r.FormValue("slot_code"), OriginalFilename: header.Filename, Data: data, SortOrder: sortOrder, MaxWidthMM: maxWidth, MaxHeightMM: maxHeight}, clientMeta(r))
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeData(w, http.StatusCreated, item)
+		return
+	}
+	logoID := rest[0]
+	if len(rest) == 2 && rest[1] == "content" && r.Method == http.MethodGet {
+		if !h.authorizeAny(w, r, rc.principal, "programs.view", "bast.view") {
+			return
+		}
+		content, err := service.OpenDocumentLogo(r.Context(), profileID, logoID)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		defer content.Reader.Close()
+		w.Header().Set("Content-Type", content.MimeType)
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": content.Filename}))
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.Copy(w, content.Reader)
+		return
+	}
+	if len(rest) == 1 && r.Method == http.MethodPatch {
+		if !h.authorize(w, r, rc.principal, "programs.manage") {
+			return
+		}
+		var input programs.DocumentLogoUpdateInput
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		input.ID = logoID
+		input.ProfileVersionID = profileID
+		item, err := service.UpdateDocumentLogo(r.Context(), rc.principal, input, clientMeta(r))
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeData(w, http.StatusOK, item)
+		return
+	}
+	writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
 }
 
 func (h *Handler) handleProgramZones(w http.ResponseWriter, r *http.Request, rc requestContext, programID, zoneID string) {

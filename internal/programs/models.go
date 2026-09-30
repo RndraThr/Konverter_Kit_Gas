@@ -2,23 +2,27 @@ package programs
 
 import (
 	"errors"
+	"io"
 	"time"
 )
 
 var (
-	ErrNotFound                 = errors.New("program setup resource not found")
-	ErrInvalidInput             = errors.New("program setup input is invalid")
-	ErrDocumentCodeInvalid      = errors.New("regency document code must contain exactly three letters")
-	ErrDocumentCodeInUse        = errors.New("regency document code is already used")
-	ErrCodeInUse                = errors.New("program or template code is already used")
-	ErrProgramTypeInvalid       = errors.New("program type must be farmer or fisherman")
-	ErrScheduleDatesInvalid     = errors.New("schedule end date must not precede start date")
-	ErrTemplateSlotInvalid      = errors.New("documentation template slot is invalid")
-	ErrPackageOptionsRequired   = errors.New("package template requires at least one machine option and one hose option when published")
-	ErrSlotQuotaInvalid         = errors.New("slot_quota must be greater than zero when set")
-	ErrZoneNotConfigured        = errors.New("regency is assigned to the unconfigured placeholder zone")
-	ErrZonePlaceholderImmutable = errors.New("placeholder zone cannot be created or modified")
-	ErrZoneProgramMismatch      = errors.New("zone does not belong to the specified program")
+	ErrNotFound                  = errors.New("program setup resource not found")
+	ErrInvalidInput              = errors.New("program setup input is invalid")
+	ErrDocumentCodeInvalid       = errors.New("regency document code must contain exactly three letters")
+	ErrDocumentCodeInUse         = errors.New("regency document code is already used")
+	ErrCodeInUse                 = errors.New("program or template code is already used")
+	ErrProgramTypeInvalid        = errors.New("program type must be farmer or fisherman")
+	ErrScheduleDatesInvalid      = errors.New("schedule end date must not precede start date")
+	ErrTemplateSlotInvalid       = errors.New("documentation template slot is invalid")
+	ErrPackageOptionsRequired    = errors.New("package template requires at least one machine option and one hose option when published")
+	ErrSlotQuotaInvalid          = errors.New("slot_quota must be greater than zero when set")
+	ErrZoneNotConfigured         = errors.New("regency is assigned to the unconfigured placeholder zone")
+	ErrZonePlaceholderImmutable  = errors.New("placeholder zone cannot be created or modified")
+	ErrZoneProgramMismatch       = errors.New("zone does not belong to the specified program")
+	ErrDocumentProfilePublished  = errors.New("published document profile is immutable")
+	ErrDocumentProfileIncomplete = errors.New("document profile requires text fields and at least one visible logo")
+	ErrDocumentLogoInvalid       = errors.New("document logo must be a PNG or JPEG up to 10 MiB")
 )
 
 type ProgramType string
@@ -199,6 +203,73 @@ type StorageContext struct {
 	ZoneName    string      `json:"zone_name"`
 	RegencyID   string      `json:"regency_id"`
 	RegencyName string      `json:"regency_name"`
+}
+
+type DocumentProfile struct {
+	ID                     string         `json:"id"`
+	ProgramID              string         `json:"program_id"`
+	Version                int            `json:"version"`
+	Title                  string         `json:"title"`
+	Subtitle               string         `json:"subtitle"`
+	ProcurementDescription string         `json:"procurement_description"`
+	DocumentSeries         string         `json:"document_series"`
+	Status                 string         `json:"status"`
+	PublishedAt            *time.Time     `json:"published_at,omitempty"`
+	Logos                  []DocumentLogo `json:"logos"`
+	CreatedAt              time.Time      `json:"created_at"`
+	UpdatedAt              time.Time      `json:"updated_at"`
+}
+
+type DocumentLogo struct {
+	ID               string    `json:"id"`
+	ProfileVersionID string    `json:"profile_version_id"`
+	SlotCode         string    `json:"slot_code"`
+	StorageKey       string    `json:"-"`
+	OriginalFilename string    `json:"original_filename"`
+	MimeType         string    `json:"mime_type"`
+	ByteSize         int64     `json:"byte_size"`
+	Checksum         string    `json:"checksum"`
+	SortOrder        int       `json:"sort_order"`
+	MaxWidthMM       float64   `json:"max_width_mm"`
+	MaxHeightMM      float64   `json:"max_height_mm"`
+	IsVisible        bool      `json:"is_visible"`
+	ContentURL       string    `json:"content_url"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
+}
+
+type DocumentProfileInput struct {
+	ID                     string `json:"id,omitempty"`
+	ProgramID              string `json:"program_id"`
+	Title                  string `json:"title"`
+	Subtitle               string `json:"subtitle"`
+	ProcurementDescription string `json:"procurement_description"`
+	DocumentSeries         string `json:"document_series"`
+}
+
+type DocumentLogoInput struct {
+	ProfileVersionID string  `json:"profile_version_id"`
+	SlotCode         string  `json:"slot_code"`
+	OriginalFilename string  `json:"original_filename"`
+	Data             []byte  `json:"-"`
+	SortOrder        int     `json:"sort_order"`
+	MaxWidthMM       float64 `json:"max_width_mm"`
+	MaxHeightMM      float64 `json:"max_height_mm"`
+}
+
+type DocumentLogoUpdateInput struct {
+	ID               string  `json:"id,omitempty"`
+	ProfileVersionID string  `json:"profile_version_id"`
+	SortOrder        int     `json:"sort_order"`
+	MaxWidthMM       float64 `json:"max_width_mm"`
+	MaxHeightMM      float64 `json:"max_height_mm"`
+	IsVisible        bool    `json:"is_visible"`
+}
+
+type DocumentLogoContent struct {
+	Reader   io.ReadCloser
+	MimeType string
+	Filename string
 }
 
 type ScheduleInput struct {

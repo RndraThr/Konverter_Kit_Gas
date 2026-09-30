@@ -627,6 +627,217 @@ func (r *Repository) scheduleByID(ctx context.Context, id string) (Schedule, err
 	return item, err
 }
 
+func (r *Repository) GetProgram(ctx context.Context, id string) (Program, error) {
+	return r.programByID(ctx, id)
+}
+
+func (r *Repository) ListDocumentProfiles(ctx context.Context, programID string) ([]DocumentProfile, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id::text,program_id::text,version,title,subtitle,procurement_description,document_series,status,published_at,created_at,updated_at FROM program_document_profile_versions WHERE program_id=$1 ORDER BY version DESC`, programID)
+	if err != nil {
+		return nil, fmt.Errorf("list document profiles: %w", err)
+	}
+	defer rows.Close()
+	items := []DocumentProfile{}
+	for rows.Next() {
+		item, err := scanDocumentProfile(rows)
+		if err != nil {
+			return nil, err
+		}
+		item.Logos, err = r.documentLogos(ctx, r.pool, item.ID)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func scanDocumentProfile(row rowScanner) (DocumentProfile, error) {
+	var item DocumentProfile
+	err := row.Scan(&item.ID, &item.ProgramID, &item.Version, &item.Title, &item.Subtitle, &item.ProcurementDescription, &item.DocumentSeries, &item.Status, &item.PublishedAt, &item.CreatedAt, &item.UpdatedAt)
+	if err != nil {
+		return DocumentProfile{}, fmt.Errorf("scan document profile: %w", err)
+	}
+	return item, nil
+}
+
+func (r *Repository) GetDocumentProfile(ctx context.Context, id string) (DocumentProfile, error) {
+	item, err := scanDocumentProfile(r.pool.QueryRow(ctx, `SELECT id::text,program_id::text,version,title,subtitle,procurement_description,document_series,status,published_at,created_at,updated_at FROM program_document_profile_versions WHERE id=$1`, id))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return DocumentProfile{}, ErrNotFound
+	}
+	if err != nil {
+		return DocumentProfile{}, err
+	}
+	item.Logos, err = r.documentLogos(ctx, r.pool, item.ID)
+	return item, err
+}
+
+func (r *Repository) SaveDocumentProfile(ctx context.Context, actor auth.Principal, input DocumentProfileInput, meta auth.ClientMeta) (DocumentProfile, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return DocumentProfile{}, fmt.Errorf("begin save document profile: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	id := input.ID
+	version := 1
+	if id == "" {
+		err = tx.QueryRow(ctx, `SELECT COALESCE(max(version),0)+1 FROM program_document_profile_versions WHERE program_id=$1`, input.ProgramID).Scan(&version)
+		if err == nil {
+			err = tx.QueryRow(ctx, `INSERT INTO program_document_profile_versions(program_id,version,title,subtitle,procurement_description,document_series,status) VALUES($1,$2,$3,$4,$5,$6,'draft') RETURNING id::text`, input.ProgramID, version, input.Title, input.Subtitle, input.ProcurementDescription, input.DocumentSeries).Scan(&id)
+		}
+	} else {
+		var status, ownerProgramID string
+		err = tx.QueryRow(ctx, `SELECT program_id::text,status FROM program_document_profile_versions WHERE id=$1 FOR UPDATE`, id).Scan(&ownerProgramID, &status)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return DocumentProfile{}, ErrNotFound
+		}
+		if err == nil && ownerProgramID != input.ProgramID {
+			return DocumentProfile{}, ErrNotFound
+		}
+		if err == nil && status == "published" {
+			err = tx.QueryRow(ctx, `SELECT COALESCE(max(version),0)+1 FROM program_document_profile_versions WHERE program_id=$1`, input.ProgramID).Scan(&version)
+			if err == nil {
+				err = tx.QueryRow(ctx, `INSERT INTO program_document_profile_versions(program_id,version,title,subtitle,procurement_description,document_series,status) VALUES($1,$2,$3,$4,$5,$6,'draft') RETURNING id::text`, input.ProgramID, version, input.Title, input.Subtitle, input.ProcurementDescription, input.DocumentSeries).Scan(&id)
+			}
+		} else if err == nil {
+			_, err = tx.Exec(ctx, `UPDATE program_document_profile_versions SET title=$3,subtitle=$4,procurement_description=$5,document_series=$6,updated_at=now() WHERE id=$1 AND program_id=$2`, id, input.ProgramID, input.Title, input.Subtitle, input.ProcurementDescription, input.DocumentSeries)
+		}
+	}
+	if isForeignKeyViolation(err) {
+		return DocumentProfile{}, ErrNotFound
+	}
+	if err != nil {
+		return DocumentProfile{}, fmt.Errorf("save document profile: %w", err)
+	}
+	if err := recordSetupAudit(ctx, tx, actor, meta, "document_profile.saved", "program_document_profile", id, map[string]any{"program_id": input.ProgramID, "version": version}); err != nil {
+		return DocumentProfile{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return DocumentProfile{}, fmt.Errorf("commit document profile: %w", err)
+	}
+	return r.GetDocumentProfile(ctx, id)
+}
+
+func (r *Repository) PublishDocumentProfile(ctx context.Context, actor auth.Principal, programID, profileID string, meta auth.ClientMeta) (DocumentProfile, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return DocumentProfile{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var visible int
+	err = tx.QueryRow(ctx, `SELECT count(*) FROM program_document_logo_assets l JOIN program_document_profile_versions p ON p.id=l.profile_version_id WHERE p.id=$1 AND p.program_id=$2 AND p.status='draft' AND l.is_visible=true`, profileID, programID).Scan(&visible)
+	if err != nil {
+		return DocumentProfile{}, fmt.Errorf("validate document profile: %w", err)
+	}
+	if visible == 0 {
+		return DocumentProfile{}, ErrDocumentProfileIncomplete
+	}
+	var id string
+	err = tx.QueryRow(ctx, `UPDATE program_document_profile_versions SET status='published',published_at=now(),updated_at=now() WHERE id=$1 AND program_id=$2 AND status='draft' AND btrim(title)<>'' AND btrim(procurement_description)<>'' AND btrim(document_series)<>'' RETURNING id::text`, profileID, programID).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return DocumentProfile{}, ErrDocumentProfileIncomplete
+	}
+	if err != nil {
+		return DocumentProfile{}, fmt.Errorf("publish document profile: %w", err)
+	}
+	if err := recordSetupAudit(ctx, tx, actor, meta, "document_profile.published", "program_document_profile", id, map[string]any{"program_id": programID}); err != nil {
+		return DocumentProfile{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return DocumentProfile{}, err
+	}
+	return r.GetDocumentProfile(ctx, id)
+}
+
+func (r *Repository) documentLogos(ctx context.Context, db queryer, profileID string) ([]DocumentLogo, error) {
+	rows, err := db.Query(ctx, `SELECT id::text,profile_version_id::text,slot_code,storage_key,original_filename,mime_type,byte_size,checksum,sort_order,max_width_mm::float8,max_height_mm::float8,is_visible,created_at,updated_at FROM program_document_logo_assets WHERE profile_version_id=$1 ORDER BY sort_order,id`, profileID)
+	if err != nil {
+		return nil, fmt.Errorf("list document logos: %w", err)
+	}
+	defer rows.Close()
+	items := []DocumentLogo{}
+	for rows.Next() {
+		var item DocumentLogo
+		if err := scanDocumentLogo(rows, &item); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func scanDocumentLogo(row rowScanner, item *DocumentLogo) error {
+	if err := row.Scan(&item.ID, &item.ProfileVersionID, &item.SlotCode, &item.StorageKey, &item.OriginalFilename, &item.MimeType, &item.ByteSize, &item.Checksum, &item.SortOrder, &item.MaxWidthMM, &item.MaxHeightMM, &item.IsVisible, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		return fmt.Errorf("scan document logo: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) SaveDocumentLogo(ctx context.Context, actor auth.Principal, logo DocumentLogo, meta auth.ClientMeta) (DocumentLogo, string, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return DocumentLogo{}, "", err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var status string
+	if err := tx.QueryRow(ctx, `SELECT status FROM program_document_profile_versions WHERE id=$1 FOR UPDATE`, logo.ProfileVersionID).Scan(&status); errors.Is(err, pgx.ErrNoRows) {
+		return DocumentLogo{}, "", ErrNotFound
+	} else if err != nil {
+		return DocumentLogo{}, "", err
+	}
+	if status != "draft" {
+		return DocumentLogo{}, "", ErrDocumentProfilePublished
+	}
+	var oldKey string
+	_ = tx.QueryRow(ctx, `SELECT storage_key FROM program_document_logo_assets WHERE profile_version_id=$1 AND slot_code=$2`, logo.ProfileVersionID, logo.SlotCode).Scan(&oldKey)
+	var id string
+	err = tx.QueryRow(ctx, `INSERT INTO program_document_logo_assets(profile_version_id,slot_code,storage_key,original_filename,mime_type,byte_size,checksum,sort_order,max_width_mm,max_height_mm,is_visible) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true) ON CONFLICT(profile_version_id,slot_code) DO UPDATE SET storage_key=excluded.storage_key,original_filename=excluded.original_filename,mime_type=excluded.mime_type,byte_size=excluded.byte_size,checksum=excluded.checksum,sort_order=excluded.sort_order,max_width_mm=excluded.max_width_mm,max_height_mm=excluded.max_height_mm,is_visible=true,updated_at=now() RETURNING id::text`, logo.ProfileVersionID, logo.SlotCode, logo.StorageKey, logo.OriginalFilename, logo.MimeType, logo.ByteSize, logo.Checksum, logo.SortOrder, logo.MaxWidthMM, logo.MaxHeightMM).Scan(&id)
+	if err != nil {
+		return DocumentLogo{}, "", fmt.Errorf("save document logo: %w", err)
+	}
+	if err := recordSetupAudit(ctx, tx, actor, meta, "document_logo.saved", "program_document_logo", id, map[string]any{"profile_id": logo.ProfileVersionID, "slot_code": logo.SlotCode}); err != nil {
+		return DocumentLogo{}, "", err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return DocumentLogo{}, "", err
+	}
+	item, err := r.GetDocumentLogo(ctx, logo.ProfileVersionID, id)
+	return item, oldKey, err
+}
+
+func (r *Repository) UpdateDocumentLogo(ctx context.Context, actor auth.Principal, input DocumentLogoUpdateInput, meta auth.ClientMeta) (DocumentLogo, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return DocumentLogo{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var id string
+	err = tx.QueryRow(ctx, `UPDATE program_document_logo_assets l SET sort_order=$3,max_width_mm=$4,max_height_mm=$5,is_visible=$6,updated_at=now() FROM program_document_profile_versions p WHERE l.id=$1 AND l.profile_version_id=$2 AND p.id=l.profile_version_id AND p.status='draft' RETURNING l.id::text`, input.ID, input.ProfileVersionID, input.SortOrder, input.MaxWidthMM, input.MaxHeightMM, input.IsVisible).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return DocumentLogo{}, ErrDocumentProfilePublished
+	}
+	if err != nil {
+		return DocumentLogo{}, err
+	}
+	if err := recordSetupAudit(ctx, tx, actor, meta, "document_logo.updated", "program_document_logo", id, map[string]any{"profile_id": input.ProfileVersionID}); err != nil {
+		return DocumentLogo{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return DocumentLogo{}, err
+	}
+	return r.GetDocumentLogo(ctx, input.ProfileVersionID, id)
+}
+
+func (r *Repository) GetDocumentLogo(ctx context.Context, profileID, logoID string) (DocumentLogo, error) {
+	var item DocumentLogo
+	err := scanDocumentLogo(r.pool.QueryRow(ctx, `SELECT id::text,profile_version_id::text,slot_code,storage_key,original_filename,mime_type,byte_size,checksum,sort_order,max_width_mm::float8,max_height_mm::float8,is_visible,created_at,updated_at FROM program_document_logo_assets WHERE id=$1 AND profile_version_id=$2`, logoID, profileID), &item)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return DocumentLogo{}, ErrNotFound
+	}
+	return item, err
+}
+
 func recordSetupAudit(ctx context.Context, tx pgx.Tx, actor auth.Principal, meta auth.ClientMeta, action, resourceType, resourceID string, metadata map[string]any) error {
 	return audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "program_setup." + action, ResourceType: resourceType, ResourceID: resourceID, Metadata: metadata, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent})
 }
