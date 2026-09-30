@@ -1,6 +1,9 @@
 export type ProgramType = 'farmer' | 'fisherman';
 export type Regency = { id: string; province_name: string; name: string; document_code: string; is_active: boolean; notes?: string };
 export type Program = { id: string; code: string; name: string; program_type: ProgramType; fiscal_year: number; status: string; notes?: string };
+export type ProgramZone = { id: string; program_id: string; code: string; name: string; sort_order: number; is_placeholder: boolean; regencies: Regency[] };
+export type DocumentLogo = { id: string; profile_version_id: string; slot_code: string; original_filename: string; mime_type: string; byte_size: number; sort_order: number; max_width_mm: number; max_height_mm: number; is_visible: boolean; content_url: string };
+export type DocumentProfile = { id: string; program_id: string; version: number; title: string; subtitle: string; procurement_description: string; document_series: string; status: 'draft' | 'published' | 'retired'; published_at?: string; logos: DocumentLogo[] };
 export type MachineOption = { code: string; brand: string; type: string };
 export type HoseOption = { code: string; brand: string; spec: string };
 export type ConverterOption = { code: string; brand: string };
