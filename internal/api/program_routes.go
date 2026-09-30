@@ -105,7 +105,7 @@ func (h *Handler) handlePrograms(w http.ResponseWriter, r *http.Request, rc requ
 
 func (h *Handler) handleSchedules(w http.ResponseWriter, r *http.Request, rc requestContext, id string) {
 	if r.Method == http.MethodGet && id == "" {
-		if !h.authorize(w, r, rc.principal, "programs.view") {
+		if !h.authorizeAny(w, r, rc.principal, "programs.view", "bast.view") {
 			return
 		}
 		scope, ok := h.regencyScope(w, r, rc.principal)

@@ -67,3 +67,22 @@ test('redirects a user without recipients.view away from / to /profil instead of
   expect(await screen.findByRole('heading', { name: 'Profil saya' })).toBeInTheDocument();
   expect(router.state.location.pathname).toBe('/profil');
 });
+
+test('opens Berita Acara for a user with bast.view', async () => {
+  const bastBootstrap = {
+    ...bootstrap,
+    data: { ...bootstrap.data, permissions: ['bast.view'] },
+  };
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const path = String(input);
+    const body = path.includes('/program-setup/schedules') ? { data: [] } : path.includes('/health') ? { status: 'ok' } : bastBootstrap;
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const router = createMemoryRouter(dashboardRoutes, { initialEntries: ['/berita-acara'] });
+
+  render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
+
+  expect(await screen.findByRole('heading', { name: 'Berita Acara' })).toBeInTheDocument();
+  expect(router.state.location.pathname).toBe('/berita-acara');
+});

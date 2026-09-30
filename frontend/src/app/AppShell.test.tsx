@@ -12,7 +12,7 @@ const bootstrap = {
     username: 'admin',
     email: 'admin@konkit.test',
     roles: ['super_admin'],
-    permissions: ['recipients.view', 'dashboard.view', 'programs.view', 'dcp3.view', 'distribution.view', 'activities.view', 'users.view', 'settings.view'],
+    permissions: ['recipients.view', 'dashboard.view', 'programs.view', 'dcp3.view', 'distribution.view', 'activities.view', 'bast.view', 'users.view', 'settings.view'],
   },
   meta: { csrf_token: 'csrf-token' },
 };
@@ -57,6 +57,8 @@ describe('AppShell', () => {
     expect(screen.getByRole('link', { name: 'Pendistribusian' })).toHaveAttribute('href', '/dokumentasi/pendistribusian');
     expect(screen.getByRole('link', { name: 'Ceremony & Sosialisasi' })).toHaveAttribute('href', '/dokumentasi/ceremony-sosialisasi');
     expect(screen.getByRole('link', { name: 'Unloading' })).toHaveAttribute('href', '/dokumentasi/unloading');
+    await userEvent.click(screen.getByRole('button', { name: 'Berita Acara' }));
+    expect(screen.getByRole('link', { name: 'Berita Acara' })).toHaveAttribute('href', '/berita-acara');
     await userEvent.click(screen.getByRole('button', { name: 'Administrasi' }));
     expect(screen.getByRole('link', { name: 'Pengguna' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Profil saya' })).not.toBeInTheDocument();

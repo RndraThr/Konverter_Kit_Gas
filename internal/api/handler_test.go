@@ -218,6 +218,27 @@ func TestRegenciesEndpointAppliesCallerRegencyScope(t *testing.T) {
 	}
 }
 
+func TestSchedulesEndpointAllowsBASTViewerAndForwardsRegencyScope(t *testing.T) {
+	authService := &fakeAuthService{
+		principal:          auth.Principal{UserID: "user-1"},
+		allowedPermissions: map[string]bool{"bast.view": true},
+		regencyScope:       auth.RegencyScope{RegencyIDs: []string{"regency-1"}},
+	}
+	programService := &fakeProgramSetupService{}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/program-setup/schedules", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+
+	NewHandler(Dependencies{Auth: authService, Programs: programService}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if programService.seenRegencyScope.Unrestricted || len(programService.seenRegencyScope.RegencyIDs) != 1 || programService.seenRegencyScope.RegencyIDs[0] != "regency-1" {
+		t.Fatalf("scope not forwarded: %+v", programService.seenRegencyScope)
+	}
+}
+
 func TestDCP3PreviewEndpointAppliesCallerRegencyScope(t *testing.T) {
 	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"dcp3.view": true}, regencyScope: auth.RegencyScope{RegencyIDs: []string{"regency-1"}}}
 	dcp3Service := &fakeDCP3Service{}
