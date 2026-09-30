@@ -23,10 +23,17 @@ type BundleRenderInput struct {
 }
 
 type RenderedBundle struct {
-	PDF       []byte
-	PageCount int
-	Filename  string
-	Events    []string
+	PDF        []byte
+	PageCount  int
+	Filename   string
+	Events     []string
+	Recipients []RenderedRecipientPages
+}
+
+type RenderedRecipientPages struct {
+	SlotNumber int
+	PageStart  int
+	PageEnd    int
 }
 
 type registeredLogo struct {
@@ -73,6 +80,9 @@ func RenderPetaniBundle(input BundleRenderInput) (RenderedBundle, error) {
 	pdf.SetAutoPageBreak(false, marginMM)
 	pdf.SetTitle(strings.TrimSuffix(filename, ".pdf"), false)
 	pdf.SetAuthor("KONKIT", false)
+	creationDate, _ := time.Parse("2006-01-02", input.LocalDate)
+	pdf.SetCreationDate(creationDate)
+	pdf.SetCatalogSort(true)
 
 	logos, err := registerLogos(pdf, documents[0].Snapshot.Profile.Logos, input.LogoBytes)
 	if err != nil {
@@ -80,10 +90,13 @@ func RenderPetaniBundle(input BundleRenderInput) (RenderedBundle, error) {
 	}
 
 	events := make([]string, 0, len(documents))
+	pageRanges := make([]RenderedRecipientPages, 0, len(documents))
 	for _, document := range documents {
 		pdf.AddPage()
+		pageStart := pdf.PageNo()
 		events = append(events, fmt.Sprintf("PAGE %d RECIPIENT %d START", pdf.PageNo(), document.SlotNumber))
 		renderRecipient(pdf, document, logos, &events)
+		pageRanges = append(pageRanges, RenderedRecipientPages{SlotNumber: document.SlotNumber, PageStart: pageStart, PageEnd: pdf.PageNo()})
 		if pdf.Err() {
 			return RenderedBundle{}, pdf.Error()
 		}
@@ -93,7 +106,7 @@ func RenderPetaniBundle(input BundleRenderInput) (RenderedBundle, error) {
 	if err := pdf.Output(&output); err != nil {
 		return RenderedBundle{}, err
 	}
-	return RenderedBundle{PDF: output.Bytes(), PageCount: pdf.PageNo(), Filename: filename, Events: events}, nil
+	return RenderedBundle{PDF: output.Bytes(), PageCount: pdf.PageNo(), Filename: filename, Events: events, Recipients: pageRanges}, nil
 }
 
 func registerLogos(pdf *fpdf.Fpdf, snapshots []LogoSnapshot, logoBytes map[string][]byte) ([]registeredLogo, error) {

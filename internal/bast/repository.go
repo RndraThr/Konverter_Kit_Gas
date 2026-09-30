@@ -257,7 +257,7 @@ func (r *Repository) LockRegencyTotal(ctx context.Context, actor auth.Principal,
 }
 
 func (r *Repository) ListActiveBundles(ctx context.Context, programID, regencyID string, scope auth.RegencyScope) ([]DailyBundle, error) {
-	rows, err := r.pool.Query(ctx, `SELECT b.id::text,b.program_id::text,b.regency_id::text,b.local_date::text,b.filename,b.recipient_count,b.page_count,b.version,b.status,b.synced_at FROM bast_daily_bundles b WHERE b.program_id=$1 AND b.regency_id=$2 AND b.status='active' AND ($3 OR b.regency_id::text=ANY($4)) ORDER BY b.local_date DESC`, programID, regencyID, scope.Unrestricted, scope.RegencyIDs)
+	rows, err := r.pool.Query(ctx, `SELECT b.id::text,b.program_id::text,b.regency_id::text,b.local_date::text,b.filename,b.recipient_count,b.page_count,b.version,b.status,b.checksum,b.storage_key,COALESCE(b.last_error,''),b.synced_at FROM bast_daily_bundles b WHERE b.program_id=$1 AND b.regency_id=$2 AND b.status='active' AND ($3 OR b.regency_id::text=ANY($4)) ORDER BY b.local_date DESC`, programID, regencyID, scope.Unrestricted, scope.RegencyIDs)
 	if err != nil {
 		return nil, fmt.Errorf("list BA bundles: %w", err)
 	}
@@ -265,10 +265,96 @@ func (r *Repository) ListActiveBundles(ctx context.Context, programID, regencyID
 	items := []DailyBundle{}
 	for rows.Next() {
 		var item DailyBundle
-		if err := rows.Scan(&item.ID, &item.ProgramID, &item.RegencyID, &item.LocalDate, &item.Filename, &item.RecipientCount, &item.PageCount, &item.Version, &item.Status, &item.SyncedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.ProgramID, &item.RegencyID, &item.LocalDate, &item.Filename, &item.RecipientCount, &item.PageCount, &item.Version, &item.Status, &item.Checksum, &item.StorageKey, &item.LastError, &item.SyncedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (r *Repository) GetActiveBundle(ctx context.Context, programID, regencyID, localDate string, scope auth.RegencyScope) (DailyBundle, error) {
+	var item DailyBundle
+	err := r.pool.QueryRow(ctx, `SELECT id::text,program_id::text,regency_id::text,local_date::text,filename,recipient_count,page_count,version,status,checksum,storage_key,COALESCE(last_error,''),synced_at FROM bast_daily_bundles WHERE program_id=$1 AND regency_id=$2 AND local_date=$3 AND document_type='individual' AND status='active' AND ($4 OR regency_id::text=ANY($5))`, programID, regencyID, localDate, scope.Unrestricted, scope.RegencyIDs).Scan(&item.ID, &item.ProgramID, &item.RegencyID, &item.LocalDate, &item.Filename, &item.RecipientCount, &item.PageCount, &item.Version, &item.Status, &item.Checksum, &item.StorageKey, &item.LastError, &item.SyncedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return DailyBundle{}, ErrNotFound
+	}
+	if err != nil {
+		return DailyBundle{}, fmt.Errorf("get active BA bundle: %w", err)
+	}
+	return item, nil
+}
+
+func (r *Repository) GetActiveBundleByID(ctx context.Context, id string, scope auth.RegencyScope) (DailyBundle, error) {
+	var item DailyBundle
+	err := r.pool.QueryRow(ctx, `SELECT id::text,program_id::text,regency_id::text,local_date::text,filename,recipient_count,page_count,version,status,checksum,storage_key,COALESCE(last_error,''),synced_at FROM bast_daily_bundles WHERE id=$1 AND document_type='individual' AND status='active' AND ($2 OR regency_id::text=ANY($3))`, id, scope.Unrestricted, scope.RegencyIDs).Scan(&item.ID, &item.ProgramID, &item.RegencyID, &item.LocalDate, &item.Filename, &item.RecipientCount, &item.PageCount, &item.Version, &item.Status, &item.Checksum, &item.StorageKey, &item.LastError, &item.SyncedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return DailyBundle{}, ErrNotFound
+	}
+	if err != nil {
+		return DailyBundle{}, fmt.Errorf("get BA bundle: %w", err)
+	}
+	return item, nil
+}
+
+func (r *Repository) ActivateBundle(ctx context.Context, actor auth.Principal, input BundleActivation, meta auth.ClientMeta) (BundleActivationResult, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return BundleActivationResult{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	lockKey := input.ProgramID + ":" + input.RegencyID + ":" + input.LocalDate + ":individual"
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, lockKey); err != nil {
+		return BundleActivationResult{}, err
+	}
+
+	var current DailyBundle
+	err = tx.QueryRow(ctx, `SELECT id::text,program_id::text,regency_id::text,local_date::text,filename,recipient_count,page_count,version,status,checksum,storage_key,COALESCE(last_error,''),synced_at FROM bast_daily_bundles WHERE program_id=$1 AND regency_id=$2 AND local_date=$3 AND document_type='individual' AND status='active' FOR UPDATE`, input.ProgramID, input.RegencyID, input.LocalDate).Scan(&current.ID, &current.ProgramID, &current.RegencyID, &current.LocalDate, &current.Filename, &current.RecipientCount, &current.PageCount, &current.Version, &current.Status, &current.Checksum, &current.StorageKey, &current.LastError, &current.SyncedAt)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return BundleActivationResult{}, err
+	}
+	currentExists := err == nil
+	if currentExists && current.Checksum == input.Checksum {
+		if err := tx.Commit(ctx); err != nil {
+			return BundleActivationResult{}, err
+		}
+		return BundleActivationResult{Bundle: current, Unchanged: true}, nil
+	}
+	if (currentExists && current.ID != input.ExpectedActiveID) || (!currentExists && input.ExpectedActiveID != "") {
+		return BundleActivationResult{}, ErrBundleConflict
+	}
+	if !currentExists && input.ExpectedActiveID == "" {
+		// No prior active version is the expected initial state.
+	} else if currentExists {
+		if _, err := tx.Exec(ctx, `UPDATE bast_daily_bundles SET status='superseded',updated_at=now() WHERE id=$1`, current.ID); err != nil {
+			return BundleActivationResult{}, err
+		}
+	}
+
+	var version int
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(max(version),0)+1 FROM bast_daily_bundles WHERE program_id=$1 AND regency_id=$2 AND local_date=$3 AND document_type='individual'`, input.ProgramID, input.RegencyID, input.LocalDate).Scan(&version); err != nil {
+		return BundleActivationResult{}, err
+	}
+	var bundle DailyBundle
+	err = tx.QueryRow(ctx, `INSERT INTO bast_daily_bundles(program_id,regency_id,local_date,document_type,profile_version_id,filename,recipient_count,page_count,checksum,storage_key,version,status,synced_at,synced_by) VALUES($1,$2,$3,'individual',$4,$5,$6,$7,$8,$9,$10,'active',now(),NULLIF($11,'')::uuid) RETURNING id::text,program_id::text,regency_id::text,local_date::text,filename,recipient_count,page_count,version,status,checksum,storage_key,COALESCE(last_error,''),synced_at`, input.ProgramID, input.RegencyID, input.LocalDate, input.ProfileVersionID, input.Filename, len(input.Items), input.PageCount, input.Checksum, input.StorageKey, version, actor.UserID).Scan(&bundle.ID, &bundle.ProgramID, &bundle.RegencyID, &bundle.LocalDate, &bundle.Filename, &bundle.RecipientCount, &bundle.PageCount, &bundle.Version, &bundle.Status, &bundle.Checksum, &bundle.StorageKey, &bundle.LastError, &bundle.SyncedAt)
+	if err != nil {
+		return BundleActivationResult{}, fmt.Errorf("insert BA bundle: %w", err)
+	}
+	for i, item := range input.Items {
+		if _, err := tx.Exec(ctx, `INSERT INTO bast_daily_bundle_items(bundle_id,individual_document_id,item_order,page_start,page_end) VALUES($1,$2,$3,$4,$5)`, bundle.ID, item.IndividualDocumentID, i+1, item.PageStart, item.PageEnd); err != nil {
+			return BundleActivationResult{}, fmt.Errorf("insert BA bundle item: %w", err)
+		}
+	}
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "bast.bundle_activated", ResourceType: "bast_daily_bundle", ResourceID: bundle.ID, Metadata: map[string]any{"local_date": input.LocalDate, "recipient_count": len(input.Items), "version": version}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+		return BundleActivationResult{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return BundleActivationResult{}, err
+	}
+	return BundleActivationResult{Bundle: bundle, OldStorageKey: current.StorageKey}, nil
+}
+
+func (r *Repository) RecordCleanupFailure(ctx context.Context, bundleID, message string) error {
+	_, err := r.pool.Exec(ctx, `UPDATE bast_daily_bundles SET last_error=$2,updated_at=now() WHERE id=$1 AND status='active'`, bundleID, message)
+	return err
 }

@@ -2,6 +2,7 @@ package bast
 
 import (
 	"errors"
+	"io"
 	"time"
 )
 
@@ -14,6 +15,8 @@ var (
 	ErrZoneNotConfigured   = errors.New("regency has not been assigned to a configured zone")
 	ErrProfileNotPublished = errors.New("a published document profile is required")
 	ErrTemplateUnavailable = errors.New("individual handover template is not available for this program type")
+	ErrNoRecipients        = errors.New("no completed recipients are available for this date")
+	ErrBundleConflict      = errors.New("daily bundle was changed by another operator")
 )
 
 type DailyBundle struct {
@@ -26,7 +29,55 @@ type DailyBundle struct {
 	PageCount      int        `json:"page_count"`
 	Version        int        `json:"version"`
 	Status         string     `json:"status"`
+	Checksum       string     `json:"checksum"`
+	StorageKey     string     `json:"-"`
+	LastError      string     `json:"last_error,omitempty"`
 	SyncedAt       *time.Time `json:"synced_at,omitempty"`
+}
+
+type BundleRequest struct {
+	ProgramID string `json:"program_id"`
+	RegencyID string `json:"regency_id"`
+	LocalDate string `json:"local_date"`
+}
+
+type BundlePreview struct {
+	PDF            []byte `json:"-"`
+	Filename       string `json:"filename"`
+	RecipientCount int    `json:"recipient_count"`
+	PageCount      int    `json:"page_count"`
+	Checksum       string `json:"checksum"`
+}
+
+type BundleContent struct {
+	Reader   io.ReadCloser
+	Filename string
+}
+
+type BundleItemActivation struct {
+	IndividualDocumentID string
+	SlotNumber           int
+	PageStart            int
+	PageEnd              int
+}
+
+type BundleActivation struct {
+	ProgramID        string
+	RegencyID        string
+	LocalDate        string
+	ProfileVersionID string
+	Filename         string
+	PageCount        int
+	Checksum         string
+	StorageKey       string
+	ExpectedActiveID string
+	Items            []BundleItemActivation
+}
+
+type BundleActivationResult struct {
+	Bundle        DailyBundle
+	OldStorageKey string
+	Unchanged     bool
 }
 
 type DateSummary struct {

@@ -2,6 +2,7 @@ package bast
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -61,6 +62,7 @@ func TestRepositoryResolvesScopedBAContextAndCompletedSlots(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM bast_daily_bundles WHERE program_id=$1`, programID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM bast_individual_documents WHERE program_id=$1`, programID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM program_regency_bast_settings WHERE program_id=$1`, programID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM distribution_slots WHERE schedule_id=$1`, scheduleID)
@@ -125,5 +127,26 @@ func TestRepositoryResolvesScopedBAContextAndCompletedSlots(t *testing.T) {
 	}
 	if reloaded.Snapshot.Recipient.FullName != "Siti Aminah" || reloaded.Snapshot.Equipment.MachineSerial != "M-001" {
 		t.Fatalf("snapshot mutated: %+v", reloaded.Snapshot)
+	}
+	activation := BundleActivation{ProgramID: programID, RegencyID: regencyID, LocalDate: "2024-12-10", ProfileVersionID: profileID, Filename: "SELASA, 10 DESEMBER 2024.pdf", PageCount: 1, Checksum: strings.Repeat("b", 64), StorageKey: "bundle-key-1", Items: []BundleItemActivation{{IndividualDocumentID: document.ID, SlotNumber: document.SlotNumber, PageStart: 1, PageEnd: 1}}}
+	activated, err := repository.ActivateBundle(ctx, auth.Principal{}, activation, auth.ClientMeta{UserAgent: "bast-bundle-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if activated.Bundle.Version != 1 || activated.Bundle.RecipientCount != 1 || activated.Bundle.StorageKey != "bundle-key-1" {
+		t.Fatalf("activated=%+v", activated)
+	}
+	opened, err := repository.GetActiveBundleByID(ctx, activated.Bundle.ID, scope)
+	if err != nil || opened.ID != activated.Bundle.ID {
+		t.Fatalf("opened=%+v err=%v", opened, err)
+	}
+	if _, err := repository.GetActiveBundleByID(ctx, activated.Bundle.ID, auth.RegencyScope{RegencyIDs: []string{"00000000-0000-0000-0000-000000000000"}}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("out-of-scope bundle err=%v", err)
+	}
+	conflicting := activation
+	conflicting.Checksum = strings.Repeat("c", 64)
+	conflicting.StorageKey = "bundle-key-2"
+	if _, err := repository.ActivateBundle(ctx, auth.Principal{}, conflicting, auth.ClientMeta{}); !errors.Is(err, ErrBundleConflict) {
+		t.Fatalf("conflict err=%v", err)
 	}
 }
