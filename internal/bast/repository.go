@@ -2,6 +2,7 @@ package bast
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -61,6 +62,133 @@ func (r *Repository) GetSourceContext(ctx context.Context, programID, regencyID 
 		result.DocumentSeries = *series
 	}
 	return result, nil
+}
+
+type packageValues struct {
+	MachineOptions   []struct{ Code, Brand, Type string } `json:"machine_options"`
+	HoseOptions      []struct{ Code, Brand, Spec string } `json:"hose_options"`
+	ConverterOptions []struct{ Code, Brand string }       `json:"converter_options"`
+	Components       []struct {
+		Code, Label string
+		Quantity    int
+		Unit        string
+	} `json:"components"`
+}
+
+func (r *Repository) LoadSourceData(ctx context.Context, recipient RecipientDocument, sourceContext SourceContext, scope auth.RegencyScope) (SourceData, error) {
+	var source SourceData
+	var packageJSON []byte
+	var machineCode, hoseCode, converterCode string
+	err := r.pool.QueryRow(ctx, `
+		SELECT p.program_type,profile.id::text,profile.title,profile.subtitle,profile.procurement_description,profile.document_series,
+			person.full_name,COALESCE(person.nik,''),COALESCE(identifier.display_value,''),COALESCE(person.address,''),COALESCE(person.village,''),COALESCE(person.district,''),r.name,COALESCE(person.phone_number,''),
+			COALESCE(ds.machine_option_code,''),COALESCE(ds.machine_serial_number,''),COALESCE(ds.hose_option_code,''),COALESCE(ds.hose_serial_number,''),COALESCE(ds.converter_option_code,''),COALESCE(ds.converter_serial_number,''),
+			pt.id::text,pt.values_json,COALESCE(u.full_name,u.username,''),COALESCE(ps.supervisor_name,'')
+		FROM distribution_slots ds
+		JOIN program_schedules ps ON ps.id=ds.schedule_id
+		JOIN programs p ON p.id=ps.program_id JOIN regencies r ON r.id=ps.regency_id
+		JOIN people person ON person.id=ds.recipient_person_id
+		LEFT JOIN person_sector_identifiers identifier ON identifier.person_id=person.id AND identifier.identifier_type='farmer_card'
+		JOIN package_template_versions pt ON pt.id=ps.package_template_version_id
+		JOIN program_document_profile_versions profile ON profile.id=$4 AND profile.program_id=p.id AND profile.status='published'
+		LEFT JOIN users u ON u.id=ds.distributed_by
+		WHERE ds.id=$1 AND ps.program_id=$2 AND ps.regency_id=$3 AND ds.status='completed' AND ($5 OR ps.regency_id::text=ANY($6))
+	`, recipient.DistributionSlotID, sourceContext.ProgramID, sourceContext.RegencyID, sourceContext.ProfileVersionID, scope.Unrestricted, scope.RegencyIDs).Scan(&source.ProgramType, &source.Profile.VersionID, &source.Profile.Title, &source.Profile.Subtitle, &source.Profile.ProcurementDescription, &source.Profile.DocumentSeries, &source.Recipient.FullName, &source.Recipient.NIK, &source.Recipient.SectorIdentifier, &source.Recipient.Address, &source.Recipient.Village, &source.Recipient.District, &source.Recipient.Regency, &source.Recipient.PhoneNumber, &machineCode, &source.Equipment.MachineSerial, &hoseCode, &source.Equipment.HoseSerial, &converterCode, &source.Equipment.ConverterSerial, &source.PackageTemplateVersionID, &packageJSON, &source.ExecutorName, &source.SupervisorName)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return SourceData{}, ErrNotFound
+	}
+	if err != nil {
+		return SourceData{}, fmt.Errorf("load BA source: %w", err)
+	}
+	source.DocumentNumber, source.LocalDate = recipient.DocumentNumber, recipient.LocalDate
+	source.ProgramID, source.RegencyID = sourceContext.ProgramID, sourceContext.RegencyID
+	var values packageValues
+	if err := json.Unmarshal(packageJSON, &values); err != nil {
+		return SourceData{}, fmt.Errorf("decode BA package: %w", err)
+	}
+	for _, option := range values.MachineOptions {
+		if option.Code == machineCode {
+			source.Equipment.MachineBrand, source.Equipment.MachineType = option.Brand, option.Type
+			break
+		}
+	}
+	for _, option := range values.HoseOptions {
+		if option.Code == hoseCode {
+			source.Equipment.HoseBrand, source.Equipment.HoseSpec = option.Brand, option.Spec
+			break
+		}
+	}
+	for _, option := range values.ConverterOptions {
+		if option.Code == converterCode {
+			source.Equipment.ConverterBrand = option.Brand
+			break
+		}
+	}
+	for _, component := range values.Components {
+		source.Components = append(source.Components, ComponentSnapshot{Code: component.Code, Label: component.Label, Quantity: component.Quantity, Unit: component.Unit, Checked: true})
+	}
+	rows, err := r.pool.Query(ctx, `SELECT id::text,storage_key,mime_type,sort_order,max_width_mm::float8,max_height_mm::float8 FROM program_document_logo_assets WHERE profile_version_id=$1 AND is_visible=true ORDER BY sort_order,id`, source.Profile.VersionID)
+	if err != nil {
+		return SourceData{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var logo LogoSnapshot
+		if err := rows.Scan(&logo.AssetID, &logo.StorageKey, &logo.MimeType, &logo.SortOrder, &logo.MaxWidthMM, &logo.MaxHeightMM); err != nil {
+			return SourceData{}, err
+		}
+		source.Profile.Logos = append(source.Profile.Logos, logo)
+	}
+	return source, rows.Err()
+}
+
+func (r *Repository) SaveFinalDocument(ctx context.Context, actor auth.Principal, recipient RecipientDocument, source SourceData, snapshot Snapshot, meta auth.ClientMeta) (IndividualDocument, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return IndividualDocument{}, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var existingID string
+	err = tx.QueryRow(ctx, `SELECT id::text FROM bast_individual_documents WHERE distribution_slot_id=$1 AND document_type='individual' AND status='final'`, recipient.DistributionSlotID).Scan(&existingID)
+	if err == nil {
+		_ = tx.Rollback(ctx)
+		return r.getIndividualDocument(ctx, existingID)
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return IndividualDocument{}, err
+	}
+	payload, err := json.Marshal(snapshot)
+	if err != nil {
+		return IndividualDocument{}, ErrInvalidInput
+	}
+	var id string
+	err = tx.QueryRow(ctx, `INSERT INTO bast_individual_documents(distribution_slot_id,program_id,regency_id,local_date,slot_number,final_total,document_number,profile_version_id,package_template_version_id,snapshot_json,revision,status,finalized_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,(SELECT COALESCE(max(revision),0)+1 FROM bast_individual_documents WHERE distribution_slot_id=$1 AND document_type='individual'),'final',NULLIF($11,'')::uuid) RETURNING id::text`, recipient.DistributionSlotID, source.ProgramID, source.RegencyID, recipient.LocalDate, recipient.SlotNumber, recipient.FinalTotal, recipient.DocumentNumber, source.Profile.VersionID, source.PackageTemplateVersionID, payload, actor.UserID).Scan(&id)
+	if err != nil {
+		return IndividualDocument{}, fmt.Errorf("save final BA document: %w", err)
+	}
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "bast.individual_finalized", ResourceType: "bast_individual_document", ResourceID: id, Metadata: map[string]any{"distribution_slot_id": recipient.DistributionSlotID, "document_number": recipient.DocumentNumber}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+		return IndividualDocument{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return IndividualDocument{}, err
+	}
+	return r.getIndividualDocument(ctx, id)
+}
+
+func (r *Repository) getIndividualDocument(ctx context.Context, id string) (IndividualDocument, error) {
+	var item IndividualDocument
+	var payload []byte
+	err := r.pool.QueryRow(ctx, `SELECT id::text,distribution_slot_id::text,program_id::text,regency_id::text,document_number,local_date::text,slot_number,final_total,profile_version_id::text,package_template_version_id::text,revision,status,snapshot_json,finalized_at FROM bast_individual_documents WHERE id=$1`, id).Scan(&item.ID, &item.DistributionSlotID, &item.ProgramID, &item.RegencyID, &item.DocumentNumber, &item.LocalDate, &item.SlotNumber, &item.FinalTotal, &item.ProfileVersionID, &item.PackageTemplateVersionID, &item.Revision, &item.Status, &payload, &item.FinalizedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return IndividualDocument{}, ErrNotFound
+	}
+	if err != nil {
+		return IndividualDocument{}, err
+	}
+	if err := json.Unmarshal(payload, &item.Snapshot); err != nil {
+		return IndividualDocument{}, err
+	}
+	return item, nil
 }
 
 func (r *Repository) ListCompletedSlots(ctx context.Context, programID, regencyID string, scope auth.RegencyScope) ([]CompletedSlot, error) {

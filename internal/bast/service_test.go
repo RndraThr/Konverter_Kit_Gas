@@ -31,6 +31,12 @@ func (r *repositoryStub) LockRegencyTotal(context.Context, auth.Principal, Sourc
 func (r *repositoryStub) ListActiveBundles(context.Context, string, string, auth.RegencyScope) ([]DailyBundle, error) {
 	return nil, nil
 }
+func (r *repositoryStub) LoadSourceData(context.Context, RecipientDocument, SourceContext, auth.RegencyScope) (SourceData, error) {
+	return SourceData{}, nil
+}
+func (r *repositoryStub) SaveFinalDocument(context.Context, auth.Principal, RecipientDocument, SourceData, Snapshot, auth.ClientMeta) (IndividualDocument, error) {
+	return IndividualDocument{}, nil
+}
 
 func readyContext() SourceContext {
 	return SourceContext{ProgramID: "program-1", RegencyID: "regency-1", ProgramType: "farmer", RegencyCode: "WJO", ZoneName: "Zona 1", Padding: 4, SlotQuota: 1578, ProfileVersionID: "profile-1", DocumentSeries: "KSM-KKT"}

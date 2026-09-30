@@ -16,6 +16,27 @@ type repository interface {
 	GetLockedTotal(context.Context, string, string) (LockResult, error)
 	LockRegencyTotal(context.Context, auth.Principal, SourceContext, auth.ClientMeta) (LockResult, error)
 	ListActiveBundles(context.Context, string, string, auth.RegencyScope) ([]DailyBundle, error)
+	LoadSourceData(context.Context, RecipientDocument, SourceContext, auth.RegencyScope) (SourceData, error)
+	SaveFinalDocument(context.Context, auth.Principal, RecipientDocument, SourceData, Snapshot, auth.ClientMeta) (IndividualDocument, error)
+}
+
+func (s *Service) FinalizeRecipient(ctx context.Context, actor auth.Principal, programID, regencyID string, recipient RecipientDocument, scope auth.RegencyScope, meta auth.ClientMeta) (IndividualDocument, error) {
+	contextData, err := s.repository.GetSourceContext(ctx, programID, regencyID, scope)
+	if err != nil {
+		return IndividualDocument{}, err
+	}
+	if err := validateContext(contextData); err != nil {
+		return IndividualDocument{}, err
+	}
+	source, err := s.repository.LoadSourceData(ctx, recipient, contextData, scope)
+	if err != nil {
+		return IndividualDocument{}, err
+	}
+	snapshot, err := BuildSnapshot(source)
+	if err != nil {
+		return IndividualDocument{}, err
+	}
+	return s.repository.SaveFinalDocument(ctx, actor, recipient, source, snapshot, meta)
 }
 
 type Service struct {

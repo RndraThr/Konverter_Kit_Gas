@@ -3,6 +3,7 @@ package bast
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,15 +33,35 @@ func TestRepositoryResolvesScopedBAContextAndCompletedSlots(t *testing.T) {
 	mustQuery(`INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,distribution_number_padding,slot_quota,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal BA','2024-12-01','2024-12-31','active',4,50,'{}') RETURNING id::text`, []any{programID, regencyID, packageID, documentationID}, &scheduleID)
 	mustQuery(`INSERT INTO program_document_profile_versions(program_id,version,title,procurement_description,document_series,status,published_at) VALUES($1,1,'BAST','Pengadaan','KSM-KKT','published',now()) RETURNING id::text`, []any{programID}, &profileID)
 	first := time.Date(2024, 12, 9, 18, 0, 0, 0, time.UTC)
+	var firstSlotID string
 	for _, slot := range []struct {
 		number int
 		at     time.Time
 	}{{10, first}, {1, first.Add(-30 * time.Minute)}} {
-		if _, err := pool.Exec(ctx, `INSERT INTO distribution_slots(schedule_id,slot_number,status,distributed_at,completed_at) VALUES($1,$2,'completed',$3,$3)`, scheduleID, slot.number, slot.at); err != nil {
+		var slotID string
+		if err := pool.QueryRow(ctx, `INSERT INTO distribution_slots(schedule_id,slot_number,status,distributed_at,completed_at) VALUES($1,$2,'completed',$3,$3) RETURNING id::text`, scheduleID, slot.number, slot.at).Scan(&slotID); err != nil {
 			t.Fatal(err)
 		}
+		if slot.number == 1 {
+			firstSlotID = slotID
+		}
+	}
+	var personID string
+	mustQuery(`INSERT INTO people(full_name,nik,address,village,district,phone_number,verification_status) VALUES('Siti Aminah','7306014101900001','Alamat Awal','Tempe','Sabbangparu','08123456789','verified') RETURNING id::text`, nil, &personID)
+	if _, err := pool.Exec(ctx, `INSERT INTO person_sector_identifiers(person_id,identifier_type,normalized_value,display_value) VALUES($1,'farmer_card',$2,'KP-01')`, personID, "KP01-"+suffix); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE distribution_slots SET recipient_person_id=$2,machine_option_code='machine-1',machine_serial_number='M-001',hose_option_code='hose-1',hose_serial_number='H-001',converter_option_code='converter-1',converter_serial_number='C-001' WHERE id=$1`, firstSlotID, personID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE package_template_versions SET values_json='{"machine_options":[{"code":"machine-1","brand":"SHARK","type":"SPWP"}],"hose_options":[{"code":"hose-1","brand":"TRILIUNHOSE","spec":"6m/10m"}],"converter_options":[{"code":"converter-1","brand":"ERGAS"}],"components":[{"code":"lpg","label":"Tabung LPG 3 Kg","quantity":1,"unit":"Tabung"}]}'::jsonb WHERE id=$1`, packageID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO program_document_logo_assets(profile_version_id,slot_code,storage_key,original_filename,mime_type,byte_size,checksum,sort_order) VALUES($1,'organizer',$2,'logo.png','image/png',10,$3,1)`, profileID, "bast-logo-"+suffix, strings.Repeat("a", 64)); err != nil {
+		t.Fatal(err)
 	}
 	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM bast_individual_documents WHERE program_id=$1`, programID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM program_regency_bast_settings WHERE program_id=$1`, programID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM distribution_slots WHERE schedule_id=$1`, scheduleID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM program_schedules WHERE id=$1`, scheduleID)
@@ -50,6 +71,7 @@ func TestRepositoryResolvesScopedBAContextAndCompletedSlots(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM programs WHERE id=$1`, programID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM package_template_versions WHERE id=$1`, packageID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM documentation_template_versions WHERE id=$1`, documentationID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE id=$1`, personID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM regencies WHERE id=$1`, regencyID)
 	})
 	repository := NewRepository(pool)
@@ -77,5 +99,31 @@ func TestRepositoryResolvesScopedBAContextAndCompletedSlots(t *testing.T) {
 	}
 	if locked.FinalTotal != 50 {
 		t.Fatalf("locked=%+v", locked)
+	}
+	location, _ := time.LoadLocation("Asia/Jakarta")
+	service := NewService(repository, location)
+	recipients, err := service.ListRecipients(ctx, programID, regencyID, "2024-12-10", scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recipients) != 2 {
+		t.Fatalf("recipients=%+v", recipients)
+	}
+	document, err := service.FinalizeRecipient(ctx, auth.Principal{}, programID, regencyID, recipients[0], scope, auth.ClientMeta{UserAgent: "bast-finalize-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE people SET full_name='Nama Berubah' WHERE id=$1`, personID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE distribution_slots SET machine_serial_number='M-CHANGED' WHERE id=$1`, firstSlotID); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := repository.getIndividualDocument(ctx, document.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Snapshot.Recipient.FullName != "Siti Aminah" || reloaded.Snapshot.Equipment.MachineSerial != "M-001" {
+		t.Fatalf("snapshot mutated: %+v", reloaded.Snapshot)
 	}
 }
