@@ -13,6 +13,7 @@ import (
 
 	"konkit/internal/auth"
 	"konkit/internal/media"
+	"konkit/internal/programs"
 )
 
 type repository interface {
@@ -25,15 +26,25 @@ type repository interface {
 }
 
 type Service struct {
-	repository repository
-	storage    media.Storage
+	repository      repository
+	storage         media.Storage
+	programContexts programContextResolver
 }
 
-func NewService(repository repository, storage media.Storage) *Service {
-	return &Service{repository: repository, storage: storage}
+type programContextResolver interface {
+	ResolveStorageContext(context.Context, string, string, auth.RegencyScope) (programs.StorageContext, error)
+}
+
+func NewService(repository repository, storage media.Storage, resolvers ...programContextResolver) *Service {
+	var resolver programContextResolver
+	if len(resolvers) > 0 {
+		resolver = resolvers[0]
+	}
+	return &Service{repository: repository, storage: storage, programContexts: resolver}
 }
 
 func (s *Service) List(ctx context.Context, filter Filter, scope auth.RegencyScope) (Page, error) {
+	filter.ProgramID = strings.TrimSpace(filter.ProgramID)
 	filter.RegencyID = strings.TrimSpace(filter.RegencyID)
 	filter.ActivityType = strings.TrimSpace(filter.ActivityType)
 	if !isValidActivityType(filter.ActivityType) {
@@ -53,6 +64,7 @@ func (s *Service) List(ctx context.Context, filter Filter, scope auth.RegencySco
 }
 
 func (s *Service) Upload(ctx context.Context, actor auth.Principal, input UploadInput, meta auth.ClientMeta, scope auth.RegencyScope) (ActivityMedia, error) {
+	input.ProgramID = strings.TrimSpace(input.ProgramID)
 	input.RegencyID = strings.TrimSpace(input.RegencyID)
 	input.ActivityType = strings.TrimSpace(input.ActivityType)
 	input.Source = strings.TrimSpace(input.Source)
@@ -68,23 +80,32 @@ func (s *Service) Upload(ctx context.Context, actor auth.Principal, input Upload
 	if len(input.Data) > maxFileBytes {
 		return ActivityMedia{}, ErrFileTooLarge
 	}
-	regency, err := s.repository.GetRegency(ctx, input.RegencyID, scope)
-	if err != nil {
-		return ActivityMedia{}, err
-	}
 	mimeType, mediaType, ok := detectMediaType(input.Data, input.OriginalFilename)
 	if !ok {
 		return ActivityMedia{}, ErrMediaTypeInvalid
+	}
+	if input.ProgramID == "" || s.programContexts == nil {
+		return ActivityMedia{}, ErrProgramRequired
+	}
+	storageContext, err := s.programContexts.ResolveStorageContext(ctx, input.ProgramID, input.RegencyID, scope)
+	if err != nil {
+		return ActivityMedia{}, err
+	}
+	regency, err := s.repository.GetRegency(ctx, input.RegencyID, scope)
+	if err != nil {
+		return ActivityMedia{}, err
 	}
 	key, err := newStorageKey()
 	if err != nil {
 		return ActivityMedia{}, err
 	}
-	folderPath := []string{
-		fmt.Sprintf("Konkit %d", time.Now().Year()),
-		regency.Name,
-		"DOKUMENTASI FOTO & VIDEO",
-		activityTypeFolderNames[input.ActivityType],
+	folderPath, err := media.BuildFolderPath(media.FolderPathInput{
+		ProgramType: string(storageContext.ProgramType), ZoneName: storageContext.ZoneName,
+		RegencyName: storageContext.RegencyName, Category: media.FolderPhotos,
+		Child: activityTypeFolderNames[input.ActivityType],
+	})
+	if err != nil {
+		return ActivityMedia{}, err
 	}
 	storageKey, size, checksum, err := s.storage.Put(ctx, key, folderPath, bytes.NewReader(input.Data))
 	if err != nil {
@@ -92,7 +113,7 @@ func (s *Service) Upload(ctx context.Context, actor auth.Principal, input Upload
 	}
 	displayName := fmt.Sprintf("%s-%s-%s", regency.DocumentCode, activityTypeCodes[input.ActivityType], time.Now().Format("20060102-150405"))
 	stored, err := s.repository.Insert(ctx, actor, insertInput{
-		RegencyID: input.RegencyID, ActivityType: input.ActivityType, StorageKey: storageKey,
+		ProgramID: input.ProgramID, RegencyID: input.RegencyID, ActivityType: input.ActivityType, StorageKey: storageKey,
 		DisplayName: displayName, OriginalFilename: strings.TrimSpace(input.OriginalFilename),
 		MediaType: mediaType, MimeType: mimeType, ByteSize: size, Checksum: checksum, Source: input.Source,
 	}, meta)

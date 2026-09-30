@@ -16,9 +16,9 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { apiRequest } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
 import { buildPageItems } from './pagination';
-import type { ActivityMedia, ActivityMediaPage, ActivityType, RegencyOption } from './types';
+import type { ActivityMedia, ActivityMediaPage, ActivityType, ProgramOption, ProgramZone } from './types';
 
-type PendingFile = { file: File; source: 'camera' | 'gallery'; previewURL: string; regencyID: string; activityType: ActivityType };
+type PendingFile = { file: File; source: 'camera' | 'gallery'; previewURL: string; programID: string; regencyID: string; activityType: ActivityType };
 type ActivityTypeOption = { value: ActivityType; label: string };
 const acceptedTypes = 'image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime';
 
@@ -34,6 +34,7 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
   const activeOption = options.find((option) => option.value === params.get('type')) ?? options[0];
   const activityType = activeOption.value;
   const setActivityType = (value: string | number) => setParams((prev) => { const next = new URLSearchParams(prev); next.set('type', String(value)); next.delete('page'); return next; });
+  const programID = params.get('program_id') ?? '';
   const regencyID = params.get('regency_id') ?? '';
   const page = Number(params.get('page') ?? '1') || 1;
   const [pending, setPending] = useState<PendingFile | null>(null);
@@ -42,34 +43,41 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
 
   useEffect(() => () => { if (pending?.previewURL) URL.revokeObjectURL(pending.previewURL); }, [pending]);
 
-  const regencies = useQuery({ queryKey: ['program-setup', 'regencies'], queryFn: () => apiRequest<{ data: RegencyOption[] }>('/api/v1/program-setup/regencies') });
+  const programs = useQuery({ queryKey: ['program-setup', 'programs'], queryFn: () => apiRequest<{ data: ProgramOption[] }>('/api/v1/program-setup/programs') });
+  const zones = useQuery({
+    queryKey: ['program-setup', 'programs', programID, 'zones'],
+    queryFn: () => apiRequest<{ data: ProgramZone[] }>(`/api/v1/program-setup/programs/${programID}/zones`),
+    enabled: programID !== '',
+  });
+  const regencies = zones.data?.data.flatMap((zone) => zone.regencies) ?? [];
   const gallery = useQuery({
-    queryKey: ['activities', activityType, regencyID, page],
-    queryFn: () => apiRequest<{ data: ActivityMediaPage }>(`/api/v1/activities/media?activity_type=${activityType}&regency_id=${regencyID}&page=${page}&page_size=24`),
-    enabled: regencyID !== '',
+    queryKey: ['activities', activityType, programID, regencyID, page],
+    queryFn: () => apiRequest<{ data: ActivityMediaPage }>(`/api/v1/activities/media?activity_type=${activityType}&program_id=${programID}&regency_id=${regencyID}&page=${page}&page_size=24`),
+    enabled: programID !== '' && regencyID !== '',
   });
 
+  const setProgram = (value: string | null) => setParams((prev) => { const next = new URLSearchParams(prev); if (value) next.set('program_id', value); else next.delete('program_id'); next.delete('regency_id'); next.delete('page'); return next; });
   const setRegency = (value: string | null) => setParams((prev) => { const next = new URLSearchParams(prev); if (value) next.set('regency_id', value); else next.delete('regency_id'); next.delete('page'); return next; });
   const setPage = (value: number) => setParams((prev) => { const next = new URLSearchParams(prev); next.set('page', String(value)); return next; });
 
   const upload = useMutation({
-    mutationFn: ({ file, source, regencyID: uploadRegencyID, activityType: uploadActivityType }: PendingFile) => {
+    mutationFn: ({ file, source, programID: uploadProgramID, regencyID: uploadRegencyID, activityType: uploadActivityType }: PendingFile) => {
       const body = new FormData();
-      body.set('file', file); body.set('source', source); body.set('activity_type', uploadActivityType); body.set('regency_id', uploadRegencyID);
+      body.set('file', file); body.set('source', source); body.set('activity_type', uploadActivityType); body.set('program_id', uploadProgramID); body.set('regency_id', uploadRegencyID);
       return apiRequest<{ data: ActivityMedia }>('/api/v1/activities/media', { method: 'POST', body });
     },
-    onSuccess: (_data, variables) => { setPending((current) => current === variables ? null : current); client.invalidateQueries({ queryKey: ['activities', variables.activityType, variables.regencyID] }); toast.success('Dokumentasi berhasil diunggah.'); },
+    onSuccess: (_data, variables) => { setPending((current) => current === variables ? null : current); client.invalidateQueries({ queryKey: ['activities', variables.activityType, variables.programID, variables.regencyID] }); toast.success('Dokumentasi berhasil diunggah.'); },
     onError: () => toast.error('Gagal mengunggah dokumentasi.'),
   });
   const remove = useMutation({
     mutationFn: (id: string) => apiRequest<void>(`/api/v1/activities/media/${id}`, { method: 'DELETE' }),
-    onSuccess: () => { setPendingDelete(null); setPreview(null); client.invalidateQueries({ queryKey: ['activities', activityType, regencyID] }); toast.success('Dokumentasi dihapus.'); },
+    onSuccess: () => { setPendingDelete(null); setPreview(null); client.invalidateQueries({ queryKey: ['activities', activityType, programID, regencyID] }); toast.success('Dokumentasi dihapus.'); },
     onError: () => toast.error('Dokumentasi belum dapat dihapus.'),
   });
 
   const choose = (file: File | undefined, source: 'camera' | 'gallery') => {
-    if (!file || !regencyID) return;
-    const selected = { file, source, previewURL: URL.createObjectURL(file), regencyID, activityType };
+    if (!file || !programID || !regencyID) return;
+    const selected = { file, source, previewURL: URL.createObjectURL(file), programID, regencyID, activityType };
     upload.reset();
     setPending(selected); upload.mutate(selected);
   };
@@ -111,10 +119,17 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
         </>}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
           <div className="grid min-w-0 flex-1 gap-2">
+            <Label id="filter-program-label">Program / Tender</Label>
+            <Select disabled={programs.isPending || Boolean(pending)} value={programID} onValueChange={setProgram}>
+              <SelectTrigger aria-labelledby="filter-program-label"><SelectValue placeholder={programs.isPending ? 'Memuat program...' : 'Pilih program'} /></SelectTrigger>
+              <SelectContent>{programs.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="grid min-w-0 flex-1 gap-2">
             <Label id="filter-regency-label">Kabupaten / Kota</Label>
-            <Select disabled={regencies.isPending || Boolean(pending)} value={regencyID} onValueChange={setRegency}>
-              <SelectTrigger aria-labelledby="filter-regency-label"><SelectValue placeholder={regencies.isPending ? 'Memuat kabupaten...' : 'Pilih kabupaten untuk melihat galeri'} /></SelectTrigger>
-              <SelectContent>{regencies.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.document_code} - {item.name}</SelectItem>)}</SelectContent>
+            <Select disabled={!programID || zones.isPending || Boolean(pending)} value={regencyID} onValueChange={setRegency}>
+              <SelectTrigger aria-labelledby="filter-regency-label"><SelectValue placeholder={!programID ? 'Pilih program terlebih dahulu' : zones.isPending ? 'Memuat kabupaten...' : 'Pilih kabupaten untuk melihat galeri'} /></SelectTrigger>
+              <SelectContent>{regencies.map((item) => <SelectItem key={item.id} value={item.id}>{item.document_code} - {item.name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           {canManage && regencyID && <div className="flex shrink-0 gap-2">
@@ -126,11 +141,17 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
     </Card>
 
     {/* === Content Area === */}
-    {regencies.isError
-      ? <DataState kind="error" title="Daftar kabupaten belum dapat dimuat" description="Periksa koneksi, lalu coba muat kembali daftar kabupaten." action={{ label: 'Coba lagi', onClick: () => void regencies.refetch() }} />
-      : regencies.isPending
-        ? <DataState kind="loading" title="Memuat kabupaten" description="Menyiapkan pilihan wilayah dokumentasi." />
-        : !regencyID
+    {programs.isError
+      ? <DataState kind="error" title="Daftar program belum dapat dimuat" description="Periksa koneksi, lalu coba muat kembali daftar program." action={{ label: 'Coba lagi', onClick: () => void programs.refetch() }} />
+      : programs.isPending
+        ? <DataState kind="loading" title="Memuat program" description="Menyiapkan pilihan tender dokumentasi." />
+        : !programID
+          ? <DataState kind="empty" title="Pilih program terlebih dahulu" description="Pilih program atau tender agar zona dan kabupaten yang sesuai dapat dimuat." />
+          : zones.isError
+            ? <DataState kind="error" title="Daftar kabupaten belum dapat dimuat" description="Periksa konfigurasi zona program, lalu coba kembali." action={{ label: 'Coba lagi', onClick: () => void zones.refetch() }} />
+            : zones.isPending
+              ? <DataState kind="loading" title="Memuat kabupaten" description="Menyiapkan wilayah dari zona program." />
+              : !regencyID
           ? <DataState kind="empty" title="Pilih kabupaten terlebih dahulu" description="Pilih kabupaten atau kota di atas untuk melihat dan mengunggah dokumentasi." />
           : gallery.isError
             ? <DataState kind="error" title="Dokumentasi belum dapat dimuat" description="Periksa koneksi lalu coba lagi." action={{ label: 'Coba lagi', onClick: () => void gallery.refetch() }} />

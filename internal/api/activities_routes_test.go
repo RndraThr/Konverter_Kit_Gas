@@ -46,14 +46,14 @@ func (f *fakeActivitiesService) OpenContent(_ context.Context, id string, scope 
 func TestActivitiesListRequiresViewPermissionAndForwardsFilters(t *testing.T) {
 	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"activities.view": true}}
 	service := &fakeActivitiesService{page: activities.Page{Page: 1, PageSize: 24, Total: 1, Items: []activities.ActivityMedia{{ID: "media-1", DisplayName: "WJO-RAKOR-20260916-154500"}}}}
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/activities/media?regency_id=regency-1&activity_type=rakor&page=2&page_size=48", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/activities/media?program_id=program-1&regency_id=regency-1&activity_type=rakor&page=2&page_size=48", nil)
 	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
 	rec := httptest.NewRecorder()
 	NewHandler(Dependencies{Auth: viewer, Activities: service}).ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "WJO-RAKOR-20260916-154500") {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if service.seenFilter.RegencyID != "regency-1" || service.seenFilter.ActivityType != "rakor" || service.seenFilter.Page != 2 || service.seenFilter.PageSize != 48 {
+	if service.seenFilter.ProgramID != "program-1" || service.seenFilter.RegencyID != "regency-1" || service.seenFilter.ActivityType != "rakor" || service.seenFilter.Page != 2 || service.seenFilter.PageSize != 48 {
 		t.Fatalf("filters were not forwarded: %+v", service.seenFilter)
 	}
 
@@ -80,6 +80,7 @@ func TestActivitiesUploadRequiresManagePermissionAndParsesMultipart(t *testing.T
 	_, _ = part.Write([]byte("fake jpeg bytes"))
 	_ = writer.WriteField("source", "gallery")
 	_ = writer.WriteField("activity_type", "rakor")
+	_ = writer.WriteField("program_id", "program-1")
 	_ = writer.WriteField("regency_id", "regency-1")
 	_ = writer.Close()
 
@@ -94,7 +95,7 @@ func TestActivitiesUploadRequiresManagePermissionAndParsesMultipart(t *testing.T
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if service.seenUploadInput.RegencyID != "regency-1" || service.seenUploadInput.ActivityType != "rakor" || service.seenUploadInput.Source != "gallery" || service.seenUploadInput.OriginalFilename != "foto.jpg" {
+	if service.seenUploadInput.ProgramID != "program-1" || service.seenUploadInput.RegencyID != "regency-1" || service.seenUploadInput.ActivityType != "rakor" || service.seenUploadInput.Source != "gallery" || service.seenUploadInput.OriginalFilename != "foto.jpg" {
 		t.Fatalf("upload input not forwarded: %+v", service.seenUploadInput)
 	}
 

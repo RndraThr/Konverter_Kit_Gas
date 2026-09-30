@@ -9,6 +9,7 @@ import (
 var (
 	ErrNotFound            = errors.New("activity media not found")
 	ErrRegencyRequired     = errors.New("regency_id is required")
+	ErrProgramRequired     = errors.New("program_id is required")
 	ErrRegencyNotFound     = errors.New("regency not found")
 	ErrActivityTypeInvalid = errors.New("activity_type is not a recognized activity type")
 	ErrMediaTypeInvalid    = errors.New("file must be a supported image or video format")
@@ -63,6 +64,7 @@ func isValidActivityType(activityType string) bool {
 
 type ActivityMedia struct {
 	ID                  string    `json:"id"`
+	ProgramID           *string   `json:"program_id,omitempty"`
 	RegencyID           string    `json:"regency_id"`
 	RegencyName         string    `json:"regency_name"`
 	RegencyDocumentCode string    `json:"regency_document_code"`
@@ -84,6 +86,7 @@ type ActivityMedia struct {
 }
 
 type Filter struct {
+	ProgramID    string
 	RegencyID    string
 	ActivityType string
 	Page         int
@@ -98,6 +101,7 @@ type Page struct {
 }
 
 type UploadInput struct {
+	ProgramID        string
 	RegencyID        string
 	ActivityType     string
 	OriginalFilename string

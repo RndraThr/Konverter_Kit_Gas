@@ -11,7 +11,7 @@ vi.mock('../../lib/api', () => ({ apiRequest: vi.fn() }));
 
 function renderPage(permissions: string[], initialEntries: string[] = ['/dokumentasi/rakor']) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  return render(<QueryClientProvider client={client}><PermissionsProvider permissions={permissions}><MemoryRouter initialEntries={initialEntries}><ActivityDocumentationPage activityType="rakor" label="Rakor" /></MemoryRouter></PermissionsProvider></QueryClientProvider>);
+  return render(<QueryClientProvider client={client}><PermissionsProvider permissions={permissions}><MemoryRouter initialEntries={withProgram(initialEntries)}><ActivityDocumentationPage activityType="rakor" label="Rakor" /></MemoryRouter></PermissionsProvider></QueryClientProvider>);
 }
 
 const unloadingOptions = [
@@ -21,14 +21,24 @@ const unloadingOptions = [
 
 function renderGroupedPage(permissions: string[], initialEntries: string[] = ['/dokumentasi/unloading?regency_id=regency-1']) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  return render(<QueryClientProvider client={client}><PermissionsProvider permissions={permissions}><MemoryRouter initialEntries={initialEntries}><ActivityDocumentationPage label="Unloading" activityTypes={unloadingOptions} /></MemoryRouter></PermissionsProvider></QueryClientProvider>);
+  return render(<QueryClientProvider client={client}><PermissionsProvider permissions={permissions}><MemoryRouter initialEntries={withProgram(initialEntries)}><ActivityDocumentationPage label="Unloading" activityTypes={unloadingOptions} /></MemoryRouter></PermissionsProvider></QueryClientProvider>);
+}
+
+function withProgram(entries: string[]) {
+  return entries.map((entry) => `${entry}${entry.includes('?') ? '&' : '?'}program_id=program-1`);
+}
+
+function programSetupResponse(path: string) {
+  if (path === '/api/v1/program-setup/programs') return { data: [{ id: 'program-1', code: 'PETANI-2026', name: 'Program Petani 2026', program_type: 'farmer', status: 'active' }] };
+  if (path === '/api/v1/program-setup/programs/program-1/zones') return { data: [{ id: 'zone-1', name: 'Zona 1', is_placeholder: false, regencies: [{ id: 'regency-1', name: 'Wajo', document_code: 'WJO' }] }] };
+  return undefined;
 }
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 function mockApi(gallery: ActivityMediaPage = { items: [], page: 1, page_size: 24, total: 0 }) {
   vi.mocked(apiRequest).mockImplementation((path: string) => {
-    if (path === '/api/v1/program-setup/regencies') return Promise.resolve({ data: [{ id: 'regency-1', name: 'Wajo', document_code: 'WJO' }] });
+    const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
     if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: gallery });
     return Promise.reject(new Error(`Unexpected request: ${path}`));
   });
@@ -38,6 +48,15 @@ test('prompts to pick a kabupaten before loading the gallery', async () => {
   mockApi();
   renderPage(['activities.view']);
   expect(await screen.findByRole('heading', { name: 'Pilih kabupaten terlebih dahulu' })).toBeVisible();
+});
+
+test('requires a program before a kabupaten can be selected', async () => {
+  mockApi();
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  render(<QueryClientProvider client={client}><PermissionsProvider permissions={['activities.view', 'activities.manage']}><MemoryRouter initialEntries={['/dokumentasi/rakor']}><ActivityDocumentationPage activityType="rakor" label="Rakor" /></MemoryRouter></PermissionsProvider></QueryClientProvider>);
+  expect(await screen.findByRole('heading', { name: 'Pilih program terlebih dahulu' })).toBeVisible();
+  expect(screen.getByRole('combobox', { name: 'Kabupaten / Kota' })).toBeDisabled();
+  expect(screen.queryByLabelText('Pilih dari Galeri')).not.toBeInTheDocument();
 });
 
 test('shows the gallery once a kabupaten is selected', async () => {
@@ -64,7 +83,7 @@ test('hides upload controls without activities.manage', async () => {
 
 test('uploads a photo via the gallery picker', async () => {
   vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
-    if (path === '/api/v1/program-setup/regencies') return Promise.resolve({ data: [{ id: 'regency-1', name: 'Wajo', document_code: 'WJO' }] });
+    const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
     if (path === '/api/v1/activities/media' && init?.method === 'POST') {
       return Promise.resolve({ data: { id: 'media-2', display_name: 'WJO-RAKOR-20260916-160000', media_type: 'image', content_url: '/api/v1/activities/media/media-2/content' } });
     }
@@ -80,7 +99,7 @@ test('uploads a photo via the gallery picker', async () => {
 
 test('renders a video element while a video upload is pending', async () => {
   vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
-    if (path === '/api/v1/program-setup/regencies') return Promise.resolve({ data: [{ id: 'regency-1', name: 'Wajo', document_code: 'WJO' }] });
+    const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
     if (path === '/api/v1/activities/media' && init?.method === 'POST') return new Promise(() => undefined);
     if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
     return Promise.reject(new Error(`Unexpected request: ${path}`));
@@ -97,10 +116,11 @@ test('renders a video element while a video upload is pending', async () => {
 test('offers retry and cancel actions after an upload fails', async () => {
   let uploadAttempts = 0;
   vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
-    if (path === '/api/v1/program-setup/regencies') return Promise.resolve({ data: [{ id: 'regency-1', name: 'Wajo', document_code: 'WJO' }] });
+    const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
     if (path === '/api/v1/activities/media' && init?.method === 'POST') {
       uploadAttempts += 1;
       if (uploadAttempts === 1) return Promise.reject(new Error('upload failed'));
+      expect((init.body as FormData).get('program_id')).toBe('program-1');
       expect((init.body as FormData).get('regency_id')).toBe('regency-1');
       return Promise.resolve({ data: { id: 'media-2' } });
     }
@@ -120,13 +140,14 @@ test('offers retry and cancel actions after an upload fails', async () => {
   expect(uploadAttempts).toBe(2);
 });
 
-test('shows a retryable error when regencies cannot be loaded', async () => {
+test('shows a retryable error when program zones cannot be loaded', async () => {
   let regencyAttempts = 0;
   vi.mocked(apiRequest).mockImplementation((path: string) => {
-    if (path === '/api/v1/program-setup/regencies') {
+    if (path === '/api/v1/program-setup/programs') return Promise.resolve(programSetupResponse(path)!);
+    if (path === '/api/v1/program-setup/programs/program-1/zones') {
       regencyAttempts += 1;
       if (regencyAttempts === 1) return Promise.reject(new Error('regencies unavailable'));
-      return Promise.resolve({ data: [{ id: 'regency-1', name: 'Wajo', document_code: 'WJO' }] });
+      return Promise.resolve(programSetupResponse(path)!);
     }
     return Promise.reject(new Error(`Unexpected request: ${path}`));
   });
@@ -141,7 +162,7 @@ test('shows a retryable error when regencies cannot be loaded', async () => {
 
 test('grouped mode defaults to the first tab and loads its gallery', async () => {
   vi.mocked(apiRequest).mockImplementation((path: string) => {
-    if (path === '/api/v1/program-setup/regencies') return Promise.resolve({ data: [{ id: 'regency-1', name: 'Wajo', document_code: 'WJO' }] });
+    const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
     if (path.startsWith('/api/v1/activities/media?')) {
       const params = new URLSearchParams(path.split('?')[1]);
       expect(params.get('activity_type')).toBe('unloading_konkit');
@@ -160,7 +181,7 @@ test('grouped mode defaults to the first tab and loads its gallery', async () =>
 test('switching tabs refetches the gallery for the newly selected activity type', async () => {
   const seenTypes: string[] = [];
   vi.mocked(apiRequest).mockImplementation((path: string) => {
-    if (path === '/api/v1/program-setup/regencies') return Promise.resolve({ data: [{ id: 'regency-1', name: 'Wajo', document_code: 'WJO' }] });
+    const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
     if (path.startsWith('/api/v1/activities/media?')) {
       const params = new URLSearchParams(path.split('?')[1]);
       seenTypes.push(params.get('activity_type') ?? '');
@@ -181,7 +202,7 @@ test('switching tabs refetches the gallery for the newly selected activity type'
 test('uploads to the currently active tab, not the first option', async () => {
   let sentActivityType: string | null = null;
   vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
-    if (path === '/api/v1/program-setup/regencies') return Promise.resolve({ data: [{ id: 'regency-1', name: 'Wajo', document_code: 'WJO' }] });
+    const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
     if (path === '/api/v1/activities/media' && init?.method === 'POST') {
       sentActivityType = (init.body as FormData).get('activity_type') as string;
       return new Promise(() => undefined);
@@ -211,7 +232,7 @@ test('does not render tabs in single-activity-type mode', async () => {
 
 test('clears a failed upload when navigating to another activity type', async () => {
   vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
-    if (path === '/api/v1/program-setup/regencies') return Promise.resolve({ data: [{ id: 'regency-1', name: 'Wajo', document_code: 'WJO' }] });
+    const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
     if (path === '/api/v1/activities/media' && init?.method === 'POST') return Promise.reject(new Error('upload failed'));
     if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
     return Promise.reject(new Error(`Unexpected request: ${path}`));
@@ -219,7 +240,7 @@ test('clears a failed upload when navigating to another activity type', async ()
   vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:failed-preview'), revokeObjectURL: vi.fn() });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const wrapper = (activityType: 'rakor' | 'training_10', label: string) => (
-    <QueryClientProvider client={client}><PermissionsProvider permissions={['activities.view', 'activities.manage']}><MemoryRouter initialEntries={['/dokumentasi/rakor?regency_id=regency-1']}><ActivityDocumentationPage activityType={activityType} label={label} /></MemoryRouter></PermissionsProvider></QueryClientProvider>
+    <QueryClientProvider client={client}><PermissionsProvider permissions={['activities.view', 'activities.manage']}><MemoryRouter initialEntries={['/dokumentasi/rakor?program_id=program-1&regency_id=regency-1']}><ActivityDocumentationPage activityType={activityType} label={label} /></MemoryRouter></PermissionsProvider></QueryClientProvider>
   );
   const view = render(wrapper('rakor', 'Rakor'));
 

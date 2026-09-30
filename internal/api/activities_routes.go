@@ -13,7 +13,7 @@ const maxActivityMediaRequestBody = 101 << 20 // 100 MiB + multipart overhead ma
 
 func activityFilterFromRequest(r *http.Request) activities.Filter {
 	return activities.Filter{
-		RegencyID: r.URL.Query().Get("regency_id"), ActivityType: r.URL.Query().Get("activity_type"),
+		ProgramID: r.URL.Query().Get("program_id"), RegencyID: r.URL.Query().Get("regency_id"), ActivityType: r.URL.Query().Get("activity_type"),
 		Page: intQuery(r, "page", 1), PageSize: intQuery(r, "page_size", 24),
 	}
 }
@@ -66,7 +66,7 @@ func (h *Handler) handleActivitiesMedia(w http.ResponseWriter, r *http.Request, 
 			return
 		}
 		input := activities.UploadInput{
-			RegencyID: strings.TrimSpace(r.FormValue("regency_id")), ActivityType: strings.TrimSpace(r.FormValue("activity_type")),
+			ProgramID: strings.TrimSpace(r.FormValue("program_id")), RegencyID: strings.TrimSpace(r.FormValue("regency_id")), ActivityType: strings.TrimSpace(r.FormValue("activity_type")),
 			OriginalFilename: header.Filename, Source: strings.TrimSpace(r.FormValue("source")), Data: data,
 		}
 		scope, ok := h.regencyScope(w, r, rc.principal)

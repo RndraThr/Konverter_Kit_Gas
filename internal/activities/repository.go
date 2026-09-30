@@ -38,7 +38,7 @@ func (r *Repository) GetRegency(ctx context.Context, regencyID string, scope aut
 }
 
 const activityMediaSelect = `
-SELECT m.id::text, m.regency_id::text, r.name, r.document_code, m.activity_type, m.storage_key,
+SELECT m.id::text, m.program_id::text, m.regency_id::text, r.name, r.document_code, m.activity_type, m.storage_key,
 	m.display_name, m.original_filename, m.media_type, m.mime_type, m.byte_size, m.checksum,
 	m.source, m.status, m.uploaded_by, m.uploaded_at, m.created_at, m.updated_at
 FROM activity_media m
@@ -52,7 +52,7 @@ type rowScanner interface {
 func scanActivityMedia(row rowScanner) (ActivityMedia, error) {
 	var item ActivityMedia
 	var uploadedBy *string
-	if err := row.Scan(&item.ID, &item.RegencyID, &item.RegencyName, &item.RegencyDocumentCode, &item.ActivityType,
+	if err := row.Scan(&item.ID, &item.ProgramID, &item.RegencyID, &item.RegencyName, &item.RegencyDocumentCode, &item.ActivityType,
 		&item.StorageKey, &item.DisplayName, &item.OriginalFilename, &item.MediaType, &item.MimeType,
 		&item.ByteSize, &item.Checksum, &item.Source, &item.Status, &uploadedBy, &item.UploadedAt,
 		&item.CreatedAt, &item.UpdatedAt); err != nil {
@@ -72,10 +72,11 @@ func (r *Repository) List(ctx context.Context, filter Filter, scope auth.Regency
 	}
 	rows, err := r.pool.Query(ctx, activityMediaSelect+`
 		WHERE m.status = 'active' AND m.regency_id = $1 AND m.activity_type = $2
-		AND ($3 OR r.id::text = ANY($4))
+		AND ($3 = '' OR m.program_id = NULLIF($3,'')::uuid)
+		AND ($4 OR r.id::text = ANY($5))
 		ORDER BY m.uploaded_at DESC
-		LIMIT $5 OFFSET $6
-	`, filter.RegencyID, filter.ActivityType, scope.Unrestricted, scope.RegencyIDs, pageSize, (page-1)*pageSize)
+		LIMIT $6 OFFSET $7
+	`, filter.RegencyID, filter.ActivityType, filter.ProgramID, scope.Unrestricted, scope.RegencyIDs, pageSize, (page-1)*pageSize)
 	if err != nil {
 		return Page{}, fmt.Errorf("list activity media: %w", err)
 	}
@@ -97,8 +98,9 @@ func (r *Repository) List(ctx context.Context, filter Filter, scope auth.Regency
 	if err := r.pool.QueryRow(ctx, `
 		SELECT count(*) FROM activity_media m JOIN regencies r ON r.id = m.regency_id
 		WHERE m.status = 'active' AND m.regency_id = $1 AND m.activity_type = $2
-		AND ($3 OR r.id::text = ANY($4))
-	`, filter.RegencyID, filter.ActivityType, scope.Unrestricted, scope.RegencyIDs).Scan(&total); err != nil {
+		AND ($3 = '' OR m.program_id = NULLIF($3,'')::uuid)
+		AND ($4 OR r.id::text = ANY($5))
+	`, filter.RegencyID, filter.ActivityType, filter.ProgramID, scope.Unrestricted, scope.RegencyIDs).Scan(&total); err != nil {
 		return Page{}, fmt.Errorf("count activity media: %w", err)
 	}
 
@@ -106,6 +108,7 @@ func (r *Repository) List(ctx context.Context, filter Filter, scope auth.Regency
 }
 
 type insertInput struct {
+	ProgramID        string
 	RegencyID        string
 	ActivityType     string
 	StorageKey       string
@@ -127,16 +130,16 @@ func (r *Repository) Insert(ctx context.Context, actor auth.Principal, input ins
 
 	var id string
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO activity_media (regency_id, activity_type, storage_key, display_name, original_filename,
+		INSERT INTO activity_media (program_id, regency_id, activity_type, storage_key, display_name, original_filename,
 			media_type, mime_type, byte_size, checksum, source, uploaded_by)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+		VALUES (NULLIF($1,'')::uuid,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 		RETURNING id::text
-	`, input.RegencyID, input.ActivityType, input.StorageKey, input.DisplayName, input.OriginalFilename,
+	`, input.ProgramID, input.RegencyID, input.ActivityType, input.StorageKey, input.DisplayName, input.OriginalFilename,
 		input.MediaType, input.MimeType, input.ByteSize, input.Checksum, input.Source, actor.UserID).Scan(&id); err != nil {
 		return ActivityMedia{}, fmt.Errorf("insert activity media: %w", err)
 	}
 	if err := recordActivityMediaAudit(ctx, tx, actor, meta, "uploaded", id, map[string]any{
-		"regency_id": input.RegencyID, "activity_type": input.ActivityType,
+		"program_id": input.ProgramID, "regency_id": input.RegencyID, "activity_type": input.ActivityType,
 		"mime_type": input.MimeType, "byte_size": input.ByteSize, "source": input.Source,
 	}); err != nil {
 		return ActivityMedia{}, err

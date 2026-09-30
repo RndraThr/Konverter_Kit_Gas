@@ -87,6 +87,9 @@ func TestInsertListGetByIDAndSoftDeleteRoundTrip(t *testing.T) {
 	if created.RegencyName != "Wajo Activities Test" || created.Status != "active" || created.DisplayName != "WAT-RAKOR-20260916-154500" {
 		t.Fatalf("created = %+v", created)
 	}
+	if created.ProgramID != nil {
+		t.Fatalf("legacy row program_id=%v, want nil", created.ProgramID)
+	}
 
 	page, err := repository.List(ctx, Filter{RegencyID: fixture.inScopeRegencyID, ActivityType: "rakor", Page: 1, PageSize: 20}, scope)
 	if err != nil {
@@ -94,6 +97,9 @@ func TestInsertListGetByIDAndSoftDeleteRoundTrip(t *testing.T) {
 	}
 	if page.Total != 1 || len(page.Items) != 1 || page.Items[0].ID != created.ID {
 		t.Fatalf("page = %+v", page)
+	}
+	if page.Items[0].ProgramID != nil {
+		t.Fatalf("legacy list must preserve nullable program_id, got %v", page.Items[0].ProgramID)
 	}
 
 	outOfScope := auth.RegencyScope{RegencyIDs: []string{fixture.outOfScopeRegencyID}}
