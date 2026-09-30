@@ -1,12 +1,11 @@
 import { FormEvent, useState } from 'react';
-import { CheckCircle2, Lock, UserCheck } from 'lucide-react';
+import { Lock, UserCheck } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { apiRequest, ApiError } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
 import type { CandidateMatch, DataResponse, DistributionSlot, LinkSlotInput } from './types';
 import { DocumentationSlot } from './DocumentationSlot';
-import styles from './Distribution.module.css';
-import { Badge } from '@/components/ui/badge';
+import { PosSectionShell } from './PosSectionShell';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -37,34 +36,31 @@ export function SlotDokumenSection({ slot, onChanged }: { slot: DistributionSlot
 
   if (slot.status === 'open') {
     if (!canLink) {
-      return <section className={styles.slotSection} data-state="locked" aria-label="POS Dokumen"><header className={styles.slotSectionHeader}><div><Badge variant="outline">POS Dokumen</Badge><h3><Lock aria-hidden="true" />Menunggu penerima</h3></div></header></section>;
+      return <PosSectionShell label="POS Dokumen" badge="POS Dokumen" icon={<Lock aria-hidden="true" />} title="Menunggu penerima" state="locked" />;
     }
-    return <section className={styles.slotSection} data-state="active" aria-label="POS Dokumen">
-      <header className={styles.slotSectionHeader}><div><Badge variant="outline">POS Dokumen</Badge><h3><UserCheck aria-hidden="true" />Hubungkan penerima</h3></div></header>
-      <form className={styles.fields} onSubmit={submitLookup}>
-        <FormField className={styles.fieldWide} label="NIK Penerima" name="nik" maxLength={16} value={nik} onChange={(event) => setNik(event.target.value.replace(/\D/g, ''))} />
-        <Button type="submit" disabled={nik.length !== 16 || lookup.isPending}>{lookup.isPending ? 'Mencari...' : 'Cari di DCP3'}</Button>
+    return <PosSectionShell label="POS Dokumen" badge="POS Dokumen" icon={<UserCheck aria-hidden="true" />} title="Hubungkan penerima" state="active">
+      <form className="flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={submitLookup}>
+        <FormField className="flex-1" label="NIK Penerima" name="nik" maxLength={16} value={nik} onChange={(event) => setNik(event.target.value.replace(/\D/g, ''))} />
+        <Button className="shrink-0" type="submit" disabled={nik.length !== 16 || lookup.isPending}>{lookup.isPending ? 'Mencari...' : 'Cari di DCP3'}</Button>
       </form>
       {lookup.isError && <Alert variant="destructive"><AlertDescription>{lookup.error instanceof ApiError ? lookup.error.message : 'Kandidat tidak ditemukan.'}</AlertDescription></Alert>}
-      {candidate && <form className={styles.fields} onSubmit={submitLink}>
-        <FormField className={styles.fieldWide} label="Nama" name="candidate_full_name" value={candidate.full_name} disabled onChange={() => {}} />
+      {candidate && <form className="grid gap-3 sm:grid-cols-2" onSubmit={submitLink}>
+        <FormField className="sm:col-span-2" label="Nama" name="candidate_full_name" value={candidate.full_name} disabled onChange={() => {}} />
         <FormField label={candidate.program_type === 'farmer' ? 'Nomor kartu petani' : 'Nomor KUSUKA'} name="sector_identifier" value={linkInput.sector_identifier} onChange={(event) => setLinkInput({ ...linkInput, sector_identifier: event.target.value.toUpperCase() })} />
         <FormField label="Nomor telepon" name="phone_number" value={linkInput.phone_number} onChange={(event) => setLinkInput({ ...linkInput, phone_number: event.target.value })} />
-        <FormField className={styles.fieldWide} label="Alamat" name="address" value={linkInput.address} onChange={(event) => setLinkInput({ ...linkInput, address: event.target.value })} />
+        <FormField className="sm:col-span-2" label="Alamat" name="address" value={linkInput.address} onChange={(event) => setLinkInput({ ...linkInput, address: event.target.value })} />
         <FormField label="Desa/kelurahan" name="village" value={linkInput.village} onChange={(event) => setLinkInput({ ...linkInput, village: event.target.value })} />
         <FormField label="Kecamatan" name="district" value={linkInput.district} onChange={(event) => setLinkInput({ ...linkInput, district: event.target.value })} />
-        {link.isError && <Alert className={styles.fieldWide} variant="destructive"><AlertDescription>{link.error instanceof ApiError ? link.error.message : 'Slot belum dapat dihubungkan.'}</AlertDescription></Alert>}
-        <Button className={styles.fieldWide} disabled={link.isPending} type="submit">{link.isPending ? 'Menghubungkan...' : 'Hubungkan ke Nomor Bagi Ini'}</Button>
+        {link.isError && <Alert className="sm:col-span-2" variant="destructive"><AlertDescription>{link.error instanceof ApiError ? link.error.message : 'Slot belum dapat dihubungkan.'}</AlertDescription></Alert>}
+        <Button className="sm:col-span-2" disabled={link.isPending} type="submit">{link.isPending ? 'Menghubungkan...' : 'Hubungkan ke Nomor Bagi Ini'}</Button>
       </form>}
-    </section>;
+    </PosSectionShell>;
   }
 
-  return <section className={styles.slotSection} data-state="done" aria-label="POS Dokumen">
-    <header className={styles.slotSectionHeader}>
-      <div><Badge variant="outline">POS Dokumen</Badge><h3><UserCheck aria-hidden="true" />{slot.full_name}</h3></div>
-      <span className={styles.slotSectionStatus}><CheckCircle2 aria-hidden="true" />Terhubung</span>
-    </header>
-    <dl className={styles.slotSummaryList}><div><dt>NIK</dt><dd>{slot.nik}</dd></div></dl>
-    <div className={styles.sectionDocumentation}>{documentation.map((item) => <DocumentationSlot key={item.code} slot={item} onChanged={updateDocumentation} />)}</div>
-  </section>;
+  return <PosSectionShell label="POS Dokumen" badge="POS Dokumen" icon={<UserCheck aria-hidden="true" />} title={slot.full_name ?? ''} state="done" status="Terhubung">
+    <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
+      <div className="min-w-0"><dt className="text-xs text-muted-foreground">NIK</dt><dd className="text-sm font-medium wrap-break-word">{slot.nik}</dd></div>
+    </dl>
+    {documentation.length > 0 && <div className="grid gap-4 sm:grid-cols-2">{documentation.map((item) => <DocumentationSlot key={item.code} slot={item} onChanged={updateDocumentation} />)}</div>}
+  </PosSectionShell>;
 }

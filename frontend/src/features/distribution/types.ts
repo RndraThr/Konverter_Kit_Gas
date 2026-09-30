@@ -12,14 +12,17 @@ export type DistributionSlot = {
   id: string; schedule_id: string; slot_number: number; status: 'open' | 'linked' | 'completed' | 'cancelled';
   allocation_id?: string; full_name?: string; nik?: string;
   machine_option_code?: string; machine_serial_number?: string;
-  hose_option_code?: string; hose_serial_number?: string; converter_serial_number?: string;
+  hose_option_code?: string; hose_serial_number?: string;
+  converter_option_code?: string; converter_serial_number?: string;
   documentation: SlotSummary[]; distributed_at?: string; created_at: string; updated_at: string;
 };
 
 export type CreateSlotInput = {
   schedule_id: string;
+  slot_number?: number;
   machine_option_code: string; machine_serial_number: string;
-  hose_option_code: string; hose_serial_number: string; converter_serial_number: string;
+  hose_option_code: string; hose_serial_number: string;
+  converter_option_code: string; converter_serial_number: string;
 };
 
 export type CandidateMatch = {

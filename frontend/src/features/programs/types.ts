@@ -3,6 +3,7 @@ export type Regency = { id: string; province_name: string; name: string; documen
 export type Program = { id: string; code: string; name: string; program_type: ProgramType; fiscal_year: number; status: string; notes?: string };
 export type MachineOption = { code: string; brand: string; type: string };
 export type HoseOption = { code: string; brand: string; spec: string };
+export type ConverterOption = { code: string; brand: string };
 export type PackageComponent = { code: string; label: string; quantity: number; unit: string };
 export type PackageTemplate = { id: string; template_code: string; version: number; name: string; program_type: ProgramType; values: Record<string, unknown>; status: string };
 export type DocumentationSlot = { slot_code: string; label: string; stage: 'mesin' | 'dokumen' | 'penyerahan'; is_required: boolean; min_files: number; max_files: number; input_source: 'camera' | 'gallery' | 'both'; require_location: boolean; require_captured_at: boolean; instructions?: string; sort_order: number };

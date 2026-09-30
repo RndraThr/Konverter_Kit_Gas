@@ -265,9 +265,10 @@ test('manages package template equipment options and components as repeatable ro
   await userEvent.click(await screen.findByRole('tab', { name: 'Template' }));
   await userEvent.click(screen.getByRole('button', { name: 'Tambah paket' }));
 
-  const converterBrand = screen.getByRole('textbox', { name: 'Merk Konkit/Reducer' });
-  await userEvent.type(converterBrand, 'ergas');
-  expect(converterBrand).toHaveValue('ERGAS');
+  await userEvent.click(screen.getByRole('button', { name: 'Tambah opsi konkit' }));
+  expect(screen.getByRole('group', { name: 'Opsi konkit 1' })).toBeVisible();
+  await userEvent.type(screen.getByLabelText('Merk konkit 1'), 'ergas');
+  expect(screen.getByLabelText('Merk konkit 1')).toHaveValue('ERGAS');
 
   await userEvent.click(screen.getByRole('button', { name: 'Tambah opsi mesin' }));
   expect(screen.getByRole('group', { name: 'Opsi mesin 1' })).toBeVisible();

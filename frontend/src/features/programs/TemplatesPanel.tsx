@@ -17,19 +17,17 @@ import { apiRequest } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
 import { SetupDialog, SetupFormSection } from './SetupDialog';
 import { SetupToolbar } from './SetupToolbar';
-import { DataResponse, DocumentationSlot, DocumentationTemplate, HoseOption, MachineOption, PackageComponent, PackageTemplate, ProgramType, programTypeLabel } from './types';
+import { ConverterOption, DataResponse, DocumentationSlot, DocumentationTemplate, HoseOption, MachineOption, PackageComponent, PackageTemplate, ProgramType, programTypeLabel } from './types';
 
 const newSlot = (index = 0): DocumentationSlot => ({ slot_code: '', label: '', stage: 'mesin', is_required: true, min_files: 1, max_files: 1, input_source: 'both', require_location: false, require_captured_at: false, sort_order: (index + 1) * 10 });
 const newMachineOption = (): MachineOption => ({ code: '', brand: '', type: '' });
 const newHoseOption = (): HoseOption => ({ code: '', brand: '', spec: '' });
+const newConverterOption = (): ConverterOption => ({ code: '', brand: '' });
 const newComponent = (): PackageComponent => ({ code: '', label: '', quantity: 1, unit: '' });
 
-const emptyPackageValues = { template_code: '', name: '', program_type: 'farmer' as ProgramType, status: 'draft', converter_brand: '', machine_options: [] as MachineOption[], hose_options: [] as HoseOption[], components: [] as PackageComponent[] };
+const emptyPackageValues = { template_code: '', name: '', program_type: 'farmer' as ProgramType, status: 'draft', machine_options: [] as MachineOption[], hose_options: [] as HoseOption[], converter_options: [] as ConverterOption[], components: [] as PackageComponent[] };
 const createEmptyDocumentValues = () => ({ template_code: '', name: '', program_type: 'farmer' as ProgramType, status: 'draft', slots: [newSlot()] });
 
-function asString(value: unknown): string {
-  return typeof value === 'string' ? value : '';
-}
 function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? value as T[] : [];
 }
@@ -66,20 +64,22 @@ export function TemplatesPanel() {
       method: packageEditing ? 'PATCH' : 'POST',
       body: JSON.stringify({
         template_code: packageValues.template_code, name: packageValues.name, program_type: packageValues.program_type, status: packageValues.status,
-        values: { converter_brand: packageValues.converter_brand, machine_options: packageValues.machine_options, hose_options: packageValues.hose_options, components: packageValues.components },
+        values: { machine_options: packageValues.machine_options, hose_options: packageValues.hose_options, converter_options: packageValues.converter_options, components: packageValues.components },
       }),
     }),
     onSuccess: () => { setPackageOpen(false); client.invalidateQueries({ queryKey: ['program-setup', 'package-templates'] }); toast.success('Template paket berhasil disimpan.'); },
   });
   const documentMutation = useMutation({ mutationFn: () => apiRequest(`/api/v1/program-setup/documentation-templates${documentEditing ? `/${documentEditing.id}` : ''}`, { method: documentEditing ? 'PATCH' : 'POST', body: JSON.stringify(documentValues) }), onSuccess: () => { setDocumentOpen(false); client.invalidateQueries({ queryKey: ['program-setup', 'documentation-templates'] }); toast.success('Template dokumentasi berhasil disimpan.'); } });
-  const showPackage = (item?: PackageTemplate) => { const nextValues = item ? { template_code: item.template_code, name: item.name, program_type: item.program_type, status: item.status, converter_brand: asString(item.values.converter_brand), machine_options: asArray<MachineOption>(item.values.machine_options), hose_options: asArray<HoseOption>(item.values.hose_options), components: asArray<PackageComponent>(item.values.components) } : emptyPackageValues; setPackageEditing(item); setPackageValues(nextValues); setInitialPackageValues(nextValues); setPackageOpen(true); };
+  const showPackage = (item?: PackageTemplate) => { const nextValues = item ? { template_code: item.template_code, name: item.name, program_type: item.program_type, status: item.status, machine_options: asArray<MachineOption>(item.values.machine_options), hose_options: asArray<HoseOption>(item.values.hose_options), converter_options: asArray<ConverterOption>(item.values.converter_options), components: asArray<PackageComponent>(item.values.components) } : emptyPackageValues; setPackageEditing(item); setPackageValues(nextValues); setInitialPackageValues(nextValues); setPackageOpen(true); };
   const showDocument = (item?: DocumentationTemplate) => { const nextValues = item ? { template_code: item.template_code, name: item.name, program_type: item.program_type, status: item.status, slots: item.slots } : createEmptyDocumentValues(); setDocumentEditing(item); setDocumentValues(nextValues); setInitialDocumentValues(nextValues); setDocumentOpen(true); };
   const updateSlot = (index: number, patch: Partial<DocumentationSlot>) => setDocumentValues({ ...documentValues, slots: documentValues.slots.map((slot, slotIndex) => slotIndex === index ? { ...slot, ...patch } : slot) });
   const updateMachineOption = (index: number, patch: Partial<MachineOption>) => setPackageValues({ ...packageValues, machine_options: packageValues.machine_options.map((option, optionIndex) => optionIndex === index ? { ...option, ...patch } : option) });
   const updateHoseOption = (index: number, patch: Partial<HoseOption>) => setPackageValues({ ...packageValues, hose_options: packageValues.hose_options.map((option, optionIndex) => optionIndex === index ? { ...option, ...patch } : option) });
+  const updateConverterOption = (index: number, patch: Partial<ConverterOption>) => setPackageValues({ ...packageValues, converter_options: packageValues.converter_options.map((option, optionIndex) => optionIndex === index ? { ...option, ...patch } : option) });
   const updateComponent = (index: number, patch: Partial<PackageComponent>) => setPackageValues({ ...packageValues, components: packageValues.components.map((component, componentIndex) => componentIndex === index ? { ...component, ...patch } : component) });
   const addMachineOption = () => { const index = packageValues.machine_options.length; setPackageValues({ ...packageValues, machine_options: [...packageValues.machine_options, newMachineOption()] }); revealAddedField(`machine_code_${index}`); };
   const addHoseOption = () => { const index = packageValues.hose_options.length; setPackageValues({ ...packageValues, hose_options: [...packageValues.hose_options, newHoseOption()] }); revealAddedField(`hose_code_${index}`); };
+  const addConverterOption = () => { const index = packageValues.converter_options.length; setPackageValues({ ...packageValues, converter_options: [...packageValues.converter_options, newConverterOption()] }); revealAddedField(`converter_code_${index}`); };
   const addComponent = () => { const index = packageValues.components.length; setPackageValues({ ...packageValues, components: [...packageValues.components, newComponent()] }); revealAddedField(`component_code_${index}`); };
   const addDocumentationSlot = () => { const index = documentValues.slots.length; setDocumentValues({ ...documentValues, slots: [...documentValues.slots, newSlot(index)] }); revealAddedField(`slot_code_${index}`); };
   const normalizedSearch = search.trim().toLocaleLowerCase('id-ID');
@@ -97,7 +97,6 @@ export function TemplatesPanel() {
       <FormField label="Nama template" name="package_name" required value={packageValues.name} onChange={(e) => setPackageValues({ ...packageValues, name: e.target.value.toUpperCase() })} />
       <div className="grid min-w-0 gap-2"><Label id="package-type-label">Jenis program</Label><Select value={packageValues.program_type} onValueChange={(value) => setPackageValues({ ...packageValues, program_type: (value ?? 'farmer') as ProgramType })}><SelectTrigger className="w-full" aria-labelledby="package-type-label"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="farmer">Petani</SelectItem><SelectItem value="fisherman">Nelayan</SelectItem></SelectContent></Select></div>
       <div className="grid min-w-0 gap-2"><Label id="package-status-label">Status</Label><Select value={packageValues.status} onValueChange={(value) => setPackageValues({ ...packageValues, status: value ?? 'draft' })}><SelectTrigger className="w-full" aria-labelledby="package-status-label"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="draft">Draf</SelectItem><SelectItem value="published">Terbit</SelectItem><SelectItem value="retired">Diarsipkan</SelectItem></SelectContent></Select></div>
-      <FormField label="Merk Konkit/Reducer" name="converter_brand" value={packageValues.converter_brand} onChange={(e) => setPackageValues({ ...packageValues, converter_brand: e.target.value.toUpperCase() })} />
       </SetupFormSection>
 
       <SetupFormSection title="Opsi mesin" description="Daftar merk dan tipe mesin yang dapat dipilih pada alokasi."><div className="slotEditor fullField"><RepeatableEditorHead title="Merk dan tipe mesin" count={packageValues.machine_options.length} addLabel="Tambah opsi mesin" onAdd={addMachineOption} />
@@ -115,6 +114,14 @@ export function TemplatesPanel() {
           <FormField label={`Kode selang ${index + 1}`} name={`hose_code_${index}`} required value={option.code} onChange={(e) => updateHoseOption(index, { code: e.target.value.toLowerCase() })} />
           <FormField label={`Merk selang ${index + 1}`} name={`hose_brand_${index}`} required value={option.brand} onChange={(e) => updateHoseOption(index, { brand: e.target.value.toUpperCase() })} />
           <FormField label={`Spesifikasi selang ${index + 1}`} name={`hose_spec_${index}`} required value={option.spec} onChange={(e) => updateHoseOption(index, { spec: e.target.value.toUpperCase() })} />
+        </div>)}
+      </div></SetupFormSection>
+
+      <SetupFormSection title="Opsi konkit/reducer" description="Daftar merk konkit/reducer yang dapat dipilih pada alokasi."><div className="slotEditor fullField"><RepeatableEditorHead title="Merk konkit/reducer" count={packageValues.converter_options.length} addLabel="Tambah opsi konkit" onAdd={addConverterOption} />
+        {packageValues.converter_options.map((option, index) => <div className="equipmentRow" role="group" aria-label={`Opsi konkit ${index + 1}`} key={index}>
+          <div className="repeatableRowHeader"><strong>Opsi konkit {index + 1}</strong><Button type="button" variant="ghost" size="sm" className="dangerIcon" aria-label={`Hapus opsi konkit ${index + 1}`} onClick={() => setPackageValues({ ...packageValues, converter_options: packageValues.converter_options.filter((_, optionIndex) => optionIndex !== index) })}><Trash2 />Hapus</Button></div>
+          <FormField label={`Kode konkit ${index + 1}`} name={`converter_code_${index}`} required value={option.code} onChange={(e) => updateConverterOption(index, { code: e.target.value.toLowerCase() })} />
+          <FormField label={`Merk konkit ${index + 1}`} name={`converter_brand_${index}`} required value={option.brand} onChange={(e) => updateConverterOption(index, { brand: e.target.value.toUpperCase() })} />
         </div>)}
       </div></SetupFormSection>
 

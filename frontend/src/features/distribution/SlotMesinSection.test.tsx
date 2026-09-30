@@ -32,6 +32,6 @@ test('renders equipment summary fields from the slot fixture', () => {
 });
 
 test('shows a placeholder dash when equipment fields are empty', () => {
-  renderSection({ machine_option_code: '', machine_serial_number: '', hose_option_code: '', hose_serial_number: '', converter_serial_number: '' });
-  expect(screen.getAllByText('-')).toHaveLength(5);
+  renderSection({ machine_option_code: '', machine_serial_number: '', hose_option_code: '', hose_serial_number: '', converter_option_code: '', converter_serial_number: '' });
+  expect(screen.getAllByText('-')).toHaveLength(6);
 });
