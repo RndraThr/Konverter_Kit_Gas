@@ -1,15 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Camera, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ImagePlus, PlayCircle, RefreshCw, Trash2, X } from 'lucide-react';
+import { Camera, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ImageIcon, ImagePlus, PlayCircle, RefreshCw, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { DataState } from '@/components/DataState';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { PageHeader } from '@/components/PageHeader';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { apiRequest } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
@@ -19,7 +21,6 @@ import type { ActivityMedia, ActivityMediaPage, ActivityType, RegencyOption } fr
 type PendingFile = { file: File; source: 'camera' | 'gallery'; previewURL: string; regencyID: string; activityType: ActivityType };
 type ActivityTypeOption = { value: ActivityType; label: string };
 const acceptedTypes = 'image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime';
-const uploadButtonClass = 'inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-md border bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 has-[:disabled]:pointer-events-none has-[:disabled]:opacity-50';
 
 type Props =
   | { label: string; activityType: ActivityType; activityTypes?: undefined }
@@ -94,73 +95,116 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
   return <div className="space-y-6">
     <PageHeader title={label} description="Dokumentasi foto/video kegiatan lapangan, tidak terikat jadwal." />
 
-    {options.length > 1 && <Tabs value={activityType} onValueChange={setActivityType}>
-      <TabsList variant="line" aria-label={`Jenis ${label}`}>
-        {options.map((option) => <TabsTrigger key={option.value} value={option.value} disabled={Boolean(pending)}>{option.label}</TabsTrigger>)}
-      </TabsList>
-    </Tabs>}
+    {/* === Filter & Upload Card === */}
+    <Card>
+      <CardContent className="space-y-4 pt-1">
+        {options.length > 1 && <>
+          <div className="space-y-1.5">
+            <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Jenis Kegiatan</Label>
+            <Tabs value={activityType} onValueChange={setActivityType}>
+              <TabsList variant="line" aria-label={`Jenis ${label}`}>
+                {options.map((opt) => <TabsTrigger key={opt.value} value={opt.value} disabled={Boolean(pending)}>{opt.label}</TabsTrigger>)}
+              </TabsList>
+            </Tabs>
+          </div>
+          <Separator />
+        </>}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
+          <div className="grid min-w-0 flex-1 gap-2">
+            <Label id="filter-regency-label">Kabupaten / Kota</Label>
+            <Select disabled={regencies.isPending || Boolean(pending)} value={regencyID} onValueChange={setRegency}>
+              <SelectTrigger aria-labelledby="filter-regency-label"><SelectValue placeholder={regencies.isPending ? 'Memuat kabupaten...' : 'Pilih kabupaten untuk melihat galeri'} /></SelectTrigger>
+              <SelectContent>{regencies.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.document_code} - {item.name}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          {canManage && regencyID && <div className="flex shrink-0 gap-2">
+            <label className="inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"><Camera className="size-4" aria-hidden="true" /><span className="hidden sm:inline">Ambil Foto</span><span className="sm:hidden">Kamera</span><input className="sr-only" type="file" aria-label="Ambil Foto" accept={acceptedTypes} capture="environment" disabled={Boolean(pending)} onChange={(e) => choose(e.target.files?.[0], 'camera')} /></label>
+            <label className="inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"><ImagePlus className="size-4" aria-hidden="true" /><span className="hidden sm:inline">Pilih dari Galeri</span><span className="sm:hidden">Galeri</span><input className="sr-only" type="file" aria-label="Pilih dari Galeri" accept={acceptedTypes} disabled={Boolean(pending)} onChange={(e) => choose(e.target.files?.[0], 'gallery')} /></label>
+          </div>}
+        </div>
+      </CardContent>
+    </Card>
 
+    {/* === Content Area === */}
     {regencies.isError
-      ? <DataState kind="error" title="Daftar kabupaten belum dapat dimuat" description="Periksa koneksi, lalu coba muat kembali daftar kabupaten." action={{ label: 'Coba lagi', onClick: () => regencies.refetch() }} />
-      : <>
-        <div className="grid max-w-xs gap-2 rounded-xl border bg-card p-4"><Label id="filter-regency-label">Kabupaten</Label><Select disabled={regencies.isPending || Boolean(pending)} value={regencyID} onValueChange={setRegency}><SelectTrigger aria-labelledby="filter-regency-label"><SelectValue placeholder={regencies.isPending ? 'Memuat kabupaten...' : 'Pilih kabupaten'} /></SelectTrigger><SelectContent>{regencies.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.document_code} - {item.name}</SelectItem>)}</SelectContent></Select></div>
+      ? <DataState kind="error" title="Daftar kabupaten belum dapat dimuat" description="Periksa koneksi, lalu coba muat kembali daftar kabupaten." action={{ label: 'Coba lagi', onClick: () => void regencies.refetch() }} />
+      : regencies.isPending
+        ? <DataState kind="loading" title="Memuat kabupaten" description="Menyiapkan pilihan wilayah dokumentasi." />
+        : !regencyID
+          ? <DataState kind="empty" title="Pilih kabupaten terlebih dahulu" description="Pilih kabupaten atau kota di atas untuk melihat dan mengunggah dokumentasi." />
+          : gallery.isError
+            ? <DataState kind="error" title="Dokumentasi belum dapat dimuat" description="Periksa koneksi lalu coba lagi." action={{ label: 'Coba lagi', onClick: () => void gallery.refetch() }} />
+            : gallery.isPending
+              ? <DataState kind="loading" title="Memuat dokumentasi" description="Mengambil data dari kabupaten terpilih." />
+              : <>
 
-        {regencies.isPending ? <DataState kind="loading" title="Memuat kabupaten" description="Menyiapkan pilihan wilayah dokumentasi." /> : !regencyID ? <DataState kind="empty" title="Pilih kabupaten" description="Pilih kabupaten untuk melihat dan mengunggah dokumentasi." /> : <>
-      {canManage && <div className="flex flex-wrap gap-2">
-        <label className={uploadButtonClass}><Camera aria-hidden="true" />Buka kamera<input aria-label="Buka kamera" type="file" accept={acceptedTypes} capture="environment" className="sr-only" disabled={Boolean(pending)} onChange={(event) => choose(event.target.files?.[0], 'camera')} /></label>
-        <label className={uploadButtonClass}><ImagePlus aria-hidden="true" />Pilih galeri<input aria-label="Pilih galeri" type="file" accept={acceptedTypes} className="sr-only" disabled={Boolean(pending)} onChange={(event) => choose(event.target.files?.[0], 'gallery')} /></label>
-      </div>}
+      {/* Stats Bar */}
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          <span className="font-semibold tabular-nums text-foreground">{total}</span> dokumentasi
+          {totalPages > 1 && <> &middot; halaman <span className="font-medium text-foreground">{page}</span>/{totalPages}</>}
+        </p>
+      </div>
 
-      {gallery.isError ? <DataState kind="error" title="Dokumentasi belum dapat dimuat" description="Periksa koneksi lalu coba lagi." action={{ label: 'Coba lagi', onClick: () => gallery.refetch() }} />
-        : gallery.isPending ? <DataState kind="loading" title="Memuat dokumentasi" description="Mengambil data dari kabupaten terpilih." />
-        : items.length === 0 && !pending ? <DataState kind="empty" title="Belum ada dokumentasi" description="Unggah foto atau video pertama untuk kegiatan ini." />
-        : <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
-          {pending && <figure className="relative aspect-square overflow-hidden rounded-lg border bg-muted">
+      {items.length === 0 && !pending
+        ? <DataState kind="empty" title="Belum ada dokumentasi" description={canManage ? 'Unggah foto atau video pertama untuk kabupaten ini.' : 'Belum ada dokumentasi kegiatan yang diunggah.'} />
+        : <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+          {pending && <figure className="group relative aspect-square overflow-hidden rounded-lg border-2 border-dashed border-primary/40 bg-primary/5">
             {pending.file.type.startsWith('video/')
-              ? <video aria-label="Preview unggahan video" src={pending.previewURL} className="size-full object-cover" muted />
-              : <img src={pending.previewURL} alt="Preview unggahan" className="size-full object-cover" />}
-            <figcaption className="absolute inset-x-0 bottom-0 bg-black/70 p-2 text-xs text-white">
-              <span>{upload.isError ? 'Unggahan gagal' : 'Mengunggah...'}</span>
-              {upload.isError && <span className="mt-2 grid grid-cols-2 gap-1.5">
-                <Button type="button" size="xs" variant="secondary" aria-label="Coba unggah lagi" onClick={() => upload.mutate(pending)}><RefreshCw aria-hidden="true" />Coba lagi</Button>
-                <Button type="button" size="xs" variant="outline" aria-label="Batalkan unggahan" onClick={cancelFailedUpload}><X aria-hidden="true" />Batal</Button>
+              ? <video aria-label="Preview unggahan video" src={pending.previewURL} className="size-full object-cover opacity-50" muted />
+              : <img src={pending.previewURL} alt="Preview unggahan" className="size-full object-cover opacity-50" />}
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/30">
+              {upload.isPending && <div className="size-6 animate-spin rounded-full border-2 border-white border-t-transparent" />}
+              {upload.isPending && <span className="text-xs font-medium text-white">Mengunggah&hellip;</span>}
+            </div>
+            <figcaption className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-black/70 px-2 py-1.5">
+              <span className="truncate text-xs text-white">{upload.isError ? 'Upload gagal' : pending.file.name}</span>
+              {upload.isError && <span className="flex shrink-0 gap-1">
+                <Button type="button" size="xs" variant="secondary" onClick={() => upload.mutate(pending)}><RefreshCw aria-hidden="true" />Coba lagi</Button>
+                <Button type="button" size="xs" variant="outline" aria-label="Batalkan" onClick={cancelFailedUpload}><X aria-hidden="true" /></Button>
               </span>}
             </figcaption>
           </figure>}
-          {items.map((item) => <button key={item.id} type="button" className="group relative aspect-square overflow-hidden rounded-lg border bg-muted" onClick={() => setPreview(item)}>
+          {items.map((item) => <button key={item.id} type="button" className="group relative aspect-square overflow-hidden rounded-lg border bg-muted transition-shadow hover:shadow-md hover:ring-2 hover:ring-ring/20 focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setPreview(item)}>
             {item.media_type === 'video'
-              ? <><video src={item.content_url} className="size-full object-cover" muted /><PlayCircle aria-hidden="true" className="absolute inset-0 m-auto size-8 text-white drop-shadow" /></>
-              : <img src={item.content_url} alt={item.display_name} className="size-full object-cover" />}
-            <span className="absolute inset-x-0 bottom-0 truncate bg-black/60 px-2 py-1 text-left text-xs text-white">{item.display_name}</span>
+              ? <><video src={item.content_url} className="size-full object-cover" muted /><PlayCircle aria-hidden="true" className="absolute inset-0 m-auto size-10 text-white drop-shadow-lg transition-transform group-hover:scale-110" /></>
+              : <img src={item.content_url} alt={item.display_name} className="size-full object-cover transition-transform duration-200 group-hover:scale-105" loading="lazy" />}
+            <span className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-linear-to-t from-black/80 to-transparent px-2.5 py-2 pt-6 text-left text-xs text-white">
+              {item.media_type === 'video' ? <PlayCircle className="size-3 shrink-0" /> : <ImageIcon className="size-3 shrink-0" />}
+              <span className="truncate">{item.display_name}</span>
+            </span>
           </button>)}
         </div>}
 
-      {totalPages > 1 && <nav className="flex flex-wrap items-center justify-center gap-1" aria-label={`Pagination ${label}`}>
+      {totalPages > 1 && <nav className="flex flex-wrap items-center justify-center gap-1 pt-2" aria-label={`Pagination ${label}`}>
         <Button type="button" size="icon-sm" variant="outline" aria-label="Halaman pertama" disabled={page <= 1} onClick={() => setPage(1)}><ChevronsLeft /></Button>
         <Button type="button" size="icon-sm" variant="outline" aria-label="Halaman sebelumnya" disabled={page <= 1} onClick={() => setPage(page - 1)}><ChevronLeft /></Button>
         {pageItems.map((item) => typeof item === 'number'
           ? <Button type="button" size="icon-sm" variant={item === page ? 'default' : 'outline'} aria-label={`Halaman ${item}`} aria-current={item === page ? 'page' : undefined} key={item} onClick={() => setPage(item)}>{item}</Button>
-          : <span key={item} aria-hidden="true" className="flex size-11 items-center justify-center">…</span>)}
+          : <span key={item} aria-hidden="true" className="flex size-9 items-center justify-center text-muted-foreground">&hellip;</span>)}
         <Button type="button" size="icon-sm" variant="outline" aria-label="Halaman berikutnya" disabled={page >= totalPages} onClick={() => setPage(page + 1)}><ChevronRight /></Button>
         <Button type="button" size="icon-sm" variant="outline" aria-label="Halaman terakhir" disabled={page >= totalPages} onClick={() => setPage(totalPages)}><ChevronsRight /></Button>
       </nav>}
-        </>}
-      </>}
+    </>}
 
+    {/* === Preview Dialog === */}
     <Dialog open={Boolean(preview)} onOpenChange={(open) => { if (!open) setPreview(null); }}>
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader><DialogTitle>{preview?.display_name}</DialogTitle></DialogHeader>
         {preview && (preview.media_type === 'video'
           ? <video src={preview.content_url} controls className="max-h-[70vh] w-full rounded-lg" />
           : <img src={preview.content_url} alt={preview.display_name} className="max-h-[70vh] w-full rounded-lg object-contain" />)}
-        {canManage && preview && <Button type="button" variant="destructive" onClick={() => setPendingDelete(preview)}><Trash2 />Hapus</Button>}
+        {canManage && preview && <div className="flex justify-end"><Button type="button" variant="destructive" size="sm" onClick={() => setPendingDelete(preview)}><Trash2 className="size-4" />Hapus Dokumentasi</Button></div>}
       </DialogContent>
     </Dialog>
 
+    {/* === Delete Confirmation === */}
     <AlertDialog open={Boolean(pendingDelete)} onOpenChange={(open) => { if (!open) setPendingDelete(null); }}>
-      <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Hapus {pendingDelete?.display_name}?</AlertDialogTitle><AlertDialogDescription>Dokumentasi ini akan dihapus dan tidak lagi tampil di galeri.</AlertDialogDescription></AlertDialogHeader>
-        <AlertDialogFooter><AlertDialogCancel disabled={remove.isPending}>Batal</AlertDialogCancel><AlertDialogAction disabled={remove.isPending} onClick={() => { if (pendingDelete) remove.mutate(pendingDelete.id); }}>{remove.isPending ? 'Menghapus...' : 'Hapus'}</AlertDialogAction></AlertDialogFooter>
+      <AlertDialogContent>
+        <AlertDialogHeader><AlertDialogTitle>Hapus {pendingDelete?.display_name}?</AlertDialogTitle><AlertDialogDescription>Dokumentasi ini akan dihapus dan tidak lagi tampil di galeri.</AlertDialogDescription></AlertDialogHeader>
+        <AlertDialogFooter><AlertDialogCancel disabled={remove.isPending}>Batal</AlertDialogCancel><AlertDialogAction disabled={remove.isPending} onClick={() => { if (pendingDelete) remove.mutate(pendingDelete.id); }}>{remove.isPending ? 'Menghapus\u2026' : 'Hapus'}</AlertDialogAction></AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
   </div>;
 }
+

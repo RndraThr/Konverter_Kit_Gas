@@ -37,7 +37,7 @@ function mockApi(gallery: ActivityMediaPage = { items: [], page: 1, page_size: 2
 test('prompts to pick a kabupaten before loading the gallery', async () => {
   mockApi();
   renderPage(['activities.view']);
-  expect(await screen.findByRole('heading', { name: 'Pilih kabupaten' })).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'Pilih kabupaten terlebih dahulu' })).toBeVisible();
 });
 
 test('shows the gallery once a kabupaten is selected', async () => {
@@ -58,8 +58,8 @@ test('hides upload controls without activities.manage', async () => {
   mockApi();
   renderPage(['activities.view'], ['/dokumentasi/rakor?regency_id=regency-1']);
   await screen.findByText('Belum ada dokumentasi');
-  expect(screen.queryByLabelText('Buka kamera')).not.toBeInTheDocument();
-  expect(screen.queryByLabelText('Pilih galeri')).not.toBeInTheDocument();
+  expect(screen.queryByText('Ambil Foto')).not.toBeInTheDocument();
+  expect(screen.queryByText('Pilih dari Galeri')).not.toBeInTheDocument();
 });
 
 test('uploads a photo via the gallery picker', async () => {
@@ -74,7 +74,7 @@ test('uploads a photo via the gallery picker', async () => {
   vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:preview'), revokeObjectURL: vi.fn() });
   renderPage(['activities.view', 'activities.manage'], ['/dokumentasi/rakor?regency_id=regency-1']);
   const file = new File(['photo'], 'foto.jpg', { type: 'image/jpeg' });
-  fireEvent.change(await screen.findByLabelText('Pilih galeri'), { target: { files: [file] } });
+  fireEvent.change(await screen.findByLabelText('Pilih dari Galeri'), { target: { files: [file] } });
   expect(await screen.findByAltText('Preview unggahan')).toHaveAttribute('src', 'blob:preview');
 });
 
@@ -88,10 +88,10 @@ test('renders a video element while a video upload is pending', async () => {
   vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:video-preview'), revokeObjectURL: vi.fn() });
   renderPage(['activities.view', 'activities.manage'], ['/dokumentasi/rakor?regency_id=regency-1']);
 
-  fireEvent.change(await screen.findByLabelText('Pilih galeri'), { target: { files: [new File(['video'], 'rakor.mp4', { type: 'video/mp4' })] } });
+  fireEvent.change(await screen.findByLabelText('Pilih dari Galeri'), { target: { files: [new File(['video'], 'rakor.mp4', { type: 'video/mp4' })] } });
 
   expect(await screen.findByLabelText('Preview unggahan video')).toHaveAttribute('src', 'blob:video-preview');
-  expect(screen.getByRole('combobox', { name: 'Kabupaten' })).toBeDisabled();
+  expect(screen.getByRole('combobox', { name: 'Kabupaten / Kota' })).toBeDisabled();
 });
 
 test('offers retry and cancel actions after an upload fails', async () => {
@@ -110,12 +110,12 @@ test('offers retry and cancel actions after an upload fails', async () => {
   vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:failed-preview'), revokeObjectURL: vi.fn() });
   renderPage(['activities.view', 'activities.manage'], ['/dokumentasi/rakor?regency_id=regency-1']);
 
-  fireEvent.change(await screen.findByLabelText('Pilih galeri'), { target: { files: [new File(['photo'], 'foto.jpg', { type: 'image/jpeg' })] } });
+  fireEvent.change(await screen.findByLabelText('Pilih dari Galeri'), { target: { files: [new File(['photo'], 'foto.jpg', { type: 'image/jpeg' })] } });
 
-  expect(await screen.findByRole('button', { name: 'Coba unggah lagi' })).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Batalkan unggahan' })).toBeVisible();
-  expect(screen.getByRole('combobox', { name: 'Kabupaten' })).toBeDisabled();
-  fireEvent.click(screen.getByRole('button', { name: 'Coba unggah lagi' }));
+  expect(await screen.findByText('Coba lagi')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Batalkan' })).toBeVisible();
+  expect(screen.getByRole('combobox', { name: 'Kabupaten / Kota' })).toBeDisabled();
+  fireEvent.click(screen.getByText('Coba lagi'));
   expect(await screen.findByText('Belum ada dokumentasi')).toBeVisible();
   expect(uploadAttempts).toBe(2);
 });
@@ -135,7 +135,7 @@ test('shows a retryable error when regencies cannot be loaded', async () => {
 
   expect(await screen.findByRole('heading', { name: 'Daftar kabupaten belum dapat dimuat' })).toBeVisible();
   fireEvent.click(screen.getByRole('button', { name: 'Coba lagi' }));
-  expect(await screen.findByRole('combobox', { name: 'Kabupaten' })).toBeVisible();
+  expect(await screen.findByRole('combobox', { name: 'Kabupaten / Kota' })).toBeVisible();
   expect(regencyAttempts).toBe(2);
 });
 
@@ -197,7 +197,7 @@ test('uploads to the currently active tab, not the first option', async () => {
   await screen.findByText('Belum ada dokumentasi');
 
   const file = new File(['photo'], 'foto.jpg', { type: 'image/jpeg' });
-  fireEvent.change(await screen.findByLabelText('Pilih galeri'), { target: { files: [file] } });
+  fireEvent.change(await screen.findByLabelText('Pilih dari Galeri'), { target: { files: [file] } });
   await screen.findByAltText('Preview unggahan');
   expect(sentActivityType).toBe('unloading_oli');
 });
@@ -223,12 +223,12 @@ test('clears a failed upload when navigating to another activity type', async ()
   );
   const view = render(wrapper('rakor', 'Rakor'));
 
-  fireEvent.change(await screen.findByLabelText('Pilih galeri'), { target: { files: [new File(['photo'], 'foto.jpg', { type: 'image/jpeg' })] } });
-  expect(await screen.findByRole('button', { name: 'Coba unggah lagi' })).toBeVisible();
+  fireEvent.change(await screen.findByLabelText('Pilih dari Galeri'), { target: { files: [new File(['photo'], 'foto.jpg', { type: 'image/jpeg' })] } });
+  expect(await screen.findByText('Coba lagi')).toBeVisible();
 
   view.rerender(wrapper('training_10', 'Training 10%'));
 
   expect(await screen.findByRole('heading', { name: 'Training 10%' })).toBeVisible();
-  expect(screen.queryByRole('button', { name: 'Coba unggah lagi' })).not.toBeInTheDocument();
+  expect(screen.queryByText('Coba lagi')).not.toBeInTheDocument();
   expect(screen.queryByAltText('Preview unggahan')).not.toBeInTheDocument();
 });

@@ -232,7 +232,7 @@ export function DashboardPage() {
     </div>
 
     {list.isError ? <DataState kind="error" title="Data penerima belum dapat dimuat" description="Periksa koneksi lalu coba lagi." action={{ label: 'Coba lagi', onClick: () => list.refetch() }} /> : list.isPending ? <DataState kind="loading" title="Memuat data penerima" description="Mengambil data dari seluruh kabupaten." /> : list.data?.data.items.length === 0 ? <DataState kind="empty" title="Belum ada penerima yang sesuai" description="Ubah filter atau tambahkan penerima baru." /> : <DataTable label="Daftar penerima" minimumWidth={2078} className="table-fixed">
-      <colgroup><col className="w-[72px] md:w-44" /><col className="w-[120px] md:w-56" /><col className="w-[140px] md:w-48" /><col className="w-60" /><col className="w-44" /><col className="w-52" /><col className="w-44" /><col className="w-56" /><col className="w-56" /><col className="w-40" /><col className="w-40" />{canManage && <col className="w-28" />}</colgroup>
+      <colgroup><col className="w-18 md:w-44" /><col className="w-30 md:w-56" /><col className="w-35 md:w-48" /><col className="w-60" /><col className="w-44" /><col className="w-52" /><col className="w-44" /><col className="w-56" /><col className="w-56" /><col className="w-40" /><col className="w-40" />{canManage && <col className="w-28" />}</colgroup>
       <thead className="[&_th]:uppercase [&_th]:tracking-wide"><tr>
         {sortableHeader('No. Pembagian', 'distribution_number', `${stickyNumber} ${stickyHeader}`)}
         {sortableHeader('Nama', 'full_name', `${stickyName} ${stickyHeader}`)}
