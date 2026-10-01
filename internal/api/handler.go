@@ -144,6 +144,13 @@ type BASTService interface {
 	OpenBundle(context.Context, string, auth.RegencyScope) (bast.BundleContent, error)
 }
 
+type BASTBrandingService interface {
+	ListBranding(context.Context, string) ([]bast.LogoAsset, error)
+	UploadLogo(context.Context, auth.Principal, bast.LogoUploadInput, auth.ClientMeta) (bast.LogoAsset, error)
+	PatchLogo(context.Context, auth.Principal, bast.LogoPatchInput, auth.ClientMeta) (bast.LogoAsset, error)
+	OpenLogo(context.Context, string, string) (bast.LogoContent, error)
+}
+
 type Dependencies struct {
 	Auth           AuthService
 	Profile        ProfileService
@@ -158,6 +165,7 @@ type Dependencies struct {
 	Recipients     RecipientsService
 	Activities     ActivitiesService
 	BAST           BASTService
+	BASTBranding   BASTBrandingService
 	SessionSecret  []byte
 }
 
@@ -283,6 +291,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleActivityMediaItem(w, r, rc, strings.TrimPrefix(path, "activities/media/"))
 	case strings.HasPrefix(path, "bast/individual/"):
 		h.handleBASTIndividual(w, r, rc, strings.TrimPrefix(path, "bast/individual/"))
+	case path == "bast/branding" || strings.HasPrefix(path, "bast/branding/"):
+		h.handleBASTBranding(w, r, rc, strings.TrimPrefix(strings.TrimPrefix(path, "bast/branding"), "/"))
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
 	}

@@ -74,6 +74,7 @@ func run(ctx context.Context, cfg config.Config) error {
 	}
 	bastRepository := bast.NewRepository(pool)
 	bastService := bast.NewBundleService(bastRepository, mediaStorage, applicationLocation)
+	bastBrandingService := bast.NewBrandingService(bastRepository, mediaStorage)
 	apiHandler := apihttp.NewHandler(apihttp.Dependencies{
 		Auth:           authService,
 		Profile:        profile.NewService(profile.NewRepository(pool)),
@@ -88,6 +89,7 @@ func run(ctx context.Context, cfg config.Config) error {
 		Recipients:     recipients.NewService(recipients.NewRepository(pool)),
 		Activities:     activities.NewService(activities.NewRepository(pool), mediaStorage, programService),
 		BAST:           bastService,
+		BASTBranding:   bastBrandingService,
 		SessionSecret:  cfg.SessionSecret,
 	})
 	handler := web.NewHandler(web.Dependencies{

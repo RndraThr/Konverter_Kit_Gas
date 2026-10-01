@@ -1,8 +1,10 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -96,6 +98,75 @@ func TestBASTIndividualFinalizeAndContent(t *testing.T) {
 	NewHandler(Dependencies{Auth: manager, BAST: service}).ServeHTTP(contentRec, content)
 	if contentRec.Code != http.StatusOK || contentRec.Body.String() != "%PDF-final" || !strings.Contains(contentRec.Header().Get("Content-Disposition"), "attachment") {
 		t.Fatalf("status=%d headers=%v body=%s", contentRec.Code, contentRec.Header(), contentRec.Body.String())
+	}
+}
+
+type fakeBrandingService struct {
+	logos    []bast.LogoAsset
+	uploaded bast.LogoUploadInput
+	patched  bast.LogoPatchInput
+	listedID string
+}
+
+func (f *fakeBrandingService) ListBranding(_ context.Context, programID string) ([]bast.LogoAsset, error) {
+	f.listedID = programID
+	return f.logos, nil
+}
+func (f *fakeBrandingService) UploadLogo(_ context.Context, _ auth.Principal, input bast.LogoUploadInput, _ auth.ClientMeta) (bast.LogoAsset, error) {
+	f.uploaded = input
+	return bast.LogoAsset{ID: "logo-new", ProgramID: input.ProgramID, SlotCode: input.SlotCode}, nil
+}
+func (f *fakeBrandingService) PatchLogo(_ context.Context, _ auth.Principal, input bast.LogoPatchInput, _ auth.ClientMeta) (bast.LogoAsset, error) {
+	f.patched = input
+	return bast.LogoAsset{ID: input.ID, ProgramID: input.ProgramID, SortOrder: input.SortOrder, IsVisible: input.IsVisible}, nil
+}
+func (f *fakeBrandingService) OpenLogo(_ context.Context, _, _ string) (bast.LogoContent, error) {
+	return bast.LogoContent{}, nil
+}
+
+func TestBASTBrandingListRequiresViewAndForwardsProgram(t *testing.T) {
+	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user"}, allowedPermissions: map[string]bool{"bast.view": true}}
+	service := &fakeBrandingService{logos: []bast.LogoAsset{{ID: "logo-1", SlotCode: "left"}}}
+	req := authenticatedRequest(http.MethodGet, "/api/v1/bast/branding?program_id=prog", "", nil)
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: viewer, BASTBranding: service}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "logo-1") || service.listedID != "prog" {
+		t.Fatalf("status=%d listed=%q body=%s", rec.Code, service.listedID, rec.Body.String())
+	}
+}
+
+func TestBASTBrandingPatchRejectsViewerWithoutManage(t *testing.T) {
+	secret := []byte("01234567890123456789012345678901")
+	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user"}, allowedPermissions: map[string]bool{"bast.view": true}}
+	service := &fakeBrandingService{}
+	req := authenticatedRequest(http.MethodPatch, "/api/v1/bast/branding/logos/logo-1", `{"program_id":"prog","sort_order":2,"max_width_mm":35,"max_height_mm":18,"is_visible":true}`, secret)
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: viewer, BASTBranding: service, SessionSecret: secret}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestBASTBrandingUploadStoresLogoForManager(t *testing.T) {
+	secret := []byte("01234567890123456789012345678901")
+	manager := &fakeAuthService{principal: auth.Principal{UserID: "user"}, allowedPermissions: map[string]bool{"bast.manage": true}}
+	service := &fakeBrandingService{}
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	_ = writer.WriteField("program_id", "prog")
+	_ = writer.WriteField("slot_code", "left")
+	_ = writer.WriteField("sort_order", "1")
+	part, _ := writer.CreateFormFile("file", "logo.png")
+	_, _ = part.Write(append([]byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A}, make([]byte, 16)...))
+	_ = writer.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/bast/branding/logos", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: manager, BASTBranding: service, SessionSecret: secret}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated || service.uploaded.ProgramID != "prog" || service.uploaded.SlotCode != "left" {
+		t.Fatalf("status=%d uploaded=%+v body=%s", rec.Code, service.uploaded, rec.Body.String())
 	}
 }
 
