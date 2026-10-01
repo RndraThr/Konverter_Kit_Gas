@@ -67,6 +67,22 @@ func TestRootRedirectsToLogin(t *testing.T) {
 	}
 }
 
+func TestPrivacyPageIsPublic(t *testing.T) {
+	for _, path := range []string{"/privacy", "/privacy/"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		response := httptest.NewRecorder()
+
+		newTestHandler().ServeHTTP(response, request)
+
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s: expected status 200, got %d", path, response.Code)
+		}
+		if body := response.Body.String(); !strings.Contains(body, "Kebijakan Privasi") {
+			t.Fatalf("%s: expected privacy policy content, got %q", path, body)
+		}
+	}
+}
+
 func TestFaviconIsServed(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/favicon.ico", nil)
 	response := httptest.NewRecorder()

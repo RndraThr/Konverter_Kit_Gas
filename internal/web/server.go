@@ -37,6 +37,8 @@ func (s *Server) routes() {
 
 	s.mux.HandleFunc("/", s.redirectToLogin)
 	s.mux.HandleFunc("/favicon.ico", s.favicon)
+	s.mux.HandleFunc("/privacy", s.privacy)
+	s.mux.HandleFunc("/privacy/", s.privacy)
 	s.mux.HandleFunc("/login", s.login)
 	s.mux.Handle("/logout", s.requireAuth(http.HandlerFunc(s.logout)))
 	s.mux.Handle("/dashboard", s.requirePermission("dashboard.view", http.HandlerFunc(s.dashboard)))
@@ -72,6 +74,18 @@ func (s *Server) redirectToLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/login", http.StatusFound)
+}
+
+func (s *Server) privacy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.templates.ExecuteTemplate(w, "privacy.html", nil); err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+	}
 }
 
 func (s *Server) favicon(w http.ResponseWriter, r *http.Request) {
