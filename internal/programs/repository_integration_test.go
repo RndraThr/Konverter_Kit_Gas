@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +19,74 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 )
+
+func TestMigrationSeedsKonkit2026ZonesAndScheduleQuotas(t *testing.T) {
+	pool := programsIntegrationPool(t)
+	ctx := context.Background()
+
+	type zoneSummary struct {
+		Code      string
+		Regencies []string
+		Quota     int
+	}
+	want := []zoneSummary{
+		{
+			Code: "ZONA-1",
+			Regencies: []string{
+				"LNG", "BRN", "SBG", "DLS", "TDT", "SJJ", "PDP", "IRH", "IRL", "SIK", "RHL", "KPR",
+				"CLP", "BMS", "GRB", "BLR", "WNG", "BBS", "TGL", "JPR", "KBM", "PBG", "PML",
+			},
+			Quota: 4470,
+		},
+		{
+			Code: "ZONA-2",
+			Regencies: []string{
+				"OKI", "OKU", "OKT", "TJT", "MJB", "JMB", "KRC", "MRG", "LGS", "LGT", "LTM", "BKA", "BKB",
+				"JBR", "LMJ", "PCT", "PNG", "BKL", "NGJ", "MJK", "TBN", "BJN", "MLG",
+			},
+			Quota: 4770,
+		},
+	}
+
+	for _, expected := range want {
+		rows, err := pool.Query(ctx, `
+			SELECT r.document_code, s.slot_quota
+			FROM programs p
+			JOIN program_zones z ON z.program_id = p.id
+			JOIN program_regency_assignments a ON a.program_id = p.id AND a.zone_id = z.id
+			JOIN regencies r ON r.id = a.regency_id
+			JOIN program_schedules s ON s.program_id = p.id AND s.regency_id = r.id
+			WHERE p.code = 'KONKIT-2026' AND z.code = $1
+			ORDER BY array_position($2::text[], r.document_code)
+		`, expected.Code, expected.Regencies)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var gotCodes []string
+		gotQuota := 0
+		for rows.Next() {
+			var code string
+			var quota int
+			if err := rows.Scan(&code, &quota); err != nil {
+				rows.Close()
+				t.Fatal(err)
+			}
+			gotCodes = append(gotCodes, code)
+			gotQuota += quota
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(gotCodes, expected.Regencies) {
+			t.Fatalf("%s regencies = %v, want %v", expected.Code, gotCodes, expected.Regencies)
+		}
+		if gotQuota != expected.Quota {
+			t.Fatalf("%s quota = %d, want %d", expected.Code, gotQuota, expected.Quota)
+		}
+	}
+}
 
 func TestIntegrationRepositoryPersistsProgramSetupAndVersionsPublishedTemplate(t *testing.T) {
 	pool := programsIntegrationPool(t)
