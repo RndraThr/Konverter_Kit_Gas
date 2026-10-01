@@ -31,3 +31,18 @@ export type RecipientDocument = {
 
 export type LockResult = { program_id: string; regency_id: string; final_total: number; locked_at: string };
 export type BundleRequest = { program_id: string; regency_id: string; local_date: string };
+
+export type BaLogo = {
+  id: string;
+  program_id: string;
+  slot_code: string;
+  original_filename: string;
+  mime_type: 'image/png' | 'image/jpeg';
+  byte_size: number;
+  checksum: string;
+  sort_order: number;
+  max_width_mm: number;
+  max_height_mm: number;
+  is_visible: boolean;
+  content_url: string;
+};

@@ -11,6 +11,7 @@ import { apiRequest } from '@/lib/api';
 import type { DataResponse, ProgramType, Schedule } from '../programs/types';
 import { programTypeLabel } from '../programs/types';
 import { BAIndividualPanel } from './BAIndividualPanel';
+import { LogoTenderPanel } from './LogoTenderPanel';
 
 const documentTypes = [
   { value: 'dp3', label: 'DP3' },
@@ -88,6 +89,8 @@ export function BeritaAcaraPage() {
     </section>
 
     {schedules.isError && <DataState kind="error" title="Jadwal berita acara belum dapat dimuat" description="Periksa koneksi atau hak akses, lalu coba kembali." action={{ label: 'Coba lagi', onClick: () => schedules.refetch() }} />}
+
+    {selectedSchedule && <LogoTenderPanel programID={selectedSchedule.program_id} />}
 
     <Tabs value={activeTab} onValueChange={(value) => updateParam('tab', value)}>
       <div className="overflow-x-auto pb-2" role="presentation">
