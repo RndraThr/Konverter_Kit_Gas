@@ -50,6 +50,21 @@ test('prompts to pick a kabupaten before loading the gallery', async () => {
   expect(await screen.findByRole('heading', { name: 'Pilih kabupaten terlebih dahulu' })).toBeVisible();
 });
 
+test('handles program zones whose empty regencies field is omitted by the API', async () => {
+  vi.mocked(apiRequest).mockImplementation((path: string) => {
+    if (path === '/api/v1/program-setup/programs') return Promise.resolve(programSetupResponse(path)!);
+    if (path === '/api/v1/program-setup/programs/program-1/zones') {
+      return Promise.resolve({ data: [{ id: 'zone-empty', name: 'Zona Kosong', is_placeholder: false }] });
+    }
+    return Promise.reject(new Error(`Unexpected request: ${path}`));
+  });
+
+  renderPage(['activities.view']);
+
+  expect(await screen.findByRole('heading', { name: 'Pilih kabupaten terlebih dahulu' })).toBeVisible();
+  expect(screen.getByRole('combobox', { name: 'Kabupaten / Kota' })).toBeVisible();
+});
+
 test('requires a program before a kabupaten can be selected', async () => {
   mockApi();
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });

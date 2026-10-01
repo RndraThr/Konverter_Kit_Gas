@@ -41,7 +41,7 @@ export type ActivityMediaPage = {
 
 export type RegencyOption = { id: string; name: string; document_code: string };
 export type ProgramOption = { id: string; name: string; code: string; program_type: 'farmer' | 'fisherman'; status: string };
-export type ProgramZone = { id: string; name: string; is_placeholder: boolean; regencies: RegencyOption[] };
+export type ProgramZone = { id: string; name: string; is_placeholder: boolean; regencies?: RegencyOption[] };
 
 export const activityTypeLabels: Record<ActivityType, string> = {
   ceremony_sosialisasi: 'Ceremony & Sosialisasi',

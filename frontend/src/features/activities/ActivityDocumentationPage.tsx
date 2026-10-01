@@ -49,7 +49,7 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
     queryFn: () => apiRequest<{ data: ProgramZone[] }>(`/api/v1/program-setup/programs/${programID}/zones`),
     enabled: programID !== '',
   });
-  const regencies = zones.data?.data.flatMap((zone) => zone.regencies) ?? [];
+  const regencies = zones.data?.data.flatMap((zone) => zone.regencies ?? []) ?? [];
   const gallery = useQuery({
     queryKey: ['activities', activityType, programID, regencyID, page],
     queryFn: () => apiRequest<{ data: ActivityMediaPage }>(`/api/v1/activities/media?activity_type=${activityType}&program_id=${programID}&regency_id=${regencyID}&page=${page}&page_size=24`),
