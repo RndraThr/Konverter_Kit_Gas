@@ -20,11 +20,12 @@ func NewRepository(pool *pgxpool.Pool) *Repository { return &Repository{pool: po
 func (r *Repository) GetSourceContext(ctx context.Context, programID, regencyID string, scope auth.RegencyScope) (SourceContext, error) {
 	var result SourceContext
 	var slotQuota *int
-	var profileID, series, zoneName *string
+	var zoneName *string
 	var placeholder *bool
 	err := r.pool.QueryRow(ctx, `
 		SELECT p.id::text,r.id::text,p.program_type,r.document_code,r.name,z.name,z.is_placeholder,
-			s.distribution_number_padding,s.slot_quota,profile.id::text,profile.document_series
+			s.distribution_number_padding,s.slot_quota,
+			EXISTS(SELECT 1 FROM program_ba_logo_assets logo WHERE logo.program_id=p.id AND logo.is_visible=true)
 		FROM programs p
 		JOIN regencies r ON r.id=$2
 		JOIN LATERAL (
@@ -34,12 +35,8 @@ func (r *Repository) GetSourceContext(ctx context.Context, programID, regencyID 
 		) s ON true
 		LEFT JOIN program_regency_assignments a ON a.program_id=p.id AND a.regency_id=r.id
 		LEFT JOIN program_zones z ON z.id=a.zone_id
-		LEFT JOIN LATERAL (
-			SELECT id,document_series FROM program_document_profile_versions
-			WHERE program_id=p.id AND status='published' ORDER BY version DESC LIMIT 1
-		) profile ON true
 		WHERE p.id=$1 AND ($3 OR r.id::text=ANY($4))
-	`, programID, regencyID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ProgramID, &result.RegencyID, &result.ProgramType, &result.RegencyCode, &result.RegencyName, &zoneName, &placeholder, &result.Padding, &slotQuota, &profileID, &series)
+	`, programID, regencyID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ProgramID, &result.RegencyID, &result.ProgramType, &result.RegencyCode, &result.RegencyName, &zoneName, &placeholder, &result.Padding, &slotQuota, &result.HasActiveLogo)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return SourceContext{}, ErrNotFound
 	}
@@ -55,12 +52,7 @@ func (r *Repository) GetSourceContext(ctx context.Context, programID, regencyID 
 	if placeholder != nil {
 		result.ZonePlaceholder = *placeholder
 	}
-	if profileID != nil {
-		result.ProfileVersionID = *profileID
-	}
-	if series != nil {
-		result.DocumentSeries = *series
-	}
+	result.DocumentSeries = documentSeries
 	return result, nil
 }
 
@@ -80,7 +72,7 @@ func (r *Repository) LoadSourceData(ctx context.Context, recipient RecipientDocu
 	var packageJSON []byte
 	var machineCode, hoseCode, converterCode string
 	err := r.pool.QueryRow(ctx, `
-		SELECT p.program_type,profile.id::text,profile.title,profile.subtitle,profile.procurement_description,profile.document_series,
+		SELECT p.program_type,p.fiscal_year,
 			person.full_name,COALESCE(person.nik,''),COALESCE(identifier.display_value,''),COALESCE(person.address,''),COALESCE(person.village,''),COALESCE(person.district,''),r.name,COALESCE(person.phone_number,''),
 			COALESCE(ds.machine_option_code,''),COALESCE(ds.machine_serial_number,''),COALESCE(ds.hose_option_code,''),COALESCE(ds.hose_serial_number,''),COALESCE(ds.converter_option_code,''),COALESCE(ds.converter_serial_number,''),
 			pt.id::text,pt.values_json,COALESCE(u.full_name,u.username,''),COALESCE(ps.supervisor_name,'')
@@ -90,10 +82,9 @@ func (r *Repository) LoadSourceData(ctx context.Context, recipient RecipientDocu
 		JOIN people person ON person.id=ds.recipient_person_id
 		LEFT JOIN person_sector_identifiers identifier ON identifier.person_id=person.id AND identifier.identifier_type='farmer_card'
 		JOIN package_template_versions pt ON pt.id=ps.package_template_version_id
-		JOIN program_document_profile_versions profile ON profile.id=$4 AND profile.program_id=p.id AND profile.status='published'
 		LEFT JOIN users u ON u.id=ds.distributed_by
-		WHERE ds.id=$1 AND ps.program_id=$2 AND ps.regency_id=$3 AND ds.status='completed' AND ($5 OR ps.regency_id::text=ANY($6))
-	`, recipient.DistributionSlotID, sourceContext.ProgramID, sourceContext.RegencyID, sourceContext.ProfileVersionID, scope.Unrestricted, scope.RegencyIDs).Scan(&source.ProgramType, &source.Profile.VersionID, &source.Profile.Title, &source.Profile.Subtitle, &source.Profile.ProcurementDescription, &source.Profile.DocumentSeries, &source.Recipient.FullName, &source.Recipient.NIK, &source.Recipient.SectorIdentifier, &source.Recipient.Address, &source.Recipient.Village, &source.Recipient.District, &source.Recipient.Regency, &source.Recipient.PhoneNumber, &machineCode, &source.Equipment.MachineSerial, &hoseCode, &source.Equipment.HoseSerial, &converterCode, &source.Equipment.ConverterSerial, &source.PackageTemplateVersionID, &packageJSON, &source.ExecutorName, &source.SupervisorName)
+		WHERE ds.id=$1 AND ps.program_id=$2 AND ps.regency_id=$3 AND ds.status='completed' AND ($4 OR ps.regency_id::text=ANY($5))
+	`, recipient.DistributionSlotID, sourceContext.ProgramID, sourceContext.RegencyID, scope.Unrestricted, scope.RegencyIDs).Scan(&source.ProgramType, &source.Render.FiscalYear, &source.Recipient.FullName, &source.Recipient.NIK, &source.Recipient.SectorIdentifier, &source.Recipient.Address, &source.Recipient.Village, &source.Recipient.District, &source.Recipient.Regency, &source.Recipient.PhoneNumber, &machineCode, &source.Equipment.MachineSerial, &hoseCode, &source.Equipment.HoseSerial, &converterCode, &source.Equipment.ConverterSerial, &source.PackageTemplateVersionID, &packageJSON, &source.ExecutorName, &source.SupervisorName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return SourceData{}, ErrNotFound
 	}
@@ -127,7 +118,7 @@ func (r *Repository) LoadSourceData(ctx context.Context, recipient RecipientDocu
 	for _, component := range values.Components {
 		source.Components = append(source.Components, ComponentSnapshot{Code: component.Code, Label: component.Label, Quantity: component.Quantity, Unit: component.Unit, Checked: true})
 	}
-	rows, err := r.pool.Query(ctx, `SELECT id::text,storage_key,mime_type,sort_order,max_width_mm::float8,max_height_mm::float8 FROM program_document_logo_assets WHERE profile_version_id=$1 AND is_visible=true ORDER BY sort_order,id`, source.Profile.VersionID)
+	rows, err := r.pool.Query(ctx, `SELECT id::text,storage_key,mime_type,sort_order,max_width_mm::float8,max_height_mm::float8 FROM program_ba_logo_assets WHERE program_id=$1 AND is_visible=true ORDER BY sort_order,id`, sourceContext.ProgramID)
 	if err != nil {
 		return SourceData{}, err
 	}
@@ -137,7 +128,7 @@ func (r *Repository) LoadSourceData(ctx context.Context, recipient RecipientDocu
 		if err := rows.Scan(&logo.AssetID, &logo.StorageKey, &logo.MimeType, &logo.SortOrder, &logo.MaxWidthMM, &logo.MaxHeightMM); err != nil {
 			return SourceData{}, err
 		}
-		source.Profile.Logos = append(source.Profile.Logos, logo)
+		source.Render.Logos = append(source.Render.Logos, logo)
 	}
 	return source, rows.Err()
 }
@@ -162,7 +153,7 @@ func (r *Repository) SaveFinalDocument(ctx context.Context, actor auth.Principal
 		return IndividualDocument{}, ErrInvalidInput
 	}
 	var id string
-	err = tx.QueryRow(ctx, `INSERT INTO bast_individual_documents(distribution_slot_id,program_id,regency_id,local_date,slot_number,final_total,document_number,profile_version_id,package_template_version_id,snapshot_json,revision,status,finalized_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,(SELECT COALESCE(max(revision),0)+1 FROM bast_individual_documents WHERE distribution_slot_id=$1 AND document_type='individual'),'final',NULLIF($11,'')::uuid) RETURNING id::text`, recipient.DistributionSlotID, source.ProgramID, source.RegencyID, recipient.LocalDate, recipient.SlotNumber, recipient.FinalTotal, recipient.DocumentNumber, source.Profile.VersionID, source.PackageTemplateVersionID, payload, actor.UserID).Scan(&id)
+	err = tx.QueryRow(ctx, `INSERT INTO bast_individual_documents(distribution_slot_id,program_id,regency_id,local_date,slot_number,final_total,document_number,package_template_version_id,snapshot_json,revision,status,finalized_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,(SELECT COALESCE(max(revision),0)+1 FROM bast_individual_documents WHERE distribution_slot_id=$1 AND document_type='individual'),'final',NULLIF($10,'')::uuid) RETURNING id::text`, recipient.DistributionSlotID, source.ProgramID, source.RegencyID, recipient.LocalDate, recipient.SlotNumber, recipient.FinalTotal, recipient.DocumentNumber, source.PackageTemplateVersionID, payload, actor.UserID).Scan(&id)
 	if err != nil {
 		return IndividualDocument{}, fmt.Errorf("save final BA document: %w", err)
 	}
@@ -178,14 +169,15 @@ func (r *Repository) SaveFinalDocument(ctx context.Context, actor auth.Principal
 func (r *Repository) getIndividualDocument(ctx context.Context, id string) (IndividualDocument, error) {
 	var item IndividualDocument
 	var payload []byte
-	err := r.pool.QueryRow(ctx, `SELECT id::text,distribution_slot_id::text,program_id::text,regency_id::text,document_number,local_date::text,slot_number,final_total,profile_version_id::text,package_template_version_id::text,revision,status,snapshot_json,finalized_at FROM bast_individual_documents WHERE id=$1`, id).Scan(&item.ID, &item.DistributionSlotID, &item.ProgramID, &item.RegencyID, &item.DocumentNumber, &item.LocalDate, &item.SlotNumber, &item.FinalTotal, &item.ProfileVersionID, &item.PackageTemplateVersionID, &item.Revision, &item.Status, &payload, &item.FinalizedAt)
+	err := r.pool.QueryRow(ctx, `SELECT id::text,distribution_slot_id::text,program_id::text,regency_id::text,document_number,local_date::text,slot_number,final_total,package_template_version_id::text,revision,status,snapshot_json,finalized_at FROM bast_individual_documents WHERE id=$1`, id).Scan(&item.ID, &item.DistributionSlotID, &item.ProgramID, &item.RegencyID, &item.DocumentNumber, &item.LocalDate, &item.SlotNumber, &item.FinalTotal, &item.PackageTemplateVersionID, &item.Revision, &item.Status, &payload, &item.FinalizedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return IndividualDocument{}, ErrNotFound
 	}
 	if err != nil {
 		return IndividualDocument{}, err
 	}
-	if err := json.Unmarshal(payload, &item.Snapshot); err != nil {
+	item.Snapshot, err = DecodeSnapshot(payload)
+	if err != nil {
 		return IndividualDocument{}, err
 	}
 	return item, nil
@@ -336,7 +328,7 @@ func (r *Repository) ActivateBundle(ctx context.Context, actor auth.Principal, i
 		return BundleActivationResult{}, err
 	}
 	var bundle DailyBundle
-	err = tx.QueryRow(ctx, `INSERT INTO bast_daily_bundles(program_id,regency_id,local_date,document_type,profile_version_id,filename,recipient_count,page_count,checksum,storage_key,version,status,synced_at,synced_by) VALUES($1,$2,$3,'individual',$4,$5,$6,$7,$8,$9,$10,'active',now(),NULLIF($11,'')::uuid) RETURNING id::text,program_id::text,regency_id::text,local_date::text,filename,recipient_count,page_count,version,status,checksum,storage_key,COALESCE(last_error,''),synced_at`, input.ProgramID, input.RegencyID, input.LocalDate, input.ProfileVersionID, input.Filename, len(input.Items), input.PageCount, input.Checksum, input.StorageKey, version, actor.UserID).Scan(&bundle.ID, &bundle.ProgramID, &bundle.RegencyID, &bundle.LocalDate, &bundle.Filename, &bundle.RecipientCount, &bundle.PageCount, &bundle.Version, &bundle.Status, &bundle.Checksum, &bundle.StorageKey, &bundle.LastError, &bundle.SyncedAt)
+	err = tx.QueryRow(ctx, `INSERT INTO bast_daily_bundles(program_id,regency_id,local_date,document_type,filename,recipient_count,page_count,checksum,storage_key,version,status,synced_at,synced_by) VALUES($1,$2,$3,'individual',$4,$5,$6,$7,$8,$9,'active',now(),NULLIF($10,'')::uuid) RETURNING id::text,program_id::text,regency_id::text,local_date::text,filename,recipient_count,page_count,version,status,checksum,storage_key,COALESCE(last_error,''),synced_at`, input.ProgramID, input.RegencyID, input.LocalDate, input.Filename, len(input.Items), input.PageCount, input.Checksum, input.StorageKey, version, actor.UserID).Scan(&bundle.ID, &bundle.ProgramID, &bundle.RegencyID, &bundle.LocalDate, &bundle.Filename, &bundle.RecipientCount, &bundle.PageCount, &bundle.Version, &bundle.Status, &bundle.Checksum, &bundle.StorageKey, &bundle.LastError, &bundle.SyncedAt)
 	if err != nil {
 		return BundleActivationResult{}, fmt.Errorf("insert BA bundle: %w", err)
 	}

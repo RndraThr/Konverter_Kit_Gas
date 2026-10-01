@@ -106,8 +106,7 @@ func (s *BundleService) FinalizeBundle(ctx context.Context, actor auth.Principal
 	}
 	activation := BundleActivation{
 		ProgramID: request.ProgramID, RegencyID: request.RegencyID, LocalDate: request.LocalDate,
-		ProfileVersionID: documents[0].Snapshot.Profile.VersionID,
-		Filename:         rendered.Filename, PageCount: rendered.PageCount, Checksum: checksum,
+		Filename: rendered.Filename, PageCount: rendered.PageCount, Checksum: checksum,
 		StorageKey: storageKey, ExpectedActiveID: expectedActiveID, Items: items,
 	}
 	activated, err := s.repository.ActivateBundle(ctx, actor, activation, meta)
@@ -198,7 +197,7 @@ func (s *BundleService) prepareDocuments(ctx context.Context, actor auth.Princip
 func (s *BundleService) render(ctx context.Context, localDate string, documents []RecipientDocument) (RenderedBundle, string, error) {
 	logoBytes := map[string][]byte{}
 	for _, document := range documents {
-		for _, logo := range document.Snapshot.Profile.Logos {
+		for _, logo := range document.Snapshot.Render.Logos {
 			if _, exists := logoBytes[logo.AssetID]; exists {
 				continue
 			}

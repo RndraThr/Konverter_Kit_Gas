@@ -7,17 +7,19 @@ import (
 )
 
 var (
-	ErrNotFound            = errors.New("bast resource not found")
-	ErrInvalidInput        = errors.New("bast input is invalid")
-	ErrFinalTotalMissing   = errors.New("final regency total has not been locked")
-	ErrFinalTotalLocked    = errors.New("final regency total cannot change after documents are finalized")
-	ErrSlotOutOfRange      = errors.New("distribution slot number exceeds the final regency total")
-	ErrZoneNotConfigured   = errors.New("regency has not been assigned to a configured zone")
-	ErrProfileNotPublished = errors.New("a published document profile is required")
-	ErrTemplateUnavailable = errors.New("individual handover template is not available for this program type")
-	ErrNoRecipients        = errors.New("no completed recipients are available for this date")
-	ErrBundleConflict      = errors.New("daily bundle was changed by another operator")
+	ErrNotFound              = errors.New("bast resource not found")
+	ErrInvalidInput          = errors.New("bast input is invalid")
+	ErrFinalTotalMissing     = errors.New("final regency total has not been locked")
+	ErrFinalTotalLocked      = errors.New("final regency total cannot change after documents are finalized")
+	ErrSlotOutOfRange        = errors.New("distribution slot number exceeds the final regency total")
+	ErrZoneNotConfigured     = errors.New("regency has not been assigned to a configured zone")
+	ErrBrandingNotConfigured = errors.New("at least one active BA logo is required")
+	ErrTemplateUnavailable   = errors.New("individual handover template is not available for this program type")
+	ErrNoRecipients          = errors.New("no completed recipients are available for this date")
+	ErrBundleConflict        = errors.New("daily bundle was changed by another operator")
 )
+
+const documentSeries = "KSM-KKT"
 
 type DailyBundle struct {
 	ID             string     `json:"id"`
@@ -65,7 +67,6 @@ type BundleActivation struct {
 	ProgramID        string
 	RegencyID        string
 	LocalDate        string
-	ProfileVersionID string
 	Filename         string
 	PageCount        int
 	Checksum         string
@@ -95,13 +96,9 @@ type LogoSnapshot struct {
 	MaxWidthMM  float64 `json:"max_width_mm"`
 	MaxHeightMM float64 `json:"max_height_mm"`
 }
-type ProfileSnapshot struct {
-	VersionID              string         `json:"version_id"`
-	Title                  string         `json:"title"`
-	Subtitle               string         `json:"subtitle"`
-	ProcurementDescription string         `json:"procurement_description"`
-	DocumentSeries         string         `json:"document_series"`
-	Logos                  []LogoSnapshot `json:"logos"`
+type RenderIdentity struct {
+	FiscalYear int            `json:"fiscal_year"`
+	Logos      []LogoSnapshot `json:"logos"`
 }
 type RecipientSnapshot struct {
 	FullName         string `json:"full_name"`
@@ -139,7 +136,7 @@ type Snapshot struct {
 	ProgramType    string              `json:"program_type"`
 	DocumentNumber string              `json:"document_number"`
 	LocalDate      string              `json:"local_date"`
-	Profile        ProfileSnapshot     `json:"profile"`
+	Render         RenderIdentity      `json:"render"`
 	Recipient      RecipientSnapshot   `json:"recipient"`
 	Equipment      EquipmentSnapshot   `json:"equipment"`
 	Components     []ComponentSnapshot `json:"components"`
@@ -152,7 +149,7 @@ type SourceData struct {
 	ProgramType              string
 	DocumentNumber           string
 	LocalDate                string
-	Profile                  ProfileSnapshot
+	Render                   RenderIdentity
 	Recipient                RecipientSnapshot
 	Equipment                EquipmentSnapshot
 	Components               []ComponentSnapshot
@@ -170,7 +167,6 @@ type IndividualDocument struct {
 	LocalDate                string    `json:"local_date"`
 	SlotNumber               int       `json:"slot_number"`
 	FinalTotal               int       `json:"final_total"`
-	ProfileVersionID         string    `json:"profile_version_id"`
 	PackageTemplateVersionID string    `json:"package_template_version_id"`
 	Revision                 int       `json:"revision"`
 	Status                   string    `json:"status"`
@@ -205,17 +201,17 @@ type NumberInput struct {
 }
 
 type SourceContext struct {
-	ProgramID        string
-	RegencyID        string
-	ProgramType      string
-	RegencyCode      string
-	RegencyName      string
-	ZoneName         string
-	ZonePlaceholder  bool
-	Padding          int
-	SlotQuota        int
-	ProfileVersionID string
-	DocumentSeries   string
+	ProgramID       string
+	RegencyID       string
+	ProgramType     string
+	RegencyCode     string
+	RegencyName     string
+	ZoneName        string
+	ZonePlaceholder bool
+	Padding         int
+	SlotQuota       int
+	DocumentSeries  string
+	HasActiveLogo   bool
 }
 
 type CompletedSlot struct {

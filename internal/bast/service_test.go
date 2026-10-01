@@ -39,7 +39,7 @@ func (r *repositoryStub) SaveFinalDocument(context.Context, auth.Principal, Reci
 }
 
 func readyContext() SourceContext {
-	return SourceContext{ProgramID: "program-1", RegencyID: "regency-1", ProgramType: "farmer", RegencyCode: "WJO", ZoneName: "Zona 1", Padding: 4, SlotQuota: 1578, ProfileVersionID: "profile-1", DocumentSeries: "KSM-KKT"}
+	return SourceContext{ProgramID: "program-1", RegencyID: "regency-1", ProgramType: "farmer", RegencyCode: "WJO", ZoneName: "Zona 1", Padding: 4, SlotQuota: 1578, DocumentSeries: "KSM-KKT", HasActiveLogo: true}
 }
 
 func TestBuildDocumentNumberUsesRegencyTotalAndRomanMonth(t *testing.T) {

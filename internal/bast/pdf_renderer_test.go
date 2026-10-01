@@ -125,11 +125,9 @@ func makeRenderDocument(slot, total int) RecipientDocument {
 			ProgramType:    "farmer",
 			DocumentNumber: "BAST-WAJO",
 			LocalDate:      "2024-12-10",
-			Profile: ProfileSnapshot{
-				Title:                  "BERITA ACARA SERAH TERIMA",
-				Subtitle:               "(FORM PENERIMA PAKET)",
-				ProcurementDescription: "Pengadaan Barang Penyediaan dan Pendistribusian Paket Perdana LPG untuk Mesin Pompa Air Bagi Petani Sasaran Tahun Anggaran 2024",
-				Logos:                  []LogoSnapshot{{AssetID: "logo", MimeType: "image/png", SortOrder: 1, MaxWidthMM: 35, MaxHeightMM: 15}},
+			Render: RenderIdentity{
+				FiscalYear: 2024,
+				Logos:      []LogoSnapshot{{AssetID: "logo", MimeType: "image/png", SortOrder: 1, MaxWidthMM: 35, MaxHeightMM: 15}},
 			},
 			Recipient:  RecipientSnapshot{FullName: "Penerima", NIK: "7306014101900001", SectorIdentifier: "KARTU-01", Address: "Jalan Tani", Village: "Desa", District: "Kecamatan", Regency: "Wajo", PhoneNumber: "08123456789"},
 			Equipment:  EquipmentSnapshot{MachineBrand: "SHARK", MachineType: "SPWP 80-30 / 3 inch", MachineSerial: "M-001", HoseBrand: "TRILIUNHOSE", HoseSpec: "Panjang Selang Hisap: 6m; Panjang Selang Buang: 10m", HoseSerial: "-", ConverterBrand: "ERGAS", ConverterSerial: "240005562"},

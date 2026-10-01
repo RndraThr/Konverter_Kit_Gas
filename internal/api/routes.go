@@ -468,8 +468,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "document_profile_incomplete", "Lengkapi teks dan minimal satu logo sebelum publikasi")
 	case errors.Is(err, bast.ErrZoneNotConfigured):
 		writeError(w, http.StatusConflict, "zone_not_configured", "Kabupaten belum dikonfigurasi ke zona")
-	case errors.Is(err, bast.ErrProfileNotPublished):
-		writeError(w, http.StatusConflict, "profile_not_published", "Profil dokumen yang dipublikasikan belum tersedia")
+	case errors.Is(err, bast.ErrBrandingNotConfigured):
+		writeError(w, http.StatusConflict, "ba_logo_required", "Minimal satu logo BA aktif harus dikonfigurasi")
 	case errors.Is(err, bast.ErrFinalTotalMissing):
 		writeError(w, http.StatusConflict, "final_total_missing", "Jumlah total pembagian kabupaten belum dikunci")
 	case errors.Is(err, bast.ErrFinalTotalLocked):

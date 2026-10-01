@@ -11,9 +11,12 @@ import (
 )
 
 const (
-	pageWidthMM  = 210.0
-	pageHeightMM = 297.0
-	marginMM     = 15.0
+	pageWidthMM                     = 210.0
+	pageHeightMM                    = 297.0
+	marginMM                        = 15.0
+	baPeroranganTitle               = "BERITA ACARA SERAH TERIMA"
+	baPeroranganSubtitle            = "(FORM PENERIMA PAKET)"
+	baPeroranganProcurementTemplate = "Pengadaan Barang Penyediaan dan Pendistribusian Paket Perdana Liquefied Petroleum Gas (LPG) untuk Mesin Pompa Air Bagi Petani Sasaran Tahun Anggaran %d di PT Pertamina Patra Niaga"
 )
 
 type BundleRenderInput struct {
@@ -84,23 +87,23 @@ func RenderPetaniBundle(input BundleRenderInput) (RenderedBundle, error) {
 	pdf.SetCreationDate(creationDate)
 	pdf.SetCatalogSort(true)
 
-	logosByProfile := make(map[string][]registeredLogo)
+	logosByRender := make(map[string][]registeredLogo)
 	for _, document := range documents {
-		key := profileLogoKey(document.Snapshot.Profile)
-		if _, exists := logosByProfile[key]; exists {
+		key := renderLogoKey(document.Snapshot.Render)
+		if _, exists := logosByRender[key]; exists {
 			continue
 		}
-		logos, err := registerLogos(pdf, document.Snapshot.Profile.Logos, input.LogoBytes, len(logosByProfile))
+		logos, err := registerLogos(pdf, document.Snapshot.Render.Logos, input.LogoBytes, len(logosByRender))
 		if err != nil {
 			return RenderedBundle{}, err
 		}
-		logosByProfile[key] = logos
+		logosByRender[key] = logos
 	}
 
 	events := make([]string, 0, len(documents))
 	pageRanges := make([]RenderedRecipientPages, 0, len(documents))
 	for _, document := range documents {
-		logos := logosByProfile[profileLogoKey(document.Snapshot.Profile)]
+		logos := logosByRender[renderLogoKey(document.Snapshot.Render)]
 		pdf.AddPage()
 		pageStart := pdf.PageNo()
 		events = append(events, fmt.Sprintf("PAGE %d RECIPIENT %d START", pdf.PageNo(), document.SlotNumber))
@@ -120,7 +123,7 @@ func RenderPetaniBundle(input BundleRenderInput) (RenderedBundle, error) {
 
 func registerLogos(pdf *fpdf.Fpdf, snapshots []LogoSnapshot, logoBytes map[string][]byte, profileIndex int) ([]registeredLogo, error) {
 	if len(snapshots) == 0 {
-		return nil, fmt.Errorf("%w: published profile has no logos", ErrInvalidInput)
+		return nil, fmt.Errorf("%w: render identity has no logos", ErrBrandingNotConfigured)
 	}
 	ordered := append([]LogoSnapshot(nil), snapshots...)
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].SortOrder < ordered[j].SortOrder })
@@ -160,12 +163,9 @@ func registerLogos(pdf *fpdf.Fpdf, snapshots []LogoSnapshot, logoBytes map[strin
 	return registered, nil
 }
 
-func profileLogoKey(profile ProfileSnapshot) string {
-	if profile.VersionID != "" {
-		return profile.VersionID
-	}
+func renderLogoKey(render RenderIdentity) string {
 	var key strings.Builder
-	for _, logo := range profile.Logos {
+	for _, logo := range render.Logos {
 		fmt.Fprintf(&key, "%s:%s:%d|", logo.AssetID, logo.StorageKey, logo.SortOrder)
 	}
 	return key.String()
@@ -173,11 +173,11 @@ func profileLogoKey(profile ProfileSnapshot) string {
 
 func renderRecipient(pdf *fpdf.Fpdf, document RecipientDocument, logos []registeredLogo, events *[]string) {
 	snapshot := document.Snapshot
-	renderHeader(pdf, snapshot.Profile, logos)
+	renderHeader(pdf, logos)
 
 	pdf.SetFont("Helvetica", "B", 8.5)
 	pdf.SetX(marginMM)
-	pdf.MultiCell(pageWidthMM-2*marginMM, 4, snapshot.Profile.ProcurementDescription, "", "C", false)
+	pdf.MultiCell(pageWidthMM-2*marginMM, 4, fmt.Sprintf(baPeroranganProcurementTemplate, snapshot.Render.FiscalYear), "", "C", false)
 	pdf.Ln(2)
 
 	labelValue(pdf, "No. BAST", snapshot.DocumentNumber)
@@ -209,19 +209,19 @@ func renderRecipient(pdf *fpdf.Fpdf, document RecipientDocument, logos []registe
 	for _, component := range snapshot.Components {
 		rowHeight := componentRowHeight(pdf, component)
 		if pdf.GetY()+rowHeight > 271 {
-			addContinuationPage(pdf, document.SlotNumber, snapshot.Profile, logos, events)
+			addContinuationPage(pdf, document.SlotNumber, logos, events)
 			renderComponentHeader(pdf)
 		}
 		renderComponentRow(pdf, component, rowHeight)
 	}
 
 	if pdf.GetY()+55 > pageHeightMM-marginMM {
-		addContinuationPage(pdf, document.SlotNumber, snapshot.Profile, logos, events)
+		addContinuationPage(pdf, document.SlotNumber, logos, events)
 	}
 	renderDeclarationAndSignatures(pdf, snapshot.Signatures)
 }
 
-func renderHeader(pdf *fpdf.Fpdf, profile ProfileSnapshot, logos []registeredLogo) {
+func renderHeader(pdf *fpdf.Fpdf, logos []registeredLogo) {
 	contentWidth := pageWidthMM - 2*marginMM
 	gap := 5.0
 	available := contentWidth - gap*float64(len(logos)-1)
@@ -238,15 +238,15 @@ func renderHeader(pdf *fpdf.Fpdf, profile ProfileSnapshot, logos []registeredLog
 	}
 	pdf.SetY(28)
 	pdf.SetFont("Helvetica", "BU", 10)
-	pdf.CellFormat(contentWidth, 4.5, profile.Title, "", 1, "C", false, 0, "")
-	pdf.SetFont("Helvetica", "B", 8.5)
-	pdf.CellFormat(contentWidth, 4, profile.Subtitle, "", 1, "C", false, 0, "")
+	pdf.CellFormat(contentWidth, 4.5, baPeroranganTitle, "", 1, "C", false, 0, "")
+	pdf.SetFont("Helvetica", "BI", 8.5)
+	pdf.CellFormat(contentWidth, 4, baPeroranganSubtitle, "", 1, "C", false, 0, "")
 }
 
-func addContinuationPage(pdf *fpdf.Fpdf, slot int, profile ProfileSnapshot, logos []registeredLogo, events *[]string) {
+func addContinuationPage(pdf *fpdf.Fpdf, slot int, logos []registeredLogo, events *[]string) {
 	pdf.AddPage()
 	*events = append(*events, fmt.Sprintf("PAGE %d RECIPIENT %d CONTINUATION", pdf.PageNo(), slot))
-	renderHeader(pdf, profile, logos)
+	renderHeader(pdf, logos)
 	pdf.SetFont("Helvetica", "BI", 8)
 	pdf.CellFormat(pageWidthMM-2*marginMM, 5, fmt.Sprintf("LANJUTAN - PENERIMA NOMOR %d", slot), "B", 1, "C", false, 0, "")
 	pdf.Ln(2)

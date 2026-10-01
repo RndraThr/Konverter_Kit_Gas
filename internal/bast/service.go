@@ -170,8 +170,8 @@ func validateContext(value SourceContext) error {
 	if value.ZonePlaceholder || strings.TrimSpace(value.ZoneName) == "" {
 		return ErrZoneNotConfigured
 	}
-	if value.ProfileVersionID == "" || value.DocumentSeries == "" {
-		return ErrProfileNotPublished
+	if !value.HasActiveLogo {
+		return ErrBrandingNotConfigured
 	}
 	return nil
 }

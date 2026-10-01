@@ -143,7 +143,7 @@ type bundleRepositoryStub struct {
 func newBundleRepositoryStub(t *testing.T) *bundleRepositoryStub { return &bundleRepositoryStub{t: t} }
 
 func (r *bundleRepositoryStub) GetSourceContext(context.Context, string, string, auth.RegencyScope) (SourceContext, error) {
-	return SourceContext{ProgramID: "program", RegencyID: "regency", ProgramType: "farmer", RegencyCode: "WJO", RegencyName: "Wajo", ZoneName: "Zona 1", Padding: 4, SlotQuota: 2, ProfileVersionID: "profile", DocumentSeries: "KSM-KKT"}, nil
+	return SourceContext{ProgramID: "program", RegencyID: "regency", ProgramType: "farmer", RegencyCode: "WJO", RegencyName: "Wajo", ZoneName: "Zona 1", Padding: 4, SlotQuota: 2, DocumentSeries: "KSM-KKT", HasActiveLogo: true}, nil
 }
 func (r *bundleRepositoryStub) ListCompletedSlots(context.Context, string, string, auth.RegencyScope) ([]CompletedSlot, error) {
 	return []CompletedSlot{{ID: "slot-2", SlotNumber: 2, DistributedAt: time.Date(2024, 12, 10, 2, 0, 0, 0, time.UTC)}, {ID: "slot-1", SlotNumber: 1, DistributedAt: time.Date(2024, 12, 10, 1, 0, 0, 0, time.UTC)}}, nil
@@ -161,7 +161,7 @@ func (r *bundleRepositoryStub) LoadSourceData(_ context.Context, recipient Recip
 	return renderSource(recipient), nil
 }
 func (r *bundleRepositoryStub) SaveFinalDocument(_ context.Context, _ auth.Principal, recipient RecipientDocument, source SourceData, snapshot Snapshot, _ auth.ClientMeta) (IndividualDocument, error) {
-	return IndividualDocument{ID: "doc-" + recipient.DistributionSlotID, DistributionSlotID: recipient.DistributionSlotID, ProgramID: source.ProgramID, RegencyID: source.RegencyID, DocumentNumber: recipient.DocumentNumber, LocalDate: recipient.LocalDate, SlotNumber: recipient.SlotNumber, FinalTotal: recipient.FinalTotal, ProfileVersionID: source.Profile.VersionID, Snapshot: snapshot, Status: "final"}, nil
+	return IndividualDocument{ID: "doc-" + recipient.DistributionSlotID, DistributionSlotID: recipient.DistributionSlotID, ProgramID: source.ProgramID, RegencyID: source.RegencyID, DocumentNumber: recipient.DocumentNumber, LocalDate: recipient.LocalDate, SlotNumber: recipient.SlotNumber, FinalTotal: recipient.FinalTotal, Snapshot: snapshot, Status: "final"}, nil
 }
 func (r *bundleRepositoryStub) GetActiveBundle(context.Context, string, string, string, auth.RegencyScope) (DailyBundle, error) {
 	if r.active.ID == "" {
@@ -189,7 +189,7 @@ func (r *bundleRepositoryStub) GetActiveBundleByID(context.Context, string, auth
 }
 
 func renderSource(recipient RecipientDocument) SourceData {
-	return SourceData{ProgramID: "program", RegencyID: "regency", ProgramType: "farmer", DocumentNumber: recipient.DocumentNumber, LocalDate: recipient.LocalDate, PackageTemplateVersionID: "package", Profile: ProfileSnapshot{VersionID: "profile", Title: "BERITA ACARA SERAH TERIMA", Subtitle: "(FORM PENERIMA PAKET)", ProcurementDescription: "Pengadaan paket perdana LPG untuk petani", Logos: []LogoSnapshot{{AssetID: "logo", StorageKey: "logo-key", MimeType: "image/png", SortOrder: 1}}}, Recipient: RecipientSnapshot{FullName: "Penerima", NIK: "123", SectorIdentifier: "KARTU", Address: "Alamat", Regency: "Wajo"}, Equipment: EquipmentSnapshot{MachineBrand: "SHARK"}, Components: []ComponentSnapshot{{Label: "Tabung LPG", Quantity: 1, Unit: "Tabung"}}}
+	return SourceData{ProgramID: "program", RegencyID: "regency", ProgramType: "farmer", DocumentNumber: recipient.DocumentNumber, LocalDate: recipient.LocalDate, PackageTemplateVersionID: "package", Render: RenderIdentity{FiscalYear: 2024, Logos: []LogoSnapshot{{AssetID: "logo", StorageKey: "logo-key", MimeType: "image/png", SortOrder: 1}}}, Recipient: RecipientSnapshot{FullName: "Penerima", NIK: "123", SectorIdentifier: "KARTU", Address: "Alamat", Regency: "Wajo"}, Equipment: EquipmentSnapshot{MachineBrand: "SHARK"}, Components: []ComponentSnapshot{{Label: "Tabung LPG", Quantity: 1, Unit: "Tabung"}}}
 }
 
 type bundleStorageStub struct {
