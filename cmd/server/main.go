@@ -67,7 +67,7 @@ func run(ctx context.Context, cfg config.Config) error {
 			return err
 		}
 	}
-	programService := programs.NewService(programs.NewRepository(pool), mediaStorage)
+	programService := programs.NewService(programs.NewRepository(pool))
 	applicationLocation, err := time.LoadLocation("Asia/Jakarta")
 	if err != nil {
 		return fmt.Errorf("load application timezone: %w", err)

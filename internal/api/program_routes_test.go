@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,43 +10,16 @@ import (
 	"konkit/internal/programs"
 )
 
-type fakeDocumentProfileService struct {
-	*fakeProgramSetupService
-	profileInput programs.DocumentProfileInput
-}
-
-func (f *fakeDocumentProfileService) ListDocumentProfiles(context.Context, string) ([]programs.DocumentProfile, error) {
-	return []programs.DocumentProfile{{ID: "profile-1", Version: 1, Status: "draft"}}, nil
-}
-func (f *fakeDocumentProfileService) SaveDocumentProfile(_ context.Context, _ auth.Principal, input programs.DocumentProfileInput, _ auth.ClientMeta) (programs.DocumentProfile, error) {
-	f.profileInput = input
-	return programs.DocumentProfile{ID: "profile-1", ProgramID: input.ProgramID, Title: input.Title, Version: 1, Status: "draft"}, nil
-}
-func (f *fakeDocumentProfileService) PublishDocumentProfile(context.Context, auth.Principal, string, string, auth.ClientMeta) (programs.DocumentProfile, error) {
-	return programs.DocumentProfile{}, nil
-}
-func (f *fakeDocumentProfileService) UploadDocumentLogo(context.Context, auth.Principal, programs.DocumentLogoInput, auth.ClientMeta) (programs.DocumentLogo, error) {
-	return programs.DocumentLogo{}, nil
-}
-func (f *fakeDocumentProfileService) UpdateDocumentLogo(context.Context, auth.Principal, programs.DocumentLogoUpdateInput, auth.ClientMeta) (programs.DocumentLogo, error) {
-	return programs.DocumentLogo{}, nil
-}
-func (f *fakeDocumentProfileService) OpenDocumentLogo(context.Context, string, string) (programs.DocumentLogoContent, error) {
-	return programs.DocumentLogoContent{}, nil
-}
-
-func TestDocumentProfilesCreateUsesProgramFromPath(t *testing.T) {
-	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"programs.manage": true}}
-	service := &fakeDocumentProfileService{fakeProgramSetupService: &fakeProgramSetupService{}}
-	secret := []byte("01234567890123456789012345678901")
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/program-setup/programs/program-1/document-profiles", strings.NewReader(`{"title":"BAST","procurement_description":"Pengadaan","document_series":"KSM-KKT"}`))
-	req.Header.Set("Content-Type", "application/json")
+func TestDocumentProfileEndpointIsNotRegistered(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"programs.view": true}}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/program-setup/programs/program-1/document-profiles", nil)
 	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
-	req.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
 	rec := httptest.NewRecorder()
-	NewHandler(Dependencies{Auth: authService, Programs: service, SessionSecret: secret}).ServeHTTP(rec, req)
-	if rec.Code != http.StatusCreated || service.profileInput.ProgramID != "program-1" {
-		t.Fatalf("status=%d input=%+v body=%s", rec.Code, service.profileInput, rec.Body.String())
+
+	NewHandler(Dependencies{Auth: authService, Programs: &fakeProgramSetupService{}}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

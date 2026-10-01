@@ -462,10 +462,6 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "zone_placeholder_immutable", "Zona placeholder tidak dapat diubah")
 	case errors.Is(err, programs.ErrZoneProgramMismatch):
 		writeError(w, http.StatusConflict, "zone_program_mismatch", "Zona tidak termasuk dalam program ini")
-	case errors.Is(err, programs.ErrDocumentProfilePublished):
-		writeError(w, http.StatusConflict, "document_profile_published", "Profil dokumen yang sudah dipublikasikan tidak dapat diubah")
-	case errors.Is(err, programs.ErrDocumentProfileIncomplete):
-		writeError(w, http.StatusConflict, "document_profile_incomplete", "Lengkapi teks dan minimal satu logo sebelum publikasi")
 	case errors.Is(err, bast.ErrZoneNotConfigured):
 		writeError(w, http.StatusConflict, "zone_not_configured", "Kabupaten belum dikonfigurasi ke zona")
 	case errors.Is(err, bast.ErrBrandingNotConfigured):
@@ -521,7 +517,7 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		errors.Is(err, administration.ErrInvalidInput), errors.Is(err, administration.ErrPasswordTooShort), errors.Is(err, administration.ErrRoleNotFound),
 		errors.Is(err, administration.ErrPermissionNotFound), errors.Is(err, administration.ErrRoleCodeInvalid), errors.Is(err, settings.ErrInvalidSetting),
 		errors.Is(err, programs.ErrInvalidInput), errors.Is(err, programs.ErrDocumentCodeInvalid), errors.Is(err, programs.ErrProgramTypeInvalid),
-		errors.Is(err, programs.ErrScheduleDatesInvalid), errors.Is(err, programs.ErrTemplateSlotInvalid), errors.Is(err, programs.ErrDocumentLogoInvalid):
+		errors.Is(err, programs.ErrScheduleDatesInvalid), errors.Is(err, programs.ErrTemplateSlotInvalid):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), validationFields(err))
 	case errors.Is(err, distribution.ErrScheduleRequired), errors.Is(err, distribution.ErrQueryRequired),
 		errors.Is(err, distribution.ErrNIKInvalid), errors.Is(err, distribution.ErrSlotNumberRequired):

@@ -84,15 +84,6 @@ type ProgramSetupService interface {
 	AssignRegency(context.Context, auth.Principal, programs.RegencyAssignmentInput, auth.RegencyScope, auth.ClientMeta) (programs.ProgramZone, error)
 }
 
-type DocumentProfileService interface {
-	ListDocumentProfiles(context.Context, string) ([]programs.DocumentProfile, error)
-	SaveDocumentProfile(context.Context, auth.Principal, programs.DocumentProfileInput, auth.ClientMeta) (programs.DocumentProfile, error)
-	PublishDocumentProfile(context.Context, auth.Principal, string, string, auth.ClientMeta) (programs.DocumentProfile, error)
-	UploadDocumentLogo(context.Context, auth.Principal, programs.DocumentLogoInput, auth.ClientMeta) (programs.DocumentLogo, error)
-	UpdateDocumentLogo(context.Context, auth.Principal, programs.DocumentLogoUpdateInput, auth.ClientMeta) (programs.DocumentLogo, error)
-	OpenDocumentLogo(context.Context, string, string) (programs.DocumentLogoContent, error)
-}
-
 type DCP3Service interface {
 	Preview(context.Context, auth.Principal, string, string, io.Reader, auth.ClientMeta, auth.RegencyScope, int) (dcp3.ImportPreview, error)
 	RawPreview(context.Context, io.Reader) ([][]string, error)
