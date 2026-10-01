@@ -81,14 +81,14 @@ test('can retry a failed workspace request without reloading the page', async ()
   expect(await screen.findByText('Wajo')).toBeVisible();
 });
 
-test('shows the six program preparation workspaces', async () => {
+test('shows the five program preparation workspaces without a document profile', async () => {
   renderPage(['programs.view', 'programs.manage']);
   expect(await screen.findByRole('tab', { name: 'Kabupaten' })).toBeVisible();
   expect(screen.getByRole('tab', { name: 'Program' })).toBeVisible();
   expect(screen.getByRole('tab', { name: 'Zona' })).toBeVisible();
-  expect(screen.getByRole('tab', { name: 'Profil Dokumen' })).toBeVisible();
   expect(screen.getByRole('tab', { name: 'Jadwal' })).toBeVisible();
   expect(screen.getByRole('tab', { name: 'Template' })).toBeVisible();
+  expect(screen.getAllByRole('tab')).toHaveLength(5);
   expect(await screen.findByText('Wajo')).toBeVisible();
 
   await userEvent.click(screen.getByRole('tab', { name: 'Program' }));
@@ -110,7 +110,6 @@ test('moves focus, selection, and named workspace regions with arrow keys', asyn
   const regencyTab = await screen.findByRole('tab', { name: 'Kabupaten' });
   const programTab = screen.getByRole('tab', { name: 'Program' });
   const zoneTab = screen.getByRole('tab', { name: 'Zona' });
-  const profileTab = screen.getByRole('tab', { name: 'Profil Dokumen' });
   const scheduleTab = screen.getByRole('tab', { name: 'Jadwal' });
   const templateTab = screen.getByRole('tab', { name: 'Template' });
 
@@ -128,11 +127,6 @@ test('moves focus, selection, and named workspace regions with arrow keys', asyn
   expect(zoneTab).toHaveFocus();
   expect(zoneTab).toHaveAttribute('aria-selected', 'true');
   expect(await screen.findByRole('region', { name: 'Zona program' })).toBeInTheDocument();
-
-  await userEvent.keyboard('{ArrowRight}');
-  expect(profileTab).toHaveFocus();
-  expect(profileTab).toHaveAttribute('aria-selected', 'true');
-  expect(await screen.findByRole('region', { name: 'Profil dokumen tender' })).toBeInTheDocument();
 
   await userEvent.keyboard('{ArrowRight}');
   expect(scheduleTab).toHaveFocus();
