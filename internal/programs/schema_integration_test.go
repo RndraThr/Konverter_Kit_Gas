@@ -2,6 +2,7 @@ package programs
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -76,6 +77,33 @@ func TestLegacyDocumentProfileSchemaIsRemoved(t *testing.T) {
 	}
 	if legacyFunctionExists {
 		t.Fatal("legacy document-profile trigger function still exists")
+	}
+}
+
+func TestKonkitPackageUsesSingleCombinedHoseComponent(t *testing.T) {
+	pool := programsIntegrationPool(t)
+	var raw []byte
+	if err := pool.QueryRow(context.Background(), `SELECT values_json->'components' FROM package_template_versions WHERE template_code='KONKIT-2026' AND version=1`).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var components []struct {
+		Code  string `json:"code"`
+		Label string `json:"label"`
+	}
+	if err := json.Unmarshal(raw, &components); err != nil {
+		t.Fatal(err)
+	}
+	hoseCount := 0
+	for _, component := range components {
+		if component.Code == "hose_clamp_accessories" && component.Label == "Selang, Clamp & Aksesorisnya" {
+			hoseCount++
+		}
+		if component.Code == "suction_hose" || component.Code == "discharge_hose" {
+			t.Fatalf("legacy split hose component still exists: %+v", component)
+		}
+	}
+	if hoseCount != 1 {
+		t.Fatalf("combined hose component count=%d components=%+v", hoseCount, components)
 	}
 }
 
