@@ -19,7 +19,7 @@
 - Tahun di teks BA berasal dari `programs.fiscal_year` (bukan dari tabel profil).
 - Setiap commit: `go build ./...`, `go vet ./...`, paket yang disentuh lulus `go test`, dan `npm run -s typecheck` (frontend) tetap hijau.
 - **Ruling (deviasi spec):** spec meminta satu migration create+copy+drop. Plan memecah menjadi `00023` (create+copy, additive) dan `00024` (drop, destruktif) agar tiap commit hijau selama eksekusi inline. Hasil akhir pada DB fresh identik. Biaya jika salah: dua baris riwayat migration alih-alih satu — tidak ada dampak data.
-- **Ruling (reference PDF):** `006. BAST - Penerima Paket (Perorangan).pdf` tidak ada di repo. Renderer mempertahankan geometri halaman yang sudah dibangun Codex dan hanya mengganti sumber teks (profil → konstanta baku + `fiscal_year`). Fidelitas piksel ke PDF referensi ditunda sampai PDF tersedia. Biaya jika salah: penyesuaian tata letak lanjutan setelah PDF diberikan; tidak memblokir penghapusan profil.
+- **Reference PDF (authority):** `D:\KSM\Konkit\Draft BAST Petani 2024\Draft BAST Petani 2024\006. BAST - Penerima Paket (Perorangan).pdf` adalah otoritas visual BA Perorangan Petani. Renderer harus mengikuti strukturnya (lihat Task 4 Step 5). Salin PDF ke `docs/references/` saat Task 4 agar travel dengan repo.
 
 ---
 
@@ -178,7 +178,20 @@ feat(bast): add program_ba_logo_assets table and copy logos from profiles (migra
 
 - [ ] **Step 4: `snapshot.go` + decoder** — `BuildSnapshot` isi `Render{FiscalYear, Logos}`. Tambah `DecodeSnapshot(raw []byte) (Snapshot, error)` yang: coba unmarshal format baru; jika field `profile` lama ada, map `profile.logos → Render.Logos` dan `Render.FiscalYear` = 0 (atau parse tahun dari `document_number`/`procurement_description` bila tersedia) tanpa mengaktifkan Profil. Repo `GetIndividual` memakai decoder ini.
 
-- [ ] **Step 5: `pdf_renderer.go`** — `renderHeader` memakai konstanta `baPeroranganTitle/Subtitle` + `fmt.Sprintf(baPeroranganProcurementTemplate, snapshot.Render.FiscalYear)` alih-alih `profile.Title/Subtitle/ProcurementDescription`. `registerLogos`/`profileLogoKey` memakai `snapshot.Render.Logos` (rename `profileLogoKey`→`renderLogoKey`, key dari urutan storage_key karena tak ada VersionID). Error "published profile has no logos" → `ErrBrandingNotConfigured`.
+- [ ] **Step 5: `pdf_renderer.go` — ikuti PDF referensi.** `registerLogos`/`profileLogoKey` memakai `snapshot.Render.Logos` (rename `profileLogoKey`→`renderLogoKey`, key dari urutan storage_key karena tak ada VersionID). Error "published profile has no logos" → `ErrBrandingNotConfigured`. Layout satu penerima per halaman, urutan persis referensi:
+  1. **Baris logo** branding (urut `sort_order`) di atas, satu baris horizontal.
+  2. **Judul** `BERITA ACARA SERAH TERIMA` (bold, underline, center); **subjudul** `(FORM PENERIMA PAKET)` (italic, center).
+  3. **Deskripsi pengadaan** (center, multi-line): `fmt.Sprintf(baPeroranganProcurementTemplate, snapshot.Render.FiscalYear)` =
+     `"Pengadaan Barang Penyediaan dan Pendistribusian Paket Perdana Liquefied Petroleum Gas (LPG) untuk Mesin Pompa Air Bagi Petani Sasaran Tahun Anggaran %d di PT Pertamina Patra Niaga"`.
+  4. **No. BAST:** `snapshot.DocumentNumber` (format `NOMOR/JUMLAH/KSM-KKT-KODEKOTA/BULAN/TAHUN`). **Tanggal:** `snapshot.LocalDate`.
+  5. **Data Penerima** (label : nilai): Nama, Alamat, Kota/Kabupaten (`Recipient.Regency`), No. KTP (`Recipient.NIK`), No. Kartu Petani (`Recipient.SectorIdentifier`), No. HP (`Recipient.PhoneNumber`).
+  6. **`A. Data Paket Perdana yang akan diterima.`** lalu 4 tabel:
+     - Mesin: kolom `Merk Mesin | Tipe Mesin | Serial Number | Checklist` → `Equipment.MachineBrand | MachineType | MachineSerial | √`.
+     - Selang: `Merk Selang Hisap dan Selang Buang | Spesifikasi Selang Hisap dan Selang Buang | Serial Number | Checklist` → `Equipment.HoseBrand | HoseSpec | HoseSerial | √`.
+     - Konkit/Reducer: `Merk Konkit / Reducer | Serial Number | Checklist` → `Equipment.ConverterBrand | ConverterSerial | √`.
+     - Komponen: `Komponen Paket, Aksesoris & Kelengkapan | Jumlah | Satuan | Checklist` → iterasi `snapshot.Components` (`Label | Quantity | Unit | √ jika Checked`).
+  7. **Paragraf pernyataan** (justify): `"Dengan ini kami menyatakan bahwa Seluruh Material/Produk/Barang tercantum diatas telah diterima dan dapat berfungsi dengan baik dengan jumlah yang benar serta telah diperiksa dengan seksama oleh masing-masing pihak."`
+  8. **Tanda tangan** 3 kolom: `PENERIMA PAKET/ PETANI` | `PELAKSANA PEMASANGAN & PENDISTRIBUSIAN` | `KONSULTAN PENGAWAS`, tiap kolom kotak + `Nama :` (`Signatures.ReceiverName` / `ExecutorName` / `SupervisorName`). Detail perilaku tanda tangan tetap di luar cakupan (spec §22/57) — cukup render struktur + nama.
 
 - [ ] **Step 6: `bundle_service.go`** — `documents[0].Snapshot.Profile.VersionID` dihapus (bundle tak lagi menyimpan profile_version_id); logo per dokumen dari `document.Snapshot.Render.Logos`.
 
@@ -284,5 +297,5 @@ SELECT 1;
 ## Self-Review (diisi setelah menulis)
 
 - **Spec coverage:** Profil dihapus (Task 6/7/8); branding di BA (Task 1/2/3/5); renderer mandiri + tahun dari fiscal_year (Task 4); snapshot decoder lama (Task 4 Step 4); template paket (Task 9); API branding + hapus endpoint profil (Task 3/7); migration forward (Task 1/8). ✓
-- **Gap tercatat:** reference PDF (ruling di Global Constraints) — fidelitas piksel ditunda. Mekanisme tanda tangan tetap di luar cakupan (spec §22/57).
+- **Reference PDF:** tersedia (path di Global Constraints), layout konkret di Task 4 Step 5. Mekanisme/perilaku tanda tangan tetap di luar cakupan (spec) — hanya struktur + nama yang dirender.
 - **Type consistency:** `RenderIdentity`/`Render` dipakai konsisten di models/snapshot/renderer/bundle (Task 4). `LogoAsset`/`LogoUploadInput`/`LogoPatchInput` konsisten Task 2↔3.
