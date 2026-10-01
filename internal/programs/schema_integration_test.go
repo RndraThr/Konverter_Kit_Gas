@@ -60,6 +60,25 @@ func TestProgramZoneSchemaEnforcesOneAssignmentPerProgramRegency(t *testing.T) {
 	}
 }
 
+func TestLegacyDocumentProfileSchemaIsRemoved(t *testing.T) {
+	pool := programsIntegrationPool(t)
+	ctx := context.Background()
+	var profilesTable, logosTable *string
+	if err := pool.QueryRow(ctx, `SELECT to_regclass('public.program_document_profile_versions')::text, to_regclass('public.program_document_logo_assets')::text`).Scan(&profilesTable, &logosTable); err != nil {
+		t.Fatal(err)
+	}
+	if profilesTable != nil || logosTable != nil {
+		t.Fatalf("legacy tables still exist: profiles=%v logos=%v", profilesTable, logosTable)
+	}
+	var legacyFunctionExists bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_proc WHERE proname='reject_published_program_document_profile_change')`).Scan(&legacyFunctionExists); err != nil {
+		t.Fatal(err)
+	}
+	if legacyFunctionExists {
+		t.Fatal("legacy document-profile trigger function still exists")
+	}
+}
+
 func schemaRegencyCode(suffix string) string {
 	last := len(suffix) - 1
 	return fmt.Sprintf("%c%c%c", 'A'+suffix[last]%20, 'A'+suffix[last-1]%20, 'A'+suffix[last-2]%20)
