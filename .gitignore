@@ -6,6 +6,8 @@
 gdrive-oauth-token*.json
 .cache/
 .tmp/
+/tmp/
+/output/
 .worktrees/
 .claude/worktrees/
 .kilo/worktrees/
