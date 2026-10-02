@@ -34,7 +34,22 @@ export function ScheduleSettingsPanel({ scheduleID, requirePertaminaRep = false 
   }, [settings.data]);
 
   const save = useMutation({
-    mutationFn: (input: ScheduleSettings) => apiRequest<DataResponse<ScheduleSettings>>(`/api/v1/bast/schedules/${encodeURIComponent(scheduleID)}/settings`, { method: 'PUT', body: JSON.stringify(input) }),
+    // GET responses carry read-only fields (e.g. updated_at) that the PUT
+    // endpoint rejects via DisallowUnknownFields; only send the editable
+    // input fields back, never the raw draft object.
+    mutationFn: (input: ScheduleSettings) => {
+      const payload: ScheduleSettings = {
+        schedule_id: input.schedule_id,
+        handover_location: input.handover_location,
+        consultant_company_name: input.consultant_company_name,
+        agriculture_office_name: input.agriculture_office_name,
+        agriculture_office_nip: input.agriculture_office_nip,
+        installer_name: input.installer_name,
+        supervisor_name: input.supervisor_name,
+        pertamina_rep_name: input.pertamina_rep_name,
+      };
+      return apiRequest<DataResponse<ScheduleSettings>>(`/api/v1/bast/schedules/${encodeURIComponent(scheduleID)}/settings`, { method: 'PUT', body: JSON.stringify(payload) });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bast', 'schedule-settings', scheduleID] });
       queryClient.invalidateQueries({ queryKey: ['bast', 'dp3'] });
