@@ -55,6 +55,7 @@ test('derives the Petani or Nelayan document variant from the selected schedule'
   expect(screen.getByRole('tab', { name: 'BA Perorangan' })).toHaveAttribute('aria-selected', 'true');
   expect(screen.getByRole('region', { name: 'BA Perorangan Nelayan' })).toBeVisible();
   expect(screen.getByText('BA Perorangan Nelayan belum tersedia')).toBeVisible();
+  expect(screen.queryByText('Logo Tender')).not.toBeInTheDocument();
 });
 
 test('keeps the selected schedule and document tab in the URL', async () => {

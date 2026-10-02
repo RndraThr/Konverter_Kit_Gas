@@ -75,6 +75,9 @@ func run(ctx context.Context, cfg config.Config) error {
 	bastRepository := bast.NewRepository(pool)
 	bastService := bast.NewBundleService(bastRepository, mediaStorage, applicationLocation)
 	bastBrandingService := bast.NewBrandingService(bastRepository, mediaStorage)
+	bastScheduleSettingsService := bast.NewScheduleSettingsService(bastRepository)
+	bastDP3Service := bast.NewDP3Service(bastRepository, mediaStorage, applicationLocation)
+	bastDailyRecapService := bast.NewDailyRecapService(bastRepository, mediaStorage, applicationLocation)
 	apiHandler := apihttp.NewHandler(apihttp.Dependencies{
 		Auth:           authService,
 		Profile:        profile.NewService(profile.NewRepository(pool)),
@@ -90,6 +93,9 @@ func run(ctx context.Context, cfg config.Config) error {
 		Activities:     activities.NewService(activities.NewRepository(pool), mediaStorage, programService),
 		BAST:           bastService,
 		BASTBranding:   bastBrandingService,
+		BASTSettings:   bastScheduleSettingsService,
+		DP3:            bastDP3Service,
+		DailyRecap:     bastDailyRecapService,
 		SessionSecret:  cfg.SessionSecret,
 	})
 	handler := web.NewHandler(web.Dependencies{

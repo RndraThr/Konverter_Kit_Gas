@@ -15,6 +15,7 @@ import (
 	"konkit/internal/administration"
 	"konkit/internal/audit"
 	"konkit/internal/auth"
+	"konkit/internal/bast"
 	"konkit/internal/dcp3"
 	"konkit/internal/distribution"
 	"konkit/internal/health"
@@ -604,7 +605,7 @@ func TestDistributionSlotCompleteRequiresPosPenyerahanAndReturnsStableConflicts(
 	conflicts := []struct {
 		err  error
 		code string
-	}{{distribution.ErrIdentityIncomplete, "identity_incomplete"}, {distribution.ErrDocumentationIncomplete, "documentation_incomplete"}, {distribution.ErrPreviouslyReceived, "previously_received"}, {distribution.ErrAlreadyCompleted, "already_completed"}, {distribution.ErrSlotNotOpen, "slot_not_open"}, {distribution.ErrSlotNotLinked, "slot_not_linked"}}
+	}{{distribution.ErrIdentityIncomplete, "identity_incomplete"}, {distribution.ErrDocumentationIncomplete, "documentation_incomplete"}, {distribution.ErrEquipmentOptionNotFound, "equipment_option_not_found"}, {distribution.ErrPreviouslyReceived, "previously_received"}, {distribution.ErrAlreadyCompleted, "already_completed"}, {distribution.ErrSlotNotOpen, "slot_not_open"}, {distribution.ErrSlotNotLinked, "slot_not_linked"}}
 	for _, item := range conflicts {
 		response := httptest.NewRecorder()
 		writeServiceError(response, item.err)
@@ -753,6 +754,14 @@ func TestDashboardSummaryUsesOnlyDashboardPermission(t *testing.T) {
 		if strings.Contains(rec.Body.String(), private) {
 			t.Fatalf("dashboard summary leaked %q: %s", private, rec.Body.String())
 		}
+	}
+}
+
+func TestBAEquipmentUnavailableUsesActionableConflict(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeServiceError(rec, bast.ErrEquipmentUnavailable)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"code":"equipment_unavailable"`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

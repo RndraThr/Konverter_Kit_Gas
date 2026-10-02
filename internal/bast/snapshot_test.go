@@ -38,6 +38,19 @@ func TestBuildSnapshotRequiresActiveBrandingLogo(t *testing.T) {
 	}
 }
 
+func TestBuildSnapshotRejectsUnresolvedEquipmentInsteadOfRenderingBlankFields(t *testing.T) {
+	source := SourceData{
+		ProgramType: "farmer", DocumentNumber: "N", LocalDate: "2024-12-10",
+		Render:     RenderIdentity{Logos: []LogoSnapshot{{AssetID: "logo"}}},
+		Recipient:  RecipientSnapshot{FullName: "Siti", NIK: "7306014101900001", SectorIdentifier: "KP-01"},
+		Equipment:  EquipmentSnapshot{MachineType: "SPWP", HoseBrand: "TRILLIUNHOSE", HoseSpec: "6 M / 10 M", ConverterBrand: "ERGAS"},
+		Components: []ComponentSnapshot{{Code: "lpg", Label: "Tabung LPG", Quantity: 1, Unit: "Tabung"}},
+	}
+	if _, err := BuildSnapshot(source); !errors.Is(err, ErrEquipmentUnavailable) {
+		t.Fatalf("err=%v, want ErrEquipmentUnavailable", err)
+	}
+}
+
 func TestDecodeSnapshotMapsLegacyProfileLogos(t *testing.T) {
 	raw := []byte(`{"program_type":"farmer","profile":{"logos":[{"asset_id":"legacy-logo","storage_key":"legacy.png","sort_order":1}]}}`)
 	snapshot, err := DecodeSnapshot(raw)

@@ -189,7 +189,7 @@ func (r *bundleRepositoryStub) GetActiveBundleByID(context.Context, string, auth
 }
 
 func renderSource(recipient RecipientDocument) SourceData {
-	return SourceData{ProgramID: "program", RegencyID: "regency", ProgramType: "farmer", DocumentNumber: recipient.DocumentNumber, LocalDate: recipient.LocalDate, PackageTemplateVersionID: "package", Render: RenderIdentity{FiscalYear: 2024, Logos: []LogoSnapshot{{AssetID: "logo", StorageKey: "logo-key", MimeType: "image/png", SortOrder: 1}}}, Recipient: RecipientSnapshot{FullName: "Penerima", NIK: "123", SectorIdentifier: "KARTU", Address: "Alamat", Regency: "Wajo"}, Equipment: EquipmentSnapshot{MachineBrand: "SHARK"}, Components: []ComponentSnapshot{{Label: "Tabung LPG", Quantity: 1, Unit: "Tabung"}}}
+	return SourceData{ProgramID: "program", RegencyID: "regency", ProgramType: "farmer", DocumentNumber: recipient.DocumentNumber, LocalDate: recipient.LocalDate, PackageTemplateVersionID: "package", Render: RenderIdentity{FiscalYear: 2024, Logos: []LogoSnapshot{{AssetID: "logo", StorageKey: "logo-key", MimeType: "image/png", SortOrder: 1}}}, Recipient: RecipientSnapshot{FullName: "Penerima", NIK: "123", SectorIdentifier: "KARTU", Address: "Alamat", Regency: "Wajo"}, Equipment: EquipmentSnapshot{MachineBrand: "SHARK", MachineType: "SPWP", HoseBrand: "TRILLIUNHOSE", HoseSpec: "6 M / 10 M", ConverterBrand: "ERGAS"}, Components: []ComponentSnapshot{{Label: "Tabung LPG", Quantity: 1, Unit: "Tabung"}}}
 }
 
 type bundleStorageStub struct {

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"konkit/internal/auth"
+	"konkit/internal/textnorm"
 )
 
 var nikPattern = regexp.MustCompile(`^[0-9]{16}$`)
@@ -66,8 +67,12 @@ func validateIdentity(fullName, nik string) error {
 }
 
 func (s *Service) Create(ctx context.Context, actor auth.Principal, input CreateInput, meta auth.ClientMeta, scope auth.RegencyScope) (Recipient, error) {
-	input.FullName = strings.TrimSpace(input.FullName)
+	input.FullName = textnorm.BusinessUpper(input.FullName)
 	input.NIK = strings.TrimSpace(input.NIK)
+	input.SectorIdentifier = textnorm.BusinessUpper(input.SectorIdentifier)
+	input.Address = textnorm.BusinessUpper(input.Address)
+	input.Village = textnorm.BusinessUpper(input.Village)
+	input.District = textnorm.BusinessUpper(input.District)
 	if err := validateIdentity(input.FullName, input.NIK); err != nil {
 		return Recipient{}, err
 	}
@@ -75,8 +80,12 @@ func (s *Service) Create(ctx context.Context, actor auth.Principal, input Create
 }
 
 func (s *Service) Update(ctx context.Context, actor auth.Principal, allocationID string, input UpdateInput, meta auth.ClientMeta, scope auth.RegencyScope) (Recipient, error) {
-	input.FullName = strings.TrimSpace(input.FullName)
+	input.FullName = textnorm.BusinessUpper(input.FullName)
 	input.NIK = strings.TrimSpace(input.NIK)
+	input.SectorIdentifier = textnorm.BusinessUpper(input.SectorIdentifier)
+	input.Address = textnorm.BusinessUpper(input.Address)
+	input.Village = textnorm.BusinessUpper(input.Village)
+	input.District = textnorm.BusinessUpper(input.District)
 	if err := validateIdentity(input.FullName, input.NIK); err != nil {
 		return Recipient{}, err
 	}

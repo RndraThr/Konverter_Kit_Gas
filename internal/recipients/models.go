@@ -90,6 +90,7 @@ type CreateInput struct {
 	Village          string `json:"village"`
 	District         string `json:"district"`
 	PhoneNumber      string `json:"phone_number"`
+	MachineOptionCode string `json:"machine_option_code"`
 }
 
 type UpdateInput struct {

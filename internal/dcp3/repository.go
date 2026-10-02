@@ -65,12 +65,12 @@ func (r *Repository) CreatePreview(ctx context.Context, actor auth.Principal, sc
 func (r *Repository) GetPreview(ctx context.Context, id string, scope auth.RegencyScope) (ImportPreview, error) {
 	var result ImportPreview
 	var programType programs.ProgramType
-	var envelopeData []byte
+	var envelopeData, packageValuesJSON []byte
 	err := r.pool.QueryRow(ctx, `
-		SELECT b.id::text,b.schedule_id::text,p.program_type,b.original_filename,b.file_checksum,b.sheet_name,b.mapping_json,b.status,b.created_at
-		FROM dcp3_import_batches b JOIN program_schedules s ON s.id=b.schedule_id JOIN programs p ON p.id=s.program_id
+		SELECT b.id::text,b.schedule_id::text,p.program_type,b.original_filename,b.file_checksum,b.sheet_name,b.mapping_json,b.status,b.created_at,pt.values_json
+		FROM dcp3_import_batches b JOIN program_schedules s ON s.id=b.schedule_id JOIN programs p ON p.id=s.program_id JOIN package_template_versions pt ON pt.id=s.package_template_version_id
 		WHERE b.id=$1 AND ($2 OR s.regency_id::text = ANY($3))
-	`, id, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.ScheduleID, &programType, &result.OriginalFilename, &result.FileChecksum, &result.SheetName, &envelopeData, &result.Status, &result.CreatedAt)
+	`, id, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.ScheduleID, &programType, &result.OriginalFilename, &result.FileChecksum, &result.SheetName, &envelopeData, &result.Status, &result.CreatedAt, &packageValuesJSON)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ImportPreview{}, ErrPreviewNotFound
 	}
@@ -78,6 +78,11 @@ func (r *Repository) GetPreview(ctx context.Context, id string, scope auth.Regen
 		return ImportPreview{}, fmt.Errorf("get DCP3 preview: %w", err)
 	}
 	result.ProgramType = programType
+	var packageValues map[string]any
+	if err := json.Unmarshal(packageValuesJSON, &packageValues); err != nil {
+		return ImportPreview{}, fmt.Errorf("decode DCP3 package template: %w", err)
+	}
+	result.MachineOptions = programs.MachineOptions(packageValues)
 	var envelope struct {
 		Headers []string `json:"headers"`
 	}
@@ -114,7 +119,7 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 	var status string
 	var programType programs.ProgramType
 	var scheduleID string
-	var packageSnapshot, previewMetadata []byte
+	var packageValuesJSON, previewMetadata []byte
 	err = tx.QueryRow(ctx, `
 		SELECT b.status,p.program_type,b.schedule_id::text,pt.values_json,b.mapping_json
 		FROM dcp3_import_batches b
@@ -122,7 +127,7 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 		JOIN programs p ON p.id=s.program_id
 		JOIN package_template_versions pt ON pt.id=s.package_template_version_id
 		WHERE b.id=$1 FOR UPDATE OF b
-	`, batchID).Scan(&status, &programType, &scheduleID, &packageSnapshot, &previewMetadata)
+	`, batchID).Scan(&status, &programType, &scheduleID, &packageValuesJSON, &previewMetadata)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ImportResult{}, ErrPreviewNotFound
 	}
@@ -204,7 +209,15 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 			return ImportResult{}, fmt.Errorf("insert candidate nomination: %w", err)
 		}
 		var allocationID string
-		if err := tx.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,status,package_snapshot_json) VALUES($1,$2,NULLIF($3,'')::uuid,$4,$5) RETURNING id::text`, scheduleID, nominationID, personID, allocationStatus, packageSnapshot).Scan(&allocationID); err != nil {
+		machineCode := ""
+		if mapping.MachineOption != "" {
+			machineCode, _ = programs.ResolveMachineCodeFromCell(packageValuesJSON, normalized.SourceValues[mapping.MachineOption])
+		}
+		allocationSnapshot, err := programs.BuildAllocationSnapshot(packageValuesJSON, machineCode)
+		if err != nil {
+			return ImportResult{}, fmt.Errorf("build DCP3 allocation snapshot: %w", err)
+		}
+		if err := tx.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,status,package_snapshot_json) VALUES($1,$2,NULLIF($3,'')::uuid,$4,$5) RETURNING id::text`, scheduleID, nominationID, personID, allocationStatus, allocationSnapshot).Scan(&allocationID); err != nil {
 			return ImportResult{}, fmt.Errorf("insert package allocation: %w", err)
 		}
 		switch normalized.ValidationStatus {

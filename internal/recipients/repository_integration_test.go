@@ -329,6 +329,9 @@ func TestCreateInsertsRecipientWithoutImportRowAndRejectsOutOfScopeSchedule(t *t
 	if created.FullName != "Manual Recipient" || created.NIK != "1234567890123456" || created.SectorIdentifier != "KP-99" || created.AllocationStatus != "ready" {
 		t.Fatalf("unexpected created recipient: %+v", created)
 	}
+	if created.DistributionNumber != nil {
+		t.Fatalf("manual recipient must remain an unmounted DP3 candidate, got distribution number %d", *created.DistributionNumber)
+	}
 
 	var importRowID, batchID *string
 	if err := pool.QueryRow(ctx, `

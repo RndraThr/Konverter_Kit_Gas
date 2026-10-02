@@ -185,11 +185,11 @@ func (s *GoogleDriveStorage) PutNamed(ctx context.Context, key, filename string,
 		return "", 0, "", fmt.Errorf("resolve drive folder: %w", err)
 	}
 	hashing := newHashingReader(source)
-	fileID, size, err := s.api.uploadFile(ctx, filename, folderID, hashing)
+	fileID, _, err := s.api.uploadFile(ctx, filename, folderID, hashing)
 	if err != nil {
 		return "", 0, "", err
 	}
-	return fileID, size, hashing.checksum(), nil
+	return fileID, hashing.size(), hashing.checksum(), nil
 }
 
 // Open and Delete take the real Drive file ID (the storageKey returned by
@@ -208,6 +208,7 @@ func (s *GoogleDriveStorage) Delete(ctx context.Context, storageKey string) erro
 // io.MultiWriter.
 type hashingReader struct {
 	source io.Reader
+	bytes  int64
 	hasher interface {
 		io.Writer
 		Sum([]byte) []byte
@@ -219,5 +220,10 @@ func newHashingReader(source io.Reader) *hashingReader {
 	return &hashingReader{source: io.TeeReader(source, h), hasher: h}
 }
 
-func (r *hashingReader) Read(p []byte) (int, error) { return r.source.Read(p) }
-func (r *hashingReader) checksum() string           { return hex.EncodeToString(r.hasher.Sum(nil)) }
+func (r *hashingReader) Read(p []byte) (int, error) {
+	n, err := r.source.Read(p)
+	r.bytes += int64(n)
+	return n, err
+}
+func (r *hashingReader) size() int64      { return r.bytes }
+func (r *hashingReader) checksum() string { return hex.EncodeToString(r.hasher.Sum(nil)) }

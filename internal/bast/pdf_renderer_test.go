@@ -2,10 +2,13 @@ package bast
 
 import (
 	"bytes"
+	"compress/zlib"
 	"fmt"
 	"image"
 	"image/color"
 	"image/png"
+	"io"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -17,6 +20,106 @@ func TestBundleFilenameUsesIndonesianDayAndDate(t *testing.T) {
 	}
 	if name != "SELASA, 10 DESEMBER 2024.pdf" {
 		t.Fatalf("filename=%q", name)
+	}
+}
+
+func TestFormatIndonesianDateIncludesUppercaseWeekday(t *testing.T) {
+	if got := formatIndonesianDate("2024-12-10"); got != "SELASA, 10 DESEMBER 2024" {
+		t.Fatalf("date=%q", got)
+	}
+}
+
+func TestRenderPetaniBundleUsesPrintableCheckmarkGlyph(t *testing.T) {
+	document := makeRenderDocument(1, 1)
+	result, err := RenderPetaniBundle(BundleRenderInput{
+		LocalDate: "2024-12-10",
+		Documents: []RecipientDocument{document},
+		LogoBytes: map[string][]byte{"logo": testPNG(t)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := decodedPDFStreams(t, result.PDF)
+	if !regexp.MustCompile(`\(3\)\s*Tj`).MatchString(content) {
+		t.Fatal("rendered PDF does not use the ZapfDingbats checkmark glyph")
+	}
+	if regexp.MustCompile(`\(V\)\s*Tj`).MatchString(content) {
+		t.Fatal("rendered PDF still uses the letter V as a checklist mark")
+	}
+}
+
+func TestRenderPetaniBundleItalicizesLiquefiedPetroleumGas(t *testing.T) {
+	document := makeRenderDocument(1, 1)
+	result, err := RenderPetaniBundle(BundleRenderInput{
+		LocalDate: "2024-12-10",
+		Documents: []RecipientDocument{document},
+		LogoBytes: map[string][]byte{"logo": testPNG(t)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content := decodedPDFStreams(t, result.PDF)
+	for _, phrase := range []string{"LIQUEFIED", "PETROLEUM GAS"} {
+		pattern := regexp.MustCompile(`(?s)/F\S+ 9\.50 Tf.{0,120}\(` + regexp.QuoteMeta(phrase) + `\)\s*Tj`)
+		if !pattern.MatchString(content) {
+			index := strings.Index(content, phrase)
+			start, end := maxInt(0, index-180), index+180
+			if end > len(content) {
+				end = len(content)
+			}
+			t.Fatalf("rendered PDF does not draw %q as a separately styled 9.5pt segment; nearby=%q", phrase, content[start:end])
+		}
+	}
+}
+
+func TestRenderPetaniBundleUsesApprovedFormContent(t *testing.T) {
+	document := makeRenderDocument(1, 1182)
+	result, err := RenderPetaniBundle(BundleRenderInput{LocalDate: "2024-12-10", Documents: []RecipientDocument{document}, LogoBytes: map[string][]byte{"logo": testPNG(t)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := decodedPDFStreams(t, result.PDF)
+	for _, want := range []string{
+		"PENGADAAN BARANG PENYEDIAAN DAN PENDISTRIBUSIAN",
+		"Hari / Tanggal",
+		"SELASA, 10 DESEMBER 2024",
+		"A.  Data Penerima",
+		"B.  Data Paket Perdana yang akan diterima",
+		"Seluruh Material/Produk/Barang tercantum diatas",
+		"PELAKSANA PEMASANGAN",
+		"DAN PENDISTRIBUSIAN",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("rendered PDF is missing %q", want)
+		}
+	}
+}
+
+func TestRenderPetaniBundleUppercasesLegacyBusinessValues(t *testing.T) {
+	document := makeRenderDocument(1, 1)
+	document.Snapshot.Recipient.FullName = "Nama Lama"
+	document.Snapshot.Recipient.Address = "Jalan Melati"
+	document.Snapshot.Equipment.MachineType = "Pompa Tani"
+	document.Snapshot.Components[0].Label = "Tabung Lama"
+	document.Snapshot.Components[0].Unit = "Buah"
+	document.Snapshot.Signatures.SupervisorName = "Andi Saputra"
+
+	result, err := RenderPetaniBundle(BundleRenderInput{LocalDate: "2024-12-10", Documents: []RecipientDocument{document}, LogoBytes: map[string][]byte{"logo": testPNG(t)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := decodedPDFStreams(t, result.PDF)
+	for _, want := range []string{"NAMA LAMA", "JALAN MELATI", "POMPA TANI", "TABUNG LAMA", "BUAH", "ANDI SAPUTRA"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("rendered PDF is missing uppercase legacy value %q", want)
+		}
+	}
+	for _, unwanted := range []string{"Nama Lama", "Jalan Melati", "Pompa Tani", "Tabung Lama", "Andi Saputra"} {
+		if strings.Contains(content, unwanted) {
+			t.Fatalf("rendered PDF still contains mixed-case legacy value %q", unwanted)
+		}
 	}
 }
 
@@ -150,4 +253,23 @@ func testPNG(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 	return buf.Bytes()
+}
+
+func decodedPDFStreams(t *testing.T, data []byte) string {
+	t.Helper()
+	streamPattern := regexp.MustCompile(`(?s)stream\r?\n(.*?)\r?\nendstream`)
+	var decoded strings.Builder
+	for _, match := range streamPattern.FindAllSubmatch(data, -1) {
+		reader, err := zlib.NewReader(bytes.NewReader(match[1]))
+		if err != nil {
+			continue
+		}
+		content, readErr := io.ReadAll(reader)
+		closeErr := reader.Close()
+		if readErr != nil || closeErr != nil {
+			t.Fatalf("decode PDF stream: read=%v close=%v", readErr, closeErr)
+		}
+		decoded.Write(content)
+	}
+	return decoded.String()
 }

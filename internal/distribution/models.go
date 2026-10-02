@@ -21,6 +21,7 @@ var (
 	ErrMediaLimitReached       = errors.New("documentation slot has reached its file limit")
 	ErrIdentityIncomplete      = errors.New("recipient identity is incomplete")
 	ErrDocumentationIncomplete = errors.New("required documentation is incomplete")
+	ErrEquipmentOptionNotFound = errors.New("selected equipment option is not available in the schedule package template")
 	ErrPreviouslyReceived      = errors.New("recipient has previously received a package")
 	ErrAlreadyCompleted        = errors.New("distribution is already completed")
 	ErrSlotNotFound            = errors.New("distribution slot not found")

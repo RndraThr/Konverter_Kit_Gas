@@ -16,6 +16,11 @@ func BuildSnapshot(source SourceData) (Snapshot, error) {
 	if len(source.Render.Logos) == 0 {
 		return Snapshot{}, ErrBrandingNotConfigured
 	}
+	if strings.TrimSpace(source.Equipment.MachineBrand) == "" || strings.TrimSpace(source.Equipment.MachineType) == "" ||
+		strings.TrimSpace(source.Equipment.HoseBrand) == "" || strings.TrimSpace(source.Equipment.HoseSpec) == "" ||
+		strings.TrimSpace(source.Equipment.ConverterBrand) == "" {
+		return Snapshot{}, ErrEquipmentUnavailable
+	}
 	logos := append([]LogoSnapshot(nil), source.Render.Logos...)
 	sort.SliceStable(logos, func(i, j int) bool { return logos[i].SortOrder < logos[j].SortOrder })
 	source.Render.Logos = logos

@@ -9,6 +9,7 @@ import (
 
 	"konkit/internal/audit"
 	"konkit/internal/auth"
+	"konkit/internal/programs"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -242,16 +243,23 @@ func (r *Repository) Create(ctx context.Context, actor auth.Principal, input Cre
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var programType string
+	var packageValuesJSON []byte
 	err = tx.QueryRow(ctx, `
-		SELECT prog.program_type FROM program_schedules ps JOIN programs prog ON prog.id = ps.program_id
+		SELECT prog.program_type, pt.values_json FROM program_schedules ps
+		JOIN programs prog ON prog.id = ps.program_id
+		JOIN package_template_versions pt ON pt.id = ps.package_template_version_id
 		WHERE ps.id = $1 AND ($2 OR ps.regency_id::text = ANY($3))
 		FOR UPDATE OF ps
-	`, input.ScheduleID, scope.Unrestricted, scope.RegencyIDs).Scan(&programType)
+	`, input.ScheduleID, scope.Unrestricted, scope.RegencyIDs).Scan(&programType, &packageValuesJSON)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Recipient{}, ErrScheduleNotFound
 	}
 	if err != nil {
 		return Recipient{}, fmt.Errorf("lock schedule for create: %w", err)
+	}
+	allocationSnapshot, err := programs.BuildAllocationSnapshot(packageValuesJSON, input.MachineOptionCode)
+	if err != nil {
+		return Recipient{}, fmt.Errorf("build allocation snapshot: %w", err)
 	}
 
 	var personID string
@@ -287,14 +295,9 @@ func (r *Repository) Create(ctx context.Context, actor auth.Principal, input Cre
 		return Recipient{}, fmt.Errorf("insert nomination: %w", err)
 	}
 
-	var distributionNumber int
-	if err := tx.QueryRow(ctx, `SELECT COALESCE(MAX(distribution_number),0)+1 FROM package_allocations WHERE schedule_id = $1`, input.ScheduleID).Scan(&distributionNumber); err != nil {
-		return Recipient{}, fmt.Errorf("compute distribution number: %w", err)
-	}
-
 	var allocationID string
-	if err := tx.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,distribution_number,status,package_snapshot_json) VALUES($1,$2,$3,$4,'ready','{}'::jsonb) RETURNING id::text`,
-		input.ScheduleID, nominationID, personID, distributionNumber).Scan(&allocationID); err != nil {
+	if err := tx.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,status,package_snapshot_json) VALUES($1,$2,$3,'ready',$4) RETURNING id::text`,
+		input.ScheduleID, nominationID, personID, allocationSnapshot).Scan(&allocationID); err != nil {
 		return Recipient{}, fmt.Errorf("insert allocation: %w", err)
 	}
 

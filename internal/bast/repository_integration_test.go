@@ -51,10 +51,10 @@ func TestRepositoryResolvesScopedBAContextAndCompletedSlots(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO person_sector_identifiers(person_id,identifier_type,normalized_value,display_value) VALUES($1,'farmer_card',$2,'KP-01')`, personID, "KP01-"+suffix); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `UPDATE distribution_slots SET recipient_person_id=$2,machine_option_code='machine-1',machine_serial_number='M-001',hose_option_code='hose-1',hose_serial_number='H-001',converter_option_code='converter-1',converter_serial_number='C-001' WHERE id=$1`, firstSlotID, personID); err != nil {
+	if _, err := pool.Exec(ctx, `UPDATE distribution_slots SET recipient_person_id=$2,machine_option_code='machine-1',machine_serial_number='M-001',hose_option_code='hose-1',hose_serial_number='H-001',converter_option_code='converter-1',converter_serial_number='C-001',verification_snapshot_json='{"equipment":{"machine_option_code":"machine-1","machine_brand":"SHARK SNAPSHOT","machine_type":"SPWP SNAPSHOT","machine_serial":"M-001","hose_option_code":"hose-1","hose_brand":"TRILLIUNHOSE SNAPSHOT\nYAMAKOYO SNAPSHOT","hose_spec":"6 M SNAPSHOT\n10 M SNAPSHOT","hose_serial":"H-001","converter_option_code":"converter-1","converter_brand":"ERGAS SNAPSHOT","converter_serial":"C-001"}}'::jsonb WHERE id=$1`, firstSlotID, personID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `UPDATE package_template_versions SET values_json='{"machine_options":[{"code":"machine-1","brand":"SHARK","type":"SPWP"}],"hose_options":[{"code":"hose-1","brand":"TRILIUNHOSE","spec":"6m/10m"}],"converter_options":[{"code":"converter-1","brand":"ERGAS"}],"components":[{"code":"lpg","label":"Tabung LPG 3 Kg","quantity":1,"unit":"Tabung"}]}'::jsonb WHERE id=$1`, packageID); err != nil {
+	if _, err := pool.Exec(ctx, `UPDATE package_template_versions SET values_json='{"machine_options":[{"code":"machine-1","brand":"SHARK","type":"SPWP"}],"hose_options":[{"code":"hose-1","suction_brand":"TRILLIUNHOSE","suction_spec":"6 M","discharge_brand":"YAMAKOYO","discharge_spec":"10 M"}],"converter_options":[{"code":"converter-1","brand":"ERGAS"}],"components":[{"code":"lpg","label":"Tabung LPG 3 Kg","quantity":1,"unit":"Tabung"}]}'::jsonb WHERE id=$1`, packageID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `INSERT INTO program_ba_logo_assets(program_id,slot_code,storage_key,original_filename,mime_type,byte_size,checksum,sort_order,max_width_mm,max_height_mm,is_visible) VALUES($1,'organizer',$2,'logo.png','image/png',10,$3,1,35,18,true)`, programID, "bast-logo-"+suffix, strings.Repeat("a", 64)); err != nil {
@@ -125,6 +125,12 @@ func TestRepositoryResolvesScopedBAContextAndCompletedSlots(t *testing.T) {
 	}
 	if reloaded.Snapshot.Recipient.FullName != "Siti Aminah" || reloaded.Snapshot.Equipment.MachineSerial != "M-001" {
 		t.Fatalf("snapshot mutated: %+v", reloaded.Snapshot)
+	}
+	if reloaded.Snapshot.Equipment.MachineBrand != "SHARK SNAPSHOT" || reloaded.Snapshot.Equipment.MachineType != "SPWP SNAPSHOT" {
+		t.Fatalf("machine snapshot=%+v", reloaded.Snapshot.Equipment)
+	}
+	if reloaded.Snapshot.Equipment.HoseBrand != "TRILLIUNHOSE SNAPSHOT\nYAMAKOYO SNAPSHOT" || reloaded.Snapshot.Equipment.HoseSpec != "6 M SNAPSHOT\n10 M SNAPSHOT" || reloaded.Snapshot.Equipment.ConverterBrand != "ERGAS SNAPSHOT" {
+		t.Fatalf("separated hose snapshot=%+v", reloaded.Snapshot.Equipment)
 	}
 	activation := BundleActivation{ProgramID: programID, RegencyID: regencyID, LocalDate: "2024-12-10", Filename: "SELASA, 10 DESEMBER 2024.pdf", PageCount: 1, Checksum: strings.Repeat("b", 64), StorageKey: "bundle-key-1", Items: []BundleItemActivation{{IndividualDocumentID: document.ID, SlotNumber: document.SlotNumber, PageStart: 1, PageEnd: 1}}}
 	activated, err := repository.ActivateBundle(ctx, auth.Principal{}, activation, auth.ClientMeta{UserAgent: "bast-bundle-test"})

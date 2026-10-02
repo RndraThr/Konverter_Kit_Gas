@@ -347,6 +347,28 @@ func seedMediaFixture(t *testing.T, pool *pgxpool.Pool) mediaFixture {
 	return mediaFixture{documentationSlotID: documentationSlotID, mediaID: mediaID, regencyID: regencyID, otherRegencyID: otherRegencyID}
 }
 
+func TestSaveMediaAcceptsOpaqueGoogleDriveStorageKey(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	fixture := seedMediaFixture(t, pool)
+	repo := NewRepository(pool)
+
+	stored, err := repo.SaveMedia(context.Background(), auth.Principal{}, MediaFileInput{
+		SlotID:           fixture.documentationSlotID,
+		StorageKey:       "1HcRnPZPMu_tXXDRDDuYuAqyLAMFJNvdr",
+		OriginalFilename: "foto.jpg",
+		MimeType:         "image/jpeg",
+		ByteSize:         1024,
+		Checksum:         strings.Repeat("b", 64),
+		Source:           "camera",
+	}, auth.ClientMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.StorageKey != "1HcRnPZPMu_tXXDRDDuYuAqyLAMFJNvdr" {
+		t.Fatalf("storage key = %q", stored.StorageKey)
+	}
+}
+
 // TestGetMediaSlotScopedToDistributionSlots proves the re-scoped join
 // (documentation_slots -> distribution_slots -> program_schedules) resolves a real documentation
 // slot when the caller's regency scope includes the schedule's regency.

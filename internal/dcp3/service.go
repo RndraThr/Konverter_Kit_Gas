@@ -13,6 +13,7 @@ import (
 
 	"konkit/internal/auth"
 	"konkit/internal/programs"
+	"konkit/internal/textnorm"
 )
 
 var nonDigit = regexp.MustCompile(`[^0-9]+`)
@@ -81,7 +82,7 @@ func ValidateMapping(programType programs.ProgramType, headers []string, mapping
 	if mapping.SourceSequence == "" || mapping.FullName == "" {
 		return ErrMappingInvalid
 	}
-	for _, selected := range []string{mapping.SourceSequence, mapping.FullName, mapping.NIK, mapping.FarmerCardNumber, mapping.KUSUKANumber, mapping.Address, mapping.Village, mapping.District, mapping.PhoneNumber} {
+	for _, selected := range []string{mapping.SourceSequence, mapping.FullName, mapping.NIK, mapping.FarmerCardNumber, mapping.KUSUKANumber, mapping.Address, mapping.Village, mapping.District, mapping.PhoneNumber, mapping.MachineOption} {
 		if selected == "" {
 			continue
 		}
@@ -95,10 +96,10 @@ func ValidateMapping(programType programs.ProgramType, headers []string, mapping
 func NormalizeRow(programType programs.ProgramType, row RawImportRow, mapping Mapping) NormalizedRow {
 	result := NormalizedRow{
 		SourceRowNumber:    row.SourceRowNumber,
-		FullName:           strings.TrimSpace(row.Values[mapping.FullName]),
-		Address:            strings.TrimSpace(row.Values[mapping.Address]),
-		Village:            strings.TrimSpace(row.Values[mapping.Village]),
-		District:           strings.TrimSpace(row.Values[mapping.District]),
+		FullName:           textnorm.BusinessUpper(row.Values[mapping.FullName]),
+		Address:            textnorm.BusinessUpper(row.Values[mapping.Address]),
+		Village:            textnorm.BusinessUpper(row.Values[mapping.Village]),
+		District:           textnorm.BusinessUpper(row.Values[mapping.District]),
 		PhoneNumber:        digits(row.Values[mapping.PhoneNumber]),
 		ValidationStatus:   RowValid,
 		ValidationMessages: []string{},
@@ -126,7 +127,7 @@ func NormalizeRow(programType programs.ProgramType, row RawImportRow, mapping Ma
 		identifierColumn = mapping.KUSUKANumber
 		result.IdentifierType = IdentifierKUSUKA
 	}
-	result.SectorIdentifierDisplay = strings.TrimSpace(row.Values[identifierColumn])
+	result.SectorIdentifierDisplay = textnorm.BusinessUpper(row.Values[identifierColumn])
 	result.SectorIdentifier = normalizeIdentifier(result.SectorIdentifierDisplay)
 	if result.SectorIdentifier == "" {
 		result.raise(RowWarning, "Nomor kartu sektor belum tersedia")

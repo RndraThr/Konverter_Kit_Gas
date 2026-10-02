@@ -13,6 +13,7 @@ type fakeDriveFilesAPI struct {
 	createdFolders         []string          // names, in creation order
 	uploaded               map[string][]byte // key: file ID -> content
 	uploadedNames          []string
+	reportedUploadSize     *int64
 	nextID                 int
 	deleteErr              error
 	deletedIDs             []string
@@ -53,6 +54,9 @@ func (f *fakeDriveFilesAPI) uploadFile(_ context.Context, name string, _ string,
 	id := f.newID()
 	f.uploaded[id] = content
 	f.uploadedNames = append(f.uploadedNames, name)
+	if f.reportedUploadSize != nil {
+		return id, *f.reportedUploadSize, nil
+	}
 	return id, int64(len(content)), nil
 }
 
@@ -65,6 +69,21 @@ func TestGoogleDriveStoragePutNamedUsesVisibleFilename(t *testing.T) {
 	}
 	if len(api.uploadedNames) != 1 || api.uploadedNames[0] != "SELASA, 10 DESEMBER 2024.pdf" {
 		t.Fatalf("uploaded names=%v", api.uploadedNames)
+	}
+}
+
+func TestGoogleDriveStoragePutUsesBytesReadWhenDriveOmitsSize(t *testing.T) {
+	api := newFakeDriveFilesAPI()
+	zero := int64(0)
+	api.reportedUploadSize = &zero
+	storage := &GoogleDriveStorage{api: api, cache: newFakeFolderCache(), rootFolderID: "root-1"}
+
+	_, size, _, err := storage.Put(context.Background(), "file-key", []string{"PROGRAM ASSETS"}, bytes.NewBufferString("logo bytes"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if size != int64(len("logo bytes")) {
+		t.Fatalf("size=%d, want %d", size, len("logo bytes"))
 	}
 }
 

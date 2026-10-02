@@ -11,7 +11,8 @@ import { apiRequest } from '@/lib/api';
 import type { DataResponse, ProgramType, Schedule } from '../programs/types';
 import { programTypeLabel } from '../programs/types';
 import { BAIndividualPanel } from './BAIndividualPanel';
-import { LogoTenderPanel } from './LogoTenderPanel';
+import { DailyRecapPanel } from './DailyRecapPanel';
+import { DP3Panel } from './DP3Panel';
 
 const documentTypes = [
   { value: 'dp3', label: 'DP3' },
@@ -90,8 +91,6 @@ export function BeritaAcaraPage() {
 
     {schedules.isError && <DataState kind="error" title="Jadwal berita acara belum dapat dimuat" description="Periksa koneksi atau hak akses, lalu coba kembali." action={{ label: 'Coba lagi', onClick: () => schedules.refetch() }} />}
 
-    {selectedSchedule && <LogoTenderPanel programID={selectedSchedule.program_id} />}
-
     <Tabs value={activeTab} onValueChange={(value) => updateParam('tab', value)}>
       <div className="overflow-x-auto pb-2" role="presentation">
         <TabsList activateOnFocus variant="line" className="h-auto min-w-max justify-start" aria-label="Jenis berita acara">
@@ -101,7 +100,11 @@ export function BeritaAcaraPage() {
       {documentTypes.map((document) => <TabsContent className="pt-3" key={document.value} value={document.value}>
         {document.value === 'ba-perorangan' && selectedSchedule && programType
           ? <section aria-label={`BA Perorangan ${programTypeLabel(programType)}`}><BAIndividualPanel programID={selectedSchedule.program_id} regencyID={selectedSchedule.regency_id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} /></section>
-          : <DocumentWorkspace document={document} programType={programType} />}
+          : document.value === 'dp3' && selectedSchedule && programType
+            ? <section aria-label="DP3"><DP3Panel scheduleID={selectedSchedule.id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} defaultDate={selectedSchedule.start_date.slice(0, 10)} /></section>
+            : document.value === 'rekap-harian' && selectedSchedule && programType
+              ? <section aria-label="Rekap Harian"><DailyRecapPanel scheduleID={selectedSchedule.id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} /></section>
+              : <DocumentWorkspace document={document} programType={programType} />}
       </TabsContent>)}
     </Tabs>
   </div>;

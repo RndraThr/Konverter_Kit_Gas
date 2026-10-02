@@ -183,6 +183,56 @@ func (h *Handler) handleBASTContent(w http.ResponseWriter, r *http.Request, rc r
 	writePDF(w, "attachment", content.Filename, content.Reader)
 }
 
+func (h *Handler) handleBASTScheduleSettings(w http.ResponseWriter, r *http.Request, rc requestContext, suffix string) {
+	if h.deps.BASTSettings == nil {
+		writeUnavailable(w)
+		return
+	}
+	parts := strings.Split(strings.Trim(suffix, "/"), "/")
+	if len(parts) != 2 || parts[1] != "settings" || strings.TrimSpace(parts[0]) == "" {
+		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
+		return
+	}
+	scheduleID := parts[0]
+	switch r.Method {
+	case http.MethodGet:
+		if !h.authorize(w, r, rc.principal, "bast.view") {
+			return
+		}
+		scope, ok := h.regencyScope(w, r, rc.principal)
+		if !ok {
+			return
+		}
+		result, err := h.deps.BASTSettings.Get(r.Context(), scheduleID, scope)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeData(w, http.StatusOK, result)
+	case http.MethodPut:
+		if !h.authorize(w, r, rc.principal, "bast.manage") {
+			return
+		}
+		var input bast.ScheduleSettingsInput
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		input.ScheduleID = scheduleID
+		scope, ok := h.regencyScope(w, r, rc.principal)
+		if !ok {
+			return
+		}
+		result, err := h.deps.BASTSettings.Put(r.Context(), rc.principal, input, scope, clientMeta(r))
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeData(w, http.StatusOK, result)
+	default:
+		methodNotAllowed(w, http.MethodGet+", "+http.MethodPut)
+	}
+}
+
 func (h *Handler) handleBASTBranding(w http.ResponseWriter, r *http.Request, rc requestContext, suffix string) {
 	if h.deps.BASTBranding == nil {
 		writeUnavailable(w)
@@ -219,7 +269,7 @@ func (h *Handler) handleBASTBrandingList(w http.ResponseWriter, r *http.Request,
 		methodNotAllowed(w, http.MethodGet)
 		return
 	}
-	if !h.authorize(w, r, rc.principal, "bast.view") {
+	if !h.authorize(w, r, rc.principal, "programs.view") {
 		return
 	}
 	programID := strings.TrimSpace(r.URL.Query().Get("program_id"))
@@ -232,6 +282,9 @@ func (h *Handler) handleBASTBrandingList(w http.ResponseWriter, r *http.Request,
 		writeServiceError(w, err)
 		return
 	}
+	if items == nil {
+		items = []bast.LogoAsset{}
+	}
 	writeData(w, http.StatusOK, items)
 }
 
@@ -240,7 +293,7 @@ func (h *Handler) handleBASTBrandingUpload(w http.ResponseWriter, r *http.Reques
 		methodNotAllowed(w, http.MethodPost)
 		return
 	}
-	if !h.authorize(w, r, rc.principal, "bast.manage") {
+	if !h.authorize(w, r, rc.principal, "programs.manage") {
 		return
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 11<<20)
@@ -283,7 +336,7 @@ func (h *Handler) handleBASTBrandingPatch(w http.ResponseWriter, r *http.Request
 		methodNotAllowed(w, http.MethodPatch)
 		return
 	}
-	if !h.authorize(w, r, rc.principal, "bast.manage") {
+	if !h.authorize(w, r, rc.principal, "programs.manage") {
 		return
 	}
 	var input struct {
@@ -309,7 +362,7 @@ func (h *Handler) handleBASTBrandingContent(w http.ResponseWriter, r *http.Reque
 		methodNotAllowed(w, http.MethodGet)
 		return
 	}
-	if !h.authorize(w, r, rc.principal, "bast.view") {
+	if !h.authorize(w, r, rc.principal, "programs.view") {
 		return
 	}
 	programID := strings.TrimSpace(r.URL.Query().Get("program_id"))

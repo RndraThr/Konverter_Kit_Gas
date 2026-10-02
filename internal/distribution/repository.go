@@ -2,6 +2,7 @@ package distribution
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -515,16 +516,27 @@ func (r *Repository) CompleteSlot(ctx context.Context, actor auth.Principal, inp
 	var slotID, status string
 	var allocationIDPtr, personIDPtr *string
 	var fullName, nik, sectorIdentifier string
+	var packageJSON []byte
+	var equipmentSelection CreateSlotInput
 	err = tx.QueryRow(ctx, `
-		SELECT ds.id::text, ds.status, pa.id::text, p.id::text, COALESCE(p.full_name,''), COALESCE(p.nik,''), COALESCE(psi.normalized_value,'')
+		SELECT ds.id::text, ds.status, pa.id::text, p.id::text, COALESCE(p.full_name,''), COALESCE(p.nik,''), COALESCE(psi.normalized_value,''),
+			pt.values_json, COALESCE(ds.machine_option_code,''), COALESCE(ds.machine_serial_number,''),
+			COALESCE(ds.hose_option_code,''), COALESCE(ds.hose_serial_number,''),
+			COALESCE(ds.converter_option_code,''), COALESCE(ds.converter_serial_number,'')
 		FROM distribution_slots ds
 		JOIN program_schedules ps ON ps.id = ds.schedule_id
+		JOIN package_template_versions pt ON pt.id = ps.package_template_version_id
 		LEFT JOIN package_allocations pa ON pa.id = ds.allocation_id
 		LEFT JOIN people p ON p.id = ds.recipient_person_id
 		LEFT JOIN LATERAL (SELECT normalized_value FROM person_sector_identifiers WHERE person_id = p.id LIMIT 1) psi ON true
 		WHERE ds.schedule_id=$1 AND ds.slot_number=$2 AND ($3 OR ps.regency_id::text = ANY($4))
 		FOR UPDATE OF ds
-	`, input.ScheduleID, input.SlotNumber, scope.Unrestricted, scope.RegencyIDs).Scan(&slotID, &status, &allocationIDPtr, &personIDPtr, &fullName, &nik, &sectorIdentifier)
+	`, input.ScheduleID, input.SlotNumber, scope.Unrestricted, scope.RegencyIDs).Scan(
+		&slotID, &status, &allocationIDPtr, &personIDPtr, &fullName, &nik, &sectorIdentifier,
+		&packageJSON, &equipmentSelection.MachineOptionCode, &equipmentSelection.MachineSerialNumber,
+		&equipmentSelection.HoseOptionCode, &equipmentSelection.HoseSerialNumber,
+		&equipmentSelection.ConverterOptionCode, &equipmentSelection.ConverterSerialNumber,
+	)
 	// pa and p are LEFT JOINed (not INNER JOINed) because a freshly-created 'open' slot has
 	// NULL allocation_id/recipient_person_id — an INNER JOIN would silently drop that row before
 	// the WHERE clause or FOR UPDATE lock ever apply, turning a legitimate ErrSlotNotLinked case
@@ -572,11 +584,19 @@ func (r *Repository) CompleteSlot(ctx context.Context, actor auth.Principal, inp
 	if incomplete {
 		return DistributionSlot{}, ErrDocumentationIncomplete
 	}
+	equipmentSnapshot, err := buildEquipmentVerificationSnapshot(packageJSON, equipmentSelection)
+	if err != nil {
+		return DistributionSlot{}, err
+	}
+	equipmentPayload, err := json.Marshal(equipmentSnapshot)
+	if err != nil {
+		return DistributionSlot{}, fmt.Errorf("encode equipment verification snapshot: %w", err)
+	}
 
 	if _, err := tx.Exec(ctx, `UPDATE package_allocations SET actual_recipient_person_id=$2, status='distributed', updated_at=now() WHERE id=$1`, allocationID, personID); err != nil {
 		return DistributionSlot{}, fmt.Errorf("update package allocation: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `UPDATE distribution_slots SET status='completed', distributed_at=now(), distributed_by=$2, completed_at=now(), updated_at=now() WHERE id=$1`, slotID, actor.UserID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE distribution_slots SET status='completed', verification_snapshot_json=jsonb_set(verification_snapshot_json,'{equipment}',$3::jsonb,true), distributed_at=now(), distributed_by=$2, completed_at=now(), updated_at=now() WHERE id=$1`, slotID, actor.UserID, string(equipmentPayload)); err != nil {
 		return DistributionSlot{}, fmt.Errorf("complete distribution slot: %w", err)
 	}
 

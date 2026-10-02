@@ -474,10 +474,30 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "slot_out_of_range", "Nomor pembagian melebihi jumlah total kabupaten")
 	case errors.Is(err, bast.ErrTemplateUnavailable):
 		writeError(w, http.StatusConflict, "template_unavailable", "Template BA Perorangan untuk jenis program ini belum tersedia")
+	case errors.Is(err, bast.ErrEquipmentUnavailable):
+		writeError(w, http.StatusConflict, "equipment_unavailable", "Data mesin, selang, atau konkit distribusi tidak lengkap; periksa pilihan alat pada nomor bagi")
 	case errors.Is(err, bast.ErrNoRecipients):
 		writeError(w, http.StatusConflict, "no_recipients", "Belum ada distribusi selesai pada tanggal ini")
 	case errors.Is(err, bast.ErrBundleConflict):
 		writeError(w, http.StatusConflict, "bundle_conflict", "Bundle telah diubah operator lain; muat ulang data")
+	case errors.Is(err, bast.ErrAggregateConflict):
+		writeError(w, http.StatusConflict, "document_conflict", "Dokumen telah diubah operator lain; muat ulang data")
+	case errors.Is(err, bast.ErrAggregateNoRecipients):
+		writeError(w, http.StatusConflict, "no_recipients", "Belum ada penerima pada jadwal ini")
+	case errors.Is(err, bast.ErrHandoverLocationRequired):
+		writeError(w, http.StatusConflict, "handover_location_required", "Lokasi/titik serah belum dikonfigurasi")
+	case errors.Is(err, bast.ErrSignatoryRequired):
+		writeError(w, http.StatusConflict, "signatory_required", "Penandatangan dokumen belum lengkap")
+	case errors.Is(err, bast.ErrRecipientIdentityIncomplete):
+		writeError(w, http.StatusConflict, "recipient_identity_incomplete", "Identitas penerima belum lengkap")
+	case errors.Is(err, bast.ErrAllocationSnapshotIncomplete):
+		writeError(w, http.StatusConflict, "allocation_snapshot_incomplete", "Snapshot alokasi penerima belum lengkap")
+	case errors.Is(err, bast.ErrVerificationSnapshotIncomplete):
+		writeError(w, http.StatusConflict, "verification_snapshot_incomplete", "Snapshot verifikasi distribusi belum lengkap")
+	case errors.Is(err, bast.ErrMachinePowerRequired):
+		writeError(w, http.StatusConflict, "machine_power_required", "Daya mesin belum lengkap")
+	case errors.Is(err, bast.ErrMachineFuelRequired):
+		writeError(w, http.StatusConflict, "machine_fuel_required", "Jenis BBM mesin belum lengkap")
 	case errors.Is(err, dcp3.ErrDuplicateImport):
 		writeError(w, http.StatusConflict, "duplicate_import", "File DCP3 ini sudah pernah diunggah pada jadwal yang sama")
 	case errors.Is(err, dcp3.ErrImportState):
@@ -488,6 +508,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "identity_incomplete", "Identitas wajib penerima belum lengkap")
 	case errors.Is(err, distribution.ErrDocumentationIncomplete):
 		writeError(w, http.StatusConflict, "documentation_incomplete", "Dokumentasi wajib belum lengkap")
+	case errors.Is(err, distribution.ErrEquipmentOptionNotFound):
+		writeError(w, http.StatusConflict, "equipment_option_not_found", "Pilihan mesin, selang, atau konkit tidak ditemukan pada template paket jadwal")
 	case errors.Is(err, distribution.ErrPreviouslyReceived):
 		writeError(w, http.StatusConflict, "previously_received", "Penerima sudah pernah menerima paket sebelumnya")
 	case errors.Is(err, distribution.ErrSlotNotOpen):

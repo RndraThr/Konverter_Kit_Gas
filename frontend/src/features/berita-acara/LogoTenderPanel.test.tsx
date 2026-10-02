@@ -10,14 +10,14 @@ vi.mock('@/lib/api', () => ({ apiRequest: vi.fn() }));
 
 const logo = { id: 'logo-1', program_id: 'program-1', slot_code: 'pertamina', original_filename: 'pertamina.png', mime_type: 'image/png', byte_size: 1200, checksum: 'abc', sort_order: 1, max_width_mm: 35, max_height_mm: 18, is_visible: true };
 
-function renderPanel(permissions = ['bast.view', 'bast.manage']) {
+function renderPanel(permissions = ['programs.view', 'programs.manage']) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(<QueryClientProvider client={client}><PermissionsProvider permissions={permissions}><LogoTenderPanel programID="program-1" /></PermissionsProvider></QueryClientProvider>);
 }
 
 test('menampilkan logo tender dan menyembunyikan kontrol kelola untuk pengguna lihat-saja', async () => {
   vi.mocked(apiRequest).mockResolvedValue({ data: [logo] });
-  renderPanel(['bast.view']);
+  renderPanel(['programs.view']);
 
   expect(await screen.findByRole('img', { name: 'pertamina.png' })).toHaveAttribute('src', '/api/v1/bast/branding/logos/logo-1/content?program_id=program-1');
   expect(screen.getByText('Logo Tender')).toBeVisible();
@@ -31,6 +31,14 @@ test('menampilkan petunjuk konfigurasi saat tender belum memiliki logo', async (
 
   expect(await screen.findByText('Belum ada logo tender')).toBeVisible();
   expect(screen.getByText(/unggah minimal satu logo aktif/i)).toBeVisible();
+});
+
+test('memperlakukan data null dari server lama sebagai daftar logo kosong', async () => {
+  vi.mocked(apiRequest).mockResolvedValue({ data: null });
+  renderPanel();
+
+  expect(await screen.findByText('Belum ada logo tender')).toBeVisible();
+  expect(screen.queryByText('Logo tender belum dapat dimuat')).not.toBeInTheDocument();
 });
 
 test('mengunggah multipart dan dapat mengubah visibilitas logo', async () => {

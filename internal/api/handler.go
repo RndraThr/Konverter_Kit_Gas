@@ -142,6 +142,29 @@ type BASTBrandingService interface {
 	OpenLogo(context.Context, string, string) (bast.LogoContent, error)
 }
 
+type BASTScheduleSettingsService interface {
+	Get(context.Context, string, auth.RegencyScope) (bast.ScheduleSettings, error)
+	Put(context.Context, auth.Principal, bast.ScheduleSettingsInput, auth.RegencyScope, auth.ClientMeta) (bast.ScheduleSettings, error)
+}
+
+type DP3Service interface {
+	Summary(context.Context, string, auth.RegencyScope) (bast.DP3Summary, error)
+	Recipients(context.Context, string, auth.RegencyScope) ([]bast.DP3Recipient, error)
+	Preview(context.Context, string, string, auth.RegencyScope) (bast.AggregatePreview, error)
+	Finalize(context.Context, auth.Principal, string, string, auth.RegencyScope, auth.ClientMeta) (bast.AggregateDocument, error)
+	Documents(context.Context, string, string, auth.RegencyScope) ([]bast.AggregateDocument, error)
+	Open(context.Context, string, auth.RegencyScope) (bast.AggregateContent, error)
+}
+
+type DailyRecapService interface {
+	Dates(context.Context, string, auth.RegencyScope) ([]bast.DailyRecapDate, error)
+	Recipients(context.Context, string, string, auth.RegencyScope) ([]bast.DailyRecapRecipient, error)
+	Preview(context.Context, string, string, auth.RegencyScope) (bast.AggregatePreview, error)
+	Finalize(context.Context, auth.Principal, string, string, auth.RegencyScope, auth.ClientMeta) (bast.AggregateDocument, error)
+	Documents(context.Context, string, string, auth.RegencyScope) ([]bast.AggregateDocument, error)
+	Open(context.Context, string, auth.RegencyScope) (bast.AggregateContent, error)
+}
+
 type Dependencies struct {
 	Auth           AuthService
 	Profile        ProfileService
@@ -157,6 +180,9 @@ type Dependencies struct {
 	Activities     ActivitiesService
 	BAST           BASTService
 	BASTBranding   BASTBrandingService
+	BASTSettings   BASTScheduleSettingsService
+	DP3            DP3Service
+	DailyRecap     DailyRecapService
 	SessionSecret  []byte
 }
 
@@ -282,6 +308,12 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleActivityMediaItem(w, r, rc, strings.TrimPrefix(path, "activities/media/"))
 	case strings.HasPrefix(path, "bast/individual/"):
 		h.handleBASTIndividual(w, r, rc, strings.TrimPrefix(path, "bast/individual/"))
+	case strings.HasPrefix(path, "bast/schedules/"):
+		h.handleBASTScheduleSettings(w, r, rc, strings.TrimPrefix(path, "bast/schedules/"))
+	case strings.HasPrefix(path, "bast/dp3/"):
+		h.handleBASTDP3(w, r, rc, strings.TrimPrefix(path, "bast/dp3/"))
+	case strings.HasPrefix(path, "bast/daily-recap/"):
+		h.handleBASTDailyRecap(w, r, rc, strings.TrimPrefix(path, "bast/daily-recap/"))
 	case path == "bast/branding" || strings.HasPrefix(path, "bast/branding/"):
 		h.handleBASTBranding(w, r, rc, strings.TrimPrefix(strings.TrimPrefix(path, "bast/branding"), "/"))
 	default:

@@ -11,12 +11,23 @@ import (
 )
 
 const (
-	pageWidthMM                     = 210.0
-	pageHeightMM                    = 297.0
-	marginMM                        = 15.0
-	baPeroranganTitle               = "BERITA ACARA SERAH TERIMA"
-	baPeroranganSubtitle            = "(FORM PENERIMA PAKET)"
-	baPeroranganProcurementTemplate = "Pengadaan Barang Penyediaan dan Pendistribusian Paket Perdana Liquefied Petroleum Gas (LPG) untuk Mesin Pompa Air Bagi Petani Sasaran Tahun Anggaran %d di PT Pertamina Patra Niaga"
+	pageWidthMM          = 210.0
+	pageHeightMM         = 297.0
+	marginMM             = 16.0
+	topMarginMM          = 11.0
+	bottomMarginMM       = 10.0
+	baPeroranganTitle    = "BERITA ACARA SERAH TERIMA"
+	baPeroranganSubtitle = "(FORM PENERIMA PAKET)"
+	declarationText      = "Dengan ini kami menyatakan bahwa Seluruh Material/Produk/Barang tercantum diatas telah diterima dan dapat berfungsi dengan baik dengan jumlah yang benar serta telah diperiksa dengan seksama oleh masing-masing pihak"
+
+	tableFontPt   = 8.5
+	tableLineMM   = 3.6
+	cellPadMM     = 1.6
+	minRowMM      = 5.8
+	infoRowMM     = 4.9
+	signatureHMM  = 36.0
+	checkToken    = "\u2713"
+	hoseLabelPair = "Panjang Selang Hisap"
 )
 
 type BundleRenderInput struct {
@@ -48,6 +59,11 @@ type registeredLogo struct {
 	maxHeightMM float64
 }
 
+type textSegment struct {
+	text  string
+	style string
+}
+
 func BundleFilename(localDate string) (string, error) {
 	date, err := time.Parse("2006-01-02", localDate)
 	if err != nil {
@@ -69,17 +85,18 @@ func RenderPetaniBundle(input BundleRenderInput) (RenderedBundle, error) {
 
 	documents := append([]RecipientDocument(nil), input.Documents...)
 	sort.SliceStable(documents, func(i, j int) bool { return documents[i].SlotNumber < documents[j].SlotNumber })
-	for _, document := range documents {
+	for index, document := range documents {
 		if document.LocalDate != input.LocalDate || document.Snapshot.LocalDate != input.LocalDate {
 			return RenderedBundle{}, fmt.Errorf("%w: recipient date does not match bundle date", ErrInvalidInput)
 		}
 		if document.Snapshot.ProgramType != "farmer" {
 			return RenderedBundle{}, ErrTemplateUnavailable
 		}
+		documents[index] = uppercaseRecipientDocument(document)
 	}
 
 	pdf := fpdf.New("P", "mm", "A4", "")
-	pdf.SetMargins(marginMM, 10, marginMM)
+	pdf.SetMargins(marginMM, topMarginMM, marginMM)
 	pdf.SetAutoPageBreak(false, marginMM)
 	pdf.SetTitle(strings.TrimSuffix(filename, ".pdf"), false)
 	pdf.SetAuthor("KONKIT", false)
@@ -175,34 +192,39 @@ func renderRecipient(pdf *fpdf.Fpdf, document RecipientDocument, logos []registe
 	snapshot := document.Snapshot
 	renderHeader(pdf, logos)
 
-	pdf.SetFont("Helvetica", "B", 8.5)
-	pdf.SetX(marginMM)
-	pdf.MultiCell(pageWidthMM-2*marginMM, 4, fmt.Sprintf(baPeroranganProcurementTemplate, snapshot.Render.FiscalYear), "", "C", false)
+	renderProcurementHeading(pdf, marginMM, pageWidthMM-2*marginMM, snapshot.Render.FiscalYear)
+	pdf.Ln(2.8)
+
+	labelValue(pdf, "No. BAST", snapshot.DocumentNumber, false)
+	labelValue(pdf, "Hari / Tanggal", formatIndonesianDate(snapshot.LocalDate), false)
 	pdf.Ln(2)
 
-	labelValue(pdf, "No. BAST", snapshot.DocumentNumber)
-	labelValue(pdf, "Tanggal", formatIndonesianDate(snapshot.LocalDate))
-	pdf.Ln(1)
-
-	pdf.SetFont("Helvetica", "B", 8)
-	pdf.CellFormat(0, 4.5, "Data Penerima:", "", 1, "L", false, 0, "")
-	details := [][2]string{
-		{"Nama", snapshot.Recipient.FullName},
-		{"Alamat", snapshot.Recipient.Address},
-		{"Desa/Kelurahan", snapshot.Recipient.Village},
-		{"Kecamatan", snapshot.Recipient.District},
-		{"Kota/Kabupaten", snapshot.Recipient.Regency},
-		{"No. KTP", snapshot.Recipient.NIK},
-		{"No. Kartu Petani", snapshot.Recipient.SectorIdentifier},
-		{"No. HP", snapshot.Recipient.PhoneNumber},
+	pdf.SetFont("Helvetica", "B", 9)
+	pdf.SetX(marginMM)
+	pdf.CellFormat(0, 4.8, "A.  Data Penerima", "", 1, "L", false, 0, "")
+	details := []struct {
+		label string
+		value string
+		bold  bool
+	}{
+		{"Nama", snapshot.Recipient.FullName, true},
+		{"Alamat", snapshot.Recipient.Address, false},
+		{"Desa", snapshot.Recipient.Village, false},
+		{"Kecamatan", snapshot.Recipient.District, false},
+		{"Kota/Kabupaten", snapshot.Recipient.Regency, false},
+		{"No. KTP", snapshot.Recipient.NIK, false},
+		{"No. Kartu Petani", snapshot.Recipient.SectorIdentifier, false},
+		{"No. HP", snapshot.Recipient.PhoneNumber, false},
 	}
 	for _, detail := range details {
-		labelValue(pdf, detail[0], detail[1])
+		labelValue(pdf, detail.label, detail.value, detail.bold)
 	}
-	pdf.Ln(1)
+	pdf.Ln(3)
 
-	pdf.SetFont("Helvetica", "B", 8)
-	pdf.CellFormat(0, 4.5, "A. Data Paket Perdana yang akan diterima:", "", 1, "L", false, 0, "")
+	pdf.SetFont("Helvetica", "B", 9)
+	pdf.SetX(marginMM)
+	pdf.CellFormat(0, 4.8, "B.  Data Paket Perdana yang akan diterima", "", 1, "L", false, 0, "")
+	pdf.Ln(0.8)
 	renderEquipmentTables(pdf, snapshot.Equipment)
 	pdf.Ln(1.5)
 	renderComponentHeader(pdf)
@@ -215,32 +237,72 @@ func renderRecipient(pdf *fpdf.Fpdf, document RecipientDocument, logos []registe
 		renderComponentRow(pdf, component, rowHeight)
 	}
 
-	if pdf.GetY()+55 > pageHeightMM-marginMM {
+	pdf.SetFont("Helvetica", "", 9)
+	declLines := len(pdf.SplitLines([]byte(declarationText), pageWidthMM-2*marginMM))
+	needed := 3 + float64(declLines)*4.1 + signatureHMM
+	if pdf.GetY()+needed > pageHeightMM-bottomMarginMM {
 		addContinuationPage(pdf, document.SlotNumber, logos, events)
 	}
 	renderDeclarationAndSignatures(pdf, snapshot.Signatures)
 }
 
-func renderHeader(pdf *fpdf.Fpdf, logos []registeredLogo) {
-	contentWidth := pageWidthMM - 2*marginMM
-	gap := 5.0
-	available := contentWidth - gap*float64(len(logos)-1)
-	boxWidth := available / float64(len(logos))
-	y := 9.0
-	for i, logo := range logos {
-		maxWidth := minFloat(logo.maxWidthMM, boxWidth)
-		maxHeight := logo.maxHeightMM
-		scale := minFloat(maxWidth/logo.widthMM, maxHeight/logo.heightMM)
-		w := logo.widthMM * scale
-		h := logo.heightMM * scale
-		x := marginMM + float64(i)*(boxWidth+gap) + (boxWidth-w)/2
-		pdf.ImageOptions(logo.name, x, y+(maxHeight-h)/2, w, h, false, logo.options, 0, "")
+// renderProcurementHeading menggambar uraian pengadaan baku (tiga baris,
+// dengan "LIQUEFIED PETROLEUM GAS" dicetak miring) terpusat dalam contentWidth
+// yang dimulai pada marginX. Dipakai oleh BA Perorangan (portrait) dan DP3
+// (landscape) agar uraiannya tetap identik di seluruh jenis BA.
+func renderProcurementHeading(pdf *fpdf.Fpdf, marginX, contentWidth float64, fiscalYear int) {
+	lines := [][]textSegment{
+		{{text: "PENGADAAN BARANG PENYEDIAAN DAN PENDISTRIBUSIAN PAKET PERDANA ", style: "B"}, {text: "LIQUEFIED", style: "BI"}},
+		{{text: "PETROLEUM GAS", style: "BI"}, {text: " (LPG) UNTUK MESIN POMPA AIR BAGI PETANI SASARAN", style: "B"}},
+		{{text: fmt.Sprintf("TAHUN ANGGARAN %d DI PT PERTAMINA PATRA NIAGA", fiscalYear), style: "B"}},
 	}
-	pdf.SetY(28)
-	pdf.SetFont("Helvetica", "BU", 10)
-	pdf.CellFormat(contentWidth, 4.5, baPeroranganTitle, "", 1, "C", false, 0, "")
-	pdf.SetFont("Helvetica", "BI", 8.5)
-	pdf.CellFormat(contentWidth, 4, baPeroranganSubtitle, "", 1, "C", false, 0, "")
+	const fontSize = 9.5
+	const lineHeight = 4.4
+	for _, line := range lines {
+		width := 0.0
+		for _, segment := range line {
+			pdf.SetFont("Helvetica", segment.style, fontSize)
+			width += pdf.GetStringWidth(segment.text)
+		}
+		y := pdf.GetY()
+		pdf.SetXY(marginX+(contentWidth-width)/2, y)
+		for _, segment := range line {
+			pdf.SetFont("Helvetica", segment.style, fontSize)
+			segmentWidth := pdf.GetStringWidth(segment.text)
+			pdf.CellFormat(segmentWidth, lineHeight, segment.text, "", 0, "L", false, 0, "")
+		}
+		pdf.SetXY(marginX, y+lineHeight)
+	}
+}
+
+func renderHeader(pdf *fpdf.Fpdf, logos []registeredLogo) {
+	contentWidth, gap, stripY, stripHeight := pageWidthMM-2*marginMM, 5.8, topMarginMM, 17.5
+	widths := make([]float64, len(logos))
+	heights := make([]float64, len(logos))
+	referenceHeights := []float64{10.6, 15.9, 13.8, 14.3}
+	for i, logo := range logos {
+		maxHeight, maxWidth := logo.maxHeightMM, logo.maxWidthMM
+		if len(logos) == len(referenceHeights) {
+			maxHeight, maxWidth = referenceHeights[i], 45
+		}
+		scale := minFloat(maxWidth/logo.widthMM, maxHeight/logo.heightMM)
+		widths[i], heights[i] = logo.widthMM*scale, logo.heightMM*scale
+	}
+	totalWidth := gap * float64(maxInt(0, len(logos)-1))
+	for _, width := range widths {
+		totalWidth += width
+	}
+	x := marginMM + (contentWidth-totalWidth)/2
+	for i, logo := range logos {
+		pdf.ImageOptions(logo.name, x, stripY+(stripHeight-heights[i])/2, widths[i], heights[i], false, logo.options, 0, "")
+		x += widths[i] + gap
+	}
+	pdf.SetXY(marginMM, 33.8)
+	pdf.SetFont("Helvetica", "B", 12.75)
+	pdf.CellFormat(contentWidth, 5.6, baPeroranganTitle, "", 1, "C", false, 0, "")
+	pdf.SetFont("Helvetica", "BI", 9)
+	pdf.CellFormat(contentWidth, 4.2, baPeroranganSubtitle, "", 1, "C", false, 0, "")
+	pdf.Ln(2.2)
 }
 
 func addContinuationPage(pdf *fpdf.Fpdf, slot int, logos []registeredLogo, events *[]string) {
@@ -252,75 +314,146 @@ func addContinuationPage(pdf *fpdf.Fpdf, slot int, logos []registeredLogo, event
 	pdf.Ln(2)
 }
 
-func labelValue(pdf *fpdf.Fpdf, label, value string) {
-	pdf.SetFont("Helvetica", "", 8)
+func labelValue(pdf *fpdf.Fpdf, label, value string, bold bool) {
+	pdf.SetFont("Helvetica", "", 9)
 	pdf.SetX(marginMM)
-	pdf.CellFormat(31, 4, label, "", 0, "L", false, 0, "")
-	pdf.CellFormat(4, 4, ":", "", 0, "C", false, 0, "")
-	pdf.CellFormat(pageWidthMM-2*marginMM-35, 4, value, "B", 1, "L", false, 0, "")
-}
-
-func renderEquipmentTables(pdf *fpdf.Fpdf, equipment EquipmentSnapshot) {
-	renderTable(pdf, []float64{55, 75, 35, 15}, []string{"Merk Mesin", "Tipe Mesin", "Serial Number", "Checklist"}, [][]string{{equipment.MachineBrand, equipment.MachineType, equipment.MachineSerial, checkMark(true)}})
-	pdf.Ln(1.5)
-	renderTable(pdf, []float64{48, 82, 35, 15}, []string{"Merk Selang Hisap dan Selang Buang", "Spesifikasi Selang Hisap dan Selang Buang", "Serial Number", "Checklist"}, [][]string{{equipment.HoseBrand, equipment.HoseSpec, equipment.HoseSerial, checkMark(true)}})
-	pdf.Ln(1.5)
-	renderTable(pdf, []float64{75, 75, 30}, []string{"Merk Konkit / Reducer", "Serial Number", "Checklist"}, [][]string{{equipment.ConverterBrand, equipment.ConverterSerial, checkMark(true)}})
-}
-
-func renderTable(pdf *fpdf.Fpdf, widths []float64, headers []string, rows [][]string) {
-	renderFixedRow(pdf, widths, headers, 6, true)
-	for _, row := range rows {
-		height := 6.0
-		for i, value := range row {
-			lines := len(pdf.SplitLines([]byte(value), widths[i]-2))
-			height = maxFloat(height, float64(lines)*3.5+1.5)
-		}
-		renderFixedRow(pdf, widths, row, height, false)
-	}
-}
-
-func renderFixedRow(pdf *fpdf.Fpdf, widths []float64, values []string, height float64, bold bool) {
-	x, y := pdf.GetXY()
+	pdf.CellFormat(29.6, infoRowMM, label, "", 0, "L", false, 0, "")
+	pdf.CellFormat(3.7, infoRowMM, ":", "", 0, "C", false, 0, "")
 	style := ""
 	if bold {
 		style = "B"
 	}
-	pdf.SetFont("Helvetica", style, 6.5)
+	pdf.SetFont("Helvetica", style, 9)
+	pdf.CellFormat(pageWidthMM-2*marginMM-33.3, infoRowMM, value, "", 1, "L", false, 0, "")
+}
+
+func renderEquipmentTables(pdf *fpdf.Fpdf, equipment EquipmentSnapshot) {
+	renderTable(pdf, []float64{53.4, 53.4, 49.8, 21.4}, []string{"Merek Mesin", "Tipe Mesin", "Serial Number", "Checklist"}, [][]string{{equipment.MachineBrand, equipment.MachineType, equipment.MachineSerial, checkMark(true)}})
+	pdf.Ln(1.5)
+	renderHoseTable(pdf, equipment)
+	pdf.Ln(1.5)
+	renderTable(pdf, []float64{53.4, 103.2, 21.4}, []string{"Merek Konkit / Reducer", "Serial Number", "Checklist"}, [][]string{{equipment.ConverterBrand, equipment.ConverterSerial, checkMark(true)}})
+}
+
+func renderHoseTable(pdf *fpdf.Fpdf, equipment EquipmentSnapshot) {
+	widths := []float64{53.4, 53.4, 49.8, 21.4}
+	renderFixedRow(pdf, widths, []string{"Merek Selang Hisap Dan Selang Buang", "Spesifikasi Selang Hisap dan Selang Buang", "Serial Number", "Checklist"}, nil, 10.5, true)
+
+	brands, specs := splitHosePair(equipment.HoseBrand), splitHosePair(equipment.HoseSpec)
+	x, y, rowHeight := marginMM, pdf.GetY(), minRowMM
+
+	pdf.SetFont("Helvetica", "", tableFontPt)
+	labelWidth := pdf.GetStringWidth(hoseLabelPair) + 1.2
+	labels := [2]string{"Panjang Selang Hisap", "Panjang Selang Buang"}
+
+	for row := 0; row < 2; row++ {
+		rowY := y + float64(row)*rowHeight
+		drawCell(pdf, x, rowY, widths[0], rowHeight, brands[row], "C", false)
+		specX := x + widths[0]
+		pdf.Rect(specX, rowY, widths[1], rowHeight, "")
+		pdf.SetFont("Helvetica", "", tableFontPt)
+		pdf.SetXY(specX+cellPadMM, rowY+(rowHeight-tableLineMM)/2)
+		pdf.CellFormat(labelWidth, tableLineMM, labels[row], "", 0, "L", false, 0, "")
+		pdf.CellFormat(widths[1]-2*cellPadMM-labelWidth, tableLineMM, ": "+specs[row], "", 0, "L", false, 0, "")
+	}
+	spanX := x + widths[0] + widths[1]
+	drawCell(pdf, spanX, y, widths[2], rowHeight*2, equipment.HoseSerial, "C", false)
+	drawCell(pdf, spanX+widths[2], y, widths[3], rowHeight*2, checkMark(true), "C", false)
+	pdf.SetXY(marginMM, y+rowHeight*2)
+}
+
+func splitHosePair(value string) [2]string {
+	for _, separator := range []string{"\n", ";", " / "} {
+		parts := strings.SplitN(value, separator, 2)
+		if len(parts) == 2 {
+			return [2]string{strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])}
+		}
+	}
+	value = strings.TrimSpace(value)
+	return [2]string{value, value}
+}
+
+func renderTable(pdf *fpdf.Fpdf, widths []float64, headers []string, rows [][]string) {
+	renderFixedRow(pdf, widths, headers, nil, minRowMM, true)
+	for _, row := range rows {
+		pdf.SetFont("Helvetica", "", tableFontPt)
+		height := minRowMM
+		for i, value := range row {
+			lines := len(pdf.SplitLines([]byte(value), widths[i]-2*cellPadMM))
+			height = maxFloat(height, float64(lines)*tableLineMM+2)
+		}
+		renderFixedRow(pdf, widths, row, nil, height, false)
+	}
+}
+
+func renderFixedRow(pdf *fpdf.Fpdf, widths []float64, values []string, aligns []string, height float64, bold bool) {
+	x, y := marginMM, pdf.GetY()
 	for i, width := range widths {
-		pdf.Rect(x, y, width, height, "")
-		pdf.SetXY(x+1, y+0.8)
-		pdf.MultiCell(width-2, 3.2, values[i], "", "C", false)
+		align := "C"
+		if i < len(aligns) && aligns[i] != "" {
+			align = aligns[i]
+		}
+		drawCell(pdf, x, y, width, height, values[i], align, bold)
 		x += width
 	}
 	pdf.SetXY(marginMM, y+height)
 }
 
+func drawCell(pdf *fpdf.Fpdf, x, y, w, h float64, text, align string, bold bool) {
+	pdf.Rect(x, y, w, h, "")
+	if text == "" {
+		return
+	}
+	if text == checkToken {
+		pdf.SetFont("ZapfDingbats", "", 8)
+		pdf.SetXY(x, y+(h-tableLineMM)/2)
+		pdf.CellFormat(w, tableLineMM, "3", "", 0, "C", false, 0, "")
+		return
+	}
+	style := ""
+	if bold {
+		style = "B"
+	}
+	pdf.SetFont("Helvetica", style, tableFontPt)
+	lines := pdf.SplitLines([]byte(text), w-2*cellPadMM)
+	textHeight := float64(len(lines)) * tableLineMM
+	pdf.SetXY(x+cellPadMM, y+maxFloat(0.3, (h-textHeight)/2))
+	pdf.MultiCell(w-2*cellPadMM, tableLineMM, text, "", align, false)
+}
+
+var componentWidths = []float64{106.8, 21.4, 28.5, 21.3}
+
 func renderComponentHeader(pdf *fpdf.Fpdf) {
-	renderFixedRow(pdf, []float64{105, 20, 25, 30}, []string{"Komponen Paket, Aksesoris & Kelengkapan", "Jumlah", "Satuan", "Checklist"}, 6, true)
+	renderFixedRow(pdf, componentWidths, []string{"Komponen Paket, Aksesoris & Kelengkapan", "Jumlah", "Satuan", "Checklist"}, nil, minRowMM, true)
 }
 
 func componentRowHeight(pdf *fpdf.Fpdf, component ComponentSnapshot) float64 {
-	pdf.SetFont("Helvetica", "", 7)
-	lines := len(pdf.SplitLines([]byte(component.Label), 103))
-	return maxFloat(5, float64(lines)*3.5+1.5)
+	pdf.SetFont("Helvetica", "", tableFontPt)
+	lines := len(pdf.SplitLines([]byte(component.Label), componentWidths[0]-2*cellPadMM))
+	return maxFloat(minRowMM, float64(lines)*tableLineMM+2)
 }
 
 func renderComponentRow(pdf *fpdf.Fpdf, component ComponentSnapshot, height float64) {
-	renderFixedRow(pdf, []float64{105, 20, 25, 30}, []string{component.Label, fmt.Sprintf("%d", component.Quantity), component.Unit, checkMark(component.Checked)}, height, false)
+	renderFixedRow(pdf, componentWidths,
+		[]string{component.Label, fmt.Sprintf("%d", component.Quantity), component.Unit, checkMark(component.Checked)},
+		[]string{"L", "C", "C", "C"}, height, false)
 }
 
 func renderDeclarationAndSignatures(pdf *fpdf.Fpdf, signatures SignatureSnapshot) {
 	pdf.Ln(3)
-	pdf.SetFont("Helvetica", "", 7.5)
-	declaration := "Dengan ini kami menyatakan bahwa seluruh material/produk/barang tercantum di atas telah diterima dan dapat berfungsi dengan baik dengan jumlah yang benar serta telah diperiksa dengan seksama oleh masing-masing pihak."
-	pdf.MultiCell(pageWidthMM-2*marginMM, 4, declaration, "", "J", false)
-	pdf.Ln(3)
+	pdf.SetFont("Helvetica", "", 9)
+	pdf.SetX(marginMM)
+	pdf.MultiCell(pageWidthMM-2*marginMM, 4.1, declarationText, "", "J", false)
 
-	widths := []float64{60, 60, 60}
-	renderFixedRow(pdf, widths, []string{"PENERIMA PAKET / PETANI", "PELAKSANA PEMASANGAN & PENDISTRIBUSIAN", "KONSULTAN PENGAWAS"}, 9, true)
-	renderFixedRow(pdf, widths, []string{"", "", ""}, 22, false)
-	renderFixedRow(pdf, widths, []string{"Nama: " + signatures.ReceiverName, "Nama: " + signatures.ExecutorName, "Nama: " + signatures.SupervisorName}, 7, false)
+	sigTop := pageHeightMM - bottomMarginMM - signatureHMM
+	if pdf.GetY() < sigTop {
+		pdf.SetY(sigTop)
+	}
+
+	widths := []float64{57, 64, 57}
+	renderFixedRow(pdf, widths, []string{"PENERIMA PAKET / PETANI", "PELAKSANA PEMASANGAN\nDAN PENDISTRIBUSIAN", "KONSULTAN\nPENGAWAS"}, nil, 11, true)
+	renderFixedRow(pdf, widths, []string{"", "", ""}, nil, 15.5, false)
+	renderFixedRow(pdf, widths, []string{signatures.ReceiverName, signatures.ExecutorName, signatures.SupervisorName}, nil, 9.5, true)
 }
 
 func formatIndonesianDate(value string) string {
@@ -328,13 +461,14 @@ func formatIndonesianDate(value string) string {
 	if err != nil {
 		return value
 	}
-	months := [...]string{"", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"}
-	return fmt.Sprintf("%02d %s %d", date.Day(), months[date.Month()], date.Year())
+	days := [...]string{"MINGGU", "SENIN", "SELASA", "RABU", "KAMIS", "JUMAT", "SABTU"}
+	months := [...]string{"", "JANUARI", "FEBRUARI", "MARET", "APRIL", "MEI", "JUNI", "JULI", "AGUSTUS", "SEPTEMBER", "OKTOBER", "NOVEMBER", "DESEMBER"}
+	return fmt.Sprintf("%s, %d %s %d", days[date.Weekday()], date.Day(), months[date.Month()], date.Year())
 }
 
 func checkMark(checked bool) string {
 	if checked {
-		return "V"
+		return checkToken
 	}
 	return ""
 }
@@ -347,6 +481,13 @@ func minFloat(a, b float64) float64 {
 }
 
 func maxFloat(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func maxInt(a, b int) int {
 	if a > b {
 		return a
 	}

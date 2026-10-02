@@ -15,6 +15,7 @@ var (
 	ErrZoneNotConfigured     = errors.New("regency has not been assigned to a configured zone")
 	ErrBrandingNotConfigured = errors.New("at least one active BA logo is required")
 	ErrTemplateUnavailable   = errors.New("individual handover template is not available for this program type")
+	ErrEquipmentUnavailable  = errors.New("distribution equipment data is incomplete or no longer matches the package template")
 	ErrNoRecipients          = errors.New("no completed recipients are available for this date")
 	ErrBundleConflict        = errors.New("daily bundle was changed by another operator")
 )

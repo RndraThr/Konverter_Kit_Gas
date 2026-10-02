@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"konkit/internal/audit"
 	"konkit/internal/auth"
@@ -57,9 +58,17 @@ func (r *Repository) GetSourceContext(ctx context.Context, programID, regencyID 
 }
 
 type packageValues struct {
-	MachineOptions   []struct{ Code, Brand, Type string } `json:"machine_options"`
-	HoseOptions      []struct{ Code, Brand, Spec string } `json:"hose_options"`
-	ConverterOptions []struct{ Code, Brand string }       `json:"converter_options"`
+	MachineOptions []struct{ Code, Brand, Type string } `json:"machine_options"`
+	HoseOptions    []struct {
+		Code           string `json:"code"`
+		Brand          string `json:"brand"`
+		Spec           string `json:"spec"`
+		SuctionBrand   string `json:"suction_brand"`
+		SuctionSpec    string `json:"suction_spec"`
+		DischargeBrand string `json:"discharge_brand"`
+		DischargeSpec  string `json:"discharge_spec"`
+	} `json:"hose_options"`
+	ConverterOptions []struct{ Code, Brand string } `json:"converter_options"`
 	Components       []struct {
 		Code, Label string
 		Quantity    int
@@ -69,13 +78,13 @@ type packageValues struct {
 
 func (r *Repository) LoadSourceData(ctx context.Context, recipient RecipientDocument, sourceContext SourceContext, scope auth.RegencyScope) (SourceData, error) {
 	var source SourceData
-	var packageJSON []byte
+	var packageJSON, verificationJSON []byte
 	var machineCode, hoseCode, converterCode string
 	err := r.pool.QueryRow(ctx, `
 		SELECT p.program_type,p.fiscal_year,
 			person.full_name,COALESCE(person.nik,''),COALESCE(identifier.display_value,''),COALESCE(person.address,''),COALESCE(person.village,''),COALESCE(person.district,''),r.name,COALESCE(person.phone_number,''),
 			COALESCE(ds.machine_option_code,''),COALESCE(ds.machine_serial_number,''),COALESCE(ds.hose_option_code,''),COALESCE(ds.hose_serial_number,''),COALESCE(ds.converter_option_code,''),COALESCE(ds.converter_serial_number,''),
-			pt.id::text,pt.values_json,COALESCE(u.full_name,u.username,''),COALESCE(ps.supervisor_name,'')
+			pt.id::text,pt.values_json,ds.verification_snapshot_json,COALESCE(u.full_name,u.username,''),COALESCE(ps.supervisor_name,'')
 		FROM distribution_slots ds
 		JOIN program_schedules ps ON ps.id=ds.schedule_id
 		JOIN programs p ON p.id=ps.program_id JOIN regencies r ON r.id=ps.regency_id
@@ -84,7 +93,7 @@ func (r *Repository) LoadSourceData(ctx context.Context, recipient RecipientDocu
 		JOIN package_template_versions pt ON pt.id=ps.package_template_version_id
 		LEFT JOIN users u ON u.id=ds.distributed_by
 		WHERE ds.id=$1 AND ps.program_id=$2 AND ps.regency_id=$3 AND ds.status='completed' AND ($4 OR ps.regency_id::text=ANY($5))
-	`, recipient.DistributionSlotID, sourceContext.ProgramID, sourceContext.RegencyID, scope.Unrestricted, scope.RegencyIDs).Scan(&source.ProgramType, &source.Render.FiscalYear, &source.Recipient.FullName, &source.Recipient.NIK, &source.Recipient.SectorIdentifier, &source.Recipient.Address, &source.Recipient.Village, &source.Recipient.District, &source.Recipient.Regency, &source.Recipient.PhoneNumber, &machineCode, &source.Equipment.MachineSerial, &hoseCode, &source.Equipment.HoseSerial, &converterCode, &source.Equipment.ConverterSerial, &source.PackageTemplateVersionID, &packageJSON, &source.ExecutorName, &source.SupervisorName)
+	`, recipient.DistributionSlotID, sourceContext.ProgramID, sourceContext.RegencyID, scope.Unrestricted, scope.RegencyIDs).Scan(&source.ProgramType, &source.Render.FiscalYear, &source.Recipient.FullName, &source.Recipient.NIK, &source.Recipient.SectorIdentifier, &source.Recipient.Address, &source.Recipient.Village, &source.Recipient.District, &source.Recipient.Regency, &source.Recipient.PhoneNumber, &machineCode, &source.Equipment.MachineSerial, &hoseCode, &source.Equipment.HoseSerial, &converterCode, &source.Equipment.ConverterSerial, &source.PackageTemplateVersionID, &packageJSON, &verificationJSON, &source.ExecutorName, &source.SupervisorName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return SourceData{}, ErrNotFound
 	}
@@ -97,22 +106,31 @@ func (r *Repository) LoadSourceData(ctx context.Context, recipient RecipientDocu
 	if err := json.Unmarshal(packageJSON, &values); err != nil {
 		return SourceData{}, fmt.Errorf("decode BA package: %w", err)
 	}
-	for _, option := range values.MachineOptions {
-		if option.Code == machineCode {
-			source.Equipment.MachineBrand, source.Equipment.MachineType = option.Brand, option.Type
-			break
-		}
+	verifiedEquipment, hasVerification, err := equipmentFromVerificationSnapshot(verificationJSON)
+	if err != nil {
+		return SourceData{}, fmt.Errorf("decode equipment verification snapshot: %w", err)
 	}
-	for _, option := range values.HoseOptions {
-		if option.Code == hoseCode {
-			source.Equipment.HoseBrand, source.Equipment.HoseSpec = option.Brand, option.Spec
-			break
+	if hasVerification {
+		source.Equipment = verifiedEquipment
+	} else {
+		for _, option := range values.MachineOptions {
+			if option.Code == machineCode {
+				source.Equipment.MachineBrand, source.Equipment.MachineType = option.Brand, option.Type
+				break
+			}
 		}
-	}
-	for _, option := range values.ConverterOptions {
-		if option.Code == converterCode {
-			source.Equipment.ConverterBrand = option.Brand
-			break
+		for _, option := range values.HoseOptions {
+			if option.Code == hoseCode {
+				source.Equipment.HoseBrand = joinHosePair(option.SuctionBrand, option.DischargeBrand, option.Brand)
+				source.Equipment.HoseSpec = joinHosePair(option.SuctionSpec, option.DischargeSpec, option.Spec)
+				break
+			}
+		}
+		for _, option := range values.ConverterOptions {
+			if option.Code == converterCode {
+				source.Equipment.ConverterBrand = option.Brand
+				break
+			}
 		}
 	}
 	for _, component := range values.Components {
@@ -131,6 +149,20 @@ func (r *Repository) LoadSourceData(ctx context.Context, recipient RecipientDocu
 		source.Render.Logos = append(source.Render.Logos, logo)
 	}
 	return source, rows.Err()
+}
+
+func joinHosePair(first, second, legacy string) string {
+	first, second, legacy = strings.TrimSpace(first), strings.TrimSpace(second), strings.TrimSpace(legacy)
+	if first == "" && second == "" {
+		return legacy
+	}
+	if first == "" {
+		first = legacy
+	}
+	if second == "" {
+		second = legacy
+	}
+	return first + "\n" + second
 }
 
 func (r *Repository) SaveFinalDocument(ctx context.Context, actor auth.Principal, recipient RecipientDocument, source SourceData, snapshot Snapshot, meta auth.ClientMeta) (IndividualDocument, error) {

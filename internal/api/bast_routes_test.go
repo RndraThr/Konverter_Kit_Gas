@@ -125,7 +125,7 @@ func (f *fakeBrandingService) OpenLogo(_ context.Context, _, _ string) (bast.Log
 }
 
 func TestBASTBrandingListRequiresViewAndForwardsProgram(t *testing.T) {
-	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user"}, allowedPermissions: map[string]bool{"bast.view": true}}
+	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user"}, allowedPermissions: map[string]bool{"programs.view": true}}
 	service := &fakeBrandingService{logos: []bast.LogoAsset{{ID: "logo-1", SlotCode: "left"}}}
 	req := authenticatedRequest(http.MethodGet, "/api/v1/bast/branding?program_id=prog", "", nil)
 	rec := httptest.NewRecorder()
@@ -135,9 +135,20 @@ func TestBASTBrandingListRequiresViewAndForwardsProgram(t *testing.T) {
 	}
 }
 
+func TestBASTBrandingListEncodesMissingLogosAsEmptyArray(t *testing.T) {
+	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user"}, allowedPermissions: map[string]bool{"programs.view": true}}
+	service := &fakeBrandingService{}
+	req := authenticatedRequest(http.MethodGet, "/api/v1/bast/branding?program_id=prog", "", nil)
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: viewer, BASTBranding: service}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != `{"data":[]}` {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestBASTBrandingPatchRejectsViewerWithoutManage(t *testing.T) {
 	secret := []byte("01234567890123456789012345678901")
-	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user"}, allowedPermissions: map[string]bool{"bast.view": true}}
+	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user"}, allowedPermissions: map[string]bool{"programs.view": true}}
 	service := &fakeBrandingService{}
 	req := authenticatedRequest(http.MethodPatch, "/api/v1/bast/branding/logos/logo-1", `{"program_id":"prog","sort_order":2,"max_width_mm":35,"max_height_mm":18,"is_visible":true}`, secret)
 	rec := httptest.NewRecorder()
@@ -149,7 +160,7 @@ func TestBASTBrandingPatchRejectsViewerWithoutManage(t *testing.T) {
 
 func TestBASTBrandingUploadStoresLogoForManager(t *testing.T) {
 	secret := []byte("01234567890123456789012345678901")
-	manager := &fakeAuthService{principal: auth.Principal{UserID: "user"}, allowedPermissions: map[string]bool{"bast.manage": true}}
+	manager := &fakeAuthService{principal: auth.Principal{UserID: "user"}, allowedPermissions: map[string]bool{"programs.manage": true}}
 	service := &fakeBrandingService{}
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)

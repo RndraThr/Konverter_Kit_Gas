@@ -51,12 +51,15 @@ func TestCreateValidatesFullNameAndNIK(t *testing.T) {
 		t.Fatalf("expected ErrNIKInvalid, got %v", err)
 	}
 
-	saved, err := service.Create(context.Background(), actor, CreateInput{FullName: "  Budi Santoso  ", NIK: "1234567890123456"}, auth.ClientMeta{}, auth.RegencyScope{})
+	saved, err := service.Create(context.Background(), actor, CreateInput{FullName: "  Budi Santoso  ", NIK: "1234567890123456", SectorIdentifier: " kp-01 ", Address: " jl. tani ", Village: " desa baru ", District: " wajo ", PhoneNumber: "081AbC", MachineOptionCode: "shark-spwp8030"}, auth.ClientMeta{}, auth.RegencyScope{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saved.FullName != "Budi Santoso" || repository.createInput.FullName != "Budi Santoso" {
-		t.Fatalf("expected trimmed full name forwarded, got %+v", repository.createInput)
+	if saved.FullName != "BUDI SANTOSO" || repository.createInput.FullName != "BUDI SANTOSO" || repository.createInput.SectorIdentifier != "KP-01" || repository.createInput.Address != "JL. TANI" || repository.createInput.Village != "DESA BARU" || repository.createInput.District != "WAJO" {
+		t.Fatalf("expected uppercase business fields forwarded, got %+v", repository.createInput)
+	}
+	if repository.createInput.PhoneNumber != "081AbC" || repository.createInput.MachineOptionCode != "shark-spwp8030" {
+		t.Fatalf("technical values changed: %+v", repository.createInput)
 	}
 	if repository.actor.UserID != actor.UserID {
 		t.Fatalf("expected actor forwarded, got %+v", repository.actor)
@@ -72,6 +75,12 @@ func TestUpdateValidatesIdentitySameAsCreate(t *testing.T) {
 	}
 	if _, err := service.Update(context.Background(), auth.Principal{}, "allocation-1", UpdateInput{FullName: "Budi", NIK: "abc"}, auth.ClientMeta{}, auth.RegencyScope{}); !errors.Is(err, ErrNIKInvalid) {
 		t.Fatalf("expected ErrNIKInvalid, got %v", err)
+	}
+	if _, err := service.Update(context.Background(), auth.Principal{}, "allocation-1", UpdateInput{FullName: " siti aminah ", Address: " jalan tani ", Village: " bajo ", District: " soropia ", SectorIdentifier: " kusuka-9 ", PhoneNumber: "0812"}, auth.ClientMeta{}, auth.RegencyScope{}); err != nil {
+		t.Fatal(err)
+	}
+	if repository.updateInput.FullName != "SITI AMINAH" || repository.updateInput.Address != "JALAN TANI" || repository.updateInput.Village != "BAJO" || repository.updateInput.District != "SOROPIA" || repository.updateInput.SectorIdentifier != "KUSUKA-9" || repository.updateInput.PhoneNumber != "0812" {
+		t.Fatalf("update input=%+v", repository.updateInput)
 	}
 }
 

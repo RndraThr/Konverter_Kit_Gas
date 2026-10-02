@@ -83,25 +83,32 @@ func TestValidateMappingRequiresSequenceAndName(t *testing.T) {
 	if err := ValidateMapping(programs.ProgramFarmer, headers, Mapping{SourceSequence: "No", FullName: "Nama", NIK: "NIK"}); err != nil {
 		t.Fatal(err)
 	}
+	// machine_option opsional, tetapi bila diisi wajib menunjuk header yang ada.
+	if err := ValidateMapping(programs.ProgramFarmer, headers, Mapping{SourceSequence: "No", FullName: "Nama", MachineOption: "NIK"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateMapping(programs.ProgramFarmer, headers, Mapping{SourceSequence: "No", FullName: "Nama", MachineOption: "Tidak Ada"}); !errors.Is(err, ErrMappingInvalid) {
+		t.Fatalf("machine_option invalid err=%v", err)
+	}
 }
 
 func TestNormalizeRowNormalizesFarmerIdentity(t *testing.T) {
 	row := RawImportRow{SourceRowNumber: 7, Values: map[string]string{
 		"No": " 12 ", "Nama": "  Siti Aminah ", "NIK": "7312-3456 7890 1234",
-		"No Kartu Petani": " kp 01-22 ", "Alamat": "", "No HP": "+62 812-3456",
+		"No Kartu Petani": " kp 01-22 ", "Alamat": " jl. tani ", "Desa": " desa baru ", "Kecamatan": " wajo ", "No HP": "+62 812-3456",
 	}}
 	normalized := NormalizeRow(programs.ProgramFarmer, row, Mapping{
 		SourceSequence: "No", FullName: "Nama", NIK: "NIK", FarmerCardNumber: "No Kartu Petani",
-		Address: "Alamat", PhoneNumber: "No HP",
+		Address: "Alamat", Village: "Desa", District: "Kecamatan", PhoneNumber: "No HP",
 	})
 	if normalized.SourceSequenceNumber == nil || *normalized.SourceSequenceNumber != 12 {
 		t.Fatalf("sequence=%v", normalized.SourceSequenceNumber)
 	}
-	if normalized.FullName != "Siti Aminah" || normalized.NIK != "7312345678901234" || normalized.SectorIdentifier != "KP0122" || normalized.PhoneNumber != "628123456" {
+	if normalized.FullName != "SITI AMINAH" || normalized.NIK != "7312345678901234" || normalized.SectorIdentifier != "KP0122" || normalized.SectorIdentifierDisplay != "KP 01-22" || normalized.Address != "JL. TANI" || normalized.Village != "DESA BARU" || normalized.District != "WAJO" || normalized.PhoneNumber != "628123456" {
 		t.Fatalf("normalized=%+v", normalized)
 	}
-	if normalized.ValidationStatus != RowWarning || len(normalized.ValidationMessages) == 0 {
-		t.Fatalf("expected optional-field warning: %+v", normalized)
+	if normalized.SourceValues["Nama"] != "  Siti Aminah " || normalized.SourceValues["Alamat"] != " jl. tani " {
+		t.Fatalf("raw source values changed: %+v", normalized.SourceValues)
 	}
 }
 
