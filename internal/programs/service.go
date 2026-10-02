@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"konkit/internal/auth"
+	"konkit/internal/textnorm"
 )
 
 var (
@@ -45,10 +46,10 @@ func (s *Service) ListRegencies(ctx context.Context, scope auth.RegencyScope) ([
 
 func (s *Service) SaveRegency(ctx context.Context, actor auth.Principal, input RegencyInput, meta auth.ClientMeta) (Regency, error) {
 	input.ID = strings.TrimSpace(input.ID)
-	input.ProvinceName = strings.TrimSpace(input.ProvinceName)
-	input.Name = strings.TrimSpace(input.Name)
+	input.ProvinceName = textnorm.BusinessUpper(input.ProvinceName)
+	input.Name = textnorm.BusinessUpper(input.Name)
 	input.DocumentCode = strings.ToUpper(strings.TrimSpace(input.DocumentCode))
-	input.Notes = strings.TrimSpace(input.Notes)
+	input.Notes = textnorm.BusinessUpper(input.Notes)
 	if input.ProvinceName == "" || input.Name == "" {
 		return Regency{}, ErrInvalidInput
 	}
@@ -65,8 +66,8 @@ func (s *Service) ListPrograms(ctx context.Context) ([]Program, error) {
 func (s *Service) SaveProgram(ctx context.Context, actor auth.Principal, input ProgramInput, meta auth.ClientMeta) (Program, error) {
 	input.ID = strings.TrimSpace(input.ID)
 	input.Code = strings.ToUpper(strings.TrimSpace(input.Code))
-	input.Name = strings.TrimSpace(input.Name)
-	input.Notes = strings.TrimSpace(input.Notes)
+	input.Name = textnorm.BusinessUpper(input.Name)
+	input.Notes = textnorm.BusinessUpper(input.Notes)
 	if !validProgramType(input.ProgramType) {
 		return Program{}, ErrProgramTypeInvalid
 	}
@@ -86,9 +87,9 @@ func (s *Service) SaveSchedule(ctx context.Context, actor auth.Principal, input 
 	input.RegencyID = strings.TrimSpace(input.RegencyID)
 	input.PackageTemplateVersionID = strings.TrimSpace(input.PackageTemplateVersionID)
 	input.DocumentationTemplateVersionID = strings.TrimSpace(input.DocumentationTemplateVersionID)
-	input.Name = strings.ToUpper(strings.TrimSpace(input.Name))
-	input.Notes = strings.TrimSpace(input.Notes)
-	input.SupervisorName = strings.TrimSpace(input.SupervisorName)
+	input.Name = textnorm.BusinessUpper(input.Name)
+	input.Notes = textnorm.BusinessUpper(input.Notes)
+	input.SupervisorName = textnorm.BusinessUpper(input.SupervisorName)
 	if input.EndDate.Before(input.StartDate) {
 		return Schedule{}, ErrScheduleDatesInvalid
 	}
@@ -114,7 +115,8 @@ func (s *Service) ListPackageTemplates(ctx context.Context) ([]PackageTemplate, 
 func (s *Service) SavePackageTemplate(ctx context.Context, actor auth.Principal, input PackageTemplateInput, meta auth.ClientMeta) (PackageTemplate, error) {
 	input.ID = strings.TrimSpace(input.ID)
 	input.TemplateCode = strings.ToUpper(strings.TrimSpace(input.TemplateCode))
-	input.Name = strings.TrimSpace(input.Name)
+	input.Name = textnorm.BusinessUpper(input.Name)
+	input.Values = normalizePackageDisplayValues(input.Values)
 	if !validProgramType(input.ProgramType) {
 		return PackageTemplate{}, ErrProgramTypeInvalid
 	}
@@ -131,17 +133,39 @@ func (s *Service) SavePackageTemplate(ctx context.Context, actor auth.Principal,
 }
 
 func hasEquipmentOptions(values map[string]any) bool {
-	return validOptionList(values["machine_options"], "brand", "type") && validOptionList(values["hose_options"], "brand", "spec")
+	return validMachineOptionList(values["machine_options"]) && validHoseOptionList(values["hose_options"])
 }
 
-func validOptionList(raw any, secondField string, thirdField string) bool {
+// validMachineOptionList memastikan setiap opsi mesin memiliki code, brand, type, power, dan
+// fuel_type. Field power/fuel_type dibutuhkan snapshot DP3/Rekap Harian agar data mesin per
+// penerima dapat dirender tanpa lookup ke template terkini.
+func validMachineOptionList(raw any) bool {
 	list, ok := raw.([]any)
 	if !ok || len(list) == 0 {
 		return false
 	}
 	for _, entry := range list {
 		option, ok := entry.(map[string]any)
-		if !ok || !nonEmptyString(option["code"]) || !nonEmptyString(option[secondField]) || !nonEmptyString(option[thirdField]) {
+		if !ok || !nonEmptyString(option["code"]) || !nonEmptyString(option["brand"]) || !nonEmptyString(option["type"]) || !nonEmptyString(option["power"]) || !nonEmptyString(option["fuel_type"]) {
+			return false
+		}
+	}
+	return true
+}
+
+func validHoseOptionList(raw any) bool {
+	list, ok := raw.([]any)
+	if !ok || len(list) == 0 {
+		return false
+	}
+	for _, entry := range list {
+		option, ok := entry.(map[string]any)
+		if !ok || !nonEmptyString(option["code"]) {
+			return false
+		}
+		legacy := nonEmptyString(option["brand"]) && nonEmptyString(option["spec"])
+		separated := nonEmptyString(option["suction_brand"]) && nonEmptyString(option["suction_spec"]) && nonEmptyString(option["discharge_brand"]) && nonEmptyString(option["discharge_spec"])
+		if !legacy && !separated {
 			return false
 		}
 	}
@@ -153,6 +177,55 @@ func nonEmptyString(value any) bool {
 	return ok && strings.TrimSpace(text) != ""
 }
 
+func normalizePackageDisplayValues(values map[string]any) map[string]any {
+	if values == nil {
+		return nil
+	}
+	normalized := make(map[string]any, len(values))
+	for key, value := range values {
+		normalized[key] = value
+	}
+	if value, exists := values["machine_options"]; exists {
+		normalized["machine_options"] = normalizeDisplayCollection(value, "brand", "type", "power", "fuel_type")
+	}
+	if value, exists := values["hose_options"]; exists {
+		normalized["hose_options"] = normalizeDisplayCollection(value, "brand", "spec", "suction_brand", "suction_spec", "discharge_brand", "discharge_spec")
+	}
+	if value, exists := values["converter_options"]; exists {
+		normalized["converter_options"] = normalizeDisplayCollection(value, "brand", "spec")
+	}
+	if value, exists := values["components"]; exists {
+		normalized["components"] = normalizeDisplayCollection(value, "label", "unit")
+	}
+	return normalized
+}
+
+func normalizeDisplayCollection(value any, fields ...string) any {
+	items, ok := value.([]any)
+	if !ok {
+		return value
+	}
+	normalized := make([]any, len(items))
+	for index, item := range items {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			normalized[index] = item
+			continue
+		}
+		copyEntry := make(map[string]any, len(entry))
+		for key, entryValue := range entry {
+			copyEntry[key] = entryValue
+		}
+		for _, field := range fields {
+			if text, exists := copyEntry[field].(string); exists {
+				copyEntry[field] = textnorm.BusinessUpper(text)
+			}
+		}
+		normalized[index] = copyEntry
+	}
+	return normalized
+}
+
 func (s *Service) ListDocumentationTemplates(ctx context.Context) ([]DocumentationTemplate, error) {
 	return s.repository.ListDocumentationTemplates(ctx)
 }
@@ -160,7 +233,7 @@ func (s *Service) ListDocumentationTemplates(ctx context.Context) ([]Documentati
 func (s *Service) SaveDocumentationTemplate(ctx context.Context, actor auth.Principal, input DocumentationTemplateInput, meta auth.ClientMeta) (DocumentationTemplate, error) {
 	input.ID = strings.TrimSpace(input.ID)
 	input.TemplateCode = strings.ToUpper(strings.TrimSpace(input.TemplateCode))
-	input.Name = strings.TrimSpace(input.Name)
+	input.Name = textnorm.BusinessUpper(input.Name)
 	if !validProgramType(input.ProgramType) {
 		return DocumentationTemplate{}, ErrProgramTypeInvalid
 	}
@@ -171,10 +244,10 @@ func (s *Service) SaveDocumentationTemplate(ctx context.Context, actor auth.Prin
 	for index := range input.Slots {
 		slot := &input.Slots[index]
 		slot.SlotCode = strings.ToLower(strings.TrimSpace(slot.SlotCode))
-		slot.Label = strings.TrimSpace(slot.Label)
+		slot.Label = textnorm.BusinessUpper(slot.Label)
 		slot.Stage = strings.ToLower(strings.TrimSpace(slot.Stage))
 		slot.InputSource = strings.ToLower(strings.TrimSpace(slot.InputSource))
-		slot.Instructions = strings.TrimSpace(slot.Instructions)
+		slot.Instructions = textnorm.BusinessUpper(slot.Instructions)
 		_, duplicate := seen[slot.SlotCode]
 		if duplicate || !slotCodePattern.MatchString(slot.SlotCode) || slot.Label == "" || slot.MinFiles < 0 || slot.MaxFiles < slot.MinFiles || !oneOf(slot.InputSource, "camera", "gallery", "both") || !oneOf(slot.Stage, "mesin", "dokumen", "penyerahan") {
 			return DocumentationTemplate{}, ErrTemplateSlotInvalid
@@ -192,7 +265,7 @@ func (s *Service) SaveZone(ctx context.Context, actor auth.Principal, input Zone
 	input.ID = strings.TrimSpace(input.ID)
 	input.ProgramID = strings.TrimSpace(input.ProgramID)
 	input.Code = strings.ToUpper(strings.TrimSpace(input.Code))
-	input.Name = strings.TrimSpace(input.Name)
+	input.Name = textnorm.BusinessUpper(input.Name)
 	if input.ProgramID == "" || input.Name == "" || input.SortOrder < 0 {
 		return ProgramZone{}, ErrInvalidInput
 	}

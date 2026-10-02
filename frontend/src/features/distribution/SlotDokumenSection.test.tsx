@@ -67,6 +67,13 @@ test('looks up a candidate by NIK then links the slot', async () => {
   expect(screen.getByLabelText('Nomor telepon')).toHaveValue('0812345');
   expect(screen.getByLabelText('Alamat')).toHaveValue('Jalan Sawah 10');
 
+  fireEvent.change(screen.getByLabelText('Alamat'), { target: { value: 'Jl. Nelayan' } });
+  fireEvent.change(screen.getByLabelText('Desa/kelurahan'), { target: { value: 'Desa Baru' } });
+  fireEvent.change(screen.getByLabelText('Kecamatan'), { target: { value: 'Wajo' } });
+  expect(screen.getByLabelText('Alamat')).toHaveValue('JL. NELAYAN');
+  expect(screen.getByLabelText('Desa/kelurahan')).toHaveValue('DESA BARU');
+  expect(screen.getByLabelText('Kecamatan')).toHaveValue('WAJO');
+
   fireEvent.click(screen.getByRole('button', { name: 'Hubungkan ke Nomor Bagi Ini' }));
 
   await waitFor(() => expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ status: 'linked', full_name: 'Siti Aminah' })));

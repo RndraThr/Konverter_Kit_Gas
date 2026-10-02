@@ -12,6 +12,7 @@ test('loads typed settings and saves changes', async () => {
   render(<QueryClientProvider client={client}><SettingsPage /></QueryClientProvider>);
   const name = await screen.findByLabelText('Nama aplikasi');
   await userEvent.clear(name); await userEvent.type(name, 'Konkit Nasional');
+  expect(name).toHaveValue('KONKIT NASIONAL');
   await userEvent.click(screen.getByRole('button', { name: 'Simpan pengaturan' }));
   expect(apiRequest).toHaveBeenCalledWith('/api/v1/system/settings', expect.objectContaining({ method: 'PATCH' }));
   const actions = screen.getByRole('button', { name: 'Simpan pengaturan' }).parentElement;

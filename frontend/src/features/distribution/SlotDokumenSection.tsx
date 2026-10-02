@@ -9,6 +9,7 @@ import { PosSectionShell } from './PosSectionShell';
 import { Button } from '@/components/ui/button';
 import { FormField } from '@/components/FormField';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { uppercaseBusinessText } from '@/lib/text';
 
 const emptyLinkInput = (scheduleID: string, slotNumber: number): LinkSlotInput => ({ schedule_id: scheduleID, slot_number: slotNumber, nik: '', address: '', village: '', district: '', phone_number: '', sector_identifier: '' });
 
@@ -46,11 +47,11 @@ export function SlotDokumenSection({ slot, onChanged }: { slot: DistributionSlot
       {lookup.isError && <Alert variant="destructive"><AlertDescription>{lookup.error instanceof ApiError ? lookup.error.message : 'Kandidat tidak ditemukan.'}</AlertDescription></Alert>}
       {candidate && <form className="grid gap-3 sm:grid-cols-2" onSubmit={submitLink}>
         <FormField className="sm:col-span-2" label="Nama" name="candidate_full_name" value={candidate.full_name} disabled onChange={() => {}} />
-        <FormField label={candidate.program_type === 'farmer' ? 'Nomor kartu petani' : 'Nomor KUSUKA'} name="sector_identifier" value={linkInput.sector_identifier} onChange={(event) => setLinkInput({ ...linkInput, sector_identifier: event.target.value.toUpperCase() })} />
+        <FormField label={candidate.program_type === 'farmer' ? 'Nomor kartu petani' : 'Nomor KUSUKA'} name="sector_identifier" value={linkInput.sector_identifier} onChange={(event) => setLinkInput({ ...linkInput, sector_identifier: uppercaseBusinessText(event.target.value) })} />
         <FormField label="Nomor telepon" name="phone_number" value={linkInput.phone_number} onChange={(event) => setLinkInput({ ...linkInput, phone_number: event.target.value })} />
-        <FormField className="sm:col-span-2" label="Alamat" name="address" value={linkInput.address} onChange={(event) => setLinkInput({ ...linkInput, address: event.target.value })} />
-        <FormField label="Desa/kelurahan" name="village" value={linkInput.village} onChange={(event) => setLinkInput({ ...linkInput, village: event.target.value })} />
-        <FormField label="Kecamatan" name="district" value={linkInput.district} onChange={(event) => setLinkInput({ ...linkInput, district: event.target.value })} />
+        <FormField className="sm:col-span-2" label="Alamat" name="address" value={linkInput.address} onChange={(event) => setLinkInput({ ...linkInput, address: uppercaseBusinessText(event.target.value) })} />
+        <FormField label="Desa/kelurahan" name="village" value={linkInput.village} onChange={(event) => setLinkInput({ ...linkInput, village: uppercaseBusinessText(event.target.value) })} />
+        <FormField label="Kecamatan" name="district" value={linkInput.district} onChange={(event) => setLinkInput({ ...linkInput, district: uppercaseBusinessText(event.target.value) })} />
         {link.isError && <Alert className="sm:col-span-2" variant="destructive"><AlertDescription>{link.error instanceof ApiError ? link.error.message : 'Slot belum dapat dihubungkan.'}</AlertDescription></Alert>}
         <Button className="sm:col-span-2" disabled={link.isPending} type="submit">{link.isPending ? 'Menghubungkan...' : 'Hubungkan ke Nomor Bagi Ini'}</Button>
       </form>}

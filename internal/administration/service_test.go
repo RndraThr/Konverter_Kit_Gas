@@ -24,7 +24,7 @@ func TestCreateUserNormalizesIdentityAndHashesPassword(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if repository.created.FullName != "Petugas Lapangan" || repository.created.Username != "field.user" || repository.created.Email != "field@konkit.test" {
+	if repository.created.FullName != "PETUGAS LAPANGAN" || repository.created.Username != "field.user" || repository.created.Email != "field@konkit.test" {
 		t.Fatalf("input was not normalized: %+v", repository.created)
 	}
 	if repository.passwordHash == "" || repository.passwordHash == "secure-password" {
@@ -69,7 +69,7 @@ func TestNormalizeRoleInputClearsRegencyIDsWhenAllAccessGranted(t *testing.T) {
 	repository := &fakeRepository{}
 	service := NewService(repository)
 	_, err := service.CreateRole(context.Background(), auth.Principal{UserID: "admin-1"}, RoleInput{
-		Code: "regional_role", Name: "Regional Role",
+		Code: "regional_role", Name: "Regional Role", Description: " akses wilayah ",
 		AllRegenciesAccess: true, RegencyIDs: []string{"regency-1", "regency-2"},
 	}, auth.ClientMeta{})
 	if err != nil {
@@ -77,6 +77,9 @@ func TestNormalizeRoleInputClearsRegencyIDsWhenAllAccessGranted(t *testing.T) {
 	}
 	if len(repository.createdRole.RegencyIDs) != 0 {
 		t.Fatalf("regency ids not cleared: %+v", repository.createdRole)
+	}
+	if repository.createdRole.Name != "REGIONAL ROLE" || repository.createdRole.Description != "AKSES WILAYAH" || repository.createdRole.Code != "regional_role" {
+		t.Fatalf("role text not normalized: %+v", repository.createdRole)
 	}
 }
 

@@ -36,7 +36,7 @@ func TestIntegrationSettingsUpdateIsAtomicAndAudited(t *testing.T) {
 	}
 	var found bool
 	for _, setting := range result {
-		if setting.Key == "application_name" && setting.Value == "Konkit Integration" {
+		if setting.Key == "application_name" && setting.Value == "KONKIT INTEGRATION" {
 			found = true
 		}
 	}
@@ -47,7 +47,7 @@ func TestIntegrationSettingsUpdateIsAtomicAndAudited(t *testing.T) {
 	if err := pool.QueryRow(ctx, `
 		SELECT count(*) FROM audit_logs
 		WHERE actor_user_id = $1 AND action = 'settings.updated'
-		  AND metadata->'current'->>'application_name' = 'Konkit Integration'
+		  AND metadata->'current'->>'application_name' = 'KONKIT INTEGRATION'
 	`, actor.UserID).Scan(&auditCount); err != nil {
 		t.Fatal(err)
 	}

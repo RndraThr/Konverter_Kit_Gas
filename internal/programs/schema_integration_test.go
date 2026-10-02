@@ -87,13 +87,16 @@ func TestKonkitPackageUsesSingleCombinedHoseComponent(t *testing.T) {
 		t.Fatal(err)
 	}
 	var components []struct {
-		Code  string `json:"code"`
-		Label string `json:"label"`
+		Code     string `json:"code"`
+		Label    string `json:"label"`
+		Quantity int    `json:"quantity"`
+		Unit     string `json:"unit"`
 	}
 	if err := json.Unmarshal(raw, &components); err != nil {
 		t.Fatal(err)
 	}
 	hoseCount := 0
+	referenceDetails := 0
 	for _, component := range components {
 		if component.Code == "hose_clamp_accessories" && component.Label == "Selang, Clamp & Aksesorisnya" {
 			hoseCount++
@@ -101,9 +104,38 @@ func TestKonkitPackageUsesSingleCombinedHoseComponent(t *testing.T) {
 		if component.Code == "suction_hose" || component.Code == "discharge_hose" {
 			t.Fatalf("legacy split hose component still exists: %+v", component)
 		}
+		if component.Code == "oil" && component.Label == "OLI" && component.Quantity == 2 && component.Unit == "Ltr" {
+			referenceDetails++
+		}
+		if component.Code == "bracket" && component.Label == "Braket" && component.Quantity == 1 && component.Unit == "Ea" {
+			referenceDetails++
+		}
 	}
 	if hoseCount != 1 {
 		t.Fatalf("combined hose component count=%d components=%+v", hoseCount, components)
+	}
+	if referenceDetails != 2 {
+		t.Fatalf("reference component details missing: %+v", components)
+	}
+}
+
+func TestKonkitPackageSeparatesSuctionAndDischargeHoseDetails(t *testing.T) {
+	pool := programsIntegrationPool(t)
+	var raw []byte
+	if err := pool.QueryRow(context.Background(), `SELECT values_json->'hose_options' FROM package_template_versions WHERE template_code='KONKIT-2026' AND version=1`).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var options []struct {
+		SuctionBrand   string `json:"suction_brand"`
+		SuctionSpec    string `json:"suction_spec"`
+		DischargeBrand string `json:"discharge_brand"`
+		DischargeSpec  string `json:"discharge_spec"`
+	}
+	if err := json.Unmarshal(raw, &options); err != nil {
+		t.Fatal(err)
+	}
+	if len(options) != 1 || options[0].SuctionBrand != "TRILLIUNHOSE" || options[0].SuctionSpec != "6 M" || options[0].DischargeBrand != "YAMAKOYO" || options[0].DischargeSpec != "10 M" {
+		t.Fatalf("hose_options=%s", raw)
 	}
 }
 

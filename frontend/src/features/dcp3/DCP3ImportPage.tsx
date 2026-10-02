@@ -145,7 +145,7 @@ export function DCP3ImportPage() {
           <Badge variant="outline" className={styles.fileMeta}>{preview.sheet_name} / {preview.rows.length} baris</Badge>
         </CardHeader>
         <CardContent className={styles.workspaceContent}>
-          <ColumnMappingStep headers={preview.headers} mapping={mapping} programType={preview.program_type} onChange={setMapping} />
+          <ColumnMappingStep headers={preview.headers} mapping={mapping} programType={preview.program_type} multipleMachineVariants={preview.machine_options.length > 1} onChange={setMapping} />
           <div className={styles.actions}><Button type="button" variant="outline" onClick={() => setStep(2)}><ArrowLeft /> Kembali</Button><Button type="button" disabled={!mapping.source_sequence || !mapping.full_name} onClick={() => setStep(4)}>Periksa data <ArrowRight /></Button></div>
         </CardContent>
       </Card>}

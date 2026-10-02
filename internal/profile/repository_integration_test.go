@@ -54,7 +54,7 @@ func TestIntegrationProfileUpdateAndPasswordChangeAreAudited(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.FullName != "Profile Updated" || updated.Username != "profile.updated" {
+	if updated.FullName != "PROFILE UPDATED" || updated.Username != "profile.updated" {
 		t.Fatalf("unexpected updated profile: %+v", updated)
 	}
 

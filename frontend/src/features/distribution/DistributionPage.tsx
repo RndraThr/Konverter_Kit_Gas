@@ -30,7 +30,12 @@ export function DistributionPage() {
   const selectedSchedule = schedules.data?.data.find((schedule) => schedule.id === scheduleID);
   const selectedPackageTemplate = selectedSchedule?.package_template ?? packageTemplates.data?.data.find((template) => template.id === selectedSchedule?.package_template_version_id);
   const machineOptions = ((selectedPackageTemplate?.values as { machine_options?: EquipmentOption[] } | undefined)?.machine_options) ?? [];
-  const hoseOptions = ((selectedPackageTemplate?.values as { hose_options?: EquipmentOption[] } | undefined)?.hose_options) ?? [];
+  const rawHoseOptions = ((selectedPackageTemplate?.values as { hose_options?: Array<EquipmentOption & { suction_brand?: string; suction_spec?: string; discharge_brand?: string; discharge_spec?: string }> } | undefined)?.hose_options) ?? [];
+  const hoseOptions = rawHoseOptions.map((option) => ({
+    code: option.code,
+    brand: [option.suction_brand, option.discharge_brand].filter(Boolean).join(' / ') || option.brand,
+    spec: [option.suction_spec, option.discharge_spec].filter(Boolean).join(' / ') || option.spec,
+  }));
   const converterOptions = ((selectedPackageTemplate?.values as { converter_options?: EquipmentOption[] } | undefined)?.converter_options) ?? [];
 
   const search = useMutation({

@@ -18,6 +18,7 @@ const responses: Record<string, unknown> = {
   '/api/v1/program-setup/schedules': { data: [{ id: 'schedule-1', program_id: 'prog-1', regency_id: 'reg-1', package_template_version_id: 'package-1', documentation_template_version_id: 'document-1', name: 'Wajo Tahap 1', start_date: '2026-09-01T00:00:00Z', end_date: '2026-09-30T00:00:00Z', status: 'active', distribution_number_padding: 4, program: { id: 'prog-1', name: 'Program Petani 2026' }, regency: { id: 'reg-1', name: 'Wajo', document_code: 'WJO' } }] },
   '/api/v1/program-setup/package-templates': { data: [{ id: 'package-1', template_code: 'PETANI-LPG', version: 1, name: 'Paket Petani LPG', program_type: 'farmer', values: {}, status: 'published' }] },
   '/api/v1/program-setup/documentation-templates': { data: [{ id: 'document-1', template_code: 'DOK-PETANI', version: 1, name: 'Foto Distribusi Petani', program_type: 'farmer', status: 'published', slots: [] }] },
+  '/api/v1/bast/branding?program_id=prog-1': { data: [] },
 };
 
 function LocationProbe() {
@@ -81,14 +82,22 @@ test('can retry a failed workspace request without reloading the page', async ()
   expect(await screen.findByText('Wajo')).toBeVisible();
 });
 
-test('shows the five program preparation workspaces without a document profile', async () => {
+test('shows the six program preparation workspaces without a document profile', async () => {
   renderPage(['programs.view', 'programs.manage']);
   expect(await screen.findByRole('tab', { name: 'Kabupaten' })).toBeVisible();
   expect(screen.getByRole('tab', { name: 'Program' })).toBeVisible();
   expect(screen.getByRole('tab', { name: 'Zona' })).toBeVisible();
   expect(screen.getByRole('tab', { name: 'Jadwal' })).toBeVisible();
   expect(screen.getByRole('tab', { name: 'Template' })).toBeVisible();
-  expect(screen.getAllByRole('tab')).toHaveLength(5);
+  expect(screen.getByRole('tab', { name: 'Logo Dokumen' })).toBeVisible();
+  expect(screen.getAllByRole('tab')).toEqual([
+    screen.getByRole('tab', { name: 'Kabupaten' }),
+    screen.getByRole('tab', { name: 'Program' }),
+    screen.getByRole('tab', { name: 'Zona' }),
+    screen.getByRole('tab', { name: 'Template' }),
+    screen.getByRole('tab', { name: 'Logo Dokumen' }),
+    screen.getByRole('tab', { name: 'Jadwal' }),
+  ]);
   expect(await screen.findByText('Wajo')).toBeVisible();
 
   await userEvent.click(screen.getByRole('tab', { name: 'Program' }));
@@ -98,6 +107,15 @@ test('shows the five program preparation workspaces without a document profile',
   await userEvent.click(screen.getByRole('tab', { name: 'Jadwal' }));
   expect(await screen.findByText('Paket Petani LPG')).toBeVisible();
   expect(screen.getByText('Foto Distribusi Petani')).toBeVisible();
+});
+
+test('configures document logos by program instead of by schedule', async () => {
+  renderPage(['programs.view', 'programs.manage'], { initialEntry: '/dashboard/persiapan-program?tab=logos' });
+
+  expect(await screen.findByRole('region', { name: 'Logo dokumen tender' })).toBeVisible();
+  expect(await screen.findByRole('combobox', { name: 'Program tender' })).toHaveTextContent('Program Petani 2026');
+  expect(await screen.findByText('Belum ada logo tender')).toBeVisible();
+  expect(apiRequest).toHaveBeenCalledWith('/api/v1/bast/branding?program_id=prog-1');
 });
 
 test('exposes the active setup workspace as a named region', async () => {
@@ -112,6 +130,7 @@ test('moves focus, selection, and named workspace regions with arrow keys', asyn
   const zoneTab = screen.getByRole('tab', { name: 'Zona' });
   const scheduleTab = screen.getByRole('tab', { name: 'Jadwal' });
   const templateTab = screen.getByRole('tab', { name: 'Template' });
+  const logoTab = screen.getByRole('tab', { name: 'Logo Dokumen' });
 
   regencyTab.focus();
   expect(regencyTab).toHaveFocus();
@@ -129,20 +148,25 @@ test('moves focus, selection, and named workspace regions with arrow keys', asyn
   expect(await screen.findByRole('region', { name: 'Zona program' })).toBeInTheDocument();
 
   await userEvent.keyboard('{ArrowRight}');
-  expect(scheduleTab).toHaveFocus();
-  expect(scheduleTab).toHaveAttribute('aria-selected', 'true');
-  expect(await screen.findByRole('region', { name: 'Jadwal kabupaten' })).toBeInTheDocument();
-
-  await userEvent.keyboard('{ArrowRight}');
   expect(templateTab).toHaveFocus();
   expect(templateTab).toHaveAttribute('aria-selected', 'true');
   expect(await screen.findByRole('region', { name: 'Template paket' })).toBeInTheDocument();
   expect(screen.getByRole('region', { name: 'Template dokumentasi' })).toBeInTheDocument();
 
-  await userEvent.keyboard('{ArrowLeft}');
+  await userEvent.keyboard('{ArrowRight}');
+  expect(logoTab).toHaveFocus();
+  expect(logoTab).toHaveAttribute('aria-selected', 'true');
+  expect(await screen.findByRole('region', { name: 'Logo dokumen tender' })).toBeInTheDocument();
+
+  await userEvent.keyboard('{ArrowRight}');
   expect(scheduleTab).toHaveFocus();
   expect(scheduleTab).toHaveAttribute('aria-selected', 'true');
   expect(await screen.findByRole('region', { name: 'Jadwal kabupaten' })).toBeInTheDocument();
+
+  await userEvent.keyboard('{ArrowLeft}');
+  expect(logoTab).toHaveFocus();
+  expect(logoTab).toHaveAttribute('aria-selected', 'true');
+  expect(await screen.findByRole('region', { name: 'Logo dokumen tender' })).toBeInTheDocument();
 });
 
 test('keeps data readable without mutation controls', async () => {
@@ -167,7 +191,7 @@ test('normalizes the schedule name to uppercase while typing', async () => {
   expect(name).toHaveValue('WAJO TAHAP 1');
 });
 
-test('accepts an optional supervisor name in the schedule dialog', async () => {
+test('uppercases an optional supervisor name in the schedule dialog', async () => {
   renderPage(['programs.view', 'programs.manage']);
   await userEvent.click(await screen.findByRole('tab', { name: 'Jadwal' }));
   await userEvent.click(screen.getByRole('button', { name: 'Tambah jadwal' }));
@@ -175,7 +199,7 @@ test('accepts an optional supervisor name in the schedule dialog', async () => {
   const supervisor = screen.getByRole('textbox', { name: 'Konsultan pengawas' });
   await userEvent.type(supervisor, 'Andi Amrullah');
 
-  expect(supervisor).toHaveValue('Andi Amrullah');
+  expect(supervisor).toHaveValue('ANDI AMRULLAH');
 });
 
 test('uses Indonesian status language consistently', async () => {
@@ -258,14 +282,14 @@ test('normalizes regency and program identity fields to uppercase while typing',
   expect(programName).toHaveValue('PROGRAM PETANI 2027');
 });
 
-test('keeps notes and supervisor name in their original case', async () => {
+test('uppercases business notes while typing', async () => {
   renderPage(['programs.view', 'programs.manage']);
   await screen.findByText('Wajo');
   await userEvent.click(screen.getByRole('button', { name: 'Tambah kabupaten' }));
 
   const notes = screen.getByRole('textbox', { name: 'Catatan' });
   await userEvent.type(notes, 'Menunggu verifikasi camat');
-  expect(notes).toHaveValue('Menunggu verifikasi camat');
+  expect(notes).toHaveValue('MENUNGGU VERIFIKASI CAMAT');
 });
 
 test('manages package template equipment options and components as repeatable rows', async () => {
@@ -282,18 +306,28 @@ test('manages package template equipment options and components as repeatable ro
   expect(screen.getByRole('group', { name: 'Opsi mesin 1' })).toBeVisible();
   await userEvent.type(screen.getByLabelText('Merk mesin 1'), 'shark');
   await userEvent.type(screen.getByLabelText('Tipe mesin 1'), 'spwp 80-30/3"');
+  await userEvent.type(screen.getByLabelText('Daya mesin 1'), '5.5 hp');
   expect(screen.getByLabelText('Merk mesin 1')).toHaveValue('SHARK');
   expect(screen.getByLabelText('Tipe mesin 1')).toHaveValue('SPWP 80-30/3"');
+  expect(screen.getByLabelText('Daya mesin 1')).toHaveValue('5.5 HP');
 
   await userEvent.click(screen.getByRole('button', { name: 'Tambah opsi selang' }));
   expect(screen.getByRole('group', { name: 'Opsi selang 1' })).toBeVisible();
-  await userEvent.type(screen.getByLabelText('Merk selang 1'), 'triliunhose');
-  expect(screen.getByLabelText('Merk selang 1')).toHaveValue('TRILIUNHOSE');
+  await userEvent.type(screen.getByLabelText('Merk selang hisap 1'), 'trilliunhose');
+  await userEvent.type(screen.getByLabelText('Spesifikasi selang hisap 1'), '6 m');
+  await userEvent.type(screen.getByLabelText('Merk selang buang 1'), 'yamakoyo');
+  await userEvent.type(screen.getByLabelText('Spesifikasi selang buang 1'), '10 m');
+  expect(screen.getByLabelText('Merk selang hisap 1')).toHaveValue('TRILLIUNHOSE');
+  expect(screen.getByLabelText('Spesifikasi selang hisap 1')).toHaveValue('6 M');
+  expect(screen.getByLabelText('Merk selang buang 1')).toHaveValue('YAMAKOYO');
+  expect(screen.getByLabelText('Spesifikasi selang buang 1')).toHaveValue('10 M');
 
   await userEvent.click(screen.getByRole('button', { name: 'Tambah komponen' }));
   expect(screen.getByRole('group', { name: 'Komponen 1' })).toBeVisible();
   await userEvent.type(screen.getByLabelText('Nama komponen 1'), 'Tabung LPG 3 Kg');
-  expect(screen.getByLabelText('Nama komponen 1')).toHaveValue('Tabung LPG 3 Kg');
+  await userEvent.type(screen.getByLabelText('Satuan komponen 1'), 'tabung');
+  expect(screen.getByLabelText('Nama komponen 1')).toHaveValue('TABUNG LPG 3 KG');
+  expect(screen.getByLabelText('Satuan komponen 1')).toHaveValue('TABUNG');
 
   await userEvent.click(screen.getByRole('button', { name: 'Hapus opsi mesin 1' }));
   expect(screen.queryByLabelText('Merk mesin 1')).not.toBeInTheDocument();

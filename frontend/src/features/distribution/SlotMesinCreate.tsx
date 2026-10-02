@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { uppercaseBusinessText } from '@/lib/text';
 
 const BarcodeScanner = lazy(() => import('./BarcodeScanner'));
 
@@ -40,7 +41,7 @@ export function SlotMesinCreate({ scheduleID, slotNumber, machineOptions, hoseOp
   const serialField = (label: string, field: SerialField, className?: string) => <div className={`grid min-w-0 gap-2 ${className ?? ''}`}>
     <Label htmlFor={field}>{label}</Label>
     <div className="flex gap-2">
-      <Input id={field} name={field} className="flex-1" value={input[field]} onChange={(event) => setInput({ ...input, [field]: event.target.value })} />
+      <Input id={field} name={field} className="flex-1" value={input[field]} onChange={(event) => setInput({ ...input, [field]: uppercaseBusinessText(event.target.value) })} />
       <Button type="button" variant="outline" size="icon" aria-label={`Scan ${label}`} title="Scan barcode" onClick={() => setScanning(field)}><ScanBarcode aria-hidden="true" /></Button>
     </div>
   </div>;
@@ -75,7 +76,7 @@ export function SlotMesinCreate({ scheduleID, slotNumber, machineOptions, hoseOp
       <Button className="sm:col-span-2" type="submit" disabled={create.isPending}>{create.isPending ? 'Menyimpan...' : 'Simpan Nomor Bagi'}</Button>
     </form>
     {scanning && <Suspense fallback={null}>
-      <BarcodeScanner onResult={(text) => { setInput((prev) => ({ ...prev, [scanning]: text })); setScanning(null); }} onClose={() => setScanning(null)} />
+      <BarcodeScanner onResult={(text) => { setInput((prev) => ({ ...prev, [scanning]: uppercaseBusinessText(text) })); setScanning(null); }} onClose={() => setScanning(null)} />
     </Suspense>}
   </PosSectionShell>;
 }

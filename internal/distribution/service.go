@@ -15,6 +15,7 @@ import (
 	"konkit/internal/auth"
 	"konkit/internal/media"
 	"konkit/internal/programs"
+	"konkit/internal/textnorm"
 )
 
 var onlyDigits = regexp.MustCompile(`^[0-9]+$`)
@@ -69,11 +70,11 @@ func (s *Service) CreateSlot(ctx context.Context, actor auth.Principal, input Cr
 		return DistributionSlot{}, ErrScheduleRequired
 	}
 	input.MachineOptionCode = strings.TrimSpace(input.MachineOptionCode)
-	input.MachineSerialNumber = strings.TrimSpace(input.MachineSerialNumber)
+	input.MachineSerialNumber = textnorm.BusinessUpper(input.MachineSerialNumber)
 	input.HoseOptionCode = strings.TrimSpace(input.HoseOptionCode)
-	input.HoseSerialNumber = strings.TrimSpace(input.HoseSerialNumber)
+	input.HoseSerialNumber = textnorm.BusinessUpper(input.HoseSerialNumber)
 	input.ConverterOptionCode = strings.TrimSpace(input.ConverterOptionCode)
-	input.ConverterSerialNumber = strings.TrimSpace(input.ConverterSerialNumber)
+	input.ConverterSerialNumber = textnorm.BusinessUpper(input.ConverterSerialNumber)
 	if s.posMesinRepository == nil {
 		return DistributionSlot{}, errors.New("distribution POS Mesin is unavailable")
 	}
@@ -106,9 +107,9 @@ func (s *Service) LinkSlot(ctx context.Context, actor auth.Principal, input Link
 	if len(input.NIK) != 16 {
 		return DistributionSlot{}, ErrNIKInvalid
 	}
-	input.Address = strings.TrimSpace(input.Address)
-	input.Village = strings.TrimSpace(input.Village)
-	input.District = strings.TrimSpace(input.District)
+	input.Address = textnorm.BusinessUpper(input.Address)
+	input.Village = textnorm.BusinessUpper(input.Village)
+	input.District = textnorm.BusinessUpper(input.District)
 	input.PhoneNumber = stripNonDigits.ReplaceAllString(input.PhoneNumber, "")
 	input.SectorIdentifier = normalizeIdentifier(input.SectorIdentifier)
 	if s.posDokumenRepository == nil {

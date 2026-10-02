@@ -24,6 +24,7 @@ const preview = {
     { source_row_number: 4, values: { Urutan: '3', Penerima: '', NIK: '7306010101800002' } },
   ],
   status: 'draft',
+  machine_options: [],
 };
 
 function renderPage(permissions = ['dcp3.view', 'dcp3.import']) {

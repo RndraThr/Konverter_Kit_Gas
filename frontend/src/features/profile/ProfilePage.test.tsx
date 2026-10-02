@@ -25,6 +25,9 @@ test('combines account identity, profile editing, and password security in one p
   expect(screen.getByRole('button', { name: 'Ubah password' })).toBeInTheDocument();
   await userEvent.clear(name);
   await userEvent.type(name, 'Admin Program');
+  expect(name).toHaveValue('ADMIN PROGRAM');
+  expect(screen.getByLabelText('Username')).toHaveValue('admin');
+  expect(screen.getByLabelText('Email')).toHaveValue('admin@test.id');
   await userEvent.click(screen.getByRole('button', { name: 'Simpan perubahan' }));
   expect(apiRequest).toHaveBeenCalledWith('/api/v1/me', expect.objectContaining({ method: 'PATCH' }));
 });

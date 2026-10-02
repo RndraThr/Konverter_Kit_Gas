@@ -12,6 +12,15 @@ test('requires selecting a schedule and full name before submit, then forwards t
   await userEvent.click(screen.getByRole('combobox', { name: 'Jadwal' }));
   await userEvent.click(await screen.findByRole('option', { name: /Wajo Tahap 1/ }));
   await userEvent.type(screen.getByLabelText('Nama lengkap'), 'budi santoso');
+  await userEvent.type(screen.getByLabelText('Alamat'), 'Jl. Melati');
+  await userEvent.type(screen.getByLabelText('Desa/kelurahan'), 'Desa Baru');
+  await userEvent.type(screen.getByLabelText('Kecamatan'), 'Wajo');
+  await userEvent.type(screen.getByLabelText('Nomor telepon'), '081AbC');
+
+  expect(screen.getByLabelText('Alamat')).toHaveValue('JL. MELATI');
+  expect(screen.getByLabelText('Desa/kelurahan')).toHaveValue('DESA BARU');
+  expect(screen.getByLabelText('Kecamatan')).toHaveValue('WAJO');
+  expect(screen.getByLabelText('Nomor telepon')).toHaveValue('081AbC');
   await userEvent.click(screen.getByRole('button', { name: 'Simpan' }));
 
   expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ schedule_id: 'schedule-1', full_name: 'BUDI SANTOSO' }));

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Clock3, Mail, UserRound } from 'lucide-react';
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { Alert, AlertDescription } from '../../components/ui/alert';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
@@ -9,13 +9,15 @@ import { PageHeader } from '../../components/PageHeader';
 import { FormField } from '../../components/FormField';
 import { StatusBadge } from '../../components/StatusBadge';
 import { apiRequest, BootstrapResponse, getBootstrap } from '../../lib/api';
+import { uppercaseBusinessText } from '../../lib/text';
 import { ChangePasswordForm } from './ChangePasswordForm';
 
 export function ProfilePage() {
   const client = useQueryClient();
   const bootstrap = useQuery({ queryKey: ['bootstrap'], queryFn: getBootstrap });
-  const [values, setValues] = useState({ full_name: '', username: '', email: '' });
-  useEffect(() => { if (bootstrap.data) setValues({ full_name: bootstrap.data.data.full_name, username: bootstrap.data.data.username, email: bootstrap.data.data.email }); }, [bootstrap.data]);
+  const [values, setValuesState] = useState({ full_name: '', username: '', email: '' });
+  const setValues = useCallback((next: typeof values) => setValuesState({ ...next, full_name: uppercaseBusinessText(next.full_name) }), []);
+  useEffect(() => { if (bootstrap.data) setValuesState({ full_name: bootstrap.data.data.full_name, username: bootstrap.data.data.username, email: bootstrap.data.data.email }); }, [bootstrap.data]);
   const mutation = useMutation({
     mutationFn: () => apiRequest<{ data: BootstrapResponse['data'] }>('/api/v1/me', { method: 'PATCH', body: JSON.stringify(values) }),
     onSuccess: (result) => client.setQueryData<BootstrapResponse>(['bootstrap'], (old) => old ? { ...old, data: { ...old.data, ...result.data } } : old),

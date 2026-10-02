@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"konkit/internal/auth"
+	"konkit/internal/textnorm"
 )
 
 var usernamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{2,63}$`)
@@ -32,7 +33,7 @@ func (s *Service) Get(ctx context.Context, userID string) (Profile, error) {
 }
 
 func (s *Service) Update(ctx context.Context, actor auth.Principal, input UpdateInput, meta auth.ClientMeta) (Profile, error) {
-	input.FullName = strings.TrimSpace(input.FullName)
+	input.FullName = textnorm.BusinessUpper(input.FullName)
 	input.Username = strings.ToLower(strings.TrimSpace(input.Username))
 	input.Email = strings.ToLower(strings.TrimSpace(input.Email))
 

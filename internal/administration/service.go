@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"konkit/internal/auth"
+	"konkit/internal/textnorm"
 )
 
 var (
@@ -180,7 +181,7 @@ type normalizedUser struct {
 
 func normalizeUserInput(fullName, username, email string, roleIDs []string) (normalizedUser, error) {
 	result := normalizedUser{
-		FullName: strings.TrimSpace(fullName),
+		FullName: textnorm.BusinessUpper(fullName),
 		Username: strings.ToLower(strings.TrimSpace(username)),
 		Email:    strings.ToLower(strings.TrimSpace(email)),
 		RoleIDs:  uniqueNonEmpty(roleIDs),
@@ -202,8 +203,8 @@ func normalizeUserInput(fullName, username, email string, roleIDs []string) (nor
 }
 
 func normalizeRoleInput(input *RoleInput) error {
-	input.Name = strings.TrimSpace(input.Name)
-	input.Description = strings.TrimSpace(input.Description)
+	input.Name = textnorm.BusinessUpper(input.Name)
+	input.Description = textnorm.BusinessUpper(input.Description)
 	input.PermissionCodes = uniqueNonEmpty(input.PermissionCodes)
 	input.RegencyIDs = uniqueNonEmpty(input.RegencyIDs)
 	if input.AllRegenciesAccess {

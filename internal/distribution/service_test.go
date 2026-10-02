@@ -19,6 +19,57 @@ type storageStub struct {
 	folderPath         []string
 }
 
+type operationsRepositoryStub struct {
+	createInput CreateSlotInput
+	linkInput   LinkSlotInput
+}
+
+func (r *operationsRepositoryStub) CreateSlot(_ context.Context, _ auth.Principal, input CreateSlotInput, _ auth.ClientMeta) (DistributionSlot, error) {
+	r.createInput = input
+	return DistributionSlot{}, nil
+}
+
+func (r *operationsRepositoryStub) SearchCandidate(context.Context, string, string, auth.RegencyScope) (CandidateMatch, error) {
+	return CandidateMatch{}, nil
+}
+
+func (r *operationsRepositoryStub) LinkSlot(_ context.Context, _ auth.Principal, input LinkSlotInput, _ auth.ClientMeta, _ auth.RegencyScope) (DistributionSlot, error) {
+	r.linkInput = input
+	return DistributionSlot{}, nil
+}
+
+func TestDistributionUppercasesSerialsAndRecipientBusinessText(t *testing.T) {
+	repository := &operationsRepositoryStub{}
+	service := NewService(repository)
+	if _, err := service.CreateSlot(context.Background(), auth.Principal{}, CreateSlotInput{
+		ScheduleID: "schedule-1", SlotNumber: 1,
+		MachineOptionCode: "shark-spwp8030", MachineSerialNumber: " ms-a1 ",
+		HoseOptionCode: "hose-set", HoseSerialNumber: " hs-b2 ",
+		ConverterOptionCode: "ergas-kit", ConverterSerialNumber: " cv-c3 ",
+	}, auth.ClientMeta{}); err != nil {
+		t.Fatal(err)
+	}
+	if repository.createInput.MachineSerialNumber != "MS-A1" || repository.createInput.HoseSerialNumber != "HS-B2" || repository.createInput.ConverterSerialNumber != "CV-C3" {
+		t.Fatalf("serials=%+v", repository.createInput)
+	}
+	if repository.createInput.MachineOptionCode != "shark-spwp8030" || repository.createInput.HoseOptionCode != "hose-set" || repository.createInput.ConverterOptionCode != "ergas-kit" {
+		t.Fatalf("option codes changed: %+v", repository.createInput)
+	}
+
+	if _, err := service.LinkSlot(context.Background(), auth.Principal{}, LinkSlotInput{
+		ScheduleID: "schedule-1", SlotNumber: 1, NIK: "9171031707010004", SectorIdentifier: " kp-01 ",
+		Address: " jl. tani ", Village: " desa baru ", District: " wajo ", PhoneNumber: "0812-3456",
+	}, auth.ClientMeta{}, auth.RegencyScope{}); err != nil {
+		t.Fatal(err)
+	}
+	if repository.linkInput.SectorIdentifier != "KP01" || repository.linkInput.Address != "JL. TANI" || repository.linkInput.Village != "DESA BARU" || repository.linkInput.District != "WAJO" {
+		t.Fatalf("link input=%+v", repository.linkInput)
+	}
+	if repository.linkInput.NIK != "9171031707010004" || repository.linkInput.PhoneNumber != "08123456" {
+		t.Fatalf("numeric identifiers=%+v", repository.linkInput)
+	}
+}
+
 func (s *storageStub) Put(_ context.Context, key string, folderPath []string, source io.Reader) (string, int64, string, error) {
 	s.putKey = key
 	s.folderPath = append([]string(nil), folderPath...)

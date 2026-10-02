@@ -15,13 +15,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Separator } from '../../components/ui/separator';
 import { apiRequest } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
+import { uppercaseBusinessText } from '../../lib/text';
 import { SetupDialog, SetupFormSection } from './SetupDialog';
 import { SetupToolbar } from './SetupToolbar';
 import { ConverterOption, DataResponse, DocumentationSlot, DocumentationTemplate, HoseOption, MachineOption, PackageComponent, PackageTemplate, ProgramType, programTypeLabel } from './types';
 
 const newSlot = (index = 0): DocumentationSlot => ({ slot_code: '', label: '', stage: 'mesin', is_required: true, min_files: 1, max_files: 1, input_source: 'both', require_location: false, require_captured_at: false, sort_order: (index + 1) * 10 });
-const newMachineOption = (): MachineOption => ({ code: '', brand: '', type: '' });
-const newHoseOption = (): HoseOption => ({ code: '', brand: '', spec: '' });
+const newMachineOption = (): MachineOption => ({ code: '', brand: '', type: '', power: '', fuel_type: '' });
+const newHoseOption = (): HoseOption => ({ code: '', suction_brand: '', suction_spec: '', discharge_brand: '', discharge_spec: '' });
 const newConverterOption = (): ConverterOption => ({ code: '', brand: '' });
 const newComponent = (): PackageComponent => ({ code: '', label: '', quantity: 1, unit: '' });
 
@@ -30,6 +31,27 @@ const createEmptyDocumentValues = () => ({ template_code: '', name: '', program_
 
 function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? value as T[] : [];
+}
+
+function legacyPair(value = '') {
+  const parts = value.split(/\s*(?:\/|;|\n)\s*/).filter(Boolean);
+  return [parts[0] ?? '', parts[1] ?? parts[0] ?? ''] as const;
+}
+
+function normalizeMachineOption(option: Partial<MachineOption>): MachineOption {
+  return { code: option.code ?? '', brand: option.brand ?? '', type: option.type ?? '', power: option.power ?? '', fuel_type: option.fuel_type ?? '' };
+}
+
+function normalizeHoseOption(option: Partial<HoseOption>): HoseOption {
+  const brands = legacyPair(option.brand);
+  const specs = legacyPair(option.spec);
+  return {
+    code: option.code ?? '',
+    suction_brand: option.suction_brand ?? brands[0],
+    suction_spec: option.suction_spec ?? specs[0],
+    discharge_brand: option.discharge_brand ?? brands[1],
+    discharge_spec: option.discharge_spec ?? specs[1],
+  };
 }
 
 function revealAddedField(id: string) {
@@ -70,9 +92,16 @@ export function TemplatesPanel() {
     onSuccess: () => { setPackageOpen(false); client.invalidateQueries({ queryKey: ['program-setup', 'package-templates'] }); toast.success('Template paket berhasil disimpan.'); },
   });
   const documentMutation = useMutation({ mutationFn: () => apiRequest(`/api/v1/program-setup/documentation-templates${documentEditing ? `/${documentEditing.id}` : ''}`, { method: documentEditing ? 'PATCH' : 'POST', body: JSON.stringify(documentValues) }), onSuccess: () => { setDocumentOpen(false); client.invalidateQueries({ queryKey: ['program-setup', 'documentation-templates'] }); toast.success('Template dokumentasi berhasil disimpan.'); } });
-  const showPackage = (item?: PackageTemplate) => { const nextValues = item ? { template_code: item.template_code, name: item.name, program_type: item.program_type, status: item.status, machine_options: asArray<MachineOption>(item.values.machine_options), hose_options: asArray<HoseOption>(item.values.hose_options), converter_options: asArray<ConverterOption>(item.values.converter_options), components: asArray<PackageComponent>(item.values.components) } : emptyPackageValues; setPackageEditing(item); setPackageValues(nextValues); setInitialPackageValues(nextValues); setPackageOpen(true); };
+  const showPackage = (item?: PackageTemplate) => { const nextValues = item ? { template_code: item.template_code, name: item.name, program_type: item.program_type, status: item.status, machine_options: asArray<Partial<MachineOption>>(item.values.machine_options).map(normalizeMachineOption), hose_options: asArray<Partial<HoseOption>>(item.values.hose_options).map(normalizeHoseOption), converter_options: asArray<ConverterOption>(item.values.converter_options), components: asArray<PackageComponent>(item.values.components) } : emptyPackageValues; setPackageEditing(item); setPackageValues(nextValues); setInitialPackageValues(nextValues); setPackageOpen(true); };
   const showDocument = (item?: DocumentationTemplate) => { const nextValues = item ? { template_code: item.template_code, name: item.name, program_type: item.program_type, status: item.status, slots: item.slots } : createEmptyDocumentValues(); setDocumentEditing(item); setDocumentValues(nextValues); setInitialDocumentValues(nextValues); setDocumentOpen(true); };
-  const updateSlot = (index: number, patch: Partial<DocumentationSlot>) => setDocumentValues({ ...documentValues, slots: documentValues.slots.map((slot, slotIndex) => slotIndex === index ? { ...slot, ...patch } : slot) });
+  const updateSlot = (index: number, patch: Partial<DocumentationSlot>) => {
+    const normalizedPatch = {
+      ...patch,
+      ...(typeof patch.label === 'string' ? { label: uppercaseBusinessText(patch.label) } : {}),
+      ...(typeof patch.instructions === 'string' ? { instructions: uppercaseBusinessText(patch.instructions) } : {}),
+    };
+    setDocumentValues({ ...documentValues, slots: documentValues.slots.map((slot, slotIndex) => slotIndex === index ? { ...slot, ...normalizedPatch } : slot) });
+  };
   const updateMachineOption = (index: number, patch: Partial<MachineOption>) => setPackageValues({ ...packageValues, machine_options: packageValues.machine_options.map((option, optionIndex) => optionIndex === index ? { ...option, ...patch } : option) });
   const updateHoseOption = (index: number, patch: Partial<HoseOption>) => setPackageValues({ ...packageValues, hose_options: packageValues.hose_options.map((option, optionIndex) => optionIndex === index ? { ...option, ...patch } : option) });
   const updateConverterOption = (index: number, patch: Partial<ConverterOption>) => setPackageValues({ ...packageValues, converter_options: packageValues.converter_options.map((option, optionIndex) => optionIndex === index ? { ...option, ...patch } : option) });
@@ -94,7 +123,7 @@ export function TemplatesPanel() {
     <SetupDialog layout="workspace" open={packageOpen} onOpenChange={setPackageOpen} title={packageEditing ? `Edit ${packageEditing.name}` : 'Tambah template paket'} description="Perubahan pada versi terbit akan membuat versi draf baru." pending={packageMutation.isPending} dirty={JSON.stringify(packageValues) !== JSON.stringify(initialPackageValues)} onSubmit={() => packageMutation.mutate()}>
       <SetupFormSection title="Identitas template" description="Kode, nama, jenis program, dan status versi template.">
       <FormField label="Kode template" name="package_code" required readOnly={Boolean(packageEditing)} value={packageValues.template_code} onChange={(e) => setPackageValues({ ...packageValues, template_code: e.target.value.toUpperCase() })} hint={packageEditing ? 'Kode template menjadi identitas versi dan tidak dapat diubah.' : 'Gunakan kode yang singkat dan unik.'} />
-      <FormField label="Nama template" name="package_name" required value={packageValues.name} onChange={(e) => setPackageValues({ ...packageValues, name: e.target.value.toUpperCase() })} />
+      <FormField label="Nama template" name="package_name" required value={packageValues.name} onChange={(e) => setPackageValues({ ...packageValues, name: uppercaseBusinessText(e.target.value) })} />
       <div className="grid min-w-0 gap-2"><Label id="package-type-label">Jenis program</Label><Select value={packageValues.program_type} onValueChange={(value) => setPackageValues({ ...packageValues, program_type: (value ?? 'farmer') as ProgramType })}><SelectTrigger className="w-full" aria-labelledby="package-type-label"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="farmer">Petani</SelectItem><SelectItem value="fisherman">Nelayan</SelectItem></SelectContent></Select></div>
       <div className="grid min-w-0 gap-2"><Label id="package-status-label">Status</Label><Select value={packageValues.status} onValueChange={(value) => setPackageValues({ ...packageValues, status: value ?? 'draft' })}><SelectTrigger className="w-full" aria-labelledby="package-status-label"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="draft">Draf</SelectItem><SelectItem value="published">Terbit</SelectItem><SelectItem value="retired">Diarsipkan</SelectItem></SelectContent></Select></div>
       </SetupFormSection>
@@ -103,17 +132,21 @@ export function TemplatesPanel() {
         {packageValues.machine_options.map((option, index) => <div className="equipmentRow" role="group" aria-label={`Opsi mesin ${index + 1}`} key={index}>
           <div className="repeatableRowHeader"><strong>Opsi mesin {index + 1}</strong><Button type="button" variant="ghost" size="sm" className="dangerIcon" aria-label={`Hapus opsi mesin ${index + 1}`} onClick={() => setPackageValues({ ...packageValues, machine_options: packageValues.machine_options.filter((_, optionIndex) => optionIndex !== index) })}><Trash2 />Hapus</Button></div>
           <FormField label={`Kode mesin ${index + 1}`} name={`machine_code_${index}`} required value={option.code} onChange={(e) => updateMachineOption(index, { code: e.target.value.toLowerCase() })} />
-          <FormField label={`Merk mesin ${index + 1}`} name={`machine_brand_${index}`} required value={option.brand} onChange={(e) => updateMachineOption(index, { brand: e.target.value.toUpperCase() })} />
-          <FormField label={`Tipe mesin ${index + 1}`} name={`machine_type_${index}`} required value={option.type} onChange={(e) => updateMachineOption(index, { type: e.target.value.toUpperCase() })} />
+          <FormField label={`Merk mesin ${index + 1}`} name={`machine_brand_${index}`} required value={option.brand} onChange={(e) => updateMachineOption(index, { brand: uppercaseBusinessText(e.target.value) })} />
+          <FormField label={`Tipe mesin ${index + 1}`} name={`machine_type_${index}`} required value={option.type} onChange={(e) => updateMachineOption(index, { type: uppercaseBusinessText(e.target.value) })} />
+          <FormField label={`Daya mesin ${index + 1}`} name={`machine_power_${index}`} required value={option.power} onChange={(e) => updateMachineOption(index, { power: uppercaseBusinessText(e.target.value) })} />
+          <FormField label={`Jenis BBM ${index + 1}`} name={`machine_fuel_type_${index}`} required value={option.fuel_type} onChange={(e) => updateMachineOption(index, { fuel_type: uppercaseBusinessText(e.target.value) })} />
         </div>)}
       </div></SetupFormSection>
 
-      <SetupFormSection title="Opsi selang" description="Daftar merk dan spesifikasi selang yang tersedia."><div className="slotEditor fullField"><RepeatableEditorHead title="Merk dan spesifikasi selang" count={packageValues.hose_options.length} addLabel="Tambah opsi selang" onAdd={addHoseOption} />
+      <SetupFormSection title="Opsi selang" description="Satu opsi berisi pasangan selang hisap dan selang buang yang diserahkan bersama."><div className="slotEditor fullField"><RepeatableEditorHead title="Pasangan selang hisap dan buang" count={packageValues.hose_options.length} addLabel="Tambah opsi selang" onAdd={addHoseOption} />
         {packageValues.hose_options.map((option, index) => <div className="equipmentRow" role="group" aria-label={`Opsi selang ${index + 1}`} key={index}>
           <div className="repeatableRowHeader"><strong>Opsi selang {index + 1}</strong><Button type="button" variant="ghost" size="sm" className="dangerIcon" aria-label={`Hapus opsi selang ${index + 1}`} onClick={() => setPackageValues({ ...packageValues, hose_options: packageValues.hose_options.filter((_, optionIndex) => optionIndex !== index) })}><Trash2 />Hapus</Button></div>
           <FormField label={`Kode selang ${index + 1}`} name={`hose_code_${index}`} required value={option.code} onChange={(e) => updateHoseOption(index, { code: e.target.value.toLowerCase() })} />
-          <FormField label={`Merk selang ${index + 1}`} name={`hose_brand_${index}`} required value={option.brand} onChange={(e) => updateHoseOption(index, { brand: e.target.value.toUpperCase() })} />
-          <FormField label={`Spesifikasi selang ${index + 1}`} name={`hose_spec_${index}`} required value={option.spec} onChange={(e) => updateHoseOption(index, { spec: e.target.value.toUpperCase() })} />
+          <FormField label={`Merk selang hisap ${index + 1}`} name={`hose_suction_brand_${index}`} required value={option.suction_brand} onChange={(e) => updateHoseOption(index, { suction_brand: uppercaseBusinessText(e.target.value) })} />
+          <FormField label={`Spesifikasi selang hisap ${index + 1}`} name={`hose_suction_spec_${index}`} required value={option.suction_spec} onChange={(e) => updateHoseOption(index, { suction_spec: uppercaseBusinessText(e.target.value) })} />
+          <FormField label={`Merk selang buang ${index + 1}`} name={`hose_discharge_brand_${index}`} required value={option.discharge_brand} onChange={(e) => updateHoseOption(index, { discharge_brand: uppercaseBusinessText(e.target.value) })} />
+          <FormField label={`Spesifikasi selang buang ${index + 1}`} name={`hose_discharge_spec_${index}`} required value={option.discharge_spec} onChange={(e) => updateHoseOption(index, { discharge_spec: uppercaseBusinessText(e.target.value) })} />
         </div>)}
       </div></SetupFormSection>
 
@@ -121,7 +154,7 @@ export function TemplatesPanel() {
         {packageValues.converter_options.map((option, index) => <div className="equipmentRow" role="group" aria-label={`Opsi konkit ${index + 1}`} key={index}>
           <div className="repeatableRowHeader"><strong>Opsi konkit {index + 1}</strong><Button type="button" variant="ghost" size="sm" className="dangerIcon" aria-label={`Hapus opsi konkit ${index + 1}`} onClick={() => setPackageValues({ ...packageValues, converter_options: packageValues.converter_options.filter((_, optionIndex) => optionIndex !== index) })}><Trash2 />Hapus</Button></div>
           <FormField label={`Kode konkit ${index + 1}`} name={`converter_code_${index}`} required value={option.code} onChange={(e) => updateConverterOption(index, { code: e.target.value.toLowerCase() })} />
-          <FormField label={`Merk konkit ${index + 1}`} name={`converter_brand_${index}`} required value={option.brand} onChange={(e) => updateConverterOption(index, { brand: e.target.value.toUpperCase() })} />
+          <FormField label={`Merk konkit ${index + 1}`} name={`converter_brand_${index}`} required value={option.brand} onChange={(e) => updateConverterOption(index, { brand: uppercaseBusinessText(e.target.value) })} />
         </div>)}
       </div></SetupFormSection>
 
@@ -129,9 +162,9 @@ export function TemplatesPanel() {
         {packageValues.components.map((component, index) => <div className="componentRow" role="group" aria-label={`Komponen ${index + 1}`} key={index}>
           <div className="repeatableRowHeader"><strong>Komponen {index + 1}</strong><Button type="button" variant="ghost" size="sm" className="dangerIcon" aria-label={`Hapus komponen ${index + 1}`} onClick={() => setPackageValues({ ...packageValues, components: packageValues.components.filter((_, componentIndex) => componentIndex !== index) })}><Trash2 />Hapus</Button></div>
           <FormField label={`Kode komponen ${index + 1}`} name={`component_code_${index}`} required value={component.code} onChange={(e) => updateComponent(index, { code: e.target.value.toLowerCase() })} />
-          <FormField label={`Nama komponen ${index + 1}`} name={`component_label_${index}`} required value={component.label} onChange={(e) => updateComponent(index, { label: e.target.value })} />
+          <FormField label={`Nama komponen ${index + 1}`} name={`component_label_${index}`} required value={component.label} onChange={(e) => updateComponent(index, { label: uppercaseBusinessText(e.target.value) })} />
           <FormField label={`Jumlah komponen ${index + 1}`} name={`component_quantity_${index}`} type="number" min={1} required value={component.quantity} onChange={(e) => updateComponent(index, { quantity: Number(e.target.value) })} />
-          <FormField label={`Satuan komponen ${index + 1}`} name={`component_unit_${index}`} required value={component.unit} onChange={(e) => updateComponent(index, { unit: e.target.value })} />
+          <FormField label={`Satuan komponen ${index + 1}`} name={`component_unit_${index}`} required value={component.unit} onChange={(e) => updateComponent(index, { unit: uppercaseBusinessText(e.target.value) })} />
         </div>)}
       </div></SetupFormSection>
       {packageMutation.isError && <Alert className="sm:col-span-2" variant="destructive"><AlertDescription>Template paket belum dapat disimpan.</AlertDescription></Alert>}
@@ -139,7 +172,7 @@ export function TemplatesPanel() {
     <SetupDialog layout="workspace" open={documentOpen} onOpenChange={setDocumentOpen} title={documentEditing ? `Edit ${documentEditing.name}` : 'Tambah template dokumentasi'} description="Perubahan pada versi terbit akan membuat versi draf baru." pending={documentMutation.isPending} dirty={JSON.stringify(documentValues) !== JSON.stringify(initialDocumentValues)} onSubmit={() => documentMutation.mutate()}>
       <SetupFormSection title="Identitas template" description="Kode, nama, jenis program, dan status versi dokumentasi.">
       <FormField label="Kode template" name="document_code" required readOnly={Boolean(documentEditing)} value={documentValues.template_code} onChange={(e) => setDocumentValues({ ...documentValues, template_code: e.target.value.toUpperCase() })} hint={documentEditing ? 'Kode template menjadi identitas versi dan tidak dapat diubah.' : 'Gunakan kode yang singkat dan unik.'} />
-      <FormField label="Nama template" name="document_name" required value={documentValues.name} onChange={(e) => setDocumentValues({ ...documentValues, name: e.target.value.toUpperCase() })} />
+      <FormField label="Nama template" name="document_name" required value={documentValues.name} onChange={(e) => setDocumentValues({ ...documentValues, name: uppercaseBusinessText(e.target.value) })} />
       <div className="grid min-w-0 gap-2"><Label id="document-type-label">Jenis program</Label><Select value={documentValues.program_type} onValueChange={(value) => setDocumentValues({ ...documentValues, program_type: (value ?? 'farmer') as ProgramType })}><SelectTrigger className="w-full" aria-labelledby="document-type-label"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="farmer">Petani</SelectItem><SelectItem value="fisherman">Nelayan</SelectItem></SelectContent></Select></div>
       <div className="grid min-w-0 gap-2"><Label id="document-status-label">Status</Label><Select value={documentValues.status} onValueChange={(value) => setDocumentValues({ ...documentValues, status: value ?? 'draft' })}><SelectTrigger className="w-full" aria-labelledby="document-status-label"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="draft">Draf</SelectItem><SelectItem value="published">Terbit</SelectItem><SelectItem value="retired">Diarsipkan</SelectItem></SelectContent></Select></div>
       </SetupFormSection>

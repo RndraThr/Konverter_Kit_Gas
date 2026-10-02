@@ -36,3 +36,14 @@ test('offers a konkit/reducer brand selector from the package options', async ()
   await userEvent.click(screen.getByRole('combobox', { name: 'Merk Konkit/Reducer' }));
   expect(await screen.findByRole('option', { name: 'ERGAS' })).toBeVisible();
 });
+
+test('uppercases serial numbers while typing', async () => {
+  renderCreate();
+  await userEvent.type(screen.getByLabelText('Serial Number Mesin'), 'ms-a1');
+  await userEvent.type(screen.getByLabelText('Serial Number Selang'), 'hs-b2');
+  await userEvent.type(screen.getByLabelText('Serial Number Konkit/Reducer'), 'cv-c3');
+
+  expect(screen.getByLabelText('Serial Number Mesin')).toHaveValue('MS-A1');
+  expect(screen.getByLabelText('Serial Number Selang')).toHaveValue('HS-B2');
+  expect(screen.getByLabelText('Serial Number Konkit/Reducer')).toHaveValue('CV-C3');
+});

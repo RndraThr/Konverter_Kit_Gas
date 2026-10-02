@@ -1,8 +1,9 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { Button } from '../../components/ui/button';
 import { Checkbox } from '../../components/ui/checkbox';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../components/ui/dialog';
 import { FormField } from '../../components/FormField';
+import { uppercaseBusinessText } from '../../lib/text';
 
 export type RegencyOption = { id: string; name: string; document_code: string };
 export type Permission = { id: string; code: string; name: string };
@@ -10,10 +11,12 @@ export type PermissionGroup = { resource: string; permissions: Permission[] };
 export type RoleRecord = { id: string; code: string; name: string; description?: string; is_system: boolean; permissions: Permission[]; all_regencies_access: boolean; regencies: RegencyOption[]; user_count: number };
 export type RoleValues = { code: string; name: string; description: string; permission_codes: string[]; all_regencies_access: boolean; regency_ids: string[] };
 
+const emptyRoleValues: RoleValues = { code: '', name: '', description: '', permission_codes: [], all_regencies_access: false, regency_ids: [] };
+
 export function RoleDialog({ open, onOpenChange, groups, regencies, role, pending, error, fields = {}, onSave }: { open: boolean; onOpenChange: (value: boolean) => void; groups: PermissionGroup[]; regencies: RegencyOption[]; role?: RoleRecord; pending?: boolean; error?: string; fields?: Record<string, string>; onSave: (values: RoleValues) => void }) {
-  const empty = { code: '', name: '', description: '', permission_codes: [] as string[], all_regencies_access: false, regency_ids: [] as string[] };
-  const [values, setValues] = useState<RoleValues>(empty);
-  useEffect(() => setValues(role ? { code: role.code, name: role.name, description: role.description ?? '', permission_codes: role.permissions.map((item) => item.code), all_regencies_access: role.all_regencies_access, regency_ids: role.regencies.map((item) => item.id) } : empty), [role, open]);
+  const [values, setValuesState] = useState<RoleValues>(emptyRoleValues);
+  const setValues = useCallback((next: RoleValues) => setValuesState({ ...next, name: uppercaseBusinessText(next.name), description: uppercaseBusinessText(next.description) }), []);
+  useEffect(() => setValuesState(role ? { code: role.code, name: role.name, description: role.description ?? '', permission_codes: role.permissions.map((item) => item.code), all_regencies_access: role.all_regencies_access, regency_ids: role.regencies.map((item) => item.id) } : emptyRoleValues), [role, open]);
   const toggle = (code: string) => setValues({ ...values, permission_codes: values.permission_codes.includes(code) ? values.permission_codes.filter((item) => item !== code) : [...values.permission_codes, code] });
   const toggleRegency = (id: string) => setValues({ ...values, regency_ids: values.regency_ids.includes(id) ? values.regency_ids.filter((item) => item !== id) : [...values.regency_ids, id] });
   const title = role ? `Edit ${role.name}` : 'Tambah role';

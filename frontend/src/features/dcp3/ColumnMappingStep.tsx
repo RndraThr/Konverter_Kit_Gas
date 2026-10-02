@@ -15,17 +15,20 @@ const sharedFields: MappingField[] = [
   { key: 'phone_number', label: 'Nomor telepon' },
 ];
 
-export function ColumnMappingStep({ headers, mapping, programType, onChange }: {
+export function ColumnMappingStep({ headers, mapping, programType, multipleMachineVariants, onChange }: {
   headers: string[];
   mapping: DCP3Mapping;
   programType: 'farmer' | 'fisherman';
+  multipleMachineVariants: boolean;
   onChange: (mapping: DCP3Mapping) => void;
 }) {
   const sectorField: MappingField = programType === 'farmer'
     ? { key: 'farmer_card_number', label: 'Nomor kartu petani' }
     : { key: 'kusuka_number', label: 'Nomor kartu KUSUKA' };
+  const fields: MappingField[] = [...sharedFields.slice(0, 3), sectorField, ...sharedFields.slice(3)];
+  if (multipleMachineVariants) fields.push({ key: 'machine_option', label: 'Varian mesin', required: true });
   return <div className={styles.mappingGrid}>
-    {[...sharedFields.slice(0, 3), sectorField, ...sharedFields.slice(3)].map((field) => {
+    {fields.map((field) => {
       const labelID = `dcp3-mapping-${field.key}`;
       const selectedHeaderIndex = headers.indexOf(mapping[field.key]);
       return <div className={styles.mappingField} key={field.key}>

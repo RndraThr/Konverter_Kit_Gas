@@ -33,6 +33,14 @@ test('shows assigned regencies and toggles the all-regencies checkbox', async ()
   const dialog = screen.getByRole('dialog', { name: 'Edit Petugas Wajo' });
   expect(dialog.querySelector('[data-slot="dialog-footer"]')).toHaveClass('mx-0', 'mb-0');
 
+  const roleName = screen.getByLabelText('Nama role');
+  await userEvent.clear(roleName);
+  await userEvent.type(roleName, 'Petugas Regional');
+  await userEvent.type(screen.getByLabelText('Deskripsi'), 'akses wilayah');
+  expect(roleName).toHaveValue('PETUGAS REGIONAL');
+  expect(screen.getByLabelText('Deskripsi')).toHaveValue('AKSES WILAYAH');
+  expect(screen.getByLabelText('Kode role')).toHaveValue('petugas_wajo');
+
   expect(screen.getByRole('checkbox', { name: 'Wajo' })).toBeChecked();
   expect(screen.getByRole('checkbox', { name: 'Bone' })).not.toBeChecked();
 

@@ -48,6 +48,10 @@ test('shows an API error when creating a user fails', async () => {
   await userEvent.type(screen.getByLabelText('Username'), 'petugas.baru');
   await userEvent.type(screen.getByLabelText('Email'), 'petugas@konkit.test');
   await userEvent.type(document.querySelector<HTMLInputElement>('input[name="password"]')!, 'Password-awal-2026');
+  expect(screen.getByLabelText('Nama lengkap')).toHaveValue('PETUGAS BARU');
+  expect(screen.getByLabelText('Username')).toHaveValue('petugas.baru');
+  expect(screen.getByLabelText('Email')).toHaveValue('petugas@konkit.test');
+  expect(document.querySelector<HTMLInputElement>('input[name="password"]')).toHaveValue('Password-awal-2026');
   await userEvent.click(screen.getByRole('button', { name: 'Simpan pengguna' }));
   expect(await screen.findByText('Username atau email sudah digunakan')).toBeInTheDocument();
 });

@@ -7,6 +7,7 @@ import { FormField } from '../../components/FormField';
 import { Label } from '../../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import type { Recipient, RecipientInput } from './types';
+import { uppercaseBusinessText } from '../../lib/text';
 
 export type ScheduleOption = { id: string; name: string; regency_name: string; program_type: 'farmer' | 'fisherman' };
 
@@ -47,12 +48,12 @@ export function RecipientDialog({ open, onOpenChange, recipient, schedules, pend
             <SelectContent>{schedules.map((item) => <SelectItem key={item.id} value={item.id}>{item.regency_name} / {item.name}</SelectItem>)}</SelectContent>
           </Select>
         </div>
-        <FormField className="sm:col-span-2" error={fields.full_name} label="Nama lengkap" name="full_name" required value={values.full_name} onChange={(event) => setValues({ ...values, full_name: event.target.value.toUpperCase() })} />
+        <FormField className="sm:col-span-2" error={fields.full_name} label="Nama lengkap" name="full_name" required value={values.full_name} onChange={(event) => setValues({ ...values, full_name: uppercaseBusinessText(event.target.value) })} />
         <FormField error={fields.nik} label="NIK" name="nik" maxLength={16} value={values.nik} onChange={(event) => setValues({ ...values, nik: event.target.value.replace(/\D/g, '') })} hint="16 digit, boleh dikosongkan." />
-        <FormField label={sectorLabel} name="sector_identifier" value={values.sector_identifier} onChange={(event) => setValues({ ...values, sector_identifier: event.target.value.toUpperCase() })} />
-        <FormField className="sm:col-span-2" label="Alamat" name="address" value={values.address} onChange={(event) => setValues({ ...values, address: event.target.value })} />
-        <FormField label="Desa/kelurahan" name="village" value={values.village} onChange={(event) => setValues({ ...values, village: event.target.value })} />
-        <FormField label="Kecamatan" name="district" value={values.district} onChange={(event) => setValues({ ...values, district: event.target.value })} />
+        <FormField label={sectorLabel} name="sector_identifier" value={values.sector_identifier} onChange={(event) => setValues({ ...values, sector_identifier: uppercaseBusinessText(event.target.value) })} />
+        <FormField className="sm:col-span-2" label="Alamat" name="address" value={values.address} onChange={(event) => setValues({ ...values, address: uppercaseBusinessText(event.target.value) })} />
+        <FormField label="Desa/kelurahan" name="village" value={values.village} onChange={(event) => setValues({ ...values, village: uppercaseBusinessText(event.target.value) })} />
+        <FormField label="Kecamatan" name="district" value={values.district} onChange={(event) => setValues({ ...values, district: uppercaseBusinessText(event.target.value) })} />
         <FormField label="Nomor telepon" name="phone_number" value={values.phone_number} onChange={(event) => setValues({ ...values, phone_number: event.target.value })} />
         {error && <Alert className="sm:col-span-2" variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}
       </div>

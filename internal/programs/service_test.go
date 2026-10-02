@@ -13,6 +13,8 @@ type repositoryStub struct {
 	regencyInput     RegencyInput
 	programInput     ProgramInput
 	scheduleInput    ScheduleInput
+	packageInput     PackageTemplateInput
+	documentInput    DocumentationTemplateInput
 	zoneInput        ZoneInput
 	assignmentInput  RegencyAssignmentInput
 	resolveProgramID string
@@ -46,13 +48,15 @@ func (r *repositoryStub) SaveSchedule(_ context.Context, _ auth.Principal, input
 func (r *repositoryStub) ListPackageTemplates(context.Context) ([]PackageTemplate, error) {
 	return nil, nil
 }
-func (r *repositoryStub) SavePackageTemplate(context.Context, auth.Principal, PackageTemplateInput, auth.ClientMeta) (PackageTemplate, error) {
+func (r *repositoryStub) SavePackageTemplate(_ context.Context, _ auth.Principal, input PackageTemplateInput, _ auth.ClientMeta) (PackageTemplate, error) {
+	r.packageInput = input
 	return PackageTemplate{}, nil
 }
 func (r *repositoryStub) ListDocumentationTemplates(context.Context) ([]DocumentationTemplate, error) {
 	return nil, nil
 }
-func (r *repositoryStub) SaveDocumentationTemplate(context.Context, auth.Principal, DocumentationTemplateInput, auth.ClientMeta) (DocumentationTemplate, error) {
+func (r *repositoryStub) SaveDocumentationTemplate(_ context.Context, _ auth.Principal, input DocumentationTemplateInput, _ auth.ClientMeta) (DocumentationTemplate, error) {
+	r.documentInput = input
 	return DocumentationTemplate{}, nil
 }
 func (r *repositoryStub) ListZones(context.Context, string, auth.RegencyScope) ([]ProgramZone, error) {
@@ -85,12 +89,12 @@ func TestSaveRegencyNormalizesDocumentCode(t *testing.T) {
 	actor := auth.Principal{UserID: "actor-1"}
 	meta := auth.ClientMeta{IPAddress: "127.0.0.1", UserAgent: "test"}
 	saved, err := service.SaveRegency(context.Background(), actor, RegencyInput{
-		ProvinceName: " Sulawesi Selatan ", Name: " Wajo ", DocumentCode: " wjo ", IsActive: true,
+		ProvinceName: " Sulawesi Selatan ", Name: " Wajo ", DocumentCode: " wjo ", IsActive: true, Notes: " wilayah utama ",
 	}, meta)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saved.DocumentCode != "WJO" || repository.regencyInput.ProvinceName != "Sulawesi Selatan" || repository.regencyInput.Name != "Wajo" {
+	if saved.DocumentCode != "WJO" || repository.regencyInput.ProvinceName != "SULAWESI SELATAN" || repository.regencyInput.Name != "WAJO" || repository.regencyInput.Notes != "WILAYAH UTAMA" {
 		t.Fatalf("input was not normalized: %+v", repository.regencyInput)
 	}
 	if repository.actor.UserID != actor.UserID || repository.meta.UserAgent != meta.UserAgent {
@@ -102,6 +106,88 @@ func TestSaveRegencyNormalizesDocumentCode(t *testing.T) {
 		if !errors.Is(err, ErrDocumentCodeInvalid) {
 			t.Fatalf("code=%q err=%v", code, err)
 		}
+	}
+}
+
+func TestSaveProgramSetupUppercasesBusinessTextAndPreservesTechnicalKeys(t *testing.T) {
+	repository := &repositoryStub{}
+	service := NewService(repository)
+	if _, err := service.SaveProgram(context.Background(), auth.Principal{}, ProgramInput{
+		Code: "petani-2026", Name: " bantuan petani ", ProgramType: ProgramFarmer, FiscalYear: 2026, Status: "draft", Notes: " tahap pertama ",
+	}, auth.ClientMeta{}); err != nil {
+		t.Fatal(err)
+	}
+	if repository.programInput.Name != "BANTUAN PETANI" || repository.programInput.Notes != "TAHAP PERTAMA" || repository.programInput.Code != "PETANI-2026" {
+		t.Fatalf("program=%+v", repository.programInput)
+	}
+
+	start := time.Date(2026, 9, 9, 0, 0, 0, 0, time.UTC)
+	if _, err := service.SaveSchedule(context.Background(), auth.Principal{}, ScheduleInput{
+		ProgramID: "program", RegencyID: "regency", PackageTemplateVersionID: "package", DocumentationTemplateVersionID: "document",
+		Name: " wajo tahap 1 ", Notes: " gelombang pagi ", SupervisorName: " andi saputra ", StartDate: start, EndDate: start.Add(24 * time.Hour), Status: "draft",
+	}, auth.ClientMeta{}); err != nil {
+		t.Fatal(err)
+	}
+	if repository.scheduleInput.Notes != "GELOMBANG PAGI" || repository.scheduleInput.SupervisorName != "ANDI SAPUTRA" {
+		t.Fatalf("schedule=%+v", repository.scheduleInput)
+	}
+
+	if _, err := service.SaveZone(context.Background(), auth.Principal{}, ZoneInput{ProgramID: "program", Code: "zone-a", Name: " pesisir utara "}, auth.ClientMeta{}); err != nil {
+		t.Fatal(err)
+	}
+	if repository.zoneInput.Name != "PESISIR UTARA" || repository.zoneInput.Code != "ZONE-A" {
+		t.Fatalf("zone=%+v", repository.zoneInput)
+	}
+}
+
+func TestSaveTemplatesUppercaseDisplayValuesAndPreserveCodes(t *testing.T) {
+	repository := &repositoryStub{}
+	service := NewService(repository)
+	values := map[string]any{
+		"machine_options":   []any{map[string]any{"code": "shark-spwp8030", "brand": " shark ", "type": " spwp 80-30 ", "power": " 5.5 hp ", "fuel_type": " bensin "}},
+		"hose_options":      []any{map[string]any{"code": "hose-set", "brand": " triliunhose ", "spec": " 6m/10m ", "suction_brand": " triliun ", "suction_spec": " 6 m ", "discharge_brand": " yamakoyo ", "discharge_spec": " 10 m "}},
+		"converter_options": []any{map[string]any{"code": "ergas-kit", "brand": " ergas ", "spec": " paket lengkap "}},
+		"components":        []any{map[string]any{"code": "lpg", "label": " tabung lpg 3 kg ", "unit": " tabung ", "quantity": float64(1)}},
+	}
+	if _, err := service.SavePackageTemplate(context.Background(), auth.Principal{}, PackageTemplateInput{TemplateCode: "pkg-petani", Name: " paket petani ", ProgramType: ProgramFarmer, Status: "draft", Values: values}, auth.ClientMeta{}); err != nil {
+		t.Fatal(err)
+	}
+	machine := repository.packageInput.Values["machine_options"].([]any)[0].(map[string]any)
+	hose := repository.packageInput.Values["hose_options"].([]any)[0].(map[string]any)
+	converter := repository.packageInput.Values["converter_options"].([]any)[0].(map[string]any)
+	component := repository.packageInput.Values["components"].([]any)[0].(map[string]any)
+	if repository.packageInput.Name != "PAKET PETANI" || machine["code"] != "shark-spwp8030" || machine["brand"] != "SHARK" || machine["power"] != "5.5 HP" || hose["suction_spec"] != "6 M" || converter["spec"] != "PAKET LENGKAP" || component["label"] != "TABUNG LPG 3 KG" || component["unit"] != "TABUNG" {
+		t.Fatalf("package input=%+v", repository.packageInput)
+	}
+
+	if _, err := service.SaveDocumentationTemplate(context.Background(), auth.Principal{}, DocumentationTemplateInput{
+		TemplateCode: "doc-petani", Name: " dokumentasi petani ", ProgramType: ProgramFarmer, Status: "draft",
+		Slots: []DocumentationTemplateSlotInput{{SlotCode: "serial_mesin", Label: " serial nomor mesin ", Stage: "mesin", MinFiles: 1, MaxFiles: 1, InputSource: "both", Instructions: " foto harus jelas "}},
+	}, auth.ClientMeta{}); err != nil {
+		t.Fatal(err)
+	}
+	slot := repository.documentInput.Slots[0]
+	if repository.documentInput.Name != "DOKUMENTASI PETANI" || slot.SlotCode != "serial_mesin" || slot.Label != "SERIAL NOMOR MESIN" || slot.Instructions != "FOTO HARUS JELAS" {
+		t.Fatalf("document input=%+v", repository.documentInput)
+	}
+}
+
+func TestSavePackageTemplateDoesNotAddMissingStructuralKeys(t *testing.T) {
+	repository := &repositoryStub{}
+	service := NewService(repository)
+	if _, err := service.SavePackageTemplate(context.Background(), auth.Principal{}, PackageTemplateInput{
+		TemplateCode: "pkg-minimal", Name: " paket minimal ", ProgramType: ProgramFarmer, Status: "draft",
+		Values: map[string]any{"custom_note": "keep-as-is"},
+	}, auth.ClientMeta{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"machine_options", "hose_options", "converter_options", "components"} {
+		if _, exists := repository.packageInput.Values[key]; exists {
+			t.Fatalf("missing structural key %q was added: %+v", key, repository.packageInput.Values)
+		}
+	}
+	if repository.packageInput.Values["custom_note"] != "keep-as-is" {
+		t.Fatalf("unknown value changed: %+v", repository.packageInput.Values)
 	}
 }
 
@@ -199,12 +285,26 @@ func TestSavePackageTemplateRequiresEquipmentOptionsWhenPublishing(t *testing.T)
 		TemplateCode: "TEST-PKG", Name: "Template", ProgramType: ProgramFarmer, Status: "published",
 		Values: map[string]any{
 			"converter_brand": "ERGAS",
-			"machine_options": []any{map[string]any{"code": "shark-spwp8030", "brand": "SHARK", "type": "SPWP 80-30/3\""}},
+			"machine_options": []any{map[string]any{"code": "shark-spwp8030", "brand": "SHARK", "type": "SPWP 80-30/3\"", "power": "5.5 HP", "fuel_type": "Bensin"}},
 			"hose_options":    []any{map[string]any{"code": "triliunhose", "brand": "TRILIUNHOSE", "spec": "6m/10m"}},
 		},
 	}, auth.ClientMeta{})
 	if err != nil {
 		t.Fatalf("complete options should be allowed: %v", err)
+	}
+
+	_, err = service.SavePackageTemplate(context.Background(), auth.Principal{}, PackageTemplateInput{
+		TemplateCode: "TEST-PKG", Name: "Template", ProgramType: ProgramFarmer, Status: "published",
+		Values: map[string]any{
+			"machine_options": []any{map[string]any{"code": "shark-spwp8030", "brand": "SHARK", "type": "SPWP 80-30/3\"", "power": "5.5 HP", "fuel_type": "Bensin"}},
+			"hose_options": []any{map[string]any{
+				"code": "hose-set", "suction_brand": "TRILLIUNHOSE", "suction_spec": "6 M",
+				"discharge_brand": "YAMAKOYO", "discharge_spec": "10 M",
+			}},
+		},
+	}, auth.ClientMeta{})
+	if err != nil {
+		t.Fatalf("separated suction and discharge hose fields should be allowed: %v", err)
 	}
 }
 
@@ -235,7 +335,7 @@ func TestSaveDocumentationTemplateRejectsInvalidStage(t *testing.T) {
 	}
 }
 
-func TestSaveZoneNormalizesCodeAndTrimsName(t *testing.T) {
+func TestSaveZoneNormalizesCodeAndUppercasesName(t *testing.T) {
 	repository := &repositoryStub{}
 	service := NewService(repository)
 	zone, err := service.SaveZone(context.Background(), auth.Principal{}, ZoneInput{
@@ -244,7 +344,7 @@ func TestSaveZoneNormalizesCodeAndTrimsName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if zone.Code != "ZONE-A" || repository.zoneInput.Code != "ZONE-A" || repository.zoneInput.Name != "Zona A" {
+	if zone.Code != "ZONE-A" || repository.zoneInput.Code != "ZONE-A" || repository.zoneInput.Name != "ZONA A" {
 		t.Fatalf("zone input was not normalized: %+v", repository.zoneInput)
 	}
 }

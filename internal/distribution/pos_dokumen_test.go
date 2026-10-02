@@ -52,7 +52,7 @@ func TestLinkSlotDelegatesValidInput(t *testing.T) {
 	if result.Status != "linked" {
 		t.Fatalf("result = %+v", result)
 	}
-	if repo.seenLink.Address != "Jl. A" {
-		t.Fatalf("address not trimmed: %q", repo.seenLink.Address)
+	if repo.seenLink.Address != "JL. A" {
+		t.Fatalf("address not uppercased: %q", repo.seenLink.Address)
 	}
 }

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Building2, CalendarDays, ClipboardList, Layers3, MapPinned, type LucideIcon } from 'lucide-react';
+import { Building2, CalendarDays, ClipboardList, Images, Layers3, MapPinned, type LucideIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { PageHeader } from '../../components/PageHeader';
@@ -7,13 +7,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/ta
 import { apiRequest } from '../../lib/api';
 import { RegenciesPanel } from './RegenciesPanel';
 import { ProgramsPanel } from './ProgramsPanel';
+import { ProgramLogosPanel } from './ProgramLogosPanel';
 import { SchedulesPanel } from './SchedulesPanel';
 import { TemplatesPanel } from './TemplatesPanel';
 import { ZonesPanel } from './ZonesPanel';
 import styles from './ProgramSetup.module.css';
 import { DataResponse, DocumentationTemplate, PackageTemplate, Program, Regency, Schedule } from './types';
 
-const workspaceValues = ['regencies', 'programs', 'zones', 'schedules', 'templates'] as const;
+const workspaceValues = ['regencies', 'programs', 'zones', 'templates', 'logos', 'schedules'] as const;
 type Workspace = typeof workspaceValues[number];
 
 function TabLabel({ children, count, pending, icon: Icon }: { children: string; count?: number; pending: boolean; icon: LucideIcon }) {
@@ -45,14 +46,16 @@ export function ProgramSetupPage() {
         <TabsTrigger className={styles.tab} value="regencies"><TabLabel icon={Building2} count={regencies.data?.data.length} pending={regencies.isPending}>Kabupaten</TabLabel></TabsTrigger>
         <TabsTrigger className={styles.tab} value="programs"><TabLabel icon={ClipboardList} count={programs.data?.data.length} pending={programs.isPending}>Program</TabLabel></TabsTrigger>
         <TabsTrigger className={styles.tab} value="zones"><TabLabel icon={MapPinned} count={programs.data?.data.length} pending={programs.isPending}>Zona</TabLabel></TabsTrigger>
-        <TabsTrigger className={styles.tab} value="schedules"><TabLabel icon={CalendarDays} count={schedules.data?.data.length} pending={schedules.isPending}>Jadwal</TabLabel></TabsTrigger>
         <TabsTrigger className={styles.tab} value="templates"><TabLabel icon={Layers3} count={(packages.data?.data.length ?? 0) + (documents.data?.data.length ?? 0)} pending={packages.isPending || documents.isPending}>Template</TabLabel></TabsTrigger>
+        <TabsTrigger className={styles.tab} value="logos"><TabLabel icon={Images} count={programs.data?.data.length} pending={programs.isPending}>Logo Dokumen</TabLabel></TabsTrigger>
+        <TabsTrigger className={styles.tab} value="schedules"><TabLabel icon={CalendarDays} count={schedules.data?.data.length} pending={schedules.isPending}>Jadwal</TabLabel></TabsTrigger>
       </TabsList>
       <TabsContent className={styles.panel} value="regencies"><RegenciesPanel /></TabsContent>
       <TabsContent className={styles.panel} value="programs"><ProgramsPanel /></TabsContent>
       <TabsContent className={styles.panel} value="zones"><ZonesPanel /></TabsContent>
-      <TabsContent className={styles.panel} value="schedules"><SchedulesPanel /></TabsContent>
       <TabsContent className={styles.panel} value="templates"><TemplatesPanel /></TabsContent>
+      <TabsContent className={styles.panel} value="logos"><ProgramLogosPanel /></TabsContent>
+      <TabsContent className={styles.panel} value="schedules"><SchedulesPanel /></TabsContent>
     </Tabs>
   </div>;
 }

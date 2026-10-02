@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"konkit/internal/auth"
+	"konkit/internal/textnorm"
 )
 
 type repository interface {
@@ -37,6 +38,9 @@ func (s *Service) Update(ctx context.Context, actor auth.Principal, values map[s
 			return nil, ErrInvalidSetting
 		}
 		value = strings.TrimSpace(value)
+		if key == "application_name" || key == "organization_name" {
+			value = textnorm.BusinessUpper(value)
+		}
 		if value == "" {
 			return nil, ErrInvalidSetting
 		}

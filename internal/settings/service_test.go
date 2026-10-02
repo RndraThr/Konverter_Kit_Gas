@@ -23,8 +23,11 @@ func TestUpdateValidatesClosedRegistryAndNormalizesStrings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if repository.values["application_name"] != "Konkit Nasional" || repository.values["organization_name"] != "PT Kian Santang Muliatama Tbk" {
+	if repository.values["application_name"] != "KONKIT NASIONAL" || repository.values["organization_name"] != "PT KIAN SANTANG MULIATAMA TBK" {
 		t.Fatalf("values were not normalized: %+v", repository.values)
+	}
+	if repository.values["timezone"] != "Asia/Makassar" || repository.values["date_format"] != "02/01/2006" || repository.values["locale"] != "id-ID" {
+		t.Fatalf("enum settings changed: %+v", repository.values)
 	}
 	if len(settings) != 5 {
 		t.Fatalf("expected updated settings, got %d", len(settings))

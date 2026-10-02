@@ -22,7 +22,7 @@ func TestUpdateNormalizesProfileAndPassesClientMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.FullName != "Admin Konkit" || got.Username != "admin.user" || got.Email != "admin@konkit.test" {
+	if got.FullName != "ADMIN KONKIT" || got.Username != "admin.user" || got.Email != "admin@konkit.test" {
 		t.Fatalf("profile was not normalized: %+v", got)
 	}
 	if store.updatedBy != actor.UserID || store.meta != meta {

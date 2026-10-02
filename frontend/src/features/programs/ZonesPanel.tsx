@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DataState } from '@/components/DataState';
 import { apiRequest } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
+import { uppercaseBusinessText } from '../../lib/text';
 import type { DataResponse, Program, ProgramZone, Regency } from './types';
 import { programTypeLabel } from './types';
 
@@ -38,7 +39,7 @@ export function ZonesPanel() {
       <Card><CardHeader><CardTitle>Pilih program</CardTitle></CardHeader><CardContent className="space-y-4">
         <Select value={programID} onValueChange={(value) => setProgramID(value ?? '')}><SelectTrigger aria-label="Program zona"><SelectValue placeholder="Pilih program" /></SelectTrigger><SelectContent>{programs.data?.data.map((program) => <SelectItem key={program.id} value={program.id}>{program.name}</SelectItem>)}</SelectContent></Select>
         {selectedProgram && <div className="flex flex-wrap gap-2"><Badge>{programTypeLabel(selectedProgram.program_type)}</Badge><Badge variant="outline">{selectedProgram.code}</Badge></div>}
-        {canManage && <form className="space-y-3 border-t pt-4" onSubmit={(event) => { event.preventDefault(); saveZone.mutate(); }}><div className="grid gap-2"><Label htmlFor="zone-code">Kode zona</Label><Input id="zone-code" value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder="ZONA-1" required /></div><div className="grid gap-2"><Label htmlFor="zone-name">Nama zona</Label><Input id="zone-name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Zona 1" required /></div><Button type="submit" disabled={!programID || saveZone.isPending}><Plus />Tambah zona</Button></form>}
+        {canManage && <form className="space-y-3 border-t pt-4" onSubmit={(event) => { event.preventDefault(); saveZone.mutate(); }}><div className="grid gap-2"><Label htmlFor="zone-code">Kode zona</Label><Input id="zone-code" value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder="ZONA-1" required /></div><div className="grid gap-2"><Label htmlFor="zone-name">Nama zona</Label><Input id="zone-name" value={name} onChange={(event) => setName(uppercaseBusinessText(event.target.value))} placeholder="Zona 1" required /></div><Button type="submit" disabled={!programID || saveZone.isPending}><Plus />Tambah zona</Button></form>}
       </CardContent></Card>
       <div className="space-y-4">
         {zones.isPending ? <DataState kind="loading" title="Memuat zona" description="Mengambil susunan zona dan kabupaten." /> : zones.isError ? <DataState kind="error" title="Zona belum dapat dimuat" description="Periksa koneksi lalu coba kembali." action={{ label: 'Coba lagi', onClick: () => zones.refetch() }} /> : <>

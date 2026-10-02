@@ -10,7 +10,7 @@ const collisionHeader = '__dcp3_unmapped__';
 function MappingHarness() {
   const [mapping, setMapping] = useState<DCP3Mapping>(emptyMapping);
   return <>
-    <ColumnMappingStep headers={[collisionHeader]} mapping={mapping} programType="farmer" onChange={setMapping} />
+    <ColumnMappingStep headers={[collisionHeader]} mapping={mapping} programType="farmer" multipleMachineVariants={false} onChange={setMapping} />
     <pre aria-label="Mapping JSON">{JSON.stringify(mapping)}</pre>
   </>;
 }

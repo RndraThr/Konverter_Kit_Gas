@@ -141,7 +141,7 @@ func TestIntegrationRepositoryPersistsProgramSetupAndVersionsPublishedTemplate(t
 		TemplateCode: templateCode, Name: "Template Awal", ProgramType: ProgramFarmer,
 		Values: map[string]any{
 			"converter_brand": "ERGAS",
-			"machine_options": []any{map[string]any{"code": "shark-spwp8030", "brand": "SHARK", "type": "SPWP 80-30/3\""}},
+			"machine_options": []any{map[string]any{"code": "shark-spwp8030", "brand": "SHARK", "type": "SPWP 80-30/3\"", "power": "5.5 HP", "fuel_type": "Bensin"}},
 			"hose_options":    []any{map[string]any{"code": "triliunhose", "brand": "TRILIUNHOSE", "spec": "6m/10m"}},
 		},
 		Status: "published",
@@ -167,7 +167,7 @@ func TestIntegrationRepositoryPersistsProgramSetupAndVersionsPublishedTemplate(t
 	if err := pool.QueryRow(ctx, `SELECT name, values_json->>'converter_brand' FROM package_template_versions WHERE id = $1`, template.ID).Scan(&originalName, &originalBrand); err != nil {
 		t.Fatal(err)
 	}
-	if originalName != "Template Awal" || originalBrand != "ERGAS" {
+	if originalName != "TEMPLATE AWAL" || originalBrand != "ERGAS" {
 		t.Fatalf("published version mutated: name=%q brand=%q", originalName, originalBrand)
 	}
 
@@ -201,7 +201,7 @@ func TestIntegrationRepositoryPersistsProgramSetupAndVersionsPublishedTemplate(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if scheduleWithSupervisor.SupervisorName != "Andi Amrullah" {
+	if scheduleWithSupervisor.SupervisorName != "ANDI AMRULLAH" {
 		t.Fatalf("supervisor name=%q", scheduleWithSupervisor.SupervisorName)
 	}
 
@@ -238,7 +238,7 @@ func TestSaveScheduleRoundTripsSlotQuota(t *testing.T) {
 	}
 	template, err := service.SavePackageTemplate(ctx, actor, PackageTemplateInput{
 		TemplateCode: templateCode, Name: "Template Kuota", ProgramType: ProgramFarmer,
-		Values: map[string]any{"machine_options": []any{map[string]any{"code": "m", "brand": "M", "type": "T"}}, "hose_options": []any{map[string]any{"code": "h", "brand": "H", "spec": "S"}}},
+		Values: map[string]any{"machine_options": []any{map[string]any{"code": "m", "brand": "M", "type": "T", "power": "P", "fuel_type": "F"}}, "hose_options": []any{map[string]any{"code": "h", "brand": "H", "spec": "S"}}},
 		Status: "published",
 	}, meta)
 	if err != nil {
@@ -406,7 +406,7 @@ func TestIntegrationZoneLifecycleUsesIDForUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if zone.Code != "ZONE-A" || zone.Name != "Zona A" || zone.IsPlaceholder {
+	if zone.Code != "ZONE-A" || zone.Name != "ZONA A" || zone.IsPlaceholder {
 		t.Fatalf("unexpected saved zone: %+v", zone)
 	}
 
@@ -416,7 +416,7 @@ func TestIntegrationZoneLifecycleUsesIDForUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.ID != zone.ID || updated.Name != "Zona A Revisi" || updated.SortOrder != 5 {
+	if updated.ID != zone.ID || updated.Name != "ZONA A REVISI" || updated.SortOrder != 5 {
 		t.Fatalf("expected upsert of existing zone, got: %+v", updated)
 	}
 

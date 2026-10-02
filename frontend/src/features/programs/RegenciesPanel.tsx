@@ -11,6 +11,7 @@ import { Checkbox } from '../../components/ui/checkbox';
 import { Alert, AlertDescription } from '../../components/ui/alert';
 import { apiRequest } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
+import { uppercaseBusinessText } from '../../lib/text';
 import { SetupDialog } from './SetupDialog';
 import { SetupToolbar } from './SetupToolbar';
 import { DataResponse, Regency } from './types';
@@ -35,10 +36,10 @@ export function RegenciesPanel() {
   return <section className="setupPanel" aria-labelledby="regencies-heading"><header className="panelHeading"><div><h2 id="regencies-heading">Kabupaten operasional</h2><p>Kode tiga huruf dipakai sebagai bagian penomoran dokumen.</p></div>{canManage && <Button type="button" onClick={() => show()}><Plus />Tambah kabupaten</Button>}</header>
     {query.isPending ? <DataState kind="loading" title="Memuat data kabupaten" description="Mengambil daftar wilayah operasional terbaru." /> : query.isError ? <DataState kind="error" title="Data kabupaten belum dapat dimuat" description="Periksa koneksi, lalu coba kembali." action={{ label: 'Coba lagi', onClick: () => query.refetch() }} /> : <><SetupToolbar entity="kabupaten" search={search} onSearchChange={setSearch} status={status} onStatusChange={setStatus} options={[{ value: 'all', label: 'Semua status' }, { value: 'active', label: 'Aktif' }, { value: 'inactive', label: 'Nonaktif' }]} shown={items.length} total={allItems.length} />{items.length ? <DataTable label="Daftar kabupaten"><thead><tr><th>Kabupaten</th><th>Provinsi</th><th>Kode dokumen</th><th>Status</th>{canManage && <th className="actionColumn">Aksi</th>}</tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><span className="entityName"><MapPin />{item.name}</span></td><td>{item.province_name}</td><td><strong className="documentCode">{item.document_code}</strong></td><td><StatusBadge active={item.is_active} /></td>{canManage && <td className="actionColumn"><Button type="button" variant="ghost" size="icon" aria-label={`Edit ${item.name}`} title={`Edit ${item.name}`} onClick={() => show(item)}><Edit3 /></Button></td>}</tr>)}</tbody></DataTable> : <DataState kind="empty" title={allItems.length ? 'Tidak ada kabupaten yang sesuai' : 'Belum ada kabupaten'} description={allItems.length ? 'Ubah kata kunci atau filter untuk menampilkan data lain.' : 'Tambahkan lokasi operasional pertama untuk memulai.'} />}</>}
     <SetupDialog open={open} onOpenChange={setOpen} title={editing ? `Edit ${editing.name}` : 'Tambah kabupaten'} description="Tetapkan nama wilayah dan kode dokumen yang unik." pending={mutation.isPending} dirty={JSON.stringify(values) !== JSON.stringify(initialValues)} onSubmit={() => mutation.mutate()}>
-      <FormField label="Provinsi" name="province_name" required value={values.province_name} onChange={(e) => setValues({ ...values, province_name: e.target.value.toUpperCase() })} />
-      <FormField label="Kabupaten" name="name" required value={values.name} onChange={(e) => setValues({ ...values, name: e.target.value.toUpperCase() })} />
+      <FormField label="Provinsi" name="province_name" required value={values.province_name} onChange={(e) => setValues({ ...values, province_name: uppercaseBusinessText(e.target.value) })} />
+      <FormField label="Kabupaten" name="name" required value={values.name} onChange={(e) => setValues({ ...values, name: uppercaseBusinessText(e.target.value) })} />
       <FormField label="Kode dokumen" name="document_code" required maxLength={3} value={values.document_code} onChange={(e) => setValues({ ...values, document_code: e.target.value.toUpperCase() })} hint="Tepat tiga huruf, misalnya WJO." />
-      <FormField label="Catatan" name="notes" value={values.notes} onChange={(e) => setValues({ ...values, notes: e.target.value })} />
+      <FormField label="Catatan" name="notes" value={values.notes} onChange={(e) => setValues({ ...values, notes: uppercaseBusinessText(e.target.value) })} />
       <label className="flex min-h-11 items-center gap-3 sm:col-span-2"><Checkbox checked={values.is_active} onCheckedChange={(checked) => setValues({ ...values, is_active: checked === true })} />Kabupaten aktif</label>
       {mutation.isError && <Alert className="sm:col-span-2" variant="destructive"><AlertDescription>Kabupaten belum dapat disimpan.</AlertDescription></Alert>}
     </SetupDialog>
