@@ -56,6 +56,18 @@ export type ScheduleSettings = {
   installer_name: string;
   supervisor_name: string;
   pertamina_rep_name: string;
+  rakorda_location: string;
+  rakorda_row_count: number;
+};
+
+export type RakordaUpload = {
+  id: string;
+  schedule_id: string;
+  event_date: string;
+  original_name: string;
+  mime_type: 'application/pdf' | 'image/jpeg' | 'image/png';
+  byte_size: number;
+  created_at: string;
 };
 
 export type AggregateDocument = {

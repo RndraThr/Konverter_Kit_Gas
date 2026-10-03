@@ -58,3 +58,25 @@ func TestScheduleSettingsGetPassesThrough(t *testing.T) {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 }
+
+func TestScheduleSettingsInputNormalizesRakordaDefaults(t *testing.T) {
+	input := ScheduleSettingsInput{ScheduleID: " sched-1 ", RakordaLocation: "  aula kantor bupati  "}
+	if err := input.normalize(); err != nil {
+		t.Fatal(err)
+	}
+	if input.RakordaLocation != "AULA KANTOR BUPATI" {
+		t.Fatalf("rakorda_location=%q", input.RakordaLocation)
+	}
+	if input.RakordaRowCount != 45 {
+		t.Fatalf("rakorda_row_count=%d, want 45", input.RakordaRowCount)
+	}
+}
+
+func TestScheduleSettingsInputRejectsRakordaRowCountOutsideRange(t *testing.T) {
+	for _, rows := range []int{4, 201} {
+		input := ScheduleSettingsInput{ScheduleID: "sched-1", RakordaRowCount: rows}
+		if err := input.normalize(); !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("rows=%d err=%v", rows, err)
+		}
+	}
+}

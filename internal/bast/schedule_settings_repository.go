@@ -18,7 +18,8 @@ func (r *Repository) GetScheduleSettings(ctx context.Context, scheduleID string,
 			COALESCE(st.handover_location,''), COALESCE(st.consultant_company_name,''),
 			COALESCE(st.agriculture_office_name,''), COALESCE(st.agriculture_office_nip,''),
 			COALESCE(st.installer_name,''), COALESCE(st.supervisor_name,''),
-			COALESCE(st.pertamina_rep_name,''), COALESCE(st.updated_at, now())
+			COALESCE(st.pertamina_rep_name,''), COALESCE(st.rakorda_location,''),
+			COALESCE(st.rakorda_row_count,45), COALESCE(st.updated_at, now())
 		FROM program_schedules ps
 		LEFT JOIN bast_schedule_settings st ON st.schedule_id = ps.id
 		WHERE ps.id=$1 AND ($2 OR ps.regency_id::text = ANY($3))
@@ -26,7 +27,8 @@ func (r *Repository) GetScheduleSettings(ctx context.Context, scheduleID string,
 		&settings.ScheduleID, &settings.HandoverLocation, &settings.ConsultantCompanyName,
 		&settings.AgricultureOfficeName, &settings.AgricultureOfficeNIP,
 		&settings.InstallerName, &settings.SupervisorName,
-		&settings.PertaminaRepName, &settings.UpdatedAt,
+		&settings.PertaminaRepName, &settings.RakordaLocation,
+		&settings.RakordaRowCount, &settings.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ScheduleSettings{}, ErrNotFound
@@ -54,8 +56,8 @@ func (r *Repository) UpsertScheduleSettings(ctx context.Context, actor auth.Prin
 
 	var settings ScheduleSettings
 	err = tx.QueryRow(ctx, `
-		INSERT INTO bast_schedule_settings(schedule_id,handover_location,consultant_company_name,agriculture_office_name,agriculture_office_nip,installer_name,supervisor_name,pertamina_rep_name)
-		VALUES($1,NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''))
+		INSERT INTO bast_schedule_settings(schedule_id,handover_location,consultant_company_name,agriculture_office_name,agriculture_office_nip,installer_name,supervisor_name,pertamina_rep_name,rakorda_location,rakorda_row_count)
+		VALUES($1,NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),$10)
 		ON CONFLICT(schedule_id) DO UPDATE SET
 			handover_location=EXCLUDED.handover_location,
 			consultant_company_name=EXCLUDED.consultant_company_name,
@@ -64,13 +66,16 @@ func (r *Repository) UpsertScheduleSettings(ctx context.Context, actor auth.Prin
 			installer_name=EXCLUDED.installer_name,
 			supervisor_name=EXCLUDED.supervisor_name,
 			pertamina_rep_name=EXCLUDED.pertamina_rep_name,
+			rakorda_location=EXCLUDED.rakorda_location,
+			rakorda_row_count=EXCLUDED.rakorda_row_count,
 			updated_at=now()
-		RETURNING schedule_id::text,COALESCE(handover_location,''),COALESCE(consultant_company_name,''),COALESCE(agriculture_office_name,''),COALESCE(agriculture_office_nip,''),COALESCE(installer_name,''),COALESCE(supervisor_name,''),COALESCE(pertamina_rep_name,''),updated_at
-	`, input.ScheduleID, input.HandoverLocation, input.ConsultantCompanyName, input.AgricultureOfficeName, input.AgricultureOfficeNIP, input.InstallerName, input.SupervisorName, input.PertaminaRepName).Scan(
+		RETURNING schedule_id::text,COALESCE(handover_location,''),COALESCE(consultant_company_name,''),COALESCE(agriculture_office_name,''),COALESCE(agriculture_office_nip,''),COALESCE(installer_name,''),COALESCE(supervisor_name,''),COALESCE(pertamina_rep_name,''),COALESCE(rakorda_location,''),rakorda_row_count,updated_at
+	`, input.ScheduleID, input.HandoverLocation, input.ConsultantCompanyName, input.AgricultureOfficeName, input.AgricultureOfficeNIP, input.InstallerName, input.SupervisorName, input.PertaminaRepName, input.RakordaLocation, input.RakordaRowCount).Scan(
 		&settings.ScheduleID, &settings.HandoverLocation, &settings.ConsultantCompanyName,
 		&settings.AgricultureOfficeName, &settings.AgricultureOfficeNIP,
 		&settings.InstallerName, &settings.SupervisorName,
-		&settings.PertaminaRepName, &settings.UpdatedAt,
+		&settings.PertaminaRepName, &settings.RakordaLocation,
+		&settings.RakordaRowCount, &settings.UpdatedAt,
 	)
 	if err != nil {
 		return ScheduleSettings{}, fmt.Errorf("upsert schedule settings: %w", err)

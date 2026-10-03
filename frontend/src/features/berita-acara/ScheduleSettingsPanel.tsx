@@ -17,6 +17,7 @@ type DataResponse<T> = { data: T };
 const emptySettings: ScheduleSettings = {
   schedule_id: '', handover_location: '', consultant_company_name: '', agriculture_office_name: '',
   agriculture_office_nip: '', installer_name: '', supervisor_name: '', pertamina_rep_name: '',
+  rakorda_location: '', rakorda_row_count: 45,
 };
 
 export function ScheduleSettingsPanel({ scheduleID, requirePertaminaRep = false }: Props) {
@@ -47,6 +48,8 @@ export function ScheduleSettingsPanel({ scheduleID, requirePertaminaRep = false 
         installer_name: input.installer_name,
         supervisor_name: input.supervisor_name,
         pertamina_rep_name: input.pertamina_rep_name,
+        rakorda_location: input.rakorda_location,
+        rakorda_row_count: input.rakorda_row_count,
       };
       return apiRequest<DataResponse<ScheduleSettings>>(`/api/v1/bast/schedules/${encodeURIComponent(scheduleID)}/settings`, { method: 'PUT', body: JSON.stringify(payload) });
     },

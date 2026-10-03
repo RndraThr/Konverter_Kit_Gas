@@ -15,6 +15,7 @@ import { ClosingKabupatenPanel } from './ClosingKabupatenPanel';
 import { ClosingTitikSerahPanel } from './ClosingTitikSerahPanel';
 import { DailyRecapPanel } from './DailyRecapPanel';
 import { DP3Panel } from './DP3Panel';
+import { RakordaPanel } from './RakordaPanel';
 
 const documentTypes = [
   { value: 'dp3', label: 'DP3' },
@@ -110,6 +111,8 @@ export function BeritaAcaraPage() {
                 ? <section aria-label="Closing Titik Serah"><ClosingTitikSerahPanel scheduleID={selectedSchedule.id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} defaultDate={selectedSchedule.start_date.slice(0, 10)} /></section>
                 : document.value === 'closing-kabupaten' && selectedSchedule && programType
                   ? <section aria-label="Closing Kabupaten"><ClosingKabupatenPanel scheduleID={selectedSchedule.id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} defaultDate={selectedSchedule.start_date.slice(0, 10)} /></section>
+                  : document.value === 'rakorda' && selectedSchedule && programType
+                    ? <section aria-label="RAKORDA"><RakordaPanel scheduleID={selectedSchedule.id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} defaultDate={selectedSchedule.start_date.slice(0, 10)} /></section>
                   : <DocumentWorkspace document={document} programType={programType} />}
       </TabsContent>)}
     </Tabs>

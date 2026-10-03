@@ -80,6 +80,7 @@ func run(ctx context.Context, cfg config.Config) error {
 	bastDailyRecapService := bast.NewDailyRecapService(bastRepository, mediaStorage, applicationLocation)
 	bastClosingService := bast.NewClosingTitikSerahService(bastRepository, mediaStorage, applicationLocation)
 	bastClosingKabupatenService := bast.NewClosingKabupatenService(bastRepository, mediaStorage, applicationLocation)
+	bastRakordaService := bast.NewRakordaService(bastRepository, mediaStorage)
 	apiHandler := apihttp.NewHandler(apihttp.Dependencies{
 		Auth:              authService,
 		Profile:           profile.NewService(profile.NewRepository(pool)),
@@ -100,6 +101,7 @@ func run(ctx context.Context, cfg config.Config) error {
 		DailyRecap:        bastDailyRecapService,
 		ClosingTitikSerah: bastClosingService,
 		ClosingKabupaten:  bastClosingKabupatenService,
+		Rakorda:           bastRakordaService,
 		SessionSecret:     cfg.SessionSecret,
 	})
 	handler := web.NewHandler(web.Dependencies{

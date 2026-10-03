@@ -181,6 +181,14 @@ type ClosingKabupatenService interface {
 	Open(context.Context, string, auth.RegencyScope) (bast.AggregateContent, error)
 }
 
+type RakordaService interface {
+	Preview(context.Context, string, string, auth.RegencyScope) (bast.AggregatePreview, error)
+	Upload(context.Context, auth.Principal, bast.RakordaUploadInput, auth.RegencyScope, auth.ClientMeta) (bast.RakordaUpload, error)
+	List(context.Context, string, string, auth.RegencyScope) ([]bast.RakordaUpload, error)
+	Open(context.Context, string, auth.RegencyScope) (bast.RakordaContent, error)
+	Delete(context.Context, auth.Principal, string, auth.RegencyScope, auth.ClientMeta) error
+}
+
 type Dependencies struct {
 	Auth              AuthService
 	Profile           ProfileService
@@ -201,6 +209,7 @@ type Dependencies struct {
 	DailyRecap        DailyRecapService
 	ClosingTitikSerah ClosingTitikSerahService
 	ClosingKabupaten  ClosingKabupatenService
+	Rakorda           RakordaService
 	SessionSecret     []byte
 }
 
@@ -336,6 +345,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleBASTClosingTitikSerah(w, r, rc, strings.TrimPrefix(path, "bast/closing-titik-serah/"))
 	case strings.HasPrefix(path, "bast/closing-kabupaten/"):
 		h.handleBASTClosingKabupaten(w, r, rc, strings.TrimPrefix(path, "bast/closing-kabupaten/"))
+	case strings.HasPrefix(path, "bast/rakorda/"):
+		h.handleBASTRakorda(w, r, rc, strings.TrimPrefix(path, "bast/rakorda/"))
 	case path == "bast/branding" || strings.HasPrefix(path, "bast/branding/"):
 		h.handleBASTBranding(w, r, rc, strings.TrimPrefix(strings.TrimPrefix(path, "bast/branding"), "/"))
 	default:
