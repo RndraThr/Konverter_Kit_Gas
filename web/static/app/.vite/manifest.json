@@ -1,6 +1,6 @@
 {
   "index.html": {
-    "file": "assets/index-DBUN9p2s.js",
+    "file": "assets/index-DlU_lAfE.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
@@ -8,11 +8,11 @@
       "src/features/distribution/BarcodeScanner.tsx"
     ],
     "css": [
-      "assets/index-IltwWAs6.css"
+      "assets/index-BcSxQkto.css"
     ]
   },
   "src/features/distribution/BarcodeScanner.tsx": {
-    "file": "assets/BarcodeScanner-BukTpYXP.js",
+    "file": "assets/BarcodeScanner-DeBoPxdf.js",
     "name": "BarcodeScanner",
     "src": "src/features/distribution/BarcodeScanner.tsx",
     "isDynamicEntry": true,
