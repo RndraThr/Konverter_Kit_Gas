@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, Eye, FileCheck2, RefreshCw, Settings2, Users } from 'lucide-react';
+import { Download, FileCheck2, RefreshCw, Settings2, Users } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { DataState } from '@/components/DataState';
@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { apiBlobRequest, ApiError, apiRequest } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
+import { PdfPreview } from './PdfPreview';
 import { ScheduleSettingsPanel } from './ScheduleSettingsPanel';
 import type { AggregateDocument, DP3Recipient, DP3Summary } from './types';
 
@@ -53,15 +54,20 @@ export function DP3Panel({ scheduleID, regencyName, programType, defaultDate }: 
     enabled: programType === 'farmer' && documentDate !== '',
   });
 
-  const preview = useMutation({
-    mutationFn: () => apiBlobRequest('/api/v1/bast/dp3/preview', { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, document_date: documentDate }) }),
-    onSuccess: (blob) => { const url = URL.createObjectURL(blob); window.open(url, '_blank', 'noopener,noreferrer'); window.setTimeout(() => URL.revokeObjectURL(url), 60_000); },
-    onError: (error) => toast.error(errorMessage(error)),
+  // Only gate the preview fetch on an explicit 'ready' status — defaulting
+  // to 'ready' while summary is still loading (data undefined) would fire
+  // the preview prematurely, before the real validation status is known.
+  const status = summary.data?.data.validation_status ?? 'ready';
+  const preview = useQuery({
+    queryKey: ['bast', 'dp3', 'preview', scheduleID, documentDate],
+    queryFn: () => apiBlobRequest('/api/v1/bast/dp3/preview', { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, document_date: documentDate }) }),
+    enabled: programType === 'farmer' && summary.data?.data.validation_status === 'ready' && documentDate !== '',
   });
   const finalize = useMutation({
     mutationFn: () => apiRequest<DataResponse<AggregateDocument>>('/api/v1/bast/dp3/finalize', { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, document_date: documentDate }) }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bast', 'dp3'] });
+      preview.refetch();
       toast.success('DP3 berhasil difinalisasi dan disinkronkan.');
     },
     onError: (error) => toast.error(errorMessage(error)),
@@ -72,10 +78,12 @@ export function DP3Panel({ scheduleID, regencyName, programType, defaultDate }: 
   if (summary.isError) return <DataState kind="error" title="DP3 belum dapat dimuat" description="Periksa konfigurasi program atau koneksi, lalu coba lagi." action={{ label: 'Coba lagi', onClick: () => summary.refetch() }} />;
 
   const data = summary.data?.data;
-  const status = data?.validation_status ?? 'ready';
   const activeDoc = documents.data?.data.find((doc) => doc.status === 'active');
   const versions = documents.data?.data ?? [];
-  const busy = preview.isPending || finalize.isPending;
+  // preview.isPending is excluded: react-query v5 reports isPending=true for
+  // a disabled query (never fetched), which would permanently disable these
+  // action buttons whenever the preview isn't ready yet.
+  const busy = finalize.isPending;
 
   return <div className="grid gap-5">
     {showSettings && <ScheduleSettingsPanel scheduleID={scheduleID} />}
@@ -97,7 +105,6 @@ export function DP3Panel({ scheduleID, regencyName, programType, defaultDate }: 
           <div className="grid gap-3 sm:grid-cols-[16rem_1fr] sm:items-end">
             <FormField label="Tanggal dokumen" type="date" value={documentDate} onChange={(e) => setDocumentDate(e.target.value)} />
             <div className="flex flex-wrap gap-2">
-              <Button disabled={busy || status !== 'ready'} onClick={() => preview.mutate()} variant="outline"><Eye />{preview.isPending ? 'Menyiapkan...' : 'Preview PDF'}</Button>
               {canManage && <Button disabled={busy || status !== 'ready'} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
               <Button variant="ghost" onClick={() => setShowSettings((value) => !value)}><Settings2 />{showSettings ? 'Tutup pengaturan' : 'Pengaturan'}</Button>
             </div>
@@ -112,6 +119,8 @@ export function DP3Panel({ scheduleID, regencyName, programType, defaultDate }: 
             <strong className="text-sm">Riwayat versi</strong>
             {versions.filter((doc) => doc.status === 'superseded').map((doc) => <div className="flex items-center justify-between gap-3 text-sm" key={doc.id}><span className="text-muted-foreground">Versi {doc.version} · {doc.document_date}</span><Button nativeButton={false} render={<a href={`/api/v1/bast/dp3/documents/${doc.id}/content`} />} variant="ghost" size="sm"><Download />Unduh</Button></div>)}
           </div>}
+
+          {status === 'ready' && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="DP3" />}
 
           <Button className="justify-start" variant="ghost" onClick={() => setShowRecipients((value) => !value)}><Users />{showRecipients ? 'Sembunyikan penerima' : `Lihat ${data?.total_recipients ?? 0} penerima`}</Button>
         </CardContent>

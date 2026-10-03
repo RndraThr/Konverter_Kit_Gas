@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, Download, Eye, FileCheck2, FolderOpen, LockKeyhole, RefreshCw, Users } from 'lucide-react';
+import { CalendarDays, Download, FileCheck2, FolderOpen, LockKeyhole, RefreshCw, Users } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { DataState } from '@/components/DataState';
@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { apiBlobRequest, ApiError, apiRequest } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
+import { PdfPreview } from './PdfPreview';
 import type { BundleRequest, DailyBundle, DateSummary, LockResult, RecipientDocument } from './types';
 
 type Props = { programID: string; regencyID: string; regencyName: string; programType: ProgramType };
@@ -51,21 +52,17 @@ export function BAIndividualPanel({ programID, regencyID, regencyName, programTy
     },
     onError: (error) => setOperationError(errorMessage(error)),
   });
-  const preview = useMutation({
-    mutationFn: () => apiBlobRequest('/api/v1/bast/individual/bundles/preview', { method: 'POST', body: JSON.stringify(request) }),
-    onSuccess: (blob) => {
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank', 'noopener,noreferrer');
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      setOperationError('');
-    },
-    onError: (error) => setOperationError(errorMessage(error)),
+  const preview = useQuery({
+    queryKey: ['bast', 'individual', 'preview', programID, regencyID, selectedDate],
+    queryFn: () => apiBlobRequest('/api/v1/bast/individual/bundles/preview', { method: 'POST', body: JSON.stringify(request) }),
+    enabled: programType === 'farmer' && selectedDate !== '' && ready,
   });
   const finalize = useMutation({
     mutationFn: () => apiRequest<DataResponse<DailyBundle>>('/api/v1/bast/individual/bundles/finalize', { method: 'POST', body: JSON.stringify(request) }),
     onSuccess: () => {
       setOperationError('');
       queryClient.invalidateQueries({ queryKey: ['bast', 'individual', 'dates', programID, regencyID] });
+      preview.refetch();
       toast.success('PDF harian berhasil difinalisasi dan disinkronkan.');
     },
     onError: (error) => setOperationError(errorMessage(error)),
@@ -77,7 +74,10 @@ export function BAIndividualPanel({ programID, regencyID, regencyName, programTy
   if (dateItems.length === 0) return <DataState kind="empty" title="Belum ada pembagian selesai" description={`Belum ditemukan distribusi selesai untuk ${regencyName}. Tanggal akan muncul otomatis setelah penyerahan diselesaikan.`} />;
 
   const sortedRecipients = [...(recipients.data?.data ?? [])].sort((a, b) => a.slot_number - b.slot_number);
-  const busy = lock.isPending || preview.isPending || finalize.isPending;
+  // preview.isPending is excluded: react-query v5 reports isPending=true for
+  // a disabled query (never fetched), which would permanently disable these
+  // action buttons whenever the preview isn't ready yet.
+  const busy = lock.isPending || finalize.isPending;
   return <div className="grid gap-5 xl:grid-cols-[19rem_minmax(0,1fr)]">
     <Card className="self-start">
       <CardHeader><CardTitle className="flex items-center gap-2 text-base"><CalendarDays className="size-4 text-primary" />Tanggal pembagian</CardTitle></CardHeader>
@@ -114,9 +114,9 @@ export function BAIndividualPanel({ programID, regencyID, regencyName, programTy
           {operationError && <p className="text-sm text-destructive" role="alert">{operationError}</p>}
           {selected?.validation_status !== 'configuration_required' && <div className="flex flex-wrap gap-2">
             {canManage && !ready && <Button disabled={busy} onClick={() => lock.mutate()}><LockKeyhole />{lock.isPending ? 'Mengunci...' : 'Kunci total kabupaten'}</Button>}
-            <Button disabled={!ready || busy} onClick={() => preview.mutate()} variant="outline"><Eye />{preview.isPending ? 'Menyiapkan...' : 'Preview PDF'}</Button>
             {canManage && <Button disabled={!ready || busy} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
           </div>}
+          {ready && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="BA Perorangan" />}
           {ready && <Button className="justify-start" onClick={() => setShowRecipients((value) => !value)} variant="ghost"><Users />{showRecipients ? 'Sembunyikan penerima' : `Lihat ${selected?.recipient_count ?? 0} penerima`}</Button>}
         </CardContent>
       </Card>

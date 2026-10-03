@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, Download, Eye, FileCheck2, RefreshCw, Settings2, Users } from 'lucide-react';
+import { CalendarDays, Download, FileCheck2, RefreshCw, Settings2, Users } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { DataState } from '@/components/DataState';
@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { apiBlobRequest, ApiError, apiRequest } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
+import { PdfPreview } from './PdfPreview';
 import { ScheduleSettingsPanel } from './ScheduleSettingsPanel';
 import type { AggregateDocument, DailyRecapDate, DailyRecapRecipient } from './types';
 
@@ -43,15 +44,16 @@ export function DailyRecapPanel({ scheduleID, regencyName, programType }: Props)
     enabled: programType === 'farmer' && selectedDate !== '',
   });
 
-  const preview = useMutation({
-    mutationFn: () => apiBlobRequest('/api/v1/bast/daily-recap/preview', { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, local_date: selectedDate }) }),
-    onSuccess: (blob) => { const url = URL.createObjectURL(blob); window.open(url, '_blank', 'noopener,noreferrer'); window.setTimeout(() => URL.revokeObjectURL(url), 60_000); },
-    onError: (error) => toast.error(errorMessage(error)),
+  const preview = useQuery({
+    queryKey: ['bast', 'daily-recap', 'preview', scheduleID, selectedDate],
+    queryFn: () => apiBlobRequest('/api/v1/bast/daily-recap/preview', { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, local_date: selectedDate }) }),
+    enabled: programType === 'farmer' && selectedDate !== '',
   });
   const finalize = useMutation({
     mutationFn: () => apiRequest<DataResponse<AggregateDocument>>('/api/v1/bast/daily-recap/finalize', { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, local_date: selectedDate }) }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bast', 'daily-recap'] });
+      preview.refetch();
       toast.success('Rekap Harian berhasil difinalisasi dan disinkronkan.');
     },
     onError: (error) => toast.error(errorMessage(error)),
@@ -67,7 +69,10 @@ export function DailyRecapPanel({ scheduleID, regencyName, programType }: Props)
   const versions = documents.data?.data ?? [];
   const recips = recipients.data?.data ?? [];
   const variants = groupVariants(recips);
-  const busy = preview.isPending || finalize.isPending;
+  // preview.isPending is excluded: react-query v5 reports isPending=true for
+  // a disabled query (never fetched), which would permanently disable these
+  // action buttons whenever the preview isn't ready yet.
+  const busy = finalize.isPending;
 
   return <div className="grid gap-5">
     {showSettings && <ScheduleSettingsPanel scheduleID={scheduleID} requirePertaminaRep />}
@@ -94,7 +99,6 @@ export function DailyRecapPanel({ scheduleID, regencyName, programType }: Props)
           <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle>{selected ? formatLocalDate(selected.local_date) : 'Rekap Harian'}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{regencyName} · {selected?.recipient_count ?? 0} penerima.</p></div><Badge variant="outline">Petani</Badge></div></CardHeader>
           <CardContent className="grid gap-4 pt-5">
             <div className="flex flex-wrap gap-2">
-              <Button disabled={busy} onClick={() => preview.mutate()} variant="outline"><Eye />{preview.isPending ? 'Menyiapkan...' : 'Preview PDF'}</Button>
               {canManage && <Button disabled={busy} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
               <Button variant="ghost" onClick={() => setShowSettings((value) => !value)}><Settings2 />{showSettings ? 'Tutup pengaturan' : 'Pengaturan'}</Button>
             </div>
@@ -108,6 +112,8 @@ export function DailyRecapPanel({ scheduleID, regencyName, programType }: Props)
               <strong className="text-sm">Riwayat versi</strong>
               {versions.filter((doc) => doc.status === 'superseded').map((doc) => <div className="flex items-center justify-between gap-3 text-sm" key={doc.id}><span className="text-muted-foreground">Versi {doc.version}</span><Button nativeButton={false} render={<a href={`/api/v1/bast/daily-recap/documents/${doc.id}/content`} />} variant="ghost" size="sm"><Download />Unduh</Button></div>)}
             </div>}
+
+            <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="Rekap Harian" />
 
             <Button className="justify-start" variant="ghost" onClick={() => setShowRecipients((value) => !value)}><Users />{showRecipients ? 'Sembunyikan rincian' : `Lihat ${selected?.recipient_count ?? 0} penerima`}</Button>
           </CardContent>

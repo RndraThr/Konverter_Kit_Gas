@@ -97,6 +97,13 @@ export type DP3Recipient = {
   source: string;
 };
 
+export type ClosingRow = {
+  local_date: string;
+  machine_brand: string;
+  machine_type: string;
+  count: number;
+};
+
 export type DailyRecapRecipient = {
   slot_number: number;
   full_name: string;

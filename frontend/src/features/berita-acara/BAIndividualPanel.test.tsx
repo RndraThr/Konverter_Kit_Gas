@@ -48,16 +48,18 @@ test('shows daily bundles and sorts recipients numerically', async () => {
   expect(screen.getByText('PDF tersimpan langsung di folder 2. BA PERORANGAN tanpa subfolder tanggal.')).toBeVisible();
 });
 
-test('locks total, previews, and finalizes the selected day', async () => {
+test('locks total, previews inline, and finalizes the selected day', async () => {
   renderPanel();
   await screen.findByText('SELASA, 10 DESEMBER 2024.pdf');
   await userEvent.click(screen.getByRole('button', { name: /09 Desember 2024/i }));
   await userEvent.click(screen.getByRole('button', { name: 'Kunci total kabupaten' }));
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/bast/individual/lock-total', expect.objectContaining({ method: 'POST' })));
 
-  await userEvent.click(screen.getByRole('button', { name: 'Preview PDF' }));
+  // Preview is shown inline automatically once the day becomes ready, not
+  // behind a button that opens a new tab.
   await waitFor(() => expect(apiBlobRequest).toHaveBeenCalled());
-  expect(window.open).toHaveBeenCalledWith('blob:preview', '_blank', 'noopener,noreferrer');
+  expect(window.open).not.toHaveBeenCalled();
+  expect(await screen.findByTitle('Preview BA Perorangan')).toBeVisible();
 
   await userEvent.click(screen.getByRole('button', { name: 'Finalisasi & sinkronkan' }));
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/bast/individual/bundles/finalize', expect.objectContaining({ method: 'POST' })));
@@ -69,9 +71,9 @@ test('keeps the fisherman variant explicitly unavailable', () => {
   expect(apiRequest).not.toHaveBeenCalled();
 });
 
-test('allows a viewer to preview but not finalize a ready bundle', async () => {
+test('allows a viewer to see the inline preview but not finalize a ready bundle', async () => {
 	renderPanel('farmer', ['bast.view']);
-	expect(await screen.findByRole('button', { name: 'Preview PDF' })).toBeEnabled();
+	expect(await screen.findByTitle('Preview BA Perorangan')).toBeVisible();
 	expect(screen.queryByRole('button', { name: 'Finalisasi & sinkronkan' })).not.toBeInTheDocument();
 	expect(screen.queryByRole('button', { name: 'Kunci total kabupaten' })).not.toBeInTheDocument();
 });
