@@ -85,6 +85,23 @@ func uppercaseDailyRecapSnapshot(snapshot DailyRecapSnapshot) DailyRecapSnapshot
 	return snapshot
 }
 
+func uppercaseClosingKabupatenSnapshot(snapshot ClosingKabupatenSnapshot) ClosingKabupatenSnapshot {
+	snapshot.RegencyName = renderBusinessText(snapshot.RegencyName)
+	snapshot.ProvinceName = renderBusinessText(snapshot.ProvinceName)
+	snapshot.ConsultantCompanyName = renderBusinessText(snapshot.ConsultantCompanyName)
+	snapshot.Signatories.AgricultureOfficeName = renderBusinessText(snapshot.Signatories.AgricultureOfficeName)
+	snapshot.Signatories.InstallerName = renderBusinessText(snapshot.Signatories.InstallerName)
+	snapshot.Signatories.SupervisorName = renderBusinessText(snapshot.Signatories.SupervisorName)
+	snapshot.Signatories.PertaminaRepName = renderBusinessText(snapshot.Signatories.PertaminaRepName)
+	snapshot.Rows = append([]ClosingKabupatenRow(nil), snapshot.Rows...)
+	for index := range snapshot.Rows {
+		snapshot.Rows[index].Location = renderBusinessText(snapshot.Rows[index].Location)
+		snapshot.Rows[index].MachineBrand = renderBusinessText(snapshot.Rows[index].MachineBrand)
+		snapshot.Rows[index].MachineType = renderBusinessText(snapshot.Rows[index].MachineType)
+	}
+	return snapshot
+}
+
 func uppercaseClosingSnapshot(snapshot ClosingTitikSerahSnapshot) ClosingTitikSerahSnapshot {
 	snapshot.RegencyName = renderBusinessText(snapshot.RegencyName)
 	snapshot.ProvinceName = renderBusinessText(snapshot.ProvinceName)

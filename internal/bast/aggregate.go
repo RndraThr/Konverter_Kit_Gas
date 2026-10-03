@@ -15,6 +15,7 @@ const (
 	AggregateDocumentDP3               = "dp3"
 	AggregateDocumentDailyRecap        = "daily_recap"
 	AggregateDocumentClosingTitikSerah = "closing_titik_serah"
+	AggregateDocumentClosingKabupaten  = "closing_kabupaten"
 )
 
 // AggregateDocument adalah satu versi dokumen agregat (DP3 atau Rekap Harian).

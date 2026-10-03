@@ -173,6 +173,14 @@ type ClosingTitikSerahService interface {
 	Open(context.Context, string, auth.RegencyScope) (bast.AggregateContent, error)
 }
 
+type ClosingKabupatenService interface {
+	Rows(context.Context, string, auth.RegencyScope) ([]bast.ClosingKabupatenRow, error)
+	Preview(context.Context, string, string, auth.RegencyScope) (bast.AggregatePreview, error)
+	Finalize(context.Context, auth.Principal, string, string, auth.RegencyScope, auth.ClientMeta) (bast.AggregateDocument, error)
+	Documents(context.Context, string, string, auth.RegencyScope) ([]bast.AggregateDocument, error)
+	Open(context.Context, string, auth.RegencyScope) (bast.AggregateContent, error)
+}
+
 type Dependencies struct {
 	Auth              AuthService
 	Profile           ProfileService
@@ -192,6 +200,7 @@ type Dependencies struct {
 	DP3               DP3Service
 	DailyRecap        DailyRecapService
 	ClosingTitikSerah ClosingTitikSerahService
+	ClosingKabupaten  ClosingKabupatenService
 	SessionSecret     []byte
 }
 
@@ -325,6 +334,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleBASTDailyRecap(w, r, rc, strings.TrimPrefix(path, "bast/daily-recap/"))
 	case strings.HasPrefix(path, "bast/closing-titik-serah/"):
 		h.handleBASTClosingTitikSerah(w, r, rc, strings.TrimPrefix(path, "bast/closing-titik-serah/"))
+	case strings.HasPrefix(path, "bast/closing-kabupaten/"):
+		h.handleBASTClosingKabupaten(w, r, rc, strings.TrimPrefix(path, "bast/closing-kabupaten/"))
 	case path == "bast/branding" || strings.HasPrefix(path, "bast/branding/"):
 		h.handleBASTBranding(w, r, rc, strings.TrimPrefix(strings.TrimPrefix(path, "bast/branding"), "/"))
 	default:
