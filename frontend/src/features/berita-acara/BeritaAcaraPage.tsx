@@ -11,6 +11,7 @@ import { apiRequest } from '@/lib/api';
 import type { DataResponse, ProgramType, Schedule } from '../programs/types';
 import { programTypeLabel } from '../programs/types';
 import { BAIndividualPanel } from './BAIndividualPanel';
+import { ClosingKabupatenPanel } from './ClosingKabupatenPanel';
 import { ClosingTitikSerahPanel } from './ClosingTitikSerahPanel';
 import { DailyRecapPanel } from './DailyRecapPanel';
 import { DP3Panel } from './DP3Panel';
@@ -107,7 +108,9 @@ export function BeritaAcaraPage() {
               ? <section aria-label="Rekap Harian"><DailyRecapPanel scheduleID={selectedSchedule.id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} /></section>
               : document.value === 'closing-titik-serah' && selectedSchedule && programType
                 ? <section aria-label="Closing Titik Serah"><ClosingTitikSerahPanel scheduleID={selectedSchedule.id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} defaultDate={selectedSchedule.start_date.slice(0, 10)} /></section>
-                : <DocumentWorkspace document={document} programType={programType} />}
+                : document.value === 'closing-kabupaten' && selectedSchedule && programType
+                  ? <section aria-label="Closing Kabupaten"><ClosingKabupatenPanel scheduleID={selectedSchedule.id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} defaultDate={selectedSchedule.start_date.slice(0, 10)} /></section>
+                  : <DocumentWorkspace document={document} programType={programType} />}
       </TabsContent>)}
     </Tabs>
   </div>;

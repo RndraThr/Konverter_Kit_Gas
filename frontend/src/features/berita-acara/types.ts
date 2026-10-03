@@ -104,6 +104,13 @@ export type ClosingRow = {
   count: number;
 };
 
+export type ClosingKabupatenRow = {
+  location: string;
+  machine_brand: string;
+  machine_type: string;
+  count: number;
+};
+
 export type DailyRecapRecipient = {
   slot_number: number;
   full_name: string;
