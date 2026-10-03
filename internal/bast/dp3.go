@@ -27,6 +27,8 @@ type DP3Context struct {
 	RegencyID       string
 	ProgramType     string
 	RegencyName     string
+	RegencyCode     string
+	ProvinceName    string
 	ZoneName        string
 	ZonePlaceholder bool
 	FiscalYear      int
@@ -83,15 +85,15 @@ type dp3RecipientSnapshot struct {
 
 // DP3Snapshot adalah bentuk bast_aggregate_documents.snapshot_json untuk DP3.
 type DP3Snapshot struct {
-	DocumentType           string                  `json:"document_type"`
-	DocumentDate           string                  `json:"document_date"`
-	RegencyName            string                  `json:"regency_name"`
-	HandoverLocation       string                  `json:"handover_location"`
-	ConsultantCompanyName  string                  `json:"consultant_company_name"`
-	FiscalYear             int                     `json:"fiscal_year"`
-	Logos                  []LogoSnapshot          `json:"logos"`
-	Signatories            dp3Signatories          `json:"signatories"`
-	Recipients             []dp3RecipientSnapshot  `json:"recipients"`
+	DocumentType          string                 `json:"document_type"`
+	DocumentDate          string                 `json:"document_date"`
+	RegencyName           string                 `json:"regency_name"`
+	HandoverLocation      string                 `json:"handover_location"`
+	ConsultantCompanyName string                 `json:"consultant_company_name"`
+	FiscalYear            int                    `json:"fiscal_year"`
+	Logos                 []LogoSnapshot         `json:"logos"`
+	Signatories           dp3Signatories         `json:"signatories"`
+	Recipients            []dp3RecipientSnapshot `json:"recipients"`
 }
 
 func buildDP3Snapshot(ctx DP3Context, settings ScheduleSettings, logos []LogoSnapshot, documentDate string, recipients []DP3Recipient) (DP3Snapshot, error) {
@@ -234,14 +236,14 @@ func resolveDP3Recipients(rows []dp3RawRecipient) ([]DP3Recipient, error) {
 }
 
 type dp3RawRecipient struct {
-	FullName           string
-	NIK                string
-	Address            string
-	Village            string
-	District           string
-	Regency            string
-	DistributionNumber *int
-	AllocationSnapshot []byte
+	FullName             string
+	NIK                  string
+	Address              string
+	Village              string
+	District             string
+	Regency              string
+	DistributionNumber   *int
+	AllocationSnapshot   []byte
 	VerificationSnapshot []byte
 }
 

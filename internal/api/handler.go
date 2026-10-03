@@ -165,25 +165,34 @@ type DailyRecapService interface {
 	Open(context.Context, string, auth.RegencyScope) (bast.AggregateContent, error)
 }
 
+type ClosingTitikSerahService interface {
+	Rows(context.Context, string, auth.RegencyScope) ([]bast.ClosingRow, error)
+	Preview(context.Context, string, string, auth.RegencyScope) (bast.AggregatePreview, error)
+	Finalize(context.Context, auth.Principal, string, string, auth.RegencyScope, auth.ClientMeta) (bast.AggregateDocument, error)
+	Documents(context.Context, string, string, auth.RegencyScope) ([]bast.AggregateDocument, error)
+	Open(context.Context, string, auth.RegencyScope) (bast.AggregateContent, error)
+}
+
 type Dependencies struct {
-	Auth           AuthService
-	Profile        ProfileService
-	Administration AdministrationService
-	Settings       SettingsService
-	Health         HealthService
-	Audit          AuditService
-	Programs       ProgramSetupService
-	DCP3           DCP3Service
-	Distribution   DistributionService
-	Reports        ReportsService
-	Recipients     RecipientsService
-	Activities     ActivitiesService
-	BAST           BASTService
-	BASTBranding   BASTBrandingService
-	BASTSettings   BASTScheduleSettingsService
-	DP3            DP3Service
-	DailyRecap     DailyRecapService
-	SessionSecret  []byte
+	Auth              AuthService
+	Profile           ProfileService
+	Administration    AdministrationService
+	Settings          SettingsService
+	Health            HealthService
+	Audit             AuditService
+	Programs          ProgramSetupService
+	DCP3              DCP3Service
+	Distribution      DistributionService
+	Reports           ReportsService
+	Recipients        RecipientsService
+	Activities        ActivitiesService
+	BAST              BASTService
+	BASTBranding      BASTBrandingService
+	BASTSettings      BASTScheduleSettingsService
+	DP3               DP3Service
+	DailyRecap        DailyRecapService
+	ClosingTitikSerah ClosingTitikSerahService
+	SessionSecret     []byte
 }
 
 type Handler struct {
@@ -314,6 +323,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleBASTDP3(w, r, rc, strings.TrimPrefix(path, "bast/dp3/"))
 	case strings.HasPrefix(path, "bast/daily-recap/"):
 		h.handleBASTDailyRecap(w, r, rc, strings.TrimPrefix(path, "bast/daily-recap/"))
+	case strings.HasPrefix(path, "bast/closing-titik-serah/"):
+		h.handleBASTClosingTitikSerah(w, r, rc, strings.TrimPrefix(path, "bast/closing-titik-serah/"))
 	case path == "bast/branding" || strings.HasPrefix(path, "bast/branding/"):
 		h.handleBASTBranding(w, r, rc, strings.TrimPrefix(strings.TrimPrefix(path, "bast/branding"), "/"))
 	default:

@@ -12,8 +12,9 @@ var (
 )
 
 const (
-	AggregateDocumentDP3        = "dp3"
-	AggregateDocumentDailyRecap = "daily_recap"
+	AggregateDocumentDP3               = "dp3"
+	AggregateDocumentDailyRecap        = "daily_recap"
+	AggregateDocumentClosingTitikSerah = "closing_titik_serah"
 )
 
 // AggregateDocument adalah satu versi dokumen agregat (DP3 atau Rekap Harian).
@@ -53,9 +54,9 @@ type AggregateActivation struct {
 }
 
 type AggregateActivationResult struct {
-	Document     AggregateDocument
+	Document      AggregateDocument
 	OldStorageKey string
-	Unchanged    bool
+	Unchanged     bool
 }
 
 type AggregateContent struct {

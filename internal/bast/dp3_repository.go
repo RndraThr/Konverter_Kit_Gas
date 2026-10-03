@@ -16,6 +16,7 @@ func (r *Repository) GetDP3Context(ctx context.Context, scheduleID string, scope
 	var placeholder *bool
 	err := r.pool.QueryRow(ctx, `
 		SELECT ps.id::text, ps.program_id::text, ps.regency_id::text, p.program_type, r.name,
+			r.document_code, r.province_name,
 			ps.start_date::text, p.fiscal_year, z.name, z.is_placeholder,
 			EXISTS(SELECT 1 FROM program_ba_logo_assets l WHERE l.program_id=p.id AND l.is_visible=true)
 		FROM program_schedules ps
@@ -26,6 +27,7 @@ func (r *Repository) GetDP3Context(ctx context.Context, scheduleID string, scope
 		WHERE ps.id=$1 AND ($2 OR ps.regency_id::text=ANY($3))
 	`, scheduleID, scope.Unrestricted, scope.RegencyIDs).Scan(
 		&result.ScheduleID, &result.ProgramID, &result.RegencyID, &result.ProgramType, &result.RegencyName,
+		&result.RegencyCode, &result.ProvinceName,
 		&result.StartDate, &result.FiscalYear, &zoneName, &placeholder, &result.HasActiveLogo,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
