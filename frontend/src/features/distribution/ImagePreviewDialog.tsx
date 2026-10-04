@@ -1,4 +1,4 @@
-import { useEffect, useState, type WheelEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight, Minus, Plus, RotateCcw } from 'lucide-react';
 import type { MediaFile } from './types';
 import { Button } from '@/components/ui/button';
@@ -33,9 +33,21 @@ export function ImagePreviewDialog({ files, index, onIndexChange }: Props) {
   if (!file || index === null) return null;
 
   const updateZoom = (value: number) => setZoom(clampZoom(value));
-  const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    updateZoom(zoom + (event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP));
+  // React attaches onWheel as a passive listener, so preventDefault() inside
+  // a synthetic handler is a silent no-op (and logs a console warning on
+  // every tick). A native non-passive listener is required instead. Base UI
+  // mounts the dialog's portaled content a tick after `open` flips true, so
+  // a ref callback (which fires exactly when the node appears/disappears)
+  // is used rather than a useEffect keyed on `open`, which would attach
+  // before the node exists and never retry.
+  const attachScrollNode = (node: HTMLDivElement | null) => {
+    if (!node) return;
+    const handleWheel = (event: globalThis.WheelEvent) => {
+      event.preventDefault();
+      setZoom((current) => clampZoom(current + (event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP)));
+    };
+    node.addEventListener('wheel', handleWheel, { passive: false });
+    return () => node.removeEventListener('wheel', handleWheel);
   };
   const goPrev = () => onIndexChange(index > 0 ? index - 1 : files.length - 1);
   const goNext = () => onIndexChange(index < files.length - 1 ? index + 1 : 0);
@@ -58,7 +70,7 @@ export function ImagePreviewDialog({ files, index, onIndexChange }: Props) {
         <Button type="button" variant="outline" size="icon" aria-label="Perbesar foto" disabled={zoom >= MAX_ZOOM} onClick={() => updateZoom(zoom + ZOOM_STEP)}><Plus aria-hidden="true" /></Button>
         <Button type="button" variant="outline" aria-label="Reset zoom" onClick={() => setZoom(100)}><RotateCcw aria-hidden="true" />Reset</Button>
       </div>
-      <div aria-label="Area preview foto" className="relative min-h-0 overflow-auto bg-black/90 p-4" onWheel={handleWheel}>
+      <div ref={attachScrollNode} aria-label="Area preview foto" className="relative min-h-0 overflow-auto bg-black/90 p-4">
         {hasMultiple && <>
           <Button type="button" variant="outline" size="icon" aria-label="Foto sebelumnya" className="absolute left-3 top-1/2 z-10 -translate-y-1/2" onClick={goPrev}><ChevronLeft aria-hidden="true" /></Button>
           <Button type="button" variant="outline" size="icon" aria-label="Foto berikutnya" className="absolute right-3 top-1/2 z-10 -translate-y-1/2" onClick={goNext}><ChevronRight aria-hidden="true" /></Button>
