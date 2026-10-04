@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronLeft, ChevronRight, Minus, Plus, RotateCcw } from 'lucide-react';
-import type { MediaFile } from './types';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
@@ -13,7 +12,8 @@ function clampZoom(value: number) {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
 }
 
-type Props = { files: MediaFile[]; index: number | null; onIndexChange: (index: number | null) => void };
+export type PreviewMediaItem = { id: string; url: string; title: string; mediaType?: 'image' | 'video' };
+type Props = { items: PreviewMediaItem[]; index: number | null; onIndexChange: (index: number | null) => void };
 type PointSnapshot = { x: number; y: number };
 
 // Converts a pointer's viewport coordinates into a position relative to the
@@ -23,12 +23,19 @@ function focalPoint(node: HTMLElement, clientX: number, clientY: number): PointS
   return { x: clientX - (rect.left + rect.width / 2), y: clientY - (rect.top + rect.height / 2) };
 }
 
-export function ImagePreviewDialog({ files, index, onIndexChange }: Props) {
+/**
+ * Full-screen lightbox used for every photo/video documentation gallery in
+ * the app (distribution slots, activity documentation). Images support
+ * wheel/pinch/drag zoom and pan; video plays with native controls instead —
+ * zoom gestures on a playing video fight with scrubbing, so they're skipped.
+ */
+export function MediaPreviewDialog({ items, index, onIndexChange }: Props) {
   const [zoom, setZoom] = useState(100);
   const [pan, setPan] = useState<PointSnapshot>({ x: 0, y: 0 });
   const [isGesturing, setIsGesturing] = useState(false);
   const open = index !== null;
-  const file = index !== null ? (files[index] ?? null) : null;
+  const item = index !== null ? (items[index] ?? null) : null;
+  const isVideo = item?.mediaType === 'video';
   const pointersRef = useRef(new Map<number, PointSnapshot>());
   const panOriginRef = useRef<{ pan: PointSnapshot; x: number; y: number } | null>(null);
   const pinchOriginRef = useRef<{ distance: number; zoom: number; focal: PointSnapshot } | null>(null);
@@ -41,18 +48,18 @@ export function ImagePreviewDialog({ files, index, onIndexChange }: Props) {
     panOriginRef.current = null;
     pinchOriginRef.current = null;
     setIsGesturing(false);
-  }, [open, file?.id]);
+  }, [open, item?.id]);
   useEffect(() => {
-    if (!open || files.length < 2) return;
+    if (!open || items.length < 2) return;
     const handleKey = (event: KeyboardEvent) => {
-      if (event.key === 'ArrowRight') onIndexChange(index! < files.length - 1 ? index! + 1 : 0);
-      else if (event.key === 'ArrowLeft') onIndexChange(index! > 0 ? index! - 1 : files.length - 1);
+      if (event.key === 'ArrowRight') onIndexChange(index! < items.length - 1 ? index! + 1 : 0);
+      else if (event.key === 'ArrowLeft') onIndexChange(index! > 0 ? index! - 1 : items.length - 1);
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [open, index, files.length, onIndexChange]);
+  }, [open, index, items.length, onIndexChange]);
 
-  if (!file || index === null) return null;
+  if (!item || index === null) return null;
 
   // Zooms while keeping whichever point of the image sits under `focal`
   // (container-center-relative) visually fixed in place — the same anchored
@@ -73,7 +80,7 @@ export function ImagePreviewDialog({ files, index, onIndexChange }: Props) {
   // is used rather than a useEffect keyed on `open`, which would attach
   // before the node exists and never retry.
   const attachGestureNode = (node: HTMLDivElement | null) => {
-    if (!node) return;
+    if (!node || isVideo) return;
     const handleWheel = (event: globalThis.WheelEvent) => {
       event.preventDefault();
       applyZoom(zoom + (event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP), focalPoint(node, event.clientX, event.clientY));
@@ -86,6 +93,7 @@ export function ImagePreviewDialog({ files, index, onIndexChange }: Props) {
   // midpoint. Pointer Events (unlike Touch Events) aren't forced passive by
   // React, so no native-listener workaround is needed here.
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (isVideo) return;
     const node = event.currentTarget;
     node.setPointerCapture?.(event.pointerId);
     pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -117,38 +125,42 @@ export function ImagePreviewDialog({ files, index, onIndexChange }: Props) {
     if (pointersRef.current.size === 0) { panOriginRef.current = null; setIsGesturing(false); }
   };
   const handleDoubleClick = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (isVideo) return;
     if (zoom > 100) { resetZoom(); return; }
     applyZoom(200, focalPoint(event.currentTarget, event.clientX, event.clientY));
   };
-  const goPrev = () => onIndexChange(index > 0 ? index - 1 : files.length - 1);
-  const goNext = () => onIndexChange(index < files.length - 1 ? index + 1 : 0);
-  const hasMultiple = files.length > 1;
+  const goPrev = () => onIndexChange(index > 0 ? index - 1 : items.length - 1);
+  const goNext = () => onIndexChange(index < items.length - 1 ? index + 1 : 0);
+  const hasMultiple = items.length > 1;
 
   return <Dialog open={open} onOpenChange={(next) => { if (!next) onIndexChange(null); }}>
     <DialogContent
-      aria-label={`Preview ${file.original_filename}`}
+      aria-label={`Preview ${item.title}`}
       className="flex h-dvh max-h-dvh w-screen max-w-none! flex-col gap-0 rounded-none border-0 bg-black p-0 ring-0 sm:max-w-none **:data-[slot=dialog-close]:text-white **:data-[slot=dialog-close]:hover:bg-white/15 **:data-[slot=dialog-close]:hover:text-white"
     >
-      <DialogTitle className="sr-only">{`Preview ${file.original_filename}`}</DialogTitle>
-      <DialogDescription className="sr-only">Gunakan kontrol zoom, roda mouse, atau cubit layar untuk memeriksa detail foto; geser untuk menggeser tampilan saat diperbesar{hasMultiple ? ', dan panah kiri/kanan untuk pindah foto' : ''}.</DialogDescription>
+      <DialogTitle className="sr-only">{`Preview ${item.title}`}</DialogTitle>
+      <DialogDescription className="sr-only">
+        {isVideo ? 'Gunakan kontrol pemutar video.' : 'Gunakan kontrol zoom, roda mouse, atau cubit layar untuk memeriksa detail foto; geser untuk menggeser tampilan saat diperbesar.'}
+        {hasMultiple ? ' Gunakan panah kiri/kanan untuk pindah berkas.' : ''}
+      </DialogDescription>
 
       <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-3 bg-linear-to-b from-black/70 to-transparent px-4 py-3 pr-14 text-white">
         <div className="pointer-events-auto min-w-0 truncate text-sm font-medium">
-          {file.original_filename}
-          {hasMultiple && <span className="ml-2 text-xs font-normal text-white/70">{index + 1}/{files.length}</span>}
+          {item.title}
+          {hasMultiple && <span className="ml-2 text-xs font-normal text-white/70">{index + 1}/{items.length}</span>}
         </div>
-        <div className="pointer-events-auto flex shrink-0 items-center gap-1">
+        {!isVideo && <div className="pointer-events-auto flex shrink-0 items-center gap-1">
           <Button type="button" variant="ghost" size="icon-sm" className="text-white hover:bg-white/15 hover:text-white" aria-label="Perkecil foto" disabled={zoom <= MIN_ZOOM} onClick={() => applyZoom(zoom - ZOOM_STEP)}><Minus aria-hidden="true" /></Button>
           <span className="w-11 text-center text-xs font-medium tabular-nums">{zoom}%</span>
           <Button type="button" variant="ghost" size="icon-sm" className="text-white hover:bg-white/15 hover:text-white" aria-label="Perbesar foto" disabled={zoom >= MAX_ZOOM} onClick={() => applyZoom(zoom + ZOOM_STEP)}><Plus aria-hidden="true" /></Button>
           {(zoom !== 100 || pan.x !== 0 || pan.y !== 0) && <Button type="button" variant="ghost" size="icon-sm" className="text-white hover:bg-white/15 hover:text-white" aria-label="Reset zoom" onClick={resetZoom}><RotateCcw aria-hidden="true" /></Button>}
-        </div>
+        </div>}
       </div>
 
       <div
         ref={attachGestureNode}
         aria-label="Area preview foto"
-        className={cn('relative min-h-0 flex-1 touch-none overflow-hidden select-none', isGesturing ? 'cursor-grabbing' : 'cursor-grab')}
+        className={cn('relative min-h-0 flex-1 touch-none overflow-hidden select-none', isVideo ? 'cursor-default' : isGesturing ? 'cursor-grabbing' : 'cursor-grab')}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={endPointer}
@@ -160,14 +172,16 @@ export function ImagePreviewDialog({ files, index, onIndexChange }: Props) {
           <Button type="button" variant="ghost" size="icon" className="absolute right-2 top-1/2 z-10 -translate-y-1/2 text-white hover:bg-white/15 hover:text-white" aria-label="Foto berikutnya" onClick={goNext}><ChevronRight aria-hidden="true" /></Button>
         </>}
         <div className="flex size-full items-center justify-center">
-          <img
-            src={file.content_url}
-            alt={file.original_filename}
-            draggable={false}
-            onDragStart={(event) => event.preventDefault()}
-            className={cn('max-h-dvh max-w-[100vw] object-contain', !isGesturing && 'transition-transform duration-100 motion-reduce:transition-none')}
-            style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom / 100})` }}
-          />
+          {isVideo
+            ? <video src={item.url} controls autoPlay className="max-h-dvh max-w-[100vw] object-contain" />
+            : <img
+                src={item.url}
+                alt={item.title}
+                draggable={false}
+                onDragStart={(event) => event.preventDefault()}
+                className={cn('max-h-dvh max-w-[100vw] object-contain', !isGesturing && 'transition-transform duration-100 motion-reduce:transition-none')}
+                style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom / 100})` }}
+              />}
         </div>
       </div>
     </DialogContent>

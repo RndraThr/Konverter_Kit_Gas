@@ -6,8 +6,8 @@ import { useCan } from '../../lib/permissions';
 import type { DataResponse, MediaFile, SlotSummary } from './types';
 import styles from './Distribution.module.css';
 import { Badge } from '@/components/ui/badge';
+import { MediaPreviewDialog } from '@/components/MediaPreviewDialog';
 import { cn } from '@/lib/utils';
-import { ImagePreviewDialog } from './ImagePreviewDialog';
 
 type QueuedFile = { id: string; file: File; source: 'camera' | 'gallery'; previewURL: string; status: 'queued' | 'uploading' | 'error'; errorMessage?: string };
 const acceptedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
@@ -157,6 +157,6 @@ export function DocumentationSlot({ slot, onChanged }: { slot: SlotSummary; onCh
     </div>}
     {uploadError && <p role="alert" className="text-sm text-destructive">{uploadError.file.name}: {uploadError.errorMessage ?? 'Foto belum dapat diunggah.'}</p>}
     {fileError && <p role="alert" className="text-sm text-destructive">{fileError}</p>}
-    <ImagePreviewDialog files={files} index={previewIndex} onIndexChange={setPreviewIndex} />
+    <MediaPreviewDialog items={files.map((mediaFile) => ({ id: mediaFile.id, url: mediaFile.content_url, title: mediaFile.original_filename }))} index={previewIndex} onIndexChange={setPreviewIndex} />
   </article>;
 }

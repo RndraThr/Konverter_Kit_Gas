@@ -88,12 +88,69 @@ test('shows the gallery once a kabupaten is selected', async () => {
   expect(await screen.findByAltText('WJO-RAKOR-20260916-154500')).toBeVisible();
 });
 
+function mediaItem(id: string, displayName: string): ActivityMediaPage['items'][number] {
+  return {
+    id, regency_id: 'regency-1', regency_name: 'Wajo', regency_document_code: 'WJO', activity_type: 'rakor',
+    display_name: displayName, original_filename: `${displayName}.jpg`, media_type: 'image', mime_type: 'image/jpeg',
+    byte_size: 100, checksum: 'abc', source: 'gallery', status: 'active',
+    uploaded_at: '2026-09-16T15:45:00Z', created_at: '2026-09-16T15:45:00Z', updated_at: '2026-09-16T15:45:00Z',
+    content_url: `/api/v1/activities/media/${id}/content`,
+  };
+}
+
+test('opens the lightbox preview and browses between gallery items', async () => {
+  mockApi({ items: [mediaItem('media-1', 'Foto Satu'), mediaItem('media-2', 'Foto Dua')], page: 1, page_size: 24, total: 2 });
+  renderPage(['activities.view'], ['/dokumentasi/rakor?regency_id=regency-1']);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Lihat Foto Satu' }));
+  expect(screen.getByRole('dialog', { name: 'Preview Foto Satu' })).toBeVisible();
+
+  fireEvent.click(screen.getByRole('button', { name: 'Foto berikutnya' }));
+  expect(screen.getByRole('dialog', { name: 'Preview Foto Dua' })).toBeVisible();
+});
+
+test('deletes a documentation item from the grid thumbnail', async () => {
+  let deleted = false;
+  vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
+    const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
+    if (path === '/api/v1/activities/media/media-1' && init?.method === 'DELETE') { deleted = true; return Promise.resolve(undefined); }
+    if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: { items: deleted ? [] : [mediaItem('media-1', 'Foto Satu')], page: 1, page_size: 24, total: deleted ? 0 : 1 } });
+    return Promise.reject(new Error(`Unexpected request: ${path}`));
+  });
+  renderPage(['activities.view', 'activities.manage'], ['/dokumentasi/rakor?regency_id=regency-1']);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Hapus Foto Satu' }));
+  expect(await screen.findByRole('heading', { name: 'Hapus Foto Satu?' })).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Hapus' }));
+  expect(await screen.findByText('Belum ada dokumentasi')).toBeVisible();
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
 test('hides upload controls without activities.manage', async () => {
   mockApi();
   renderPage(['activities.view'], ['/dokumentasi/rakor?regency_id=regency-1']);
   await screen.findByText('Belum ada dokumentasi');
   expect(screen.queryByText('Ambil Foto')).not.toBeInTheDocument();
   expect(screen.queryByText('Pilih dari Galeri')).not.toBeInTheDocument();
+});
+
+test('uploads a photo dropped onto the upload zone', async () => {
+  vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
+    const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
+    if (path === '/api/v1/activities/media' && init?.method === 'POST') {
+      expect((init.body as FormData).get('source')).toBe('gallery');
+      return Promise.resolve({ data: { id: 'media-2', display_name: 'WJO-RAKOR-20260916-160000', media_type: 'image', content_url: '/api/v1/activities/media/media-2/content' } });
+    }
+    if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
+    return Promise.reject(new Error(`Unexpected request: ${path}`));
+  });
+  vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:dropped-preview'), revokeObjectURL: vi.fn() });
+  renderPage(['activities.view', 'activities.manage'], ['/dokumentasi/rakor?regency_id=regency-1']);
+
+  const file = new File(['photo'], 'dropped.jpg', { type: 'image/jpeg' });
+  fireEvent.drop(await screen.findByLabelText('Unggah dokumentasi Rakor'), { dataTransfer: { files: [file] } });
+
+  expect(await screen.findByAltText('Preview unggahan')).toHaveAttribute('src', 'blob:dropped-preview');
 });
 
 test('uploads a photo via the gallery picker', async () => {

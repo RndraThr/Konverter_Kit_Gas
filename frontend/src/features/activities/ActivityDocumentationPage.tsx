@@ -7,7 +7,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { DataState } from '@/components/DataState';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { MediaPreviewDialog } from '@/components/MediaPreviewDialog';
 import { Label } from '@/components/ui/label';
 import { PageHeader } from '@/components/PageHeader';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -15,6 +15,7 @@ import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { apiRequest } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
+import { cn } from '@/lib/utils';
 import { buildPageItems } from './pagination';
 import type { ActivityMedia, ActivityMediaPage, ActivityType, ProgramOption, ProgramZone } from './types';
 
@@ -38,7 +39,8 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
   const regencyID = params.get('regency_id') ?? '';
   const page = Number(params.get('page') ?? '1') || 1;
   const [pending, setPending] = useState<PendingFile | null>(null);
-  const [preview, setPreview] = useState<ActivityMedia | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ActivityMedia | null>(null);
 
   useEffect(() => () => { if (pending?.previewURL) URL.revokeObjectURL(pending.previewURL); }, [pending]);
@@ -71,7 +73,7 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
   });
   const remove = useMutation({
     mutationFn: (id: string) => apiRequest<void>(`/api/v1/activities/media/${id}`, { method: 'DELETE' }),
-    onSuccess: () => { setPendingDelete(null); setPreview(null); client.invalidateQueries({ queryKey: ['activities', activityType, programID, regencyID] }); toast.success('Dokumentasi dihapus.'); },
+    onSuccess: () => { setPendingDelete(null); client.invalidateQueries({ queryKey: ['activities', activityType, programID, regencyID] }); toast.success('Dokumentasi dihapus.'); },
     onError: () => toast.error('Dokumentasi belum dapat dihapus.'),
   });
 
@@ -90,7 +92,7 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
   useEffect(() => {
     upload.reset();
     setPending(null);
-    setPreview(null);
+    setPreviewIndex(null);
     setPendingDelete(null);
   }, [activityType]);
 
@@ -132,9 +134,18 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
               <SelectContent>{regencies.map((item) => <SelectItem key={item.id} value={item.id}>{item.document_code} - {item.name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
-          {canManage && regencyID && <div className="flex shrink-0 gap-2">
+          {canManage && regencyID && <div
+            role="group"
+            aria-label={`Unggah dokumentasi ${label}`}
+            className={cn('flex shrink-0 flex-wrap items-center gap-2 rounded-lg border-2 border-dashed px-2 py-1.5 transition-colors', dragging ? 'border-primary bg-primary/10' : 'border-transparent')}
+            onDragEnter={(e) => { if (!pending) { e.preventDefault(); setDragging(true); } }}
+            onDragOver={(e) => { if (!pending) { e.preventDefault(); setDragging(true); } }}
+            onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false); }}
+            onDrop={(e) => { e.preventDefault(); setDragging(false); if (!pending) choose(e.dataTransfer.files?.[0], 'gallery'); }}
+          >
             <label className="inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"><Camera className="size-4" aria-hidden="true" /><span className="hidden sm:inline">Ambil Foto</span><span className="sm:hidden">Kamera</span><input className="sr-only" type="file" aria-label="Ambil Foto" accept={acceptedTypes} capture="environment" disabled={Boolean(pending)} onChange={(e) => choose(e.target.files?.[0], 'camera')} /></label>
             <label className="inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"><ImagePlus className="size-4" aria-hidden="true" /><span className="hidden sm:inline">Pilih dari Galeri</span><span className="sm:hidden">Galeri</span><input className="sr-only" type="file" aria-label="Pilih dari Galeri" accept={acceptedTypes} disabled={Boolean(pending)} onChange={(e) => choose(e.target.files?.[0], 'gallery')} /></label>
+            <span className="hidden text-xs text-muted-foreground lg:inline">atau seret berkas ke sini</span>
           </div>}
         </div>
       </CardContent>
@@ -186,15 +197,18 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
               </span>}
             </figcaption>
           </figure>}
-          {items.map((item) => <button key={item.id} type="button" className="group relative aspect-square overflow-hidden rounded-lg border bg-muted transition-shadow hover:shadow-md hover:ring-2 hover:ring-ring/20 focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setPreview(item)}>
-            {item.media_type === 'video'
-              ? <><video src={item.content_url} className="size-full object-cover" muted /><PlayCircle aria-hidden="true" className="absolute inset-0 m-auto size-10 text-white drop-shadow-lg transition-transform group-hover:scale-110" /></>
-              : <img src={item.content_url} alt={item.display_name} className="size-full object-cover transition-transform duration-200 group-hover:scale-105" loading="lazy" />}
-            <span className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-linear-to-t from-black/80 to-transparent px-2.5 py-2 pt-6 text-left text-xs text-white">
-              {item.media_type === 'video' ? <PlayCircle className="size-3 shrink-0" /> : <ImageIcon className="size-3 shrink-0" />}
-              <span className="truncate">{item.display_name}</span>
-            </span>
-          </button>)}
+          {items.map((item, itemIndex) => <figure key={item.id} className="group relative aspect-square overflow-hidden rounded-lg border bg-muted transition-shadow hover:shadow-md hover:ring-2 hover:ring-ring/20">
+            <button type="button" aria-label={`Lihat ${item.display_name}`} className="absolute inset-0 size-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setPreviewIndex(itemIndex)}>
+              {item.media_type === 'video'
+                ? <><video src={item.content_url} className="size-full object-cover" muted /><PlayCircle aria-hidden="true" className="absolute inset-0 m-auto size-10 text-white drop-shadow-lg transition-transform group-hover:scale-110" /></>
+                : <img src={item.content_url} alt={item.display_name} className="size-full object-cover transition-transform duration-200 group-hover:scale-105" loading="lazy" />}
+              <span className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-linear-to-t from-black/80 to-transparent px-2.5 py-2 pt-6 text-left text-xs text-white">
+                {item.media_type === 'video' ? <PlayCircle className="size-3 shrink-0" /> : <ImageIcon className="size-3 shrink-0" />}
+                <span className="truncate">{item.display_name}</span>
+              </span>
+            </button>
+            {canManage && <button type="button" aria-label={`Hapus ${item.display_name}`} title="Hapus" className="absolute top-1.5 right-1.5 z-10 flex size-7 items-center justify-center rounded-full bg-black/60 text-white transition-colors hover:bg-destructive" onClick={() => setPendingDelete(item)}><Trash2 className="size-3.5" /></button>}
+          </figure>)}
         </div>}
 
       {totalPages > 1 && <nav className="flex flex-wrap items-center justify-center gap-1 pt-2" aria-label={`Pagination ${label}`}>
@@ -209,15 +223,11 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
     </>}
 
     {/* === Preview Dialog === */}
-    <Dialog open={Boolean(preview)} onOpenChange={(open) => { if (!open) setPreview(null); }}>
-      <DialogContent className="sm:max-w-3xl">
-        <DialogHeader><DialogTitle>{preview?.display_name}</DialogTitle></DialogHeader>
-        {preview && (preview.media_type === 'video'
-          ? <video src={preview.content_url} controls className="max-h-[70vh] w-full rounded-lg" />
-          : <img src={preview.content_url} alt={preview.display_name} className="max-h-[70vh] w-full rounded-lg object-contain" />)}
-        {canManage && preview && <div className="flex justify-end"><Button type="button" variant="destructive" size="sm" onClick={() => setPendingDelete(preview)}><Trash2 className="size-4" />Hapus Dokumentasi</Button></div>}
-      </DialogContent>
-    </Dialog>
+    <MediaPreviewDialog
+      items={items.map((item) => ({ id: item.id, url: item.content_url, title: item.display_name, mediaType: item.media_type }))}
+      index={previewIndex}
+      onIndexChange={setPreviewIndex}
+    />
 
     {/* === Delete Confirmation === */}
     <AlertDialog open={Boolean(pendingDelete)} onOpenChange={(open) => { if (!open) setPendingDelete(null); }}>
