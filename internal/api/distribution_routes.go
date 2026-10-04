@@ -61,6 +61,30 @@ func (h *Handler) handleDistributionCandidates(w http.ResponseWriter, r *http.Re
 	writeData(w, http.StatusOK, result)
 }
 
+func (h *Handler) handleDistributionCandidateSuggestions(w http.ResponseWriter, r *http.Request, rc requestContext) {
+	if h.deps.Distribution == nil {
+		writeUnavailable(w)
+		return
+	}
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if !h.authorize(w, r, rc.principal, "distribution.pos_dokumen") {
+		return
+	}
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := h.deps.Distribution.SuggestCandidates(r.Context(), r.URL.Query().Get("schedule_id"), r.URL.Query().Get("nik_prefix"), scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
+}
+
 func (h *Handler) handleDistributionSlotLink(w http.ResponseWriter, r *http.Request, rc requestContext, slotNumber int) {
 	if !h.authorize(w, r, rc.principal, "distribution.pos_dokumen") {
 		return
@@ -177,9 +201,59 @@ func (h *Handler) handleDistributionSlot(w http.ResponseWriter, r *http.Request,
 		case parts[1] == "complete" && r.Method == http.MethodPost:
 			h.handleDistributionSlotComplete(w, r, rc, slotNumber)
 			return
+		case parts[1] == "date" && r.Method == http.MethodPatch:
+			h.handleDistributionDateUpdate(w, r, rc, slotNumber)
+			return
+		case parts[1] == "equipment" && r.Method == http.MethodPatch:
+			h.handleDistributionEquipmentUpdate(w, r, rc, slotNumber)
+			return
 		}
 	}
 	writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
+}
+
+func (h *Handler) handleDistributionDateUpdate(w http.ResponseWriter, r *http.Request, rc requestContext, slotNumber int) {
+	if !h.authorize(w, r, rc.principal, "distribution.pos_mesin") {
+		return
+	}
+	var input distribution.SetDistributionDateInput
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	input.ScheduleID = r.URL.Query().Get("schedule_id")
+	input.SlotNumber = slotNumber
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := h.deps.Distribution.SetDistributionDate(r.Context(), rc.principal, input, clientMeta(r), scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
+}
+
+func (h *Handler) handleDistributionEquipmentUpdate(w http.ResponseWriter, r *http.Request, rc requestContext, slotNumber int) {
+	if !h.authorize(w, r, rc.principal, "distribution.pos_mesin") {
+		return
+	}
+	var input distribution.UpdateEquipmentInput
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	input.ScheduleID = r.URL.Query().Get("schedule_id")
+	input.SlotNumber = slotNumber
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := h.deps.Distribution.UpdateEquipment(r.Context(), rc.principal, input, clientMeta(r), scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
 }
 
 func (h *Handler) handleDistributionSlotMediaUpload(w http.ResponseWriter, r *http.Request, rc requestContext, slotID string) {

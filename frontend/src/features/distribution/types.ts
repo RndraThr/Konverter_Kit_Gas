@@ -9,7 +9,8 @@ export type SlotSummary = {
 };
 
 export type DistributionSlot = {
-  id: string; schedule_id: string; slot_number: number; status: 'open' | 'linked' | 'completed' | 'cancelled';
+	id: string; schedule_id: string; slot_number: number; status: 'open' | 'linked' | 'completed' | 'cancelled';
+	distribution_date: string;
   allocation_id?: string; full_name?: string; nik?: string;
   machine_option_code?: string; machine_serial_number?: string;
   hose_option_code?: string; hose_serial_number?: string;
@@ -18,8 +19,15 @@ export type DistributionSlot = {
 };
 
 export type CreateSlotInput = {
-  schedule_id: string;
-  slot_number?: number;
+	schedule_id: string;
+	slot_number?: number;
+	distribution_date: string;
+  machine_option_code: string; machine_serial_number: string;
+  hose_option_code: string; hose_serial_number: string;
+  converter_option_code: string; converter_serial_number: string;
+};
+
+export type UpdateEquipmentInput = {
   machine_option_code: string; machine_serial_number: string;
   hose_option_code: string; hose_serial_number: string;
   converter_option_code: string; converter_serial_number: string;

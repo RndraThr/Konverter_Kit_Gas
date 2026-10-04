@@ -19,6 +19,10 @@ func (r *mesinRepositoryStub) CreateSlot(_ context.Context, _ auth.Principal, in
 	return r.created, r.createErr
 }
 
+func (r *mesinRepositoryStub) UpdateEquipment(_ context.Context, _ auth.Principal, _ UpdateEquipmentInput, _ auth.ClientMeta, _ auth.RegencyScope) (DistributionSlot, error) {
+	return r.created, r.createErr
+}
+
 func TestCreateSlotRequiresScheduleID(t *testing.T) {
 	service := &Service{posMesinRepository: &mesinRepositoryStub{}}
 	_, err := service.CreateSlot(context.Background(), auth.Principal{}, CreateSlotInput{}, auth.ClientMeta{})
@@ -27,11 +31,21 @@ func TestCreateSlotRequiresScheduleID(t *testing.T) {
 	}
 }
 
+func TestCreateSlotRequiresValidDistributionDate(t *testing.T) {
+	service := &Service{posMesinRepository: &mesinRepositoryStub{}}
+	for _, date := range []string{"", "20-10-2026"} {
+		_, err := service.CreateSlot(context.Background(), auth.Principal{}, CreateSlotInput{ScheduleID: "schedule-1", DistributionDate: date}, auth.ClientMeta{})
+		if !errors.Is(err, ErrDistributionDateRequired) {
+			t.Fatalf("date %q err = %v", date, err)
+		}
+	}
+}
+
 func TestCreateSlotTrimsEquipmentFieldsAndDelegates(t *testing.T) {
 	repo := &mesinRepositoryStub{created: DistributionSlot{ID: "slot-1", SlotNumber: 1, Status: "open"}}
 	service := &Service{posMesinRepository: repo}
 	result, err := service.CreateSlot(context.Background(), auth.Principal{}, CreateSlotInput{
-		ScheduleID: "schedule-1", MachineSerialNumber: "  MS-001  ", HoseSerialNumber: " HS-001 ", ConverterSerialNumber: " CV-001 ",
+		ScheduleID: "schedule-1", DistributionDate: "2026-10-20", MachineSerialNumber: "  MS-001  ", HoseSerialNumber: " HS-001 ", ConverterSerialNumber: " CV-001 ",
 	}, auth.ClientMeta{})
 	if err != nil {
 		t.Fatal(err)
@@ -39,7 +53,7 @@ func TestCreateSlotTrimsEquipmentFieldsAndDelegates(t *testing.T) {
 	if result.SlotNumber != 1 || result.Status != "open" {
 		t.Fatalf("result = %+v", result)
 	}
-	if repo.seenInput.MachineSerialNumber != "MS-001" || repo.seenInput.HoseSerialNumber != "HS-001" || repo.seenInput.ConverterSerialNumber != "CV-001" {
+	if repo.seenInput.MachineSerialNumber != "MS-001" || repo.seenInput.HoseSerialNumber != "" || repo.seenInput.ConverterSerialNumber != "CV-001" {
 		t.Fatalf("seenInput not trimmed: %+v", repo.seenInput)
 	}
 }

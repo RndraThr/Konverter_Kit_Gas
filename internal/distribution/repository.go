@@ -25,7 +25,7 @@ func (r *Repository) GetMediaSlot(ctx context.Context, slotID string, scope auth
 	var zoneName *string
 	var isPlaceholder *bool
 	err := r.pool.QueryRow(ctx, `
-		SELECT s.id::text,s.input_source,s.require_location,s.require_captured_at,s.min_files,s.max_files,
+		SELECT s.id::text,dsl.slot_number,dsl.distribution_date::text,s.label_snapshot,s.input_source,s.require_location,s.require_captured_at,s.min_files,s.max_files,
 			count(m.id) FILTER(WHERE m.status='accepted'), p.program_type, z.name, r.name, z.is_placeholder
 		FROM documentation_slots s
 		LEFT JOIN media_files m ON m.documentation_slot_id=s.id
@@ -36,8 +36,8 @@ func (r *Repository) GetMediaSlot(ctx context.Context, slotID string, scope auth
 		LEFT JOIN program_regency_assignments pra ON pra.program_id=ps.program_id AND pra.regency_id=ps.regency_id
 		LEFT JOIN program_zones z ON z.id=pra.zone_id
 		WHERE s.id=$1 AND ($2 OR ps.regency_id::text = ANY($3))
-		GROUP BY s.id,p.program_type,z.name,r.name,z.is_placeholder
-	`, slotID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.InputSource, &result.RequireLocation, &result.RequireCapturedAt, &result.MinFiles, &result.MaxFiles, &result.AcceptedFiles, &result.ProgramType, &zoneName, &result.RegencyName, &isPlaceholder)
+		GROUP BY s.id,dsl.slot_number,dsl.distribution_date,s.label_snapshot,p.program_type,z.name,r.name,z.is_placeholder
+	`, slotID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.SlotNumber, &result.DistributionDate, &result.Label, &result.InputSource, &result.RequireLocation, &result.RequireCapturedAt, &result.MinFiles, &result.MaxFiles, &result.AcceptedFiles, &result.ProgramType, &zoneName, &result.RegencyName, &isPlaceholder)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return MediaSlot{}, ErrMediaNotFound
 	}
@@ -231,10 +231,10 @@ func (r *Repository) CreateSlot(ctx context.Context, actor auth.Principal, input
 
 	var slotID string
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO distribution_slots (schedule_id, slot_number, machine_option_code, machine_serial_number, hose_option_code, hose_serial_number, converter_option_code, converter_serial_number)
-		VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''))
+		INSERT INTO distribution_slots (schedule_id, slot_number, distribution_date, machine_option_code, machine_serial_number, hose_option_code, hose_serial_number, converter_option_code, converter_serial_number)
+		VALUES ($1,$2,COALESCE(NULLIF($3,'')::date,(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date),NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''))
 		RETURNING id::text
-	`, input.ScheduleID, slotNumber, input.MachineOptionCode, input.MachineSerialNumber, input.HoseOptionCode, input.HoseSerialNumber, input.ConverterOptionCode, input.ConverterSerialNumber).Scan(&slotID); err != nil {
+	`, input.ScheduleID, slotNumber, input.DistributionDate, input.MachineOptionCode, input.MachineSerialNumber, input.HoseOptionCode, input.HoseSerialNumber, input.ConverterOptionCode, input.ConverterSerialNumber).Scan(&slotID); err != nil {
 		return DistributionSlot{}, fmt.Errorf("insert distribution slot: %w", err)
 	}
 
@@ -259,11 +259,11 @@ func (r *Repository) getSlotByID(ctx context.Context, id string) (DistributionSl
 	var slot DistributionSlot
 	var machineOption, machineSerial, hoseOption, hoseSerial, converterOption, converterSerial, fullName, nik *string
 	err := r.pool.QueryRow(ctx, `
-		SELECT ds.id::text, ds.schedule_id::text, ds.slot_number, ds.status, ds.allocation_id::text, ds.machine_option_code, ds.machine_serial_number, ds.hose_option_code, ds.hose_serial_number, ds.converter_option_code, ds.converter_serial_number, ds.distributed_at, ds.created_at, ds.updated_at, p.full_name, p.nik
+		SELECT ds.id::text, ds.schedule_id::text, ds.slot_number, ds.distribution_date::text, ds.status, ds.allocation_id::text, ds.machine_option_code, ds.machine_serial_number, ds.hose_option_code, ds.hose_serial_number, ds.converter_option_code, ds.converter_serial_number, ds.distributed_at, ds.created_at, ds.updated_at, p.full_name, p.nik
 		FROM distribution_slots ds
 		LEFT JOIN people p ON p.id = ds.recipient_person_id
 		WHERE ds.id=$1
-	`, id).Scan(&slot.ID, &slot.ScheduleID, &slot.SlotNumber, &slot.Status, &slot.AllocationID, &machineOption, &machineSerial, &hoseOption, &hoseSerial, &converterOption, &converterSerial, &slot.DistributedAt, &slot.CreatedAt, &slot.UpdatedAt, &fullName, &nik)
+	`, id).Scan(&slot.ID, &slot.ScheduleID, &slot.SlotNumber, &slot.DistributionDate, &slot.Status, &slot.AllocationID, &machineOption, &machineSerial, &hoseOption, &hoseSerial, &converterOption, &converterSerial, &slot.DistributedAt, &slot.CreatedAt, &slot.UpdatedAt, &fullName, &nik)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return DistributionSlot{}, ErrSlotNotFound
 	}
@@ -299,6 +299,95 @@ func (r *Repository) getSlotByID(ctx context.Context, id string) (DistributionSl
 		return DistributionSlot{}, err
 	}
 	return slot, nil
+}
+
+func (r *Repository) SetDistributionDate(ctx context.Context, actor auth.Principal, input SetDistributionDateInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return DistributionSlot{}, fmt.Errorf("begin distribution date update: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var slotID string
+	var hasMedia bool
+	err = tx.QueryRow(ctx, `
+		SELECT ds.id::text, EXISTS(
+			SELECT 1 FROM documentation_slots docs
+			JOIN media_files media ON media.documentation_slot_id=docs.id
+			WHERE docs.distribution_slot_id=ds.id
+		)
+		FROM distribution_slots ds
+		JOIN program_schedules ps ON ps.id=ds.schedule_id
+		WHERE ds.schedule_id=$1 AND ds.slot_number=$2 AND ($3 OR ps.regency_id::text = ANY($4))
+		FOR UPDATE OF ds
+	`, input.ScheduleID, input.SlotNumber, scope.Unrestricted, scope.RegencyIDs).Scan(&slotID, &hasMedia)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return DistributionSlot{}, ErrSlotNotFound
+	}
+	if err != nil {
+		return DistributionSlot{}, fmt.Errorf("lock distribution date: %w", err)
+	}
+	if hasMedia {
+		return DistributionSlot{}, ErrDistributionDateLocked
+	}
+	if _, err := tx.Exec(ctx, `UPDATE distribution_slots SET distribution_date=$2::date,updated_at=now() WHERE id=$1`, slotID, input.DistributionDate); err != nil {
+		return DistributionSlot{}, fmt.Errorf("update distribution date: %w", err)
+	}
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "distribution.date_updated", ResourceType: "distribution_slot", ResourceID: slotID, Metadata: map[string]any{"distribution_date": input.DistributionDate}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+		return DistributionSlot{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return DistributionSlot{}, fmt.Errorf("commit distribution date: %w", err)
+	}
+	return r.getSlotByID(ctx, slotID)
+}
+
+func (r *Repository) UpdateEquipment(ctx context.Context, actor auth.Principal, input UpdateEquipmentInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return DistributionSlot{}, fmt.Errorf("begin equipment update: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var slotID string
+	var hasMesinMedia bool
+	err = tx.QueryRow(ctx, `
+		SELECT ds.id::text, EXISTS(
+			SELECT 1 FROM documentation_slots docs
+			JOIN media_files media ON media.documentation_slot_id=docs.id
+			WHERE docs.distribution_slot_id=ds.id AND docs.stage='mesin'
+		)
+		FROM distribution_slots ds
+		JOIN program_schedules ps ON ps.id=ds.schedule_id
+		WHERE ds.schedule_id=$1 AND ds.slot_number=$2 AND ($3 OR ps.regency_id::text = ANY($4))
+		FOR UPDATE OF ds
+	`, input.ScheduleID, input.SlotNumber, scope.Unrestricted, scope.RegencyIDs).Scan(&slotID, &hasMesinMedia)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return DistributionSlot{}, ErrSlotNotFound
+	}
+	if err != nil {
+		return DistributionSlot{}, fmt.Errorf("lock equipment: %w", err)
+	}
+	if hasMesinMedia {
+		return DistributionSlot{}, ErrEquipmentLocked
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE distribution_slots
+		SET machine_option_code=NULLIF($2,''), machine_serial_number=NULLIF($3,''),
+			hose_option_code=NULLIF($4,''), hose_serial_number=NULLIF($5,''),
+			converter_option_code=NULLIF($6,''), converter_serial_number=NULLIF($7,''),
+			updated_at=now()
+		WHERE id=$1
+	`, slotID, input.MachineOptionCode, input.MachineSerialNumber, input.HoseOptionCode, input.HoseSerialNumber, input.ConverterOptionCode, input.ConverterSerialNumber); err != nil {
+		return DistributionSlot{}, fmt.Errorf("update equipment: %w", err)
+	}
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "distribution.equipment_updated", ResourceType: "distribution_slot", ResourceID: slotID, Metadata: map[string]any{"machine_option_code": input.MachineOptionCode, "converter_option_code": input.ConverterOptionCode, "hose_option_code": input.HoseOptionCode}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+		return DistributionSlot{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return DistributionSlot{}, fmt.Errorf("commit equipment update: %w", err)
+	}
+	return r.getSlotByID(ctx, slotID)
 }
 
 func (r *Repository) ListSlotCatalog(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]SlotCatalogEntry, error) {
@@ -397,6 +486,38 @@ func (r *Repository) SearchCandidate(ctx context.Context, scheduleID, nik string
 		return CandidateMatch{}, fmt.Errorf("search candidate: %w", err)
 	}
 	return match, nil
+}
+
+func (r *Repository) SuggestCandidates(ctx context.Context, scheduleID, nikPrefix string, limit int, scope auth.RegencyScope) ([]CandidateMatch, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT pa.id::text, p.full_name, COALESCE(p.nik,''), COALESCE(psi.identifier_type,''), COALESCE(psi.normalized_value,''),
+			COALESCE(p.address,''), COALESCE(p.village,''), COALESCE(p.district,''), COALESCE(p.phone_number,''), cn.program_type
+		FROM package_allocations pa
+		JOIN candidate_nominations cn ON cn.id = pa.nomination_id
+		JOIN program_schedules ps ON ps.id = pa.schedule_id
+		JOIN people p ON p.id = cn.person_id
+		LEFT JOIN LATERAL (SELECT identifier_type, normalized_value FROM person_sector_identifiers WHERE person_id = p.id LIMIT 1) psi ON true
+		WHERE pa.schedule_id = $1 AND p.nik LIKE $2 || '%' AND pa.distribution_number IS NULL
+			AND ($3 OR ps.regency_id::text = ANY($4))
+		ORDER BY p.nik, p.full_name
+		LIMIT $5
+	`, scheduleID, nikPrefix, scope.Unrestricted, scope.RegencyIDs, limit)
+	if err != nil {
+		return nil, fmt.Errorf("suggest candidates: %w", err)
+	}
+	defer rows.Close()
+	items := make([]CandidateMatch, 0, limit)
+	for rows.Next() {
+		var item CandidateMatch
+		if err := rows.Scan(&item.AllocationID, &item.FullName, &item.NIK, &item.SectorIdentifierType, &item.SectorIdentifier, &item.Address, &item.Village, &item.District, &item.PhoneNumber, &item.ProgramType); err != nil {
+			return nil, fmt.Errorf("scan candidate suggestion: %w", err)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("suggest candidates: %w", err)
+	}
+	return items, nil
 }
 
 func (r *Repository) LinkSlot(ctx context.Context, actor auth.Principal, input LinkSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {

@@ -275,6 +275,8 @@ func TestListSlotCatalogReportsStatusAndCompleteness(t *testing.T) {
 type mediaFixture struct {
 	documentationSlotID string
 	mediaID             string
+	scheduleID          string
+	slotNumber          int
 	regencyID           string
 	otherRegencyID      string
 }
@@ -344,7 +346,104 @@ func seedMediaFixture(t *testing.T, pool *pgxpool.Pool) mediaFixture {
 		}
 	})
 
-	return mediaFixture{documentationSlotID: documentationSlotID, mediaID: mediaID, regencyID: regencyID, otherRegencyID: otherRegencyID}
+	return mediaFixture{documentationSlotID: documentationSlotID, mediaID: mediaID, scheduleID: scheduleID, slotNumber: 1, regencyID: regencyID, otherRegencyID: otherRegencyID}
+}
+
+func TestSetDistributionDateLocksAfterFirstMediaUpload(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	fixture := seedMediaFixture(t, pool)
+	repo := NewRepository(pool)
+	ctx := context.Background()
+	input := SetDistributionDateInput{ScheduleID: fixture.scheduleID, SlotNumber: fixture.slotNumber, DistributionDate: "2026-10-20"}
+
+	if _, err := repo.SetDistributionDate(ctx, auth.Principal{}, input, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrDistributionDateLocked) {
+		t.Fatalf("locked err=%v", err)
+	}
+
+	must(t, func() error {
+		_, err := pool.Exec(ctx, `DELETE FROM media_files WHERE id=$1`, fixture.mediaID)
+		return err
+	}())
+	updated, err := repo.SetDistributionDate(ctx, auth.Principal{}, input, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.DistributionDate != "2026-10-20" {
+		t.Fatalf("distribution_date=%q", updated.DistributionDate)
+	}
+}
+
+func TestUpdateEquipmentIgnoresMediaFromOtherStages(t *testing.T) {
+	// seedMediaFixture's one documentation_slots row is stage='penyerahan', so its
+	// attached media must not lock POS Mesin's equipment fields — only media
+	// recorded against the 'mesin' stage should.
+	pool := distributionIntegrationPool(t)
+	fixture := seedMediaFixture(t, pool)
+	repo := NewRepository(pool)
+	ctx := context.Background()
+	input := UpdateEquipmentInput{ScheduleID: fixture.scheduleID, SlotNumber: fixture.slotNumber, MachineOptionCode: "shark-spwp8030", MachineSerialNumber: "msn-1", ConverterOptionCode: "ergas", ConverterSerialNumber: "cnv-1"}
+
+	updated, err := repo.UpdateEquipment(ctx, auth.Principal{}, input, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.MachineOptionCode != "shark-spwp8030" || updated.MachineSerialNumber != "msn-1" || updated.ConverterOptionCode != "ergas" || updated.ConverterSerialNumber != "cnv-1" {
+		t.Fatalf("slot=%+v", updated)
+	}
+}
+
+func TestUpdateEquipmentLocksAfterMesinMediaUpload(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	ctx := context.Background()
+	suffix := t.Name()
+
+	var regencyID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan',$1,'MQT',true) RETURNING id::text`, "Equipment Test "+suffix).Scan(&regencyID))
+	var programID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES($1,'Program Test Equipment','farmer',2026,'active') RETURNING id::text`, "EQP-TEST-"+suffix).Scan(&programID))
+	var packageTemplateID, docTemplateID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES($1,1,'Paket Test Equipment','farmer','{}'::jsonb,'published') RETURNING id::text`, "PKG-EQP-"+suffix).Scan(&packageTemplateID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES($1,1,'Dok Test Equipment','farmer','published') RETURNING id::text`, "DOC-EQP-"+suffix).Scan(&docTemplateID))
+	var scheduleID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,distribution_number_padding,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal Test Equipment','2026-01-01','2026-12-31','active',4,'{}'::jsonb) RETURNING id::text`, programID, regencyID, packageTemplateID, docTemplateID).Scan(&scheduleID))
+	var distributionSlotID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO distribution_slots(schedule_id,slot_number,status,machine_option_code) VALUES($1,1,'open','shark-spwp8030') RETURNING id::text`, scheduleID).Scan(&distributionSlotID))
+	var documentationSlotID string
+	must(t, pool.QueryRow(ctx, `
+		INSERT INTO documentation_slots(distribution_slot_id,slot_code,label_snapshot,stage,is_required,min_files,max_files,input_source,require_location,require_captured_at,sort_order)
+		VALUES($1,'foto-mesin','Foto Mesin','mesin',true,1,1,'both',false,false,1) RETURNING id::text
+	`, distributionSlotID).Scan(&documentationSlotID))
+	var mediaID string
+	must(t, pool.QueryRow(ctx, `
+		INSERT INTO media_files(documentation_slot_id,storage_key,original_filename,mime_type,byte_size,checksum,source,status)
+		VALUES($1,gen_random_uuid(),'foto.jpg','image/jpeg',1024,$2,'camera','accepted') RETURNING id::text
+	`, documentationSlotID, strings.Repeat("c", 64)).Scan(&mediaID))
+
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM distribution_slots WHERE id = $1`, distributionSlotID)
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM program_schedules WHERE id = $1`, scheduleID)
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM programs WHERE id = $1`, programID)
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM package_template_versions WHERE id = $1`, packageTemplateID)
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM documentation_template_versions WHERE id = $1`, docTemplateID)
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM regencies WHERE id = $1`, regencyID)
+	})
+
+	repo := NewRepository(pool)
+	input := UpdateEquipmentInput{ScheduleID: scheduleID, SlotNumber: 1, MachineOptionCode: "yanmar-tf85", MachineSerialNumber: "msn-2"}
+
+	if _, err := repo.UpdateEquipment(ctx, auth.Principal{}, input, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrEquipmentLocked) {
+		t.Fatalf("locked err=%v", err)
+	}
+
+	must(t, func() error { _, err := pool.Exec(ctx, `DELETE FROM media_files WHERE id=$1`, mediaID); return err }())
+	updated, err := repo.UpdateEquipment(ctx, auth.Principal{}, input, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.MachineOptionCode != "yanmar-tf85" || updated.MachineSerialNumber != "msn-2" {
+		t.Fatalf("slot=%+v", updated)
+	}
 }
 
 func TestSaveMediaAcceptsOpaqueGoogleDriveStorageKey(t *testing.T) {
@@ -387,6 +486,9 @@ func TestGetMediaSlotScopedToDistributionSlots(t *testing.T) {
 	}
 	if slot.AcceptedFiles != 1 {
 		t.Fatalf("slot.AcceptedFiles = %d, want 1", slot.AcceptedFiles)
+	}
+	if slot.SlotNumber != 1 || slot.Label != "Foto Alat" {
+		t.Fatalf("slot identity = number %d label %q", slot.SlotNumber, slot.Label)
 	}
 	if slot.ProgramType != "farmer" || slot.ZoneName != "Zona 1" || slot.RegencyName != "Media Test "+t.Name() {
 		t.Fatalf("slot storage context = %+v", slot)

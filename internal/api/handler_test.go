@@ -274,6 +274,26 @@ func TestDistributionCandidatesEndpointAppliesCallerRegencyScope(t *testing.T) {
 	}
 }
 
+func TestDistributionCandidateSuggestionsEndpointReturnsScopedMatches(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_dokumen": true}, regencyScope: auth.RegencyScope{RegencyIDs: []string{"regency-1"}}}
+	distributionService := &fakeDistributionService{suggestions: []distribution.CandidateMatch{{AllocationID: "allocation-1", FullName: "SITI AMINAH", NIK: "7306014101900001"}}}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/distribution/candidate-suggestions?schedule_id=schedule-1&nik_prefix=7306", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+
+	NewHandler(Dependencies{Auth: authService, Distribution: distributionService}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if distributionService.suggestionScheduleID != "schedule-1" || distributionService.suggestionPrefix != "7306" {
+		t.Fatalf("search = schedule:%q prefix:%q", distributionService.suggestionScheduleID, distributionService.suggestionPrefix)
+	}
+	if len(distributionService.seenRegencyScope.RegencyIDs) != 1 || distributionService.seenRegencyScope.RegencyIDs[0] != "regency-1" {
+		t.Fatalf("scope not forwarded: %+v", distributionService.seenRegencyScope)
+	}
+}
+
 func TestReportsSummaryEndpointAppliesCallerRegencyScope(t *testing.T) {
 	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.view": true}, regencyScope: auth.RegencyScope{RegencyIDs: []string{"regency-1"}}}
 	reportsService := &fakeReportsService{}
@@ -691,6 +711,48 @@ func TestDistributionMediaUploadAndContentHeaders(t *testing.T) {
 	}
 }
 
+func TestDistributionDateUpdateUsesOneDateForTheSlotNumber(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_mesin": true}}
+	service := &fakeDistributionService{datedSlot: distribution.DistributionSlot{ID: "slot-1", SlotNumber: 3, DistributionDate: "2026-10-20"}}
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/distribution/slots/3/date?schedule_id=schedule-1", strings.NewReader(`{"distribution_date":"2026-10-20"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: authService, Distribution: service, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || service.dateInput.ScheduleID != "schedule-1" || service.dateInput.SlotNumber != 3 || service.dateInput.DistributionDate != "2026-10-20" {
+		t.Fatalf("status=%d input=%+v body=%s", rec.Code, service.dateInput, rec.Body.String())
+	}
+}
+
+func TestDistributionEquipmentUpdateUsesSlotNumberFromThePath(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_mesin": true}}
+	service := &fakeDistributionService{equippedSlot: distribution.DistributionSlot{ID: "slot-1", SlotNumber: 3, MachineOptionCode: "shark-spwp8030"}}
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/distribution/slots/3/equipment?schedule_id=schedule-1", strings.NewReader(`{"machine_option_code":"shark-spwp8030","machine_serial_number":"msn-9"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: authService, Distribution: service, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || service.equipmentInput.ScheduleID != "schedule-1" || service.equipmentInput.SlotNumber != 3 || service.equipmentInput.MachineOptionCode != "shark-spwp8030" || service.equipmentInput.MachineSerialNumber != "msn-9" {
+		t.Fatalf("status=%d input=%+v body=%s", rec.Code, service.equipmentInput, rec.Body.String())
+	}
+}
+
+func TestDistributionEquipmentUpdateReportsLockedEquipment(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_mesin": true}}
+	service := &fakeDistributionService{equipmentErr: distribution.ErrEquipmentLocked}
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/distribution/slots/3/equipment?schedule_id=schedule-1", strings.NewReader(`{"machine_option_code":"shark-spwp8030"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: authService, Distribution: service, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "equipment_locked") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestProtectedReadinessReturnsServiceUnavailableWhenDegraded(t *testing.T) {
 	service := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowed: true}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/health", nil)
@@ -856,31 +918,39 @@ type fakeDCP3Service struct {
 
 type fakeDistributionService struct {
 	DistributionService
-	createInput         distribution.CreateSlotInput
-	createdSlot         distribution.DistributionSlot
-	createErr           error
-	candidateScheduleID string
-	candidateNIK        string
-	candidate           distribution.CandidateMatch
-	candidateErr        error
-	linkInput           distribution.LinkSlotInput
-	linkedSlot          distribution.DistributionSlot
-	linkErr             error
-	searchScheduleID    string
-	searchQuery         string
-	searchedSlot        distribution.DistributionSlot
-	searchErr           error
-	completeInput       distribution.CompleteSlotInput
-	completedSlot       distribution.DistributionSlot
-	completeErr         error
-	media               distribution.MediaFile
-	mediaContent        []byte
-	slotID              string
-	upload              distribution.UploadMediaInput
-	seenRegencyScope    auth.RegencyScope
-	catalogScheduleID   string
-	catalog             []distribution.SlotCatalogEntry
-	catalogErr          error
+	createInput          distribution.CreateSlotInput
+	createdSlot          distribution.DistributionSlot
+	createErr            error
+	candidateScheduleID  string
+	candidateNIK         string
+	candidate            distribution.CandidateMatch
+	candidateErr         error
+	suggestionScheduleID string
+	suggestionPrefix     string
+	suggestions          []distribution.CandidateMatch
+	linkInput            distribution.LinkSlotInput
+	linkedSlot           distribution.DistributionSlot
+	linkErr              error
+	searchScheduleID     string
+	searchQuery          string
+	searchedSlot         distribution.DistributionSlot
+	searchErr            error
+	completeInput        distribution.CompleteSlotInput
+	completedSlot        distribution.DistributionSlot
+	completeErr          error
+	dateInput            distribution.SetDistributionDateInput
+	datedSlot            distribution.DistributionSlot
+	equipmentInput       distribution.UpdateEquipmentInput
+	equippedSlot         distribution.DistributionSlot
+	equipmentErr         error
+	media                distribution.MediaFile
+	mediaContent         []byte
+	slotID               string
+	upload               distribution.UploadMediaInput
+	seenRegencyScope     auth.RegencyScope
+	catalogScheduleID    string
+	catalog              []distribution.SlotCatalogEntry
+	catalogErr           error
 }
 
 func (f *fakeDistributionService) CreateSlot(_ context.Context, _ auth.Principal, input distribution.CreateSlotInput, _ auth.ClientMeta) (distribution.DistributionSlot, error) {
@@ -890,6 +960,10 @@ func (f *fakeDistributionService) CreateSlot(_ context.Context, _ auth.Principal
 func (f *fakeDistributionService) SearchCandidate(_ context.Context, scheduleID, nik string, scope auth.RegencyScope) (distribution.CandidateMatch, error) {
 	f.candidateScheduleID, f.candidateNIK, f.seenRegencyScope = scheduleID, nik, scope
 	return f.candidate, f.candidateErr
+}
+func (f *fakeDistributionService) SuggestCandidates(_ context.Context, scheduleID, nikPrefix string, scope auth.RegencyScope) ([]distribution.CandidateMatch, error) {
+	f.suggestionScheduleID, f.suggestionPrefix, f.seenRegencyScope = scheduleID, nikPrefix, scope
+	return f.suggestions, nil
 }
 func (f *fakeDistributionService) LinkSlot(_ context.Context, _ auth.Principal, input distribution.LinkSlotInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.DistributionSlot, error) {
 	f.linkInput, f.seenRegencyScope = input, scope
@@ -902,6 +976,14 @@ func (f *fakeDistributionService) SearchSlot(_ context.Context, scheduleID, quer
 func (f *fakeDistributionService) CompleteSlot(_ context.Context, _ auth.Principal, input distribution.CompleteSlotInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.DistributionSlot, error) {
 	f.completeInput, f.seenRegencyScope = input, scope
 	return f.completedSlot, f.completeErr
+}
+func (f *fakeDistributionService) SetDistributionDate(_ context.Context, _ auth.Principal, input distribution.SetDistributionDateInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.DistributionSlot, error) {
+	f.dateInput, f.seenRegencyScope = input, scope
+	return f.datedSlot, nil
+}
+func (f *fakeDistributionService) UpdateEquipment(_ context.Context, _ auth.Principal, input distribution.UpdateEquipmentInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.DistributionSlot, error) {
+	f.equipmentInput, f.seenRegencyScope = input, scope
+	return f.equippedSlot, f.equipmentErr
 }
 func (f *fakeDistributionService) UploadMedia(_ context.Context, _ auth.Principal, input distribution.UploadMediaInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.MediaFile, error) {
 	f.slotID, f.upload, f.seenRegencyScope = input.SlotID, input, scope

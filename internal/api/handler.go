@@ -94,9 +94,12 @@ type DCP3Service interface {
 type DistributionService interface {
 	CreateSlot(context.Context, auth.Principal, distribution.CreateSlotInput, auth.ClientMeta) (distribution.DistributionSlot, error)
 	SearchCandidate(context.Context, string, string, auth.RegencyScope) (distribution.CandidateMatch, error)
+	SuggestCandidates(context.Context, string, string, auth.RegencyScope) ([]distribution.CandidateMatch, error)
 	LinkSlot(context.Context, auth.Principal, distribution.LinkSlotInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
 	SearchSlot(context.Context, string, string, auth.RegencyScope) (distribution.DistributionSlot, error)
 	CompleteSlot(context.Context, auth.Principal, distribution.CompleteSlotInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
+	SetDistributionDate(context.Context, auth.Principal, distribution.SetDistributionDateInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
+	UpdateEquipment(context.Context, auth.Principal, distribution.UpdateEquipmentInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
 	UploadMedia(context.Context, auth.Principal, distribution.UploadMediaInput, auth.ClientMeta, auth.RegencyScope) (distribution.MediaFile, error)
 	DeleteMedia(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) error
 	OpenMedia(context.Context, string, auth.RegencyScope) (distribution.MediaContent, error)
@@ -317,6 +320,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleDistributionSlots(w, r, rc)
 	case path == "distribution/candidates":
 		h.handleDistributionCandidates(w, r, rc)
+	case path == "distribution/candidate-suggestions":
+		h.handleDistributionCandidateSuggestions(w, r, rc)
 	case strings.HasPrefix(path, "distribution/slots/"):
 		h.handleDistributionSlot(w, r, rc, strings.TrimPrefix(path, "distribution/slots/"))
 	case strings.HasPrefix(path, "distribution/media/"):

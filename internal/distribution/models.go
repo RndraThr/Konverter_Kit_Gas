@@ -7,30 +7,33 @@ import (
 )
 
 var (
-	ErrScheduleRequired        = errors.New("distribution schedule is required")
-	ErrQueryRequired           = errors.New("recipient search query is required")
-	ErrNIKInvalid              = errors.New("NIK must contain 16 digits")
-	ErrIdentifierConflict      = errors.New("recipient identifier is already in use")
-	ErrMediaUnavailable        = errors.New("media storage is unavailable")
-	ErrMediaNotFound           = errors.New("documentation media not found")
-	ErrMediaTypeInvalid        = errors.New("documentation file must be JPEG, PNG, or WebP")
-	ErrMediaTooLarge           = errors.New("documentation file exceeds 10 MiB")
-	ErrMediaSourceInvalid      = errors.New("documentation source is not allowed for this slot")
-	ErrMediaLocationRequired   = errors.New("documentation location is required")
-	ErrMediaCapturedAtRequired = errors.New("documentation capture time is required")
-	ErrMediaLimitReached       = errors.New("documentation slot has reached its file limit")
-	ErrIdentityIncomplete      = errors.New("recipient identity is incomplete")
-	ErrDocumentationIncomplete = errors.New("required documentation is incomplete")
-	ErrEquipmentOptionNotFound = errors.New("selected equipment option is not available in the schedule package template")
-	ErrPreviouslyReceived      = errors.New("recipient has previously received a package")
-	ErrAlreadyCompleted        = errors.New("distribution is already completed")
-	ErrSlotNotFound            = errors.New("distribution slot not found")
-	ErrSlotNotOpen             = errors.New("distribution slot is not open")
-	ErrSlotNotLinked           = errors.New("distribution slot is not linked to a recipient")
-	ErrCandidateNotFound       = errors.New("no unlinked DCP3 candidate matches this NIK for this schedule")
-	ErrSlotNumberRequired      = errors.New("slot_number is required")
-	ErrSlotQuotaExceeded       = errors.New("distribution slot quota has been reached for this schedule")
-	ErrSlotNumberTaken         = errors.New("distribution slot number is already used for this schedule")
+	ErrScheduleRequired         = errors.New("distribution schedule is required")
+	ErrQueryRequired            = errors.New("recipient search query is required")
+	ErrNIKInvalid               = errors.New("NIK must contain 16 digits")
+	ErrIdentifierConflict       = errors.New("recipient identifier is already in use")
+	ErrMediaUnavailable         = errors.New("media storage is unavailable")
+	ErrMediaNotFound            = errors.New("documentation media not found")
+	ErrMediaTypeInvalid         = errors.New("documentation file must be JPEG, PNG, or WebP")
+	ErrMediaTooLarge            = errors.New("documentation file exceeds 10 MiB")
+	ErrMediaSourceInvalid       = errors.New("documentation source is not allowed for this slot")
+	ErrMediaLocationRequired    = errors.New("documentation location is required")
+	ErrMediaCapturedAtRequired  = errors.New("documentation capture time is required")
+	ErrMediaLimitReached        = errors.New("documentation slot has reached its file limit")
+	ErrIdentityIncomplete       = errors.New("recipient identity is incomplete")
+	ErrDocumentationIncomplete  = errors.New("required documentation is incomplete")
+	ErrEquipmentOptionNotFound  = errors.New("selected equipment option is not available in the schedule package template")
+	ErrPreviouslyReceived       = errors.New("recipient has previously received a package")
+	ErrAlreadyCompleted         = errors.New("distribution is already completed")
+	ErrSlotNotFound             = errors.New("distribution slot not found")
+	ErrSlotNotOpen              = errors.New("distribution slot is not open")
+	ErrSlotNotLinked            = errors.New("distribution slot is not linked to a recipient")
+	ErrCandidateNotFound        = errors.New("no unlinked DCP3 candidate matches this NIK for this schedule")
+	ErrSlotNumberRequired       = errors.New("slot_number is required")
+	ErrSlotQuotaExceeded        = errors.New("distribution slot quota has been reached for this schedule")
+	ErrSlotNumberTaken          = errors.New("distribution slot number is already used for this schedule")
+	ErrDistributionDateRequired = errors.New("distribution date is required")
+	ErrDistributionDateLocked   = errors.New("distribution date is locked after documentation is uploaded")
+	ErrEquipmentLocked          = errors.New("equipment is locked after POS Mesin documentation is uploaded")
 )
 
 type SlotSummary struct {
@@ -52,6 +55,7 @@ type DistributionSlot struct {
 	ID                    string        `json:"id"`
 	ScheduleID            string        `json:"schedule_id"`
 	SlotNumber            int           `json:"slot_number"`
+	DistributionDate      string        `json:"distribution_date"`
 	Status                string        `json:"status"`
 	AllocationID          *string       `json:"allocation_id,omitempty"`
 	FullName              string        `json:"full_name,omitempty"`
@@ -77,6 +81,7 @@ type SlotCatalogEntry struct {
 type CreateSlotInput struct {
 	ScheduleID            string `json:"schedule_id"`
 	SlotNumber            int    `json:"slot_number"`
+	DistributionDate      string `json:"distribution_date"`
 	MachineOptionCode     string `json:"machine_option_code"`
 	MachineSerialNumber   string `json:"machine_serial_number"`
 	HoseOptionCode        string `json:"hose_option_code"`
@@ -114,8 +119,28 @@ type CompleteSlotInput struct {
 	SlotNumber int    `json:"slot_number"`
 }
 
+type SetDistributionDateInput struct {
+	ScheduleID       string `json:"schedule_id"`
+	SlotNumber       int    `json:"slot_number"`
+	DistributionDate string `json:"distribution_date"`
+}
+
+type UpdateEquipmentInput struct {
+	ScheduleID            string `json:"schedule_id"`
+	SlotNumber            int    `json:"slot_number"`
+	MachineOptionCode     string `json:"machine_option_code"`
+	MachineSerialNumber   string `json:"machine_serial_number"`
+	HoseOptionCode        string `json:"hose_option_code"`
+	HoseSerialNumber      string `json:"hose_serial_number"`
+	ConverterOptionCode   string `json:"converter_option_code"`
+	ConverterSerialNumber string `json:"converter_serial_number"`
+}
+
 type MediaSlot struct {
 	ID                string
+	SlotNumber        int
+	DistributionDate  string
+	Label             string
 	ProgramType       string
 	ZoneName          string
 	RegencyName       string

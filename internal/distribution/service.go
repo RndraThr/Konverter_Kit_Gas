@@ -9,7 +9,9 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"konkit/internal/auth"
@@ -31,10 +33,12 @@ type mediaRepository interface {
 
 type posMesinRepository interface {
 	CreateSlot(ctx context.Context, actor auth.Principal, input CreateSlotInput, meta auth.ClientMeta) (DistributionSlot, error)
+	UpdateEquipment(ctx context.Context, actor auth.Principal, input UpdateEquipmentInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
 }
 
 type posDokumenRepository interface {
 	SearchCandidate(ctx context.Context, scheduleID, nik string, scope auth.RegencyScope) (CandidateMatch, error)
+	SuggestCandidates(ctx context.Context, scheduleID, nikPrefix string, limit int, scope auth.RegencyScope) ([]CandidateMatch, error)
 	LinkSlot(ctx context.Context, actor auth.Principal, input LinkSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
 }
 
@@ -44,12 +48,17 @@ type posPenyerahanRepository interface {
 	ListSlotCatalog(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]SlotCatalogEntry, error)
 }
 
+type distributionDateRepository interface {
+	SetDistributionDate(ctx context.Context, actor auth.Principal, input SetDistributionDateInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
+}
+
 type Service struct {
-	mediaRepository         mediaRepository
-	posMesinRepository      posMesinRepository
-	posDokumenRepository    posDokumenRepository
-	posPenyerahanRepository posPenyerahanRepository
-	storage                 media.Storage
+	mediaRepository            mediaRepository
+	posMesinRepository         posMesinRepository
+	posDokumenRepository       posDokumenRepository
+	posPenyerahanRepository    posPenyerahanRepository
+	distributionDateRepository distributionDateRepository
+	storage                    media.Storage
 }
 
 func NewService(repository any, storage ...media.Storage) *Service {
@@ -58,10 +67,29 @@ func NewService(repository any, storage ...media.Storage) *Service {
 	service.posMesinRepository, _ = repository.(posMesinRepository)
 	service.posDokumenRepository, _ = repository.(posDokumenRepository)
 	service.posPenyerahanRepository, _ = repository.(posPenyerahanRepository)
+	service.distributionDateRepository, _ = repository.(distributionDateRepository)
 	if len(storage) > 0 {
 		service.storage = storage[0]
 	}
 	return service
+}
+
+func (s *Service) SetDistributionDate(ctx context.Context, actor auth.Principal, input SetDistributionDateInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
+	input.ScheduleID = strings.TrimSpace(input.ScheduleID)
+	input.DistributionDate = strings.TrimSpace(input.DistributionDate)
+	if input.ScheduleID == "" {
+		return DistributionSlot{}, ErrScheduleRequired
+	}
+	if input.SlotNumber < 1 {
+		return DistributionSlot{}, ErrSlotNumberRequired
+	}
+	if _, err := time.Parse("2006-01-02", input.DistributionDate); err != nil {
+		return DistributionSlot{}, ErrDistributionDateRequired
+	}
+	if s.distributionDateRepository == nil {
+		return DistributionSlot{}, ErrSlotNotFound
+	}
+	return s.distributionDateRepository.SetDistributionDate(ctx, actor, input, meta, scope)
 }
 
 func (s *Service) CreateSlot(ctx context.Context, actor auth.Principal, input CreateSlotInput, meta auth.ClientMeta) (DistributionSlot, error) {
@@ -69,16 +97,44 @@ func (s *Service) CreateSlot(ctx context.Context, actor auth.Principal, input Cr
 	if input.ScheduleID == "" {
 		return DistributionSlot{}, ErrScheduleRequired
 	}
+	input.DistributionDate = strings.TrimSpace(input.DistributionDate)
+	if _, err := time.Parse("2006-01-02", input.DistributionDate); err != nil {
+		return DistributionSlot{}, ErrDistributionDateRequired
+	}
 	input.MachineOptionCode = strings.TrimSpace(input.MachineOptionCode)
 	input.MachineSerialNumber = textnorm.BusinessUpper(input.MachineSerialNumber)
 	input.HoseOptionCode = strings.TrimSpace(input.HoseOptionCode)
-	input.HoseSerialNumber = textnorm.BusinessUpper(input.HoseSerialNumber)
+	// Selang pada paket distribusi tidak memiliki serial number. Always discard
+	// client-supplied values so direct API calls cannot create new hose serials.
+	input.HoseSerialNumber = ""
 	input.ConverterOptionCode = strings.TrimSpace(input.ConverterOptionCode)
 	input.ConverterSerialNumber = textnorm.BusinessUpper(input.ConverterSerialNumber)
 	if s.posMesinRepository == nil {
 		return DistributionSlot{}, errors.New("distribution POS Mesin is unavailable")
 	}
 	return s.posMesinRepository.CreateSlot(ctx, actor, input, meta)
+}
+
+func (s *Service) UpdateEquipment(ctx context.Context, actor auth.Principal, input UpdateEquipmentInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
+	input.ScheduleID = strings.TrimSpace(input.ScheduleID)
+	if input.ScheduleID == "" {
+		return DistributionSlot{}, ErrScheduleRequired
+	}
+	if input.SlotNumber < 1 {
+		return DistributionSlot{}, ErrSlotNumberRequired
+	}
+	input.MachineOptionCode = strings.TrimSpace(input.MachineOptionCode)
+	input.MachineSerialNumber = textnorm.BusinessUpper(input.MachineSerialNumber)
+	input.HoseOptionCode = strings.TrimSpace(input.HoseOptionCode)
+	// Selang pada paket distribusi tidak memiliki serial number. Always discard
+	// client-supplied values so direct API calls cannot create new hose serials.
+	input.HoseSerialNumber = ""
+	input.ConverterOptionCode = strings.TrimSpace(input.ConverterOptionCode)
+	input.ConverterSerialNumber = textnorm.BusinessUpper(input.ConverterSerialNumber)
+	if s.posMesinRepository == nil {
+		return DistributionSlot{}, errors.New("distribution POS Mesin is unavailable")
+	}
+	return s.posMesinRepository.UpdateEquipment(ctx, actor, input, meta, scope)
 }
 
 func (s *Service) SearchCandidate(ctx context.Context, scheduleID, nik string, scope auth.RegencyScope) (CandidateMatch, error) {
@@ -93,6 +149,20 @@ func (s *Service) SearchCandidate(ctx context.Context, scheduleID, nik string, s
 		return CandidateMatch{}, errors.New("distribution POS Dokumen is unavailable")
 	}
 	return s.posDokumenRepository.SearchCandidate(ctx, scheduleID, nik, scope)
+}
+
+func (s *Service) SuggestCandidates(ctx context.Context, scheduleID, nikPrefix string, scope auth.RegencyScope) ([]CandidateMatch, error) {
+	scheduleID, nikPrefix = strings.TrimSpace(scheduleID), stripNonDigits.ReplaceAllString(nikPrefix, "")
+	if scheduleID == "" {
+		return nil, ErrScheduleRequired
+	}
+	if len(nikPrefix) < 4 || len(nikPrefix) > 16 {
+		return nil, ErrQueryRequired
+	}
+	if s.posDokumenRepository == nil {
+		return nil, errors.New("distribution POS Dokumen is unavailable")
+	}
+	return s.posDokumenRepository.SuggestCandidates(ctx, scheduleID, nikPrefix, 8, scope)
 }
 
 func (s *Service) LinkSlot(ctx context.Context, actor auth.Principal, input LinkSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
@@ -221,17 +291,42 @@ func (s *Service) UploadMedia(ctx context.Context, actor auth.Principal, input U
 	if err != nil {
 		return MediaFile{}, err
 	}
-	storageKey, size, checksum, err := s.storage.Put(ctx, key, folderPath, bytes.NewReader(input.Data))
+	distributionDate, err := time.Parse("2006-01-02", slot.DistributionDate)
+	if err != nil {
+		return MediaFile{}, ErrDistributionDateRequired
+	}
+	capturedAt := time.Now()
+	if input.CapturedAt != nil {
+		capturedAt = *input.CapturedAt
+	}
+	folderPath = append(folderPath, formatDistributionFolderDate(distributionDate), strconv.Itoa(slot.SlotNumber))
+	visibleFilename := formatDistributionMediaFilename(slot.Label, mimeType, slot.AcceptedFiles+1, slot.MaxFiles)
+	storageKey, size, checksum, err := media.PutNamed(ctx, s.storage, key, visibleFilename, folderPath, bytes.NewReader(input.Data))
 	if err != nil {
 		return MediaFile{}, err
 	}
-	stored, err := s.mediaRepository.SaveMedia(ctx, actor, MediaFileInput{SlotID: slot.ID, StorageKey: storageKey, OriginalFilename: strings.TrimSpace(input.OriginalFilename), MimeType: mimeType, Checksum: checksum, Source: input.Source, ByteSize: size, CapturedAt: input.CapturedAt, Latitude: input.Latitude, Longitude: input.Longitude}, meta)
+	stored, err := s.mediaRepository.SaveMedia(ctx, actor, MediaFileInput{SlotID: slot.ID, StorageKey: storageKey, OriginalFilename: visibleFilename, MimeType: mimeType, Checksum: checksum, Source: input.Source, ByteSize: size, CapturedAt: &capturedAt, Latitude: input.Latitude, Longitude: input.Longitude}, meta)
 	if err != nil {
 		_ = s.storage.Delete(context.Background(), storageKey)
 		return MediaFile{}, err
 	}
 	stored.ContentURL = "/api/v1/distribution/media/" + stored.ID + "/content"
 	return stored, nil
+}
+
+func formatDistributionFolderDate(value time.Time) string {
+	months := [...]string{"", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"}
+	local := value.In(time.FixedZone("Asia/Jakarta", 7*60*60))
+	return fmt.Sprintf("%d %s %d", local.Day(), months[local.Month()], local.Year())
+}
+
+func formatDistributionMediaFilename(label, mimeType string, sequence, maxFiles int) string {
+	label = textnorm.BusinessUpper(strings.NewReplacer("/", "-", "\\", "-").Replace(label))
+	extension := map[string]string{"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}[mimeType]
+	if maxFiles > 1 {
+		return fmt.Sprintf("%s - %02d%s", label, sequence, extension)
+	}
+	return label + extension
 }
 
 func (s *Service) DeleteMedia(ctx context.Context, actor auth.Principal, mediaID string, meta auth.ClientMeta, scope auth.RegencyScope) error {

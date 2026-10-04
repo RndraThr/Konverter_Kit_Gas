@@ -522,6 +522,10 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "slot_quota_exceeded", "Kuota slot untuk jadwal ini sudah tercapai")
 	case errors.Is(err, distribution.ErrSlotNumberTaken):
 		writeError(w, http.StatusConflict, "slot_number_taken", "Nomor bagi ini sudah dibuat")
+	case errors.Is(err, distribution.ErrDistributionDateLocked):
+		writeError(w, http.StatusConflict, "distribution_date_locked", "Tanggal distribusi tidak dapat diubah setelah foto pertama diunggah")
+	case errors.Is(err, distribution.ErrEquipmentLocked):
+		writeError(w, http.StatusConflict, "equipment_locked", "Data mesin tidak dapat diubah setelah foto POS Mesin diunggah")
 	case errors.Is(err, dcp3.ErrWorkbookTooLarge):
 		writeError(w, http.StatusRequestEntityTooLarge, "workbook_too_large", err.Error())
 	case errors.Is(err, distribution.ErrMediaTooLarge):
@@ -542,7 +546,7 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		errors.Is(err, programs.ErrScheduleDatesInvalid), errors.Is(err, programs.ErrTemplateSlotInvalid):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), validationFields(err))
 	case errors.Is(err, distribution.ErrScheduleRequired), errors.Is(err, distribution.ErrQueryRequired),
-		errors.Is(err, distribution.ErrNIKInvalid), errors.Is(err, distribution.ErrSlotNumberRequired):
+		errors.Is(err, distribution.ErrNIKInvalid), errors.Is(err, distribution.ErrSlotNumberRequired), errors.Is(err, distribution.ErrDistributionDateRequired):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), validationFields(err))
 	case errors.Is(err, reports.ErrScheduleRequired), errors.Is(err, reports.ErrFilterInvalid):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), map[string]string{"request": err.Error()})
