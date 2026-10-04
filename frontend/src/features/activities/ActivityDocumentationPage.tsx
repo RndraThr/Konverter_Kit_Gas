@@ -123,14 +123,14 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
           <div className="grid min-w-0 flex-1 gap-2">
             <Label id="filter-program-label">Program / Tender</Label>
             <Select disabled={programs.isPending || Boolean(pending)} value={programID} onValueChange={setProgram}>
-              <SelectTrigger aria-labelledby="filter-program-label"><SelectValue placeholder={programs.isPending ? 'Memuat program...' : 'Pilih program'} /></SelectTrigger>
+              <SelectTrigger className="w-full" aria-labelledby="filter-program-label"><SelectValue placeholder={programs.isPending ? 'Memuat program...' : 'Pilih program'} /></SelectTrigger>
               <SelectContent>{programs.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div className="grid min-w-0 flex-1 gap-2">
             <Label id="filter-regency-label">Kabupaten / Kota</Label>
             <Select disabled={!programID || zones.isPending || Boolean(pending)} value={regencyID} onValueChange={setRegency}>
-              <SelectTrigger aria-labelledby="filter-regency-label"><SelectValue placeholder={!programID ? 'Pilih program terlebih dahulu' : zones.isPending ? 'Memuat kabupaten...' : 'Pilih kabupaten untuk melihat galeri'} /></SelectTrigger>
+              <SelectTrigger className="w-full" aria-labelledby="filter-regency-label"><SelectValue placeholder={!programID ? 'Pilih program terlebih dahulu' : zones.isPending ? 'Memuat kabupaten...' : 'Pilih kabupaten untuk melihat galeri'} /></SelectTrigger>
               <SelectContent>{regencies.map((item) => <SelectItem key={item.id} value={item.id}>{item.document_code} - {item.name}</SelectItem>)}</SelectContent>
             </Select>
           </div>

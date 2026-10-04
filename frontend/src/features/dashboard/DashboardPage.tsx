@@ -152,7 +152,7 @@ export function DashboardPage() {
   const setFilter = (key: string, value: string) => { const next = new URLSearchParams(params); value ? next.set(key, value) : next.delete(key); next.set('page', '1'); setParams(next); };
   const setPage = (page: number) => { const next = new URLSearchParams(params); next.set('page', String(page)); setParams(next); };
   const setPageSize = (value: string | null) => {
-    if (!value || !['10', '20', '50', '100'].includes(value)) return;
+    if (!value || !['50', '100', 'all'].includes(value)) return;
     const next = new URLSearchParams(params);
     next.set('page_size', value);
     next.set('page', '1');
@@ -179,9 +179,10 @@ export function DashboardPage() {
   const openCreate = () => { save.reset(); setEditing(undefined); setDialogOpen(true); };
 
   const page = list.data?.data.page ?? 1;
-  const pageSize = list.data?.data.page_size ?? 20;
+  const pageSize = list.data?.data.page_size ?? 50;
   const total = list.data?.data.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const showAll = params.get('page_size') === 'all' || list.data?.data.all === true;
+  const totalPages = showAll ? 1 : Math.max(1, Math.ceil(total / pageSize));
   const pageItems = useMemo(() => buildPageItems(page, totalPages), [page, totalPages]);
   const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const rangeEnd = Math.min(page * pageSize, total);
@@ -218,16 +219,31 @@ export function DashboardPage() {
     <div className="space-y-3 rounded-xl border bg-card p-4">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-end">
       <div className="relative min-w-64 flex-1">{list.isFetching && search.trim() === (params.get('search') ?? '') ? <LoaderCircle aria-hidden="true" className="pointer-events-none absolute top-3 left-3 size-5 animate-spin text-primary" /> : <Search aria-hidden="true" className="pointer-events-none absolute top-3 left-3 size-5 text-muted-foreground" />}<Input aria-label="Cari penerima" className="pl-10 pr-24" placeholder="Cari nama, NIK, atau nomor kartu" value={search} onChange={(event) => setSearch(event.target.value)} /><span className="pointer-events-none absolute top-3 right-3 text-xs text-muted-foreground">Realtime</span></div>
-      <div className="grid min-w-0 gap-2"><Label id="filter-regency-label">Kabupaten</Label><Select value={params.get('regency_id') ?? ''} onValueChange={(value) => setFilter('regency_id', value ?? '')}><SelectTrigger aria-labelledby="filter-regency-label"><SelectValue placeholder="Semua kabupaten" /></SelectTrigger><SelectContent><SelectItem value="">Semua kabupaten</SelectItem>{regencies.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.document_code} - {item.name}</SelectItem>)}</SelectContent></Select></div>
-      <div className="grid min-w-0 gap-2"><Label id="filter-program-label">Program</Label><Select value={params.get('program_id') ?? ''} onValueChange={(value) => setFilter('program_id', value ?? '')}><SelectTrigger aria-labelledby="filter-program-label"><SelectValue placeholder="Semua program" /></SelectTrigger><SelectContent><SelectItem value="">Semua program</SelectItem>{programs.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div>
-      <div className="grid min-w-0 gap-2"><Label id="filter-schedule-label">Jadwal</Label><Select value={params.get('schedule_id') ?? ''} onValueChange={(value) => setFilter('schedule_id', value ?? '')}><SelectTrigger aria-labelledby="filter-schedule-label"><SelectValue placeholder="Semua jadwal" /></SelectTrigger><SelectContent><SelectItem value="">Semua jadwal</SelectItem>{schedules.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div>
+      <div className="grid min-w-0 gap-2"><Label id="filter-regency-label">Kabupaten</Label><Select value={params.get('regency_id') ?? ''} onValueChange={(value) => setFilter('regency_id', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="filter-regency-label"><SelectValue placeholder="Semua kabupaten" /></SelectTrigger><SelectContent><SelectItem value="">Semua kabupaten</SelectItem>{regencies.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.document_code} - {item.name}</SelectItem>)}</SelectContent></Select></div>
+      <div className="grid min-w-0 gap-2"><Label id="filter-program-label">Program</Label><Select value={params.get('program_id') ?? ''} onValueChange={(value) => setFilter('program_id', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="filter-program-label"><SelectValue placeholder="Semua program" /></SelectTrigger><SelectContent><SelectItem value="">Semua program</SelectItem>{programs.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div>
+      <div className="grid min-w-0 gap-2"><Label id="filter-schedule-label">Jadwal</Label><Select value={params.get('schedule_id') ?? ''} onValueChange={(value) => setFilter('schedule_id', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="filter-schedule-label"><SelectValue placeholder="Semua jadwal" /></SelectTrigger><SelectContent><SelectItem value="">Semua jadwal</SelectItem>{schedules.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-[minmax(12rem,1fr)_repeat(3,minmax(11rem,auto))_auto] xl:items-end">
       <div className="grid min-w-0 gap-2"><Label htmlFor="filter-district">Kecamatan</Label><Input id="filter-district" value={district} placeholder="Semua kecamatan" onChange={(event) => setDistrict(event.target.value)} /></div>
-      <div className="grid min-w-0 gap-2"><Label id="filter-allocation-label">Status alokasi</Label><Select value={params.get('allocation_status') ?? ''} onValueChange={(value) => setFilter('allocation_status', value ?? '')}><SelectTrigger aria-labelledby="filter-allocation-label"><SelectValue placeholder="Aktif (bukan dibatalkan)" /></SelectTrigger><SelectContent><SelectItem value="">Aktif (bukan dibatalkan)</SelectItem>{Object.entries(allocationStatusLabel).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
-      <div className="grid min-w-0 gap-2"><Label id="filter-distribution-label">Status distribusi</Label><Select value={params.get('distribution_status') ?? ''} onValueChange={(value) => setFilter('distribution_status', value ?? '')}><SelectTrigger aria-labelledby="filter-distribution-label"><SelectValue placeholder="Semua status" /></SelectTrigger><SelectContent><SelectItem value="">Semua status</SelectItem>{Object.entries(distributionStatusLabel).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
-      <div className="grid min-w-0 gap-2"><Label id="filter-evidence-label">Kelengkapan evidence</Label><Select value={params.get('evidence_status') ?? ''} onValueChange={(value) => setFilter('evidence_status', value ?? '')}><SelectTrigger aria-labelledby="filter-evidence-label"><SelectValue placeholder="Semua kelengkapan" /></SelectTrigger><SelectContent><SelectItem value="">Semua kelengkapan</SelectItem><SelectItem value="complete">Lengkap</SelectItem><SelectItem value="partial">Sebagian</SelectItem><SelectItem value="empty">Belum ada</SelectItem><SelectItem value="not-configured">Belum diatur</SelectItem></SelectContent></Select></div>
+      <div className="grid min-w-0 gap-2"><Label id="filter-allocation-label">Status alokasi</Label><Select value={params.get('allocation_status') ?? ''} onValueChange={(value) => setFilter('allocation_status', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="filter-allocation-label"><SelectValue placeholder="Aktif (bukan dibatalkan)" /></SelectTrigger><SelectContent><SelectItem value="">Aktif (bukan dibatalkan)</SelectItem>{Object.entries(allocationStatusLabel).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
+      <div className="grid min-w-0 gap-2"><Label id="filter-distribution-label">Status distribusi</Label><Select value={params.get('distribution_status') ?? ''} onValueChange={(value) => setFilter('distribution_status', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="filter-distribution-label"><SelectValue placeholder="Semua status" /></SelectTrigger><SelectContent><SelectItem value="">Semua status</SelectItem>{Object.entries(distributionStatusLabel).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
+      <div className="grid min-w-0 gap-2"><Label id="filter-evidence-label">Kelengkapan evidence</Label><Select value={params.get('evidence_status') ?? ''} onValueChange={(value) => setFilter('evidence_status', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="filter-evidence-label"><SelectValue placeholder="Semua kelengkapan" /></SelectTrigger><SelectContent><SelectItem value="">Semua kelengkapan</SelectItem><SelectItem value="complete">Lengkap</SelectItem><SelectItem value="partial">Sebagian</SelectItem><SelectItem value="empty">Belum ada</SelectItem><SelectItem value="not-configured">Belum diatur</SelectItem></SelectContent></Select></div>
       <Button type="button" variant="outline" disabled={activeFilterCount === 0} onClick={resetFilters} aria-label="Reset filter"><RotateCcw />Reset{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}</Button>
+      </div>
+    </div>
+
+    <div className="flex flex-col gap-3 rounded-xl border bg-card px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+      <span className="font-medium tabular-nums text-foreground">{showAll ? `${total} penerima ditemukan` : `${rangeStart}–${rangeEnd} dari ${total} penerima`}</span>
+      <div className="flex items-center gap-2">
+        <Label id="page-size-label" className="whitespace-nowrap text-muted-foreground">Jumlah data per halaman</Label>
+        <Select value={showAll ? 'all' : String(pageSize)} onValueChange={setPageSize}>
+          <SelectTrigger aria-labelledby="page-size-label" className="w-36"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="50">50 data</SelectItem>
+            <SelectItem value="100">100 data</SelectItem>
+            <SelectItem value="all">Semua data</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
     </div>
 
@@ -268,8 +284,7 @@ export function DashboardPage() {
       </tr>)}</tbody>
     </DataTable>}
 
-    <nav className="flex flex-col gap-4 border-t pt-4 text-sm text-muted-foreground xl:flex-row xl:items-center xl:justify-between" aria-label="Pagination penerima">
-      <div className="flex flex-wrap items-center gap-4"><span className="tabular-nums">{rangeStart}–{rangeEnd} dari {total} penerima</span><div className="flex items-center gap-2"><Label id="page-size-label" className="whitespace-nowrap">Jumlah data per halaman</Label><Select value={String(pageSize)} onValueChange={setPageSize}><SelectTrigger aria-labelledby="page-size-label" className="w-40"><SelectValue /></SelectTrigger><SelectContent>{[10, 20, 50, 100].map((size) => <SelectItem key={size} value={String(size)}>{size} per halaman</SelectItem>)}</SelectContent></Select></div></div>
+    {!showAll && <nav className="flex justify-end border-t pt-4 text-sm text-muted-foreground" aria-label="Pagination penerima">
       <div className="flex flex-wrap items-center gap-1">
         <Button type="button" size="icon-sm" variant="outline" aria-label="Halaman pertama" disabled={page <= 1} onClick={() => setPage(1)}><ChevronsLeft /></Button>
         <Button type="button" size="icon-sm" variant="outline" aria-label="Halaman sebelumnya" disabled={page <= 1} onClick={() => setPage(page - 1)}><ChevronLeft /></Button>
@@ -279,7 +294,7 @@ export function DashboardPage() {
         <Button type="button" size="icon-sm" variant="outline" aria-label="Halaman berikutnya" disabled={page >= totalPages} onClick={() => setPage(page + 1)}><ChevronRight /></Button>
         <Button type="button" size="icon-sm" variant="outline" aria-label="Halaman terakhir" disabled={page >= totalPages} onClick={() => setPage(totalPages)}><ChevronsRight /></Button>
       </div>
-    </nav>
+    </nav>}
 
     {canManage && <RecipientDialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) save.reset(); }} recipient={editing} schedules={scheduleOptions} pending={save.isPending} error={saveMessage} fields={saveFields} onSave={(values) => save.mutate(values)} />}
 
