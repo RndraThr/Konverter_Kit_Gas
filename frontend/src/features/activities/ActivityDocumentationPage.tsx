@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Camera, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ImageIcon, ImagePlus, PlayCircle, RefreshCw, Trash2, X } from 'lucide-react';
+import { Camera, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ImageIcon, ImagePlus, PlayCircle, RefreshCw, Trash2, UploadCloud, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -134,20 +134,23 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
               <SelectContent>{regencies.map((item) => <SelectItem key={item.id} value={item.id}>{item.document_code} - {item.name}</SelectItem>)}</SelectContent>
             </Select>
           </div>
-          {canManage && regencyID && <div
-            role="group"
-            aria-label={`Unggah dokumentasi ${label}`}
-            className={cn('flex shrink-0 flex-wrap items-center gap-2 rounded-lg border-2 border-dashed px-2 py-1.5 transition-colors', dragging ? 'border-primary bg-primary/10' : 'border-transparent')}
-            onDragEnter={(e) => { if (!pending) { e.preventDefault(); setDragging(true); } }}
-            onDragOver={(e) => { if (!pending) { e.preventDefault(); setDragging(true); } }}
-            onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false); }}
-            onDrop={(e) => { e.preventDefault(); setDragging(false); if (!pending) choose(e.dataTransfer.files?.[0], 'gallery'); }}
-          >
+        </div>
+        {canManage && regencyID && <div
+          role="group"
+          aria-label={`Unggah dokumentasi ${label}`}
+          className={cn('flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-4 text-center transition-colors', dragging ? 'border-primary bg-primary/10' : 'border-border bg-muted/25')}
+          onDragEnter={(e) => { if (!pending) { e.preventDefault(); setDragging(true); } }}
+          onDragOver={(e) => { if (!pending) { e.preventDefault(); setDragging(true); } }}
+          onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false); }}
+          onDrop={(e) => { e.preventDefault(); setDragging(false); if (!pending) choose(e.dataTransfer.files?.[0], 'gallery'); }}
+        >
+          <UploadCloud className="size-5 text-muted-foreground" aria-hidden="true" />
+          <span className="text-xs text-muted-foreground">Seret foto atau video ke sini, atau pilih dari bawah</span>
+          <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
             <label className="inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"><Camera className="size-4" aria-hidden="true" /><span className="hidden sm:inline">Ambil Foto</span><span className="sm:hidden">Kamera</span><input className="sr-only" type="file" aria-label="Ambil Foto" accept={acceptedTypes} capture="environment" disabled={Boolean(pending)} onChange={(e) => choose(e.target.files?.[0], 'camera')} /></label>
             <label className="inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"><ImagePlus className="size-4" aria-hidden="true" /><span className="hidden sm:inline">Pilih dari Galeri</span><span className="sm:hidden">Galeri</span><input className="sr-only" type="file" aria-label="Pilih dari Galeri" accept={acceptedTypes} disabled={Boolean(pending)} onChange={(e) => choose(e.target.files?.[0], 'gallery')} /></label>
-            <span className="hidden text-xs text-muted-foreground lg:inline">atau seret berkas ke sini</span>
-          </div>}
-        </div>
+          </div>
+        </div>}
       </CardContent>
     </Card>
 
