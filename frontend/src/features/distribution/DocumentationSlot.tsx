@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { ImagePreviewDialog } from './ImagePreviewDialog';
 
-type QueuedFile = { id: string; file: File; source: 'camera' | 'gallery'; previewURL: string; status: 'queued' | 'uploading' | 'error' };
+type QueuedFile = { id: string; file: File; source: 'camera' | 'gallery'; previewURL: string; status: 'queued' | 'uploading' | 'error'; errorMessage?: string };
 const acceptedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 export function DocumentationSlot({ slot, onChanged }: { slot: SlotSummary; onChanged: (slot: SlotSummary) => void }) {
@@ -42,8 +42,9 @@ export function DocumentationSlot({ slot, onChanged }: { slot: SlotSummary; onCh
       URL.revokeObjectURL(item.previewURL);
       setQueue((current) => current.filter((entry) => entry.id !== item.id));
     },
-    onError: (_error, item) => {
-      setQueue((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: 'error' } : entry));
+    onError: (error, item) => {
+      const errorMessage = error instanceof Error ? error.message : 'Foto belum dapat diunggah.';
+      setQueue((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: 'error', errorMessage } : entry));
     },
   });
   const remove = useMutation({
@@ -89,12 +90,13 @@ export function DocumentationSlot({ slot, onChanged }: { slot: SlotSummary; onCh
     if (!accepted.length) return;
     setQueue((current) => [...current, ...accepted.map((file) => ({ id: crypto.randomUUID(), file, source, previewURL: URL.createObjectURL(file), status: 'queued' as const }))]);
   };
-  const retry = (id: string) => setQueue((current) => current.map((item) => item.id === id ? { ...item, status: 'queued' as const } : item));
+  const retry = (id: string) => setQueue((current) => current.map((item) => item.id === id ? { ...item, status: 'queued' as const, errorMessage: undefined } : item));
   const cancelQueued = (id: string) => setQueue((current) => {
     const item = current.find((entry) => entry.id === id);
     if (item) URL.revokeObjectURL(item.previewURL);
     return current.filter((entry) => entry.id !== id);
   });
+  const uploadError = queue.find((item) => item.status === 'error');
 
   return <article
     aria-label={slot.label}
@@ -119,9 +121,9 @@ export function DocumentationSlot({ slot, onChanged }: { slot: SlotSummary; onCh
         <button type="button" aria-label={`Lihat ${file.original_filename}`} className="absolute inset-0 size-full cursor-zoom-in focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring" onClick={() => setPreviewIndex(index)}>
           <img src={file.content_url} alt="" className="size-full object-cover" />
         </button>
-        <figcaption className="absolute inset-x-0 bottom-0 z-10 flex items-center justify-between gap-1 bg-black/70 px-2 py-1 text-[10px] text-white">
+        <figcaption className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex items-center justify-between gap-1 bg-black/70 px-2 py-1 text-[10px] text-white">
           <span className="truncate">{file.original_filename}</span>
-          {canManage && <button className={styles.removeMedia} type="button" aria-label={`Hapus ${file.original_filename}`} title="Hapus foto" onClick={() => remove.mutate(file.id)}><Trash2 className="size-3.5" /></button>}
+          {canManage && <button className={cn(styles.removeMedia, 'pointer-events-auto')} type="button" aria-label={`Hapus ${file.original_filename}`} title="Hapus foto" onClick={() => remove.mutate(file.id)}><Trash2 className="size-3.5" /></button>}
         </figcaption>
       </figure>)}
       {queue.map((item) => <figure key={item.id} className="relative aspect-4/3 overflow-hidden rounded-md border bg-muted">
@@ -153,6 +155,7 @@ export function DocumentationSlot({ slot, onChanged }: { slot: SlotSummary; onCh
         <label className={cn(styles.captureControl, 'inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted')}><ImagePlus className="size-4" aria-hidden="true" />Pilih galeri<input className="sr-only" aria-label="Pilih galeri" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => { chooseMany(event.target.files, 'gallery'); event.target.value = ''; }} /></label>
       </div>}
     </div>}
+    {uploadError && <p role="alert" className="text-sm text-destructive">{uploadError.file.name}: {uploadError.errorMessage ?? 'Foto belum dapat diunggah.'}</p>}
     {fileError && <p role="alert" className="text-sm text-destructive">{fileError}</p>}
     <ImagePreviewDialog files={files} index={previewIndex} onIndexChange={setPreviewIndex} />
   </article>;

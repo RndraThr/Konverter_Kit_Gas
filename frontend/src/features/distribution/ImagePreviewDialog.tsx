@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { ChevronLeft, ChevronRight, Minus, Plus, RotateCcw } from 'lucide-react';
 import type { MediaFile } from './types';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { cn } from '@/lib/utils';
 
 const MIN_ZOOM = 25;
 const MAX_ZOOM = 400;
@@ -14,12 +15,25 @@ function clampZoom(value: number) {
 
 type Props = { files: MediaFile[]; index: number | null; onIndexChange: (index: number | null) => void };
 
+type PointSnapshot = { x: number; y: number };
+
 export function ImagePreviewDialog({ files, index, onIndexChange }: Props) {
   const [zoom, setZoom] = useState(100);
+  const [isPanning, setIsPanning] = useState(false);
   const open = index !== null;
   const file = index !== null ? (files[index] ?? null) : null;
+  const pointersRef = useRef(new Map<number, PointSnapshot>());
+  const panOriginRef = useRef<{ scrollLeft: number; scrollTop: number; x: number; y: number } | null>(null);
+  const pinchOriginRef = useRef<{ distance: number; zoom: number } | null>(null);
 
-  useEffect(() => { if (open) setZoom(100); }, [open, file?.id]);
+  useEffect(() => {
+    if (!open) return;
+    setZoom(100);
+    pointersRef.current.clear();
+    panOriginRef.current = null;
+    pinchOriginRef.current = null;
+    setIsPanning(false);
+  }, [open, file?.id]);
   useEffect(() => {
     if (!open || files.length < 2) return;
     const handleKey = (event: KeyboardEvent) => {
@@ -49,6 +63,46 @@ export function ImagePreviewDialog({ files, index, onIndexChange }: Props) {
     node.addEventListener('wheel', handleWheel, { passive: false });
     return () => node.removeEventListener('wheel', handleWheel);
   };
+
+  // One finger (or a mouse drag) pans the zoomed image by scrolling the
+  // container directly; two fingers pinch-zoom by tracking the distance
+  // between them. Pointer Events (unlike Touch Events) aren't forced
+  // passive by React, so preventDefault/manual scroll control works here
+  // without the native-listener workaround the wheel handler needs.
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const node = event.currentTarget;
+    node.setPointerCapture?.(event.pointerId);
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointersRef.current.size === 2) {
+      panOriginRef.current = null;
+      setIsPanning(false);
+      const [a, b] = Array.from(pointersRef.current.values());
+      pinchOriginRef.current = { distance: Math.hypot(a.x - b.x, a.y - b.y), zoom };
+    } else if (pointersRef.current.size === 1) {
+      panOriginRef.current = { scrollLeft: node.scrollLeft, scrollTop: node.scrollTop, x: event.clientX, y: event.clientY };
+      setIsPanning(true);
+    }
+  };
+  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!pointersRef.current.has(event.pointerId)) return;
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const node = event.currentTarget;
+    if (pointersRef.current.size === 2 && pinchOriginRef.current) {
+      const [a, b] = Array.from(pointersRef.current.values());
+      const distance = Math.hypot(a.x - b.x, a.y - b.y);
+      updateZoom(Math.round(pinchOriginRef.current.zoom * (distance / pinchOriginRef.current.distance)));
+      return;
+    }
+    if (panOriginRef.current && pointersRef.current.size === 1) {
+      node.scrollLeft = panOriginRef.current.scrollLeft - (event.clientX - panOriginRef.current.x);
+      node.scrollTop = panOriginRef.current.scrollTop - (event.clientY - panOriginRef.current.y);
+    }
+  };
+  const endPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
+    pointersRef.current.delete(event.pointerId);
+    if (pointersRef.current.size < 2) pinchOriginRef.current = null;
+    if (pointersRef.current.size === 0) { panOriginRef.current = null; setIsPanning(false); }
+  };
   const goPrev = () => onIndexChange(index > 0 ? index - 1 : files.length - 1);
   const goNext = () => onIndexChange(index < files.length - 1 ? index + 1 : 0);
   const hasMultiple = files.length > 1;
@@ -58,7 +112,7 @@ export function ImagePreviewDialog({ files, index, onIndexChange }: Props) {
       <DialogHeader className="border-b px-5 py-4 pr-16">
         <DialogTitle>{`Preview ${file.original_filename}`}</DialogTitle>
         {hasMultiple && <p className="text-sm text-muted-foreground">({index + 1} dari {files.length})</p>}
-        <DialogDescription>Gunakan kontrol zoom atau roda mouse untuk memeriksa detail foto{hasMultiple ? ', dan panah kiri/kanan untuk pindah foto' : ''}.</DialogDescription>
+        <DialogDescription>Gunakan kontrol zoom, roda mouse, atau cubit layar untuk memeriksa detail foto; geser untuk menggeser tampilan saat diperbesar{hasMultiple ? ', dan panah kiri/kanan untuk pindah foto' : ''}.</DialogDescription>
       </DialogHeader>
       <div className="flex flex-wrap items-center justify-center gap-2 border-b bg-muted/40 px-4 py-2">
         <Button type="button" variant="outline" size="icon" aria-label="Perkecil foto" disabled={zoom <= MIN_ZOOM} onClick={() => updateZoom(zoom - ZOOM_STEP)}><Minus aria-hidden="true" /></Button>
@@ -70,7 +124,16 @@ export function ImagePreviewDialog({ files, index, onIndexChange }: Props) {
         <Button type="button" variant="outline" size="icon" aria-label="Perbesar foto" disabled={zoom >= MAX_ZOOM} onClick={() => updateZoom(zoom + ZOOM_STEP)}><Plus aria-hidden="true" /></Button>
         <Button type="button" variant="outline" aria-label="Reset zoom" onClick={() => setZoom(100)}><RotateCcw aria-hidden="true" />Reset</Button>
       </div>
-      <div ref={attachScrollNode} aria-label="Area preview foto" className="relative min-h-0 overflow-auto bg-black/90 p-4">
+      <div
+        ref={attachScrollNode}
+        aria-label="Area preview foto"
+        className={cn('relative min-h-0 touch-none overflow-auto bg-black/90 p-4', isPanning ? 'cursor-grabbing' : 'cursor-grab')}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={endPointer}
+        onPointerCancel={endPointer}
+        onDoubleClick={() => updateZoom(zoom > 100 ? 100 : 200)}
+      >
         {hasMultiple && <>
           <Button type="button" variant="outline" size="icon" aria-label="Foto sebelumnya" className="absolute left-3 top-1/2 z-10 -translate-y-1/2" onClick={goPrev}><ChevronLeft aria-hidden="true" /></Button>
           <Button type="button" variant="outline" size="icon" aria-label="Foto berikutnya" className="absolute right-3 top-1/2 z-10 -translate-y-1/2" onClick={goNext}><ChevronRight aria-hidden="true" /></Button>

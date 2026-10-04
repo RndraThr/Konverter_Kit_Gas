@@ -1,13 +1,16 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
-import { apiRequest } from '../../lib/api';
+import { apiRequest, ApiError } from '../../lib/api';
 import { PermissionsProvider } from '../../lib/permissions';
 import { DocumentationSlot } from './DocumentationSlot';
 import styles from './Distribution.module.css';
 import type { MediaFile } from './types';
 
-vi.mock('../../lib/api', () => ({ apiRequest: vi.fn() }));
+vi.mock('../../lib/api', async () => {
+  const actual = await vi.importActual<typeof import('../../lib/api')>('../../lib/api');
+  return { ...actual, apiRequest: vi.fn() };
+});
 
 function renderSlot(files: MediaFile[] = [], required = true) {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
@@ -47,6 +50,17 @@ test('shows a retry action when upload fails', async () => {
   renderSlot();
   fireEvent.change(screen.getByLabelText('Pilih galeri'), { target: { files: [new File(['image'], 'bast.jpg', { type: 'image/jpeg' })] } });
   expect(await screen.findByRole('button', { name: 'Coba unggah lagi' })).toBeVisible();
+});
+
+test('shows the backend reason when an upload fails', async () => {
+  vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:preview'), revokeObjectURL: vi.fn() });
+  vi.mocked(apiRequest).mockRejectedValue(new ApiError(409, 'zone_not_configured', 'Kabupaten belum dikonfigurasi ke zona'));
+  renderSlot();
+
+  fireEvent.change(screen.getByLabelText('Pilih galeri'), { target: { files: [new File(['image'], 'bast.jpg', { type: 'image/jpeg' })] } });
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('Kabupaten belum dikonfigurasi ke zona');
+  expect(screen.getByRole('button', { name: 'Coba unggah lagi' })).toBeVisible();
 });
 
 test('uses the 44-pixel remove-media target contract', () => {
@@ -96,6 +110,42 @@ test('zooms an opened photo with the mouse wheel', () => {
   fireEvent.wheel(screen.getByLabelText('Area preview foto'), { deltaY: -100 });
 
   expect(screen.getByText('125%')).toBeVisible();
+});
+
+test('toggles zoom on double-click', () => {
+  renderSlot([{ id: 'media-1', slot_id: 'slot-1', original_filename: 'bast.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: '/media/bast.jpg' }]);
+  fireEvent.click(screen.getByRole('button', { name: 'Lihat bast.jpg' }));
+  const area = screen.getByLabelText('Area preview foto');
+
+  fireEvent.doubleClick(area);
+  expect(screen.getByText('200%')).toBeVisible();
+
+  fireEvent.doubleClick(area);
+  expect(screen.getByText('100%')).toBeVisible();
+});
+
+test('pans a zoomed photo by dragging with one pointer', () => {
+  renderSlot([{ id: 'media-1', slot_id: 'slot-1', original_filename: 'bast.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: '/media/bast.jpg' }]);
+  fireEvent.click(screen.getByRole('button', { name: 'Lihat bast.jpg' }));
+  const area = screen.getByLabelText('Area preview foto');
+
+  fireEvent.pointerDown(area, { pointerId: 1, clientX: 100, clientY: 100 });
+  fireEvent.pointerMove(area, { pointerId: 1, clientX: 60, clientY: 80 });
+
+  expect(area.scrollLeft).toBe(40);
+  expect(area.scrollTop).toBe(20);
+});
+
+test('pinch-zooms by tracking the distance between two pointers', () => {
+  renderSlot([{ id: 'media-1', slot_id: 'slot-1', original_filename: 'bast.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: '/media/bast.jpg' }]);
+  fireEvent.click(screen.getByRole('button', { name: 'Lihat bast.jpg' }));
+  const area = screen.getByLabelText('Area preview foto');
+
+  fireEvent.pointerDown(area, { pointerId: 1, clientX: 100, clientY: 100 });
+  fireEvent.pointerDown(area, { pointerId: 2, clientX: 200, clientY: 100 });
+  fireEvent.pointerMove(area, { pointerId: 1, clientX: 50, clientY: 100 });
+
+  expect(screen.getByText('150%')).toBeVisible();
 });
 
 test('uploads a dropped image as a gallery file', async () => {
