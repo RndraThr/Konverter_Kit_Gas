@@ -90,11 +90,11 @@ test('browses between multiple photos inside the open preview dialog', () => {
 
   fireEvent.click(screen.getByRole('button', { name: 'Lihat first.jpg' }));
   expect(screen.getByRole('dialog', { name: 'Preview first.jpg' })).toBeVisible();
-  expect(screen.getByText('(1 dari 2)')).toBeVisible();
+  expect(screen.getByText('1/2')).toBeVisible();
 
   fireEvent.click(screen.getByRole('button', { name: 'Foto berikutnya' }));
   expect(screen.getByRole('dialog', { name: 'Preview second.jpg' })).toBeVisible();
-  expect(screen.getByText('(2 dari 2)')).toBeVisible();
+  expect(screen.getByText('2/2')).toBeVisible();
 
   fireEvent.click(screen.getByRole('button', { name: 'Foto berikutnya' }));
   expect(screen.getByRole('dialog', { name: 'Preview first.jpg' })).toBeVisible();
@@ -128,12 +128,12 @@ test('pans a zoomed photo by dragging with one pointer', () => {
   renderSlot([{ id: 'media-1', slot_id: 'slot-1', original_filename: 'bast.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: '/media/bast.jpg' }]);
   fireEvent.click(screen.getByRole('button', { name: 'Lihat bast.jpg' }));
   const area = screen.getByLabelText('Area preview foto');
+  const image = screen.getByRole('img', { name: 'bast.jpg' });
 
   fireEvent.pointerDown(area, { pointerId: 1, clientX: 100, clientY: 100 });
   fireEvent.pointerMove(area, { pointerId: 1, clientX: 60, clientY: 80 });
 
-  expect(area.scrollLeft).toBe(40);
-  expect(area.scrollTop).toBe(20);
+  expect(image).toHaveStyle({ transform: 'translate(-40px, -20px) scale(1)' });
 });
 
 test('pinch-zooms by tracking the distance between two pointers', () => {
