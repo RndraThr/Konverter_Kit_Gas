@@ -21,6 +21,9 @@ func BuildSnapshot(source SourceData) (Snapshot, error) {
 		strings.TrimSpace(source.Equipment.ConverterBrand) == "" {
 		return Snapshot{}, ErrEquipmentUnavailable
 	}
+	if strings.TrimSpace(source.Equipment.HoseSerial) == "" {
+		source.Equipment.HoseSerial = "-"
+	}
 	logos := append([]LogoSnapshot(nil), source.Render.Logos...)
 	sort.SliceStable(logos, func(i, j int) bool { return logos[i].SortOrder < logos[j].SortOrder })
 	source.Render.Logos = logos

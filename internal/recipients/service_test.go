@@ -91,15 +91,27 @@ func TestListNormalizesPagination(t *testing.T) {
 	if _, err := service.List(context.Background(), Filter{Page: 0, PageSize: 0}, auth.RegencyScope{}); err != nil {
 		t.Fatal(err)
 	}
-	if repository.listFilter.Page != 1 || repository.listFilter.PageSize != 20 {
-		t.Fatalf("expected defaults page=1 page_size=20, got %+v", repository.listFilter)
+	if repository.listFilter.Page != 1 || repository.listFilter.PageSize != 50 {
+		t.Fatalf("expected defaults page=1 page_size=50, got %+v", repository.listFilter)
 	}
 
 	if _, err := service.List(context.Background(), Filter{Page: 3, PageSize: 500}, auth.RegencyScope{}); err != nil {
 		t.Fatal(err)
 	}
-	if repository.listFilter.Page != 3 || repository.listFilter.PageSize != 20 {
-		t.Fatalf("expected page=3 clamped page_size=20, got %+v", repository.listFilter)
+	if repository.listFilter.Page != 3 || repository.listFilter.PageSize != 50 {
+		t.Fatalf("expected page=3 clamped page_size=50, got %+v", repository.listFilter)
+	}
+}
+
+func TestListAllReturnsEveryMatchingRecipientFromTheFirstPage(t *testing.T) {
+	repository := &repositoryStub{}
+	service := NewService(repository)
+
+	if _, err := service.List(context.Background(), Filter{Page: 7, PageSize: 100, All: true}, auth.RegencyScope{}); err != nil {
+		t.Fatal(err)
+	}
+	if !repository.listFilter.All || repository.listFilter.Page != 1 {
+		t.Fatalf("expected all results from page 1, got %+v", repository.listFilter)
 	}
 }
 

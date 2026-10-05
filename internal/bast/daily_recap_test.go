@@ -1,11 +1,55 @@
 package bast
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
+
+	"konkit/internal/auth"
 )
+
+type dailyRecapRepositoryStub struct {
+	recipients []DailyRecapRecipient
+}
+
+func (s *dailyRecapRepositoryStub) GetDP3Context(context.Context, string, auth.RegencyScope) (DP3Context, error) {
+	return DP3Context{ProgramType: "farmer", ZoneName: "ZONA 1", HasActiveLogo: true}, nil
+}
+func (s *dailyRecapRepositoryStub) ListDailyRecapDates(context.Context, string, auth.RegencyScope) ([]dailyRecapDateRow, error) {
+	return []dailyRecapDateRow{{LocalDate: "2026-10-02", RecipientCount: len(s.recipients)}}, nil
+}
+func (s *dailyRecapRepositoryStub) ListDailyRecapRecipients(context.Context, string, string, auth.RegencyScope) ([]DailyRecapRecipient, error) {
+	return s.recipients, nil
+}
+func (s *dailyRecapRepositoryStub) ListActiveLogos(context.Context, string) ([]LogoSnapshot, error) {
+	return nil, nil
+}
+func (s *dailyRecapRepositoryStub) GetScheduleSettings(context.Context, string, auth.RegencyScope) (ScheduleSettings, error) {
+	return ScheduleSettings{HandoverLocation: "LOKASI", AgricultureOfficeName: "DINAS", AgricultureOfficeNIP: "123", InstallerName: "PELAKSANA", SupervisorName: "PENGAWAS", PertaminaRepName: "PERTAMINA"}, nil
+}
+func (s *dailyRecapRepositoryStub) GetActiveAggregate(context.Context, string, string, string, auth.RegencyScope) (AggregateDocument, error) {
+	return AggregateDocument{}, ErrNotFound
+}
+func (s *dailyRecapRepositoryStub) ListActiveAggregatesForType(context.Context, string, string, auth.RegencyScope) ([]AggregateDocument, error) {
+	return nil, nil
+}
+func (s *dailyRecapRepositoryStub) NextAggregateVersion(context.Context, string, string, string) (int, error) {
+	return 1, nil
+}
+func (s *dailyRecapRepositoryStub) ActivateAggregate(context.Context, auth.Principal, AggregateActivation, auth.ClientMeta) (AggregateActivationResult, error) {
+	return AggregateActivationResult{}, nil
+}
+func (s *dailyRecapRepositoryStub) RecordAggregateCleanupFailure(context.Context, string, string) error {
+	return nil
+}
+func (s *dailyRecapRepositoryStub) GetAggregateByID(context.Context, string, auth.RegencyScope) (AggregateDocument, error) {
+	return AggregateDocument{}, ErrNotFound
+}
+func (s *dailyRecapRepositoryStub) ListAggregates(context.Context, string, string, string, auth.RegencyScope) ([]AggregateDocument, error) {
+	return nil, nil
+}
 
 func TestGroupDailyRecapVariantsKeepsFirstAppearanceOrder(t *testing.T) {
 	recipients := []DailyRecapRecipient{
@@ -33,6 +77,33 @@ func TestValidateDailyRecapRequiresVerificationSnapshot(t *testing.T) {
 	missingSerial := []DailyRecapRecipient{{FullName: "A", MachineBrand: "B", MachineType: "T", MachineSerial: "", MachinePower: "P", MachineFuelType: "F"}}
 	if err := validateDailyRecapRecipients(missingSerial); !errors.Is(err, ErrVerificationSnapshotIncomplete) {
 		t.Fatalf("serial err=%v", err)
+	}
+}
+
+func TestDecodeDailyRecapRecipientsFillsLegacyMachineMetadataFromScheduledTemplate(t *testing.T) {
+	rows := []dailyRecapRawRecipient{{
+		SlotNumber: 1, FullName: "SITI", MachineSerial: "SN-1", MachineOptionCode: "machine-1",
+		VerificationSnapshot: []byte(`{"equipment":{"machine_brand":"SHARK","machine_type":"SPWP","machine_serial":"SN-1"}}`),
+		PackageTemplate:      []byte(`{"machine_options":[{"code":"machine-1","brand":"SHARK","type":"SPWP","power":"5.5 HP","fuel_type":"BENSIN"}]}`),
+	}}
+	recipients, err := decodeDailyRecapRecipients(rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recipients[0].MachinePower != "5.5 HP" || recipients[0].MachineFuelType != "BENSIN" {
+		t.Fatalf("recipient=%+v", recipients[0])
+	}
+}
+
+func TestDailyRecapDatesReportsRecipientValidationStatus(t *testing.T) {
+	repository := &dailyRecapRepositoryStub{recipients: []DailyRecapRecipient{{FullName: "SITI", MachineBrand: "SHARK", MachineType: "SPWP", MachineSerial: "SN-1"}}}
+	service := NewDailyRecapService(repository, nil, nil)
+	dates, err := service.Dates(context.Background(), "schedule-1", auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dates[0].ValidationStatus != "machine_power_required" {
+		t.Fatalf("status=%q", dates[0].ValidationStatus)
 	}
 }
 

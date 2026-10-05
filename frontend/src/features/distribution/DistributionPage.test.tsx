@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
 import { apiRequest } from '../../lib/api';
@@ -17,7 +17,7 @@ async function chooseSchedule(name: string | RegExp) {
 }
 
 const slot = {
-  id: 'slot-1', schedule_id: 'schedule-1', slot_number: 1, status: 'open',
+	id: 'slot-1', schedule_id: 'schedule-1', slot_number: 1, distribution_date: '2026-10-20', status: 'open',
   machine_option_code: '', machine_serial_number: '', hose_option_code: '', hose_serial_number: '', converter_serial_number: '',
   documentation: [], created_at: '2026-09-20T00:00:00Z', updated_at: '2026-09-20T00:00:00Z',
 };
@@ -77,4 +77,14 @@ test('without distribution.pos_mesin the create boxes are disabled', async () =>
   renderPage(['distribution.view']);
   await chooseSchedule(/Wajo Tahap 1/);
   expect(await screen.findByRole('button', { name: /Buat Nomor 2/ })).toBeDisabled();
+});
+
+test('splits the catalog and distribution form into separate workspace regions', async () => {
+  renderPage();
+  await chooseSchedule(/Wajo Tahap 1/);
+
+  const catalogPanel = await screen.findByRole('complementary', { name: 'Katalog nomor bagi' });
+  expect(within(catalogPanel).getByRole('group', { name: 'Katalog nomor bagi' })).toBeVisible();
+  expect(screen.getByRole('region', { name: 'Area kerja pendistribusian' })).toBeVisible();
+  expect(screen.getByText('Pilih nomor bagi untuk mulai bekerja')).toBeVisible();
 });

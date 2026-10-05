@@ -9,7 +9,7 @@ import { DashboardPage } from './DashboardPage';
 
 vi.mock('../../lib/api', () => ({ apiRequest: vi.fn() }));
 
-function mockApi({ page = 1, pageSize = 20, total = 1 } = {}) {
+function mockApi({ page = 1, pageSize = 50, total = 1 } = {}) {
   vi.mocked(apiRequest).mockImplementation((path) => {
     if (typeof path === 'string' && path.startsWith('/api/v1/recipients/stats')) return Promise.resolve({ data: { total: 3, by_allocation_status: { ready: 1, distributed: 1, needs_review: 1, cancelled: 0 }, by_evidence_status: { complete: 1, partial: 1, empty: 1, 'not-configured': 0 } } });
     if (typeof path === 'string' && path.startsWith('/api/v1/recipients?')) return Promise.resolve({ data: { items: [
@@ -156,14 +156,36 @@ test('keeps uppercase sortable headers readable and exposes compact action icons
 });
 
 test('changes page size and resets to the first page', async () => {
-  mockApi({ page: 3, pageSize: 20, total: 240 });
+  mockApi({ page: 3, pageSize: 50, total: 240 });
   renderPage(undefined, ['/dashboard?page=3']);
   await screen.findByText('Siti Aminah');
 
-  await userEvent.click(screen.getByRole('combobox', { name: 'Jumlah data per halaman' }));
-  await userEvent.click(await screen.findByRole('option', { name: '50 per halaman' }));
+  const table = screen.getByRole('table');
+  const pageSize = screen.getByRole('combobox', { name: 'Jumlah data per halaman' });
+  expect(pageSize.compareDocumentPosition(table) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
-  await waitFor(() => expect(vi.mocked(apiRequest).mock.calls.some(([path]) => typeof path === 'string' && path.includes('page_size=50') && path.includes('page=1'))).toBe(true));
+  await userEvent.click(pageSize);
+  expect(await screen.findByRole('option', { name: '50 data' })).toBeVisible();
+  expect(screen.getByRole('option', { name: '100 data' })).toBeVisible();
+  expect(screen.getByRole('option', { name: 'Semua data' })).toBeVisible();
+  expect(screen.queryByRole('option', { name: '20 per halaman' })).not.toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole('option', { name: '100 data' }));
+
+  await waitFor(() => expect(vi.mocked(apiRequest).mock.calls.some(([path]) => typeof path === 'string' && path.includes('page_size=100') && path.includes('page=1'))).toBe(true));
+});
+
+test('shows all matching recipients without page navigation', async () => {
+  mockApi({ page: 4, pageSize: 50, total: 240 });
+  renderPage(undefined, ['/dashboard?page=4']);
+  await screen.findByText('Siti Aminah');
+
+  await userEvent.click(screen.getByRole('combobox', { name: 'Jumlah data per halaman' }));
+  await userEvent.click(await screen.findByRole('option', { name: 'Semua data' }));
+
+  await waitFor(() => expect(vi.mocked(apiRequest).mock.calls.some(([path]) => typeof path === 'string' && path.includes('page_size=all') && path.includes('page=1'))).toBe(true));
+  expect(screen.queryByRole('navigation', { name: 'Pagination penerima' })).not.toBeInTheDocument();
+  expect(screen.getByText('240 penerima ditemukan')).toBeVisible();
 });
 
 test('renders adaptive numbered pagination for a large result', async () => {
@@ -175,7 +197,7 @@ test('renders adaptive numbered pagination for a large result', async () => {
   expect(within(pagination).getByRole('button', { name: 'Halaman 5' })).toBeVisible();
   expect(within(pagination).getByRole('button', { name: 'Halaman 6' })).toHaveAttribute('aria-current', 'page');
   expect(within(pagination).getByRole('button', { name: 'Halaman 7' })).toBeVisible();
-  expect(within(pagination).getByText('101–120 dari 240 penerima')).toBeVisible();
+  expect(screen.getByText('101–120 dari 240 penerima')).toBeVisible();
 });
 
 test('hides management actions without recipients.manage', async () => {

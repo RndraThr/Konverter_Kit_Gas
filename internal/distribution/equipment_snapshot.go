@@ -59,6 +59,9 @@ func buildEquipmentVerificationSnapshot(packageJSON []byte, selected CreateSlotI
 		ConverterOptionCode: strings.TrimSpace(selected.ConverterOptionCode),
 		ConverterSerial:     strings.TrimSpace(selected.ConverterSerialNumber),
 	}
+	if result.HoseSerial == "" {
+		result.HoseSerial = "-"
+	}
 	machineFound, hoseFound, converterFound := false, false, false
 	for _, option := range values.MachineOptions {
 		if option.Code == result.MachineOptionCode {

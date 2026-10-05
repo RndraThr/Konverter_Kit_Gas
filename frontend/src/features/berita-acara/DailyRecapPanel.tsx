@@ -19,6 +19,18 @@ type DataResponse<T> = { data: T };
 
 const formatLocalDate = (value: string) => new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${value}T00:00:00Z`));
 
+const validationMessage: Record<string, string> = {
+  zone_not_configured: 'Kabupaten belum dikonfigurasi ke zona.',
+  ba_logo_required: 'Minimal satu logo Berita Acara aktif wajib dikonfigurasi.',
+  handover_location_required: 'Lokasi atau titik serah belum dikonfigurasi.',
+  signatory_required: 'Data penandatangan dokumen belum lengkap.',
+  no_recipients: 'Belum ada penerima pada tanggal ini.',
+  recipient_identity_incomplete: 'Identitas sebagian penerima belum lengkap.',
+  verification_snapshot_incomplete: 'Snapshot verifikasi distribusi sebagian penerima belum lengkap.',
+  machine_power_required: 'Daya mesin belum lengkap pada sebagian penerima.',
+  machine_fuel_required: 'Jenis BBM mesin belum lengkap pada sebagian penerima.',
+};
+
 export function DailyRecapPanel({ scheduleID, regencyName, programType }: Props) {
   const canManage = useCan('bast.manage');
   const queryClient = useQueryClient();
@@ -47,7 +59,7 @@ export function DailyRecapPanel({ scheduleID, regencyName, programType }: Props)
   const preview = useQuery({
     queryKey: ['bast', 'daily-recap', 'preview', scheduleID, selectedDate],
     queryFn: () => apiBlobRequest('/api/v1/bast/daily-recap/preview', { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, local_date: selectedDate }) }),
-    enabled: programType === 'farmer' && selectedDate !== '',
+    enabled: programType === 'farmer' && selectedDate !== '' && dateItems.find((item) => item.local_date === selectedDate)?.validation_status === 'ready',
   });
   const finalize = useMutation({
     mutationFn: () => apiRequest<DataResponse<AggregateDocument>>('/api/v1/bast/daily-recap/finalize', { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, local_date: selectedDate }) }),
@@ -65,6 +77,7 @@ export function DailyRecapPanel({ scheduleID, regencyName, programType }: Props)
   if (dateItems.length === 0) return <DataState kind="empty" title="Belum ada distribusi selesai" description={`Belum ditemukan distribusi selesai untuk ${regencyName}. Tanggal akan muncul otomatis setelah penyerahan diselesaikan.`} />;
 
   const selected = dateItems.find((item) => item.local_date === selectedDate);
+  const selectedReady = selected?.validation_status === 'ready';
   const activeDoc = documents.data?.data.find((doc) => doc.status === 'active');
   const versions = documents.data?.data ?? [];
   const recips = recipients.data?.data ?? [];
@@ -99,7 +112,7 @@ export function DailyRecapPanel({ scheduleID, regencyName, programType }: Props)
           <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle>{selected ? formatLocalDate(selected.local_date) : 'Rekap Harian'}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{regencyName} · {selected?.recipient_count ?? 0} penerima.</p></div><Badge variant="outline">Petani</Badge></div></CardHeader>
           <CardContent className="grid gap-4 pt-5">
             <div className="flex flex-wrap gap-2">
-              {canManage && <Button disabled={busy} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
+              {canManage && <Button disabled={busy || !selectedReady} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
               <Button variant="ghost" onClick={() => setShowSettings((value) => !value)}><Settings2 />{showSettings ? 'Tutup pengaturan' : 'Pengaturan'}</Button>
             </div>
 
@@ -113,7 +126,8 @@ export function DailyRecapPanel({ scheduleID, regencyName, programType }: Props)
               {versions.filter((doc) => doc.status === 'superseded').map((doc) => <div className="flex items-center justify-between gap-3 text-sm" key={doc.id}><span className="text-muted-foreground">Versi {doc.version}</span><Button nativeButton={false} render={<a href={`/api/v1/bast/daily-recap/documents/${doc.id}/content`} />} variant="ghost" size="sm"><Download />Unduh</Button></div>)}
             </div>}
 
-            <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="Rekap Harian" />
+            {!selectedReady && selected && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">{validationMessage[selected.validation_status] ?? selected.validation_status}</div>}
+            {selectedReady && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} errorDescription={preview.error ? errorMessage(preview.error) : undefined} label="Rekap Harian" />}
 
             <Button className="justify-start" variant="ghost" onClick={() => setShowRecipients((value) => !value)}><Users />{showRecipients ? 'Sembunyikan rincian' : `Lihat ${selected?.recipient_count ?? 0} penerima`}</Button>
           </CardContent>

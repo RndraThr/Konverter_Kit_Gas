@@ -45,8 +45,11 @@ func (s *Service) List(ctx context.Context, filter Filter, scope auth.RegencySco
 	if filter.Page < 1 {
 		filter.Page = 1
 	}
+	if filter.All {
+		filter.Page = 1
+	}
 	if filter.PageSize < 1 || filter.PageSize > 100 {
-		filter.PageSize = 20
+		filter.PageSize = 50
 	}
 	filter = normalizeFilter(filter)
 	return s.repository.List(ctx, filter, scope)

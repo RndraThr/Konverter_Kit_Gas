@@ -67,3 +67,17 @@ test('quota lower than the number of existing entries still renders every entry'
   expect(screen.getByRole('button', { name: /Nomor 3/ })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /Buat Nomor/ })).not.toBeInTheDocument();
 });
+
+test('announces the selected catalog number without changing its action', async () => {
+  const onSelect = vi.fn();
+  const entries: SlotCatalogEntry[] = [
+    { slot_number: 1, status: 'open', documentation_complete: false },
+    { slot_number: 2, status: 'linked', documentation_complete: false },
+  ];
+  render(<SlotCatalogGrid quota={2} entries={entries} selectedNumber={2} onSelect={onSelect} onCreate={vi.fn()} canCreate />);
+
+  expect(screen.getByRole('button', { name: /Nomor 1/ })).toHaveAttribute('aria-pressed', 'false');
+  expect(screen.getByRole('button', { name: /Nomor 2/ })).toHaveAttribute('aria-pressed', 'true');
+  await userEvent.click(screen.getByRole('button', { name: /Nomor 2/ }));
+  expect(onSelect).toHaveBeenCalledWith(2);
+});

@@ -55,6 +55,7 @@ type EvidenceSlotSummary struct {
 type Filter struct {
 	Page               int
 	PageSize           int
+	All                bool
 	Search             string
 	RegencyID          string
 	ProgramID          string
@@ -72,6 +73,7 @@ type Page struct {
 	Items    []Recipient `json:"items"`
 	Page     int         `json:"page"`
 	PageSize int         `json:"page_size"`
+	All      bool        `json:"all"`
 	Total    int64       `json:"total"`
 }
 
@@ -82,14 +84,14 @@ type Stats struct {
 }
 
 type CreateInput struct {
-	ScheduleID       string `json:"schedule_id"`
-	FullName         string `json:"full_name"`
-	NIK              string `json:"nik"`
-	SectorIdentifier string `json:"sector_identifier"`
-	Address          string `json:"address"`
-	Village          string `json:"village"`
-	District         string `json:"district"`
-	PhoneNumber      string `json:"phone_number"`
+	ScheduleID        string `json:"schedule_id"`
+	FullName          string `json:"full_name"`
+	NIK               string `json:"nik"`
+	SectorIdentifier  string `json:"sector_identifier"`
+	Address           string `json:"address"`
+	Village           string `json:"village"`
+	District          string `json:"district"`
+	PhoneNumber       string `json:"phone_number"`
 	MachineOptionCode string `json:"machine_option_code"`
 }
 

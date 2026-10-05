@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Lock } from 'lucide-react';
+import { Check, Circle, Clock3, LayoutGrid, Lock, MousePointerClick } from 'lucide-react';
 import { apiRequest, ApiError } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
 import type { DataResponse, DistributionSlot, EquipmentOption, ScheduleResponse, SlotCatalogEntry } from './types';
@@ -23,6 +23,7 @@ export function DistributionPage() {
   const [scheduleID, setScheduleID] = useState('');
   const [slot, setSlot] = useState<DistributionSlot | null>(null);
   const [creating, setCreating] = useState<number | null>(null);
+  const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
 
   const schedules = useQuery({ queryKey: ['program-setup', 'schedules'], queryFn: () => apiRequest<ScheduleResponse>('/api/v1/program-setup/schedules') });
   const packageTemplates = useQuery({ queryKey: ['program-setup', 'package-templates'], queryFn: () => apiRequest<DataResponse<PackageTemplate[]>>('/api/v1/program-setup/package-templates') });
@@ -43,9 +44,9 @@ export function DistributionPage() {
     onSuccess: ({ data }) => setSlot(data),
   });
 
-  const changeSchedule = (value: string) => { setScheduleID(value); setSlot(null); setCreating(null); };
-  const selectExisting = (slotNumber: number) => { setSlot(null); setCreating(null); search.mutate(slotNumber); };
-  const startCreate = (slotNumber: number) => { setSlot(null); setCreating(slotNumber); };
+  const changeSchedule = (value: string) => { setScheduleID(value); setSlot(null); setCreating(null); setSelectedNumber(null); };
+  const selectExisting = (slotNumber: number) => { setSlot(null); setCreating(null); setSelectedNumber(slotNumber); search.mutate(slotNumber); };
+  const startCreate = (slotNumber: number) => { setSlot(null); setCreating(slotNumber); setSelectedNumber(slotNumber); };
   const onSlotChanged = (next: DistributionSlot) => { setSlot(next); void queryClient.invalidateQueries({ queryKey: ['distribution', 'slot-catalog', scheduleID] }); };
   const onCreated = (next: DistributionSlot) => { setSlot(next); setCreating(null); void queryClient.invalidateQueries({ queryKey: ['distribution'] }); };
 
@@ -58,17 +59,38 @@ export function DistributionPage() {
         <SelectContent>{schedules.data?.data.filter((schedule) => schedule.status === 'active').map((schedule) => <SelectItem key={schedule.id} value={schedule.id}>{schedule.regency?.name} / {schedule.name}</SelectItem>)}</SelectContent>
       </Select>
     </section>
-    {scheduleID && <SlotCatalogGrid quota={selectedSchedule?.slot_quota} entries={catalog.data?.data ?? []} onSelect={selectExisting} onCreate={startCreate} canCreate={canCreateSlot} />}
-    {search.isError && <DataState kind="error" title="Nomor bagi tidak ditemukan" description={search.error instanceof ApiError ? search.error.message : 'Muat ulang halaman, lalu coba lagi.'} />}
-    {slot && <div className={styles.slotSections}>
-      <SlotMesinSection slot={slot} onChanged={onSlotChanged} />
-      <SlotDokumenSection slot={slot} onChanged={onSlotChanged} />
-      <SlotPenyerahanSection slot={slot} onChanged={onSlotChanged} />
-    </div>}
-    {!slot && creating !== null && <div className={styles.slotSections}>
-      <SlotMesinCreate scheduleID={scheduleID} slotNumber={creating} machineOptions={machineOptions} hoseOptions={hoseOptions} converterOptions={converterOptions} onCreated={onCreated} />
-      <PosSectionShell label="POS Dokumen" badge="POS Dokumen" icon={<Lock aria-hidden="true" />} title="Menunggu nomor bagi disimpan" state="locked" />
-      <PosSectionShell label="POS Penyerahan" badge="POS Penyerahan" icon={<Lock aria-hidden="true" />} title="Menunggu dokumen selesai" state="locked" />
+    {scheduleID && <div className={styles.workspace}>
+      <aside className={styles.catalogPanel} aria-label="Katalog nomor bagi">
+        <div className={styles.catalogHeader}>
+          <div><span className={styles.catalogEyebrow}><LayoutGrid aria-hidden="true" />Katalog</span><strong>Nomor bagi</strong></div>
+          <span className={styles.catalogCount}>{catalog.data?.data.length ?? 0}{selectedSchedule?.slot_quota ? ` / ${selectedSchedule.slot_quota}` : ''}</span>
+        </div>
+        <div className={styles.catalogLegend} aria-label="Keterangan status">
+          <span><Circle aria-hidden="true" />Terbuka</span><span><Clock3 aria-hidden="true" />Proses</span><span><Check aria-hidden="true" />Selesai</span>
+        </div>
+        <div className={styles.catalogScroll}>
+          <SlotCatalogGrid quota={selectedSchedule?.slot_quota} entries={catalog.data?.data ?? []} selectedNumber={selectedNumber} onSelect={selectExisting} onCreate={startCreate} canCreate={canCreateSlot} />
+        </div>
+      </aside>
+      <section className={styles.workArea} aria-label="Area kerja pendistribusian">
+        {search.isPending && <DataState kind="loading" title="Membuka nomor bagi" description={`Menyiapkan data nomor ${selectedNumber ?? ''}.`} />}
+        {search.isError && <DataState kind="error" title="Nomor bagi tidak ditemukan" description={search.error instanceof ApiError ? search.error.message : 'Muat ulang halaman, lalu coba lagi.'} />}
+        {slot && <div className={styles.slotSections}>
+          <SlotMesinSection slot={slot} machineOptions={machineOptions} converterOptions={converterOptions} hoseOptions={hoseOptions} onChanged={onSlotChanged} />
+          <SlotDokumenSection slot={slot} onChanged={onSlotChanged} />
+          <SlotPenyerahanSection slot={slot} onChanged={onSlotChanged} />
+        </div>}
+        {!slot && creating !== null && <div className={styles.slotSections}>
+          <SlotMesinCreate scheduleID={scheduleID} slotNumber={creating} machineOptions={machineOptions} hoseOptions={hoseOptions} converterOptions={converterOptions} onCreated={onCreated} />
+          <PosSectionShell label="POS Dokumen" badge="POS Dokumen" icon={<Lock aria-hidden="true" />} title="Menunggu nomor bagi disimpan" state="locked" />
+          <PosSectionShell label="POS Penyerahan" badge="POS Penyerahan" icon={<Lock aria-hidden="true" />} title="Menunggu dokumen selesai" state="locked" />
+        </div>}
+        {!slot && creating === null && !search.isPending && !search.isError && <div className={styles.emptyWorkspace}>
+          <span><MousePointerClick aria-hidden="true" /></span>
+          <strong>Pilih nomor bagi untuk mulai bekerja</strong>
+          <p>Pilih nomor yang sudah tersedia atau buat nomor baru dari katalog di sebelah kiri.</p>
+        </div>}
+      </section>
     </div>}
   </div>;
 }

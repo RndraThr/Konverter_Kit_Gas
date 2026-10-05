@@ -132,6 +132,13 @@ func seedE2E(ctx context.Context, tx pgx.Tx) error {
 	if err := tx.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status,notes) VALUES($1,'Program Petani E2E 2026','farmer',2026,'active','Playwright fixture') RETURNING id::text`, seedProgramCode).Scan(&programID); err != nil {
 		return fmt.Errorf("seed e2e program: %w", err)
 	}
+	var zoneID string
+	if err := tx.QueryRow(ctx, `INSERT INTO program_zones(program_id,code,name,sort_order,is_placeholder) VALUES($1,'ZONA-E2E','Zona E2E',1,false) RETURNING id::text`, programID).Scan(&zoneID); err != nil {
+		return fmt.Errorf("seed e2e zone: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO program_regency_assignments(program_id,regency_id,zone_id) VALUES($1,$2,$3)`, programID, regencyID, zoneID); err != nil {
+		return fmt.Errorf("seed e2e regency assignment: %w", err)
+	}
 	insertSchedule := func(name, status string) (string, error) {
 		var id string
 		err := tx.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,notes) VALUES($1,$2,$3,$4,$5,'2026-09-01','2026-09-30',$6,'Playwright fixture') RETURNING id::text`, programID, regencyID, packageID, documentationID, name, status).Scan(&id)
@@ -180,7 +187,7 @@ func cleanupE2E(ctx context.Context, tx pgx.Tx) error {
 	statements := []cleanupStatement{
 		{`DELETE FROM audit_logs WHERE actor_user_id IN (SELECT id FROM users WHERE username=$1)`, []any{seedUsername}},
 		{`DELETE FROM eligibility_checks WHERE schedule_id IN (SELECT ps.id FROM program_schedules ps JOIN programs p ON p.id=ps.program_id WHERE p.code=$1) OR person_id IN (SELECT id FROM people WHERE full_name LIKE '% E2E%')`, []any{seedProgramCode}},
-		{`DELETE FROM distribution_slots WHERE allocation_id IN (SELECT a.id FROM package_allocations a JOIN program_schedules ps ON ps.id=a.schedule_id JOIN programs p ON p.id=ps.program_id WHERE p.code=$1)`, []any{seedProgramCode}},
+		{`DELETE FROM distribution_slots WHERE schedule_id IN (SELECT ps.id FROM program_schedules ps JOIN programs p ON p.id=ps.program_id WHERE p.code=$1)`, []any{seedProgramCode}},
 		{`DELETE FROM package_allocations WHERE schedule_id IN (SELECT ps.id FROM program_schedules ps JOIN programs p ON p.id=ps.program_id WHERE p.code=$1)`, []any{seedProgramCode}},
 		{`DELETE FROM candidate_nominations WHERE batch_id IN (SELECT b.id FROM dcp3_import_batches b JOIN program_schedules ps ON ps.id=b.schedule_id JOIN programs p ON p.id=ps.program_id WHERE p.code=$1)`, []any{seedProgramCode}},
 		{`DELETE FROM dcp3_import_batches WHERE schedule_id IN (SELECT ps.id FROM program_schedules ps JOIN programs p ON p.id=ps.program_id WHERE p.code=$1)`, []any{seedProgramCode}},

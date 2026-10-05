@@ -12,7 +12,7 @@ vi.mock('../../lib/api', async () => {
 });
 
 const openSlot: DistributionSlot = {
-  id: 'slot-1', schedule_id: 'schedule-1', slot_number: 7, status: 'open',
+	id: 'slot-1', schedule_id: 'schedule-1', slot_number: 7, distribution_date: '2026-10-20', status: 'open',
   machine_option_code: 'MSN-001', machine_serial_number: 'SN-MSN-1', hose_option_code: 'HSE-001', hose_serial_number: 'SN-HSE-1', converter_serial_number: 'SN-CNV-1',
   documentation: [], created_at: '2026-09-20T00:00:00Z', updated_at: '2026-09-20T00:00:00Z',
 };
@@ -38,7 +38,8 @@ test('shows the NIK lookup form when open and permitted', () => {
   expect(screen.getByLabelText('POS Dokumen')).toBeVisible();
   expect(screen.getByText('Hubungkan penerima')).toBeVisible();
   expect(screen.getByLabelText('NIK Penerima')).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Cari di DCP3' })).toBeDisabled();
+  expect(screen.getByText('Ketik minimal 4 digit NIK.')).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Cari di DCP3' })).not.toBeInTheDocument();
 });
 
 test('shows a locked placeholder when open without permission', () => {
@@ -47,10 +48,43 @@ test('shows a locked placeholder when open without permission', () => {
   expect(screen.queryByLabelText('NIK Penerima')).not.toBeInTheDocument();
 });
 
-test('looks up a candidate by NIK then links the slot', async () => {
+test('shows matching recipients while the NIK is being typed and selects one from the dropdown', async () => {
+  vi.mocked(apiRequest).mockImplementation((path) => {
+    if (path === '/api/v1/distribution/candidate-suggestions?schedule_id=schedule-1&nik_prefix=7306') {
+      return Promise.resolve({ data: [candidate] });
+    }
+    return Promise.reject(new Error(`Unexpected request: ${path}`));
+  });
+  renderSection(openSlot);
+
+  fireEvent.change(screen.getByLabelText('NIK Penerima'), { target: { value: '7306' } });
+
+  const option = await screen.findByRole('option', { name: '7306014101900001 Siti Aminah' });
+  fireEvent.click(option);
+
+  expect(screen.getByLabelText('NIK Penerima')).toHaveValue('7306014101900001');
+  expect(screen.getByDisplayValue('Siti Aminah')).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Cari di DCP3' })).not.toBeInTheDocument();
+});
+
+test('selects a recipient suggestion with the keyboard', async () => {
+  vi.mocked(apiRequest).mockResolvedValue({ data: [candidate] });
+  renderSection(openSlot);
+  const input = screen.getByLabelText('NIK Penerima');
+
+  fireEvent.change(input, { target: { value: '7306' } });
+  await screen.findByRole('option', { name: '7306014101900001 Siti Aminah' });
+  fireEvent.keyDown(input, { key: 'ArrowDown' });
+  fireEvent.keyDown(input, { key: 'Enter' });
+
+  expect(input).toHaveValue('7306014101900001');
+  expect(screen.getByDisplayValue('Siti Aminah')).toBeVisible();
+});
+
+test('links the candidate selected from NIK suggestions', async () => {
   vi.mocked(apiRequest).mockImplementation((path, init) => {
-    if (path === '/api/v1/distribution/candidates?schedule_id=schedule-1&nik=7306014101900001') {
-      return Promise.resolve({ data: candidate });
+    if (path === '/api/v1/distribution/candidate-suggestions?schedule_id=schedule-1&nik_prefix=7306014101900001') {
+      return Promise.resolve({ data: [candidate] });
     }
     if (path === '/api/v1/distribution/slots/7/link?schedule_id=schedule-1' && init?.method === 'POST') {
       return Promise.resolve({ data: { ...openSlot, status: 'linked', full_name: candidate.full_name, nik: candidate.nik } });
@@ -60,7 +94,7 @@ test('looks up a candidate by NIK then links the slot', async () => {
   const { onChanged } = renderSection(openSlot);
 
   fireEvent.change(screen.getByLabelText('NIK Penerima'), { target: { value: '7306014101900001' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Cari di DCP3' }));
+  fireEvent.click(await screen.findByRole('option', { name: '7306014101900001 Siti Aminah' }));
 
   await waitFor(() => expect(screen.getByDisplayValue('Siti Aminah')).toBeVisible());
   expect(screen.getByLabelText('Nomor kartu petani')).toHaveValue('KP01');

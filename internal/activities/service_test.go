@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"testing"
+	"time"
 
 	"konkit/internal/auth"
 	"konkit/internal/media"
@@ -52,8 +53,14 @@ func (r *repositoryStub) restoreAfterFailedStorageDelete(context.Context, string
 
 type storageStub struct {
 	putKey, deletedKey string
+	putFilename        string
 	putErr, deleteErr  error
 	folderPath         []string
+}
+
+func (s *storageStub) PutNamed(ctx context.Context, key, filename string, folderPath []string, source io.Reader) (string, int64, string, error) {
+	s.putFilename = filename
+	return s.Put(ctx, key, folderPath, source)
 }
 
 func (s *storageStub) Put(_ context.Context, key string, folderPath []string, source io.Reader) (string, int64, string, error) {
@@ -119,6 +126,7 @@ func TestUploadRejectsPlaceholderAndBuildsProgramZoneFolder(t *testing.T) {
 			ProgramID: "program-1", ProgramType: programs.ProgramFarmer, ZoneName: "Zona 1", RegencyID: "regency-1", RegencyName: "Kabupaten Wajo",
 		}}
 		service := NewService(repository, storage, resolver)
+		service.now = func() time.Time { return time.Date(2026, time.October, 20, 15, 30, 45, 0, time.Local) }
 		_, err := service.Upload(context.Background(), auth.Principal{}, UploadInput{
 			ProgramID: "program-1", RegencyID: "regency-1", ActivityType: "rakor", Source: "gallery", OriginalFilename: "a.jpg", Data: jpeg,
 		}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
@@ -131,6 +139,9 @@ func TestUploadRejectsPlaceholderAndBuildsProgramZoneFolder(t *testing.T) {
 		}
 		if repository.insertInput.ProgramID != "program-1" {
 			t.Fatalf("persisted program_id=%q", repository.insertInput.ProgramID)
+		}
+		if storage.putFilename != "WJO-RAKOR-20261020-153045.jpg" {
+			t.Fatalf("filename=%q", storage.putFilename)
 		}
 	})
 }

@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, KeyboardEvent, useEffect, useState } from 'react';
 import { Lock, UserCheck } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { apiRequest, ApiError } from '../../lib/api';
@@ -20,31 +20,128 @@ export function SlotDokumenSection({ slot, onChanged }: { slot: DistributionSlot
 
   const [nik, setNik] = useState('');
   const [candidate, setCandidate] = useState<CandidateMatch | null>(null);
+  const [suggestions, setSuggestions] = useState<CandidateMatch[]>([]);
+  const [activeSuggestion, setActiveSuggestion] = useState(-1);
+  const [isSearching, setIsSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [suggestionError, setSuggestionError] = useState<Error | null>(null);
   const [linkInput, setLinkInput] = useState<LinkSlotInput>(() => emptyLinkInput(slot.schedule_id, slot.slot_number));
 
-  const lookup = useMutation({
-    mutationFn: () => apiRequest<DataResponse<CandidateMatch>>(`/api/v1/distribution/candidates?schedule_id=${encodeURIComponent(slot.schedule_id)}&nik=${encodeURIComponent(nik)}`),
-    onSuccess: ({ data }) => { setCandidate(data); setLinkInput({ schedule_id: slot.schedule_id, slot_number: slot.slot_number, nik: data.nik, address: data.address, village: data.village, district: data.district, phone_number: data.phone_number, sector_identifier: data.sector_identifier }); },
-  });
+  useEffect(() => {
+    if (nik.length < 4 || candidate?.nik === nik) {
+      setSuggestions([]);
+      setActiveSuggestion(-1);
+      setIsSearching(false);
+      setHasSearched(false);
+      setSuggestionError(null);
+      return;
+    }
+
+    let cancelled = false;
+    setIsSearching(true);
+    setSuggestionError(null);
+    const timer = window.setTimeout(() => {
+      void apiRequest<DataResponse<CandidateMatch[]>>(`/api/v1/distribution/candidate-suggestions?schedule_id=${encodeURIComponent(slot.schedule_id)}&nik_prefix=${encodeURIComponent(nik)}`)
+        .then(({ data }) => {
+          if (cancelled) return;
+          setSuggestions(data);
+          setActiveSuggestion(-1);
+          setHasSearched(true);
+        })
+        .catch((error: unknown) => {
+          if (cancelled) return;
+          setSuggestions([]);
+          setSuggestionError(error instanceof Error ? error : new Error('Pencarian penerima gagal.'));
+          setHasSearched(true);
+        })
+        .finally(() => {
+          if (!cancelled) setIsSearching(false);
+        });
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [candidate?.nik, nik, slot.schedule_id]);
 
   const link = useMutation({
     mutationFn: () => apiRequest<DataResponse<DistributionSlot>>(`/api/v1/distribution/slots/${slot.slot_number}/link?schedule_id=${encodeURIComponent(slot.schedule_id)}`, { method: 'POST', body: JSON.stringify(linkInput) }),
     onSuccess: ({ data }) => onChanged(data),
   });
 
-  const submitLookup = (event: FormEvent) => { event.preventDefault(); setCandidate(null); lookup.mutate(); };
   const submitLink = (event: FormEvent) => { event.preventDefault(); link.mutate(); };
+  const selectCandidate = (next: CandidateMatch) => {
+    setNik(next.nik);
+    setCandidate(next);
+    setSuggestions([]);
+    setActiveSuggestion(-1);
+    setLinkInput({ schedule_id: slot.schedule_id, slot_number: slot.slot_number, nik: next.nik, address: next.address, village: next.village, district: next.district, phone_number: next.phone_number, sector_identifier: next.sector_identifier });
+  };
+  const handleNIKKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Escape') {
+      setSuggestions([]);
+      setActiveSuggestion(-1);
+      return;
+    }
+    if (suggestions.length === 0) return;
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setActiveSuggestion((current) => (current + 1) % suggestions.length);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setActiveSuggestion((current) => current <= 0 ? suggestions.length - 1 : current - 1);
+    } else if (event.key === 'Enter' && activeSuggestion >= 0) {
+      event.preventDefault();
+      selectCandidate(suggestions[activeSuggestion]);
+    }
+  };
 
   if (slot.status === 'open') {
     if (!canLink) {
       return <PosSectionShell label="POS Dokumen" badge="POS Dokumen" icon={<Lock aria-hidden="true" />} title="Menunggu penerima" state="locked" />;
     }
     return <PosSectionShell label="POS Dokumen" badge="POS Dokumen" icon={<UserCheck aria-hidden="true" />} title="Hubungkan penerima" state="active">
-      <form className="flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={submitLookup}>
-        <FormField className="flex-1" label="NIK Penerima" name="nik" maxLength={16} value={nik} onChange={(event) => setNik(event.target.value.replace(/\D/g, ''))} />
-        <Button className="shrink-0" type="submit" disabled={nik.length !== 16 || lookup.isPending}>{lookup.isPending ? 'Mencari...' : 'Cari di DCP3'}</Button>
-      </form>
-      {lookup.isError && <Alert variant="destructive"><AlertDescription>{lookup.error instanceof ApiError ? lookup.error.message : 'Kandidat tidak ditemukan.'}</AlertDescription></Alert>}
+      <div className="relative">
+        <FormField
+          label="NIK Penerima"
+          name="nik"
+          maxLength={16}
+          inputMode="numeric"
+          autoComplete="off"
+          role="combobox"
+          aria-autocomplete="list"
+          aria-expanded={suggestions.length > 0}
+          aria-controls={`nik-suggestions-${slot.id}`}
+          aria-activedescendant={activeSuggestion >= 0 ? `nik-suggestion-${suggestions[activeSuggestion]?.allocation_id}` : undefined}
+          value={nik}
+          hint={nik.length < 4 ? 'Ketik minimal 4 digit NIK.' : isSearching ? 'Mencari penerima...' : undefined}
+          onKeyDown={handleNIKKeyDown}
+          onChange={(event) => {
+            setNik(event.target.value.replace(/\D/g, ''));
+            setCandidate(null);
+            setLinkInput(emptyLinkInput(slot.schedule_id, slot.slot_number));
+          }}
+        />
+        {suggestions.length > 0 && <div id={`nik-suggestions-${slot.id}`} role="listbox" aria-label="Pilihan penerima" className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-md">
+          {suggestions.map((item, index) => <button
+            id={`nik-suggestion-${item.allocation_id}`}
+            key={item.allocation_id}
+            type="button"
+            role="option"
+            aria-label={`${item.nik} ${item.full_name}`}
+            aria-selected={index === activeSuggestion}
+            className="flex min-h-11 w-full flex-col items-start rounded-md px-3 py-2 text-left hover:bg-muted focus:bg-muted focus:outline-none aria-selected:bg-muted"
+            onMouseEnter={() => setActiveSuggestion(index)}
+            onClick={() => selectCandidate(item)}
+          >
+            <span className="text-sm font-medium">{item.nik}</span>
+            <span className="text-xs text-muted-foreground">{item.full_name}</span>
+          </button>)}
+        </div>}
+      </div>
+      {nik.length >= 4 && hasSearched && !isSearching && suggestions.length === 0 && !candidate && !suggestionError && <p className="text-sm text-muted-foreground" role="status">Penerima dengan awalan NIK tersebut tidak ditemukan.</p>}
+      {suggestionError && <Alert variant="destructive"><AlertDescription>{suggestionError instanceof ApiError ? suggestionError.message : 'Pencarian penerima belum dapat dilakukan.'}</AlertDescription></Alert>}
       {candidate && <form className="grid gap-3 sm:grid-cols-2" onSubmit={submitLink}>
         <FormField className="sm:col-span-2" label="Nama" name="candidate_full_name" value={candidate.full_name} disabled onChange={() => {}} />
         <FormField label={candidate.program_type === 'farmer' ? 'Nomor kartu petani' : 'Nomor KUSUKA'} name="sector_identifier" value={linkInput.sector_identifier} onChange={(event) => setLinkInput({ ...linkInput, sector_identifier: uppercaseBusinessText(event.target.value) })} />

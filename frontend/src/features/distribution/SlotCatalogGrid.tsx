@@ -1,3 +1,4 @@
+import { Ban, Check, Circle, Clock3, Plus, TriangleAlert } from 'lucide-react';
 import styles from './Distribution.module.css';
 import type { SlotCatalogEntry } from './types';
 
@@ -7,12 +8,13 @@ type Props = {
   onSelect: (slotNumber: number) => void;
   onCreate: (slotNumber: number) => void;
   canCreate: boolean;
+  selectedNumber?: number | null;
 };
 
 const statusLabel: Record<SlotCatalogEntry['status'], string> = { open: 'Terbuka', linked: 'Proses', completed: 'Selesai', cancelled: 'Batal' };
 const statusClass: Record<SlotCatalogEntry['status'], string> = { open: styles.catalogOpen, linked: styles.catalogPending, completed: styles.catalogCompleted, cancelled: styles.catalogPending };
 
-export function SlotCatalogGrid({ quota, entries, onSelect, onCreate, canCreate }: Props) {
+export function SlotCatalogGrid({ quota, entries, onSelect, onCreate, canCreate, selectedNumber }: Props) {
   const byNumber = new Map(entries.map((entry) => [entry.slot_number, entry]));
   const hasQuota = quota != null && quota > 0;
   // Slot numbers are allocated contiguously from 1 and slots are only ever cancelled, never
@@ -34,12 +36,15 @@ export function SlotCatalogGrid({ quota, entries, onSelect, onCreate, canCreate 
         const isCompletedButIncomplete = entry.status === 'completed' && !entry.documentation_complete;
         const cellClass = isCompletedButIncomplete ? styles.catalogCompletedWarning : statusClass[entry.status];
         const label = isCompletedButIncomplete ? `${statusLabel[entry.status]} (dokumen berkurang)` : statusLabel[entry.status];
+        const StatusIcon = isCompletedButIncomplete ? TriangleAlert : entry.status === 'completed' ? Check : entry.status === 'linked' ? Clock3 : entry.status === 'cancelled' ? Ban : Circle;
         return <button key={number} type="button" className={`${styles.catalogCell} ${cellClass}`}
-          onClick={() => onSelect(number)}>{`Nomor ${number} - ${label}`}</button>;
+          aria-label={`Nomor ${number} - ${label}`} aria-pressed={selectedNumber === number} title={`Nomor ${number} · ${label}`}
+          onClick={() => onSelect(number)}><span>{number}</span><StatusIcon aria-hidden="true" /></button>;
       }
       if (isCreatePosition(number)) {
         return <button key={number} type="button" className={`${styles.catalogCell} ${styles.catalogNext}`}
-          disabled={!canCreate} onClick={() => onCreate(number)}>{`Buat Nomor ${number}`}</button>;
+          aria-label={`Buat Nomor ${number}`} aria-pressed={selectedNumber === number} title={`Buat Nomor ${number}`}
+          disabled={!canCreate} onClick={() => onCreate(number)}><span>{number}</span><Plus aria-hidden="true" /></button>;
       }
       return <button key={number} type="button" className={styles.catalogCell} disabled aria-label={`Nomor ${number} belum tersedia`}>{number}</button>;
     })}

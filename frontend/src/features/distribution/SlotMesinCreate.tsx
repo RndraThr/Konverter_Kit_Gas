@@ -13,9 +13,10 @@ import { uppercaseBusinessText } from '@/lib/text';
 
 const BarcodeScanner = lazy(() => import('./BarcodeScanner'));
 
-type SerialField = 'machine_serial_number' | 'hose_serial_number' | 'converter_serial_number';
+type SerialField = 'machine_serial_number' | 'converter_serial_number';
 
-const emptyInput = (scheduleID: string, slotNumber: number): CreateSlotInput => ({ schedule_id: scheduleID, slot_number: slotNumber, machine_option_code: '', machine_serial_number: '', hose_option_code: '', hose_serial_number: '', converter_option_code: '', converter_serial_number: '' });
+const jakartaToday = () => new Date(Date.now() + (7 * 60 * 60 * 1000)).toISOString().slice(0, 10);
+const emptyInput = (scheduleID: string, slotNumber: number): CreateSlotInput => ({ schedule_id: scheduleID, slot_number: slotNumber, distribution_date: jakartaToday(), machine_option_code: '', machine_serial_number: '', hose_option_code: '', hose_serial_number: '', converter_option_code: '', converter_serial_number: '' });
 
 // POS Mesin in "create mode": clicking an empty catalog number opens this inline form (no modal) so
 // the officer records the machine on the spot. Each serial field can be filled by camera barcode
@@ -46,8 +47,13 @@ export function SlotMesinCreate({ scheduleID, slotNumber, machineOptions, hoseOp
     </div>
   </div>;
 
-  return <PosSectionShell label="POS Mesin" badge="POS Mesin" icon={<Cog aria-hidden="true" />} title={`Nomor bagi #${slotNumber}`} state="active">
-    <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+	return <PosSectionShell label="POS Mesin" badge="POS Mesin" icon={<Cog aria-hidden="true" />} title={`Nomor bagi #${slotNumber}`} state="active">
+		<form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+			<div className="grid min-w-0 gap-2 sm:col-span-2">
+				<Label htmlFor="distribution_date">Tanggal distribusi</Label>
+				<Input id="distribution_date" name="distribution_date" type="date" required value={input.distribution_date} onChange={(event) => setInput({ ...input, distribution_date: event.target.value })} />
+				<p className="text-xs text-muted-foreground">Semua foto Pos 1–3 untuk nomor bagi ini akan disimpan dalam folder tanggal tersebut.</p>
+			</div>
       <div className="grid min-w-0 gap-2">
         <Label id="create-machine-label">Merk/Tipe Mesin</Label>
         <Select value={input.machine_option_code} onValueChange={(value) => setInput({ ...input, machine_option_code: value ?? '' })}>
@@ -57,14 +63,6 @@ export function SlotMesinCreate({ scheduleID, slotNumber, machineOptions, hoseOp
       </div>
       {serialField('Serial Number Mesin', 'machine_serial_number')}
       <div className="grid min-w-0 gap-2">
-        <Label id="create-hose-label">Merk/Spesifikasi Selang</Label>
-        <Select value={input.hose_option_code} onValueChange={(value) => setInput({ ...input, hose_option_code: value ?? '' })}>
-          <SelectTrigger className="w-full" aria-labelledby="create-hose-label"><SelectValue placeholder="Pilih selang" /></SelectTrigger>
-          <SelectContent>{hoseOptions.map((option) => <SelectItem key={option.code} value={option.code}>{option.brand} {option.spec}</SelectItem>)}</SelectContent>
-        </Select>
-      </div>
-      {serialField('Serial Number Selang', 'hose_serial_number')}
-      <div className="grid min-w-0 gap-2">
         <Label id="create-converter-label">Merk Konkit/Reducer</Label>
         <Select value={input.converter_option_code} onValueChange={(value) => setInput({ ...input, converter_option_code: value ?? '' })}>
           <SelectTrigger className="w-full" aria-labelledby="create-converter-label"><SelectValue placeholder="Pilih konkit/reducer" /></SelectTrigger>
@@ -72,6 +70,17 @@ export function SlotMesinCreate({ scheduleID, slotNumber, machineOptions, hoseOp
         </Select>
       </div>
       {serialField('Serial Number Konkit/Reducer', 'converter_serial_number')}
+      <div className="grid min-w-0 gap-2">
+        <Label id="create-hose-label">Merk/Spesifikasi Selang</Label>
+        <Select value={input.hose_option_code} onValueChange={(value) => setInput({ ...input, hose_option_code: value ?? '' })}>
+          <SelectTrigger className="w-full" aria-labelledby="create-hose-label"><SelectValue placeholder="Pilih selang" /></SelectTrigger>
+          <SelectContent>{hoseOptions.map((option) => <SelectItem key={option.code} value={option.code}>{option.brand} {option.spec}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+      <div className="grid min-w-0 gap-2">
+        <Label htmlFor="hose_serial_number">Serial Number Selang</Label>
+        <Input id="hose_serial_number" name="hose_serial_number" value="-" disabled />
+      </div>
       {create.isError && <Alert className="sm:col-span-2" variant="destructive"><AlertDescription>{create.error instanceof ApiError ? create.error.message : 'Nomor bagi belum dapat dibuat.'}{create.error instanceof ApiError && create.error.code === 'slot_quota_exceeded' && ' Hubungi admin Program Setup untuk menambah kuota atau membuat jadwal tambahan.'}</AlertDescription></Alert>}
       <Button className="sm:col-span-2" type="submit" disabled={create.isPending}>{create.isPending ? 'Menyimpan...' : 'Simpan Nomor Bagi'}</Button>
     </form>

@@ -164,8 +164,13 @@ func (r *Repository) List(ctx context.Context, filter Filter, scope auth.Regency
 		return Page{}, fmt.Errorf("count recipients: %w", err)
 	}
 
-	rows, err := r.pool.Query(ctx, recipientSelect+recipientWhere+recipientOrder(filter)+" LIMIT $12 OFFSET $13",
-		append(args, filter.PageSize, (filter.Page-1)*filter.PageSize)...)
+	query := recipientSelect + recipientWhere + recipientOrder(filter)
+	queryArgs := args
+	if !filter.All {
+		query += " LIMIT $12 OFFSET $13"
+		queryArgs = append(args, filter.PageSize, (filter.Page-1)*filter.PageSize)
+	}
+	rows, err := r.pool.Query(ctx, query, queryArgs...)
 	if err != nil {
 		return Page{}, fmt.Errorf("list recipients: %w", err)
 	}
@@ -181,7 +186,11 @@ func (r *Repository) List(ctx context.Context, filter Filter, scope auth.Regency
 	if err := rows.Err(); err != nil {
 		return Page{}, fmt.Errorf("iterate recipients: %w", err)
 	}
-	return Page{Items: items, Page: filter.Page, PageSize: filter.PageSize, Total: total}, nil
+	pageSize := filter.PageSize
+	if filter.All {
+		pageSize = len(items)
+	}
+	return Page{Items: items, Page: filter.Page, PageSize: pageSize, All: filter.All, Total: total}, nil
 }
 
 func (r *Repository) Stats(ctx context.Context, filter Filter, scope auth.RegencyScope) (Stats, error) {

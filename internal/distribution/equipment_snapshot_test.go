@@ -50,3 +50,20 @@ func TestBuildEquipmentVerificationSnapshotRejectsUnknownSelectedCode(t *testing
 		t.Fatalf("err=%v, want ErrEquipmentOptionNotFound", err)
 	}
 }
+
+func TestBuildEquipmentVerificationSnapshotDefaultsMissingHoseSerial(t *testing.T) {
+	packageJSON := []byte(`{
+		"machine_options":[{"code":"machine-1","brand":"SHARK","type":"SPWP"}],
+		"hose_options":[{"code":"hose-1","brand":"TRILLIUNHOSE","spec":"6 M"}],
+		"converter_options":[{"code":"converter-1","brand":"ERGAS"}]
+	}`)
+	got, err := buildEquipmentVerificationSnapshot(packageJSON, CreateSlotInput{
+		MachineOptionCode: "machine-1", HoseOptionCode: "hose-1", ConverterOptionCode: "converter-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.HoseSerial != "-" {
+		t.Fatalf("hose serial=%q, want -", got.HoseSerial)
+	}
+}

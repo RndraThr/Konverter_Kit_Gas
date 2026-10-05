@@ -31,7 +31,7 @@ export type Recipient = {
   evidence_slots: EvidenceSlot[];
 };
 
-export type RecipientPage = { items: Recipient[]; page: number; page_size: number; total: number };
+export type RecipientPage = { items: Recipient[]; page: number; page_size: number; all?: boolean; total: number };
 
 export type RecipientStats = {
   total: number;

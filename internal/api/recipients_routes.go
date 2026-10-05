@@ -8,8 +8,9 @@ import (
 )
 
 func recipientFilterFromRequest(r *http.Request) recipients.Filter {
+	all := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("page_size")), "all")
 	return recipients.Filter{
-		Page: intQuery(r, "page", 1), PageSize: intQuery(r, "page_size", 20),
+		Page: intQuery(r, "page", 1), PageSize: intQuery(r, "page_size", 50), All: all,
 		Search: r.URL.Query().Get("search"), RegencyID: r.URL.Query().Get("regency_id"),
 		ProgramID: r.URL.Query().Get("program_id"), ProgramType: r.URL.Query().Get("program_type"),
 		AllocationStatus: r.URL.Query().Get("allocation_status"), DistributionStatus: r.URL.Query().Get("distribution_status"),

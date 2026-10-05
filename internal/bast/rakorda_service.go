@@ -90,16 +90,24 @@ func (s *RakordaService) Upload(ctx context.Context, actor auth.Principal, input
 	if err != nil {
 		return RakordaUpload{}, err
 	}
-	storageKey, size, _, err := media.PutNamed(ctx, s.storage, uuid.NewString(), input.OriginalName, folder, bytes.NewReader(input.Data))
+	visibleFilename := formatRakordaUploadFilename(ctxData.RegencyName, input.EventDate, mimeType)
+	storageKey, size, _, err := media.PutNamed(ctx, s.storage, uuid.NewString(), visibleFilename, folder, bytes.NewReader(input.Data))
 	if err != nil {
 		return RakordaUpload{}, err
 	}
-	item, err := s.repository.InsertRakordaUpload(ctx, actor, RakordaUpload{ScheduleID: input.ScheduleID, EventDate: input.EventDate, OriginalName: input.OriginalName, MimeType: mimeType, ByteSize: size, StorageKey: storageKey}, scope, meta)
+	item, err := s.repository.InsertRakordaUpload(ctx, actor, RakordaUpload{ScheduleID: input.ScheduleID, EventDate: input.EventDate, OriginalName: visibleFilename, MimeType: mimeType, ByteSize: size, StorageKey: storageKey}, scope, meta)
 	if err != nil {
 		_ = s.storage.Delete(ctx, storageKey)
 		return RakordaUpload{}, err
 	}
 	return item, nil
+}
+
+func formatRakordaUploadFilename(regencyName, eventDate, mimeType string) string {
+	date, _ := time.Parse("2006-01-02", eventDate)
+	months := [...]string{"", "JANUARI", "FEBRUARI", "MARET", "APRIL", "MEI", "JUNI", "JULI", "AGUSTUS", "SEPTEMBER", "OKTOBER", "NOVEMBER", "DESEMBER"}
+	extension := map[string]string{"application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png"}[mimeType]
+	return fmt.Sprintf("DAFTAR HADIR RAKORDA - %s - %d %s %d%s", strings.ToUpper(strings.TrimSpace(regencyName)), date.Day(), months[date.Month()], date.Year(), extension)
 }
 
 func (s *RakordaService) List(ctx context.Context, scheduleID, eventDate string, scope auth.RegencyScope) ([]RakordaUpload, error) {

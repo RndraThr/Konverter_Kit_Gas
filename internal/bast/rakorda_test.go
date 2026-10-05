@@ -47,3 +47,10 @@ func TestRenderRakordaProducesNumberedMultiPageAttendanceSheet(t *testing.T) {
 		t.Fatalf("invalid PDF, len=%d", len(rendered.PDF))
 	}
 }
+
+func TestFormatRakordaUploadFilenameUsesDocumentIdentity(t *testing.T) {
+	got := formatRakordaUploadFilename("Kabupaten Wajo", "2026-10-20", "image/png")
+	if got != "DAFTAR HADIR RAKORDA - KABUPATEN WAJO - 20 OKTOBER 2026.png" {
+		t.Fatalf("filename=%q", got)
+	}
+}

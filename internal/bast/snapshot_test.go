@@ -17,6 +17,9 @@ func TestBuildSnapshotNormalizesFarmerDocument(t *testing.T) {
 	if snapshot.Signatures.ReceiverName != "Siti Aminah" || snapshot.Signatures.ExecutorName != "Muhamad Wildan M" || snapshot.Signatures.SupervisorName != "Andi Amrullah" {
 		t.Fatalf("signatures=%+v", snapshot.Signatures)
 	}
+	if snapshot.Equipment.HoseSerial != "-" {
+		t.Fatalf("hose serial=%q, want -", snapshot.Equipment.HoseSerial)
+	}
 }
 
 func TestBuildSnapshotRejectsMissingFarmerIdentityAndFisherman(t *testing.T) {

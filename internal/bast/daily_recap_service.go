@@ -54,8 +54,11 @@ func (s *DailyRecapService) Dates(ctx context.Context, scheduleID string, scope 
 		return nil, err
 	}
 	contextErr := validateDP3Context(ctxData)
-	if _, settingsErr := s.repository.GetScheduleSettings(ctx, scheduleID, scope); settingsErr != nil {
+	settings, settingsErr := s.repository.GetScheduleSettings(ctx, scheduleID, scope)
+	if settingsErr != nil {
 		contextErr = settingsErr
+	} else if contextErr == nil {
+		contextErr = validateDailyRecapSettings(settings)
 	}
 	dateRows, err := s.repository.ListDailyRecapDates(ctx, scheduleID, scope)
 	if err != nil {
@@ -71,10 +74,15 @@ func (s *DailyRecapService) Dates(ctx context.Context, scheduleID string, scope 
 	}
 	dates := make([]DailyRecapDate, 0, len(dateRows))
 	for _, row := range dateRows {
-		status := "ready"
-		if contextErr != nil {
-			status = dp3ValidationStatus(contextErr)
+		validationErr := contextErr
+		if validationErr == nil {
+			recipients, recipientsErr := s.repository.ListDailyRecapRecipients(ctx, scheduleID, row.LocalDate, scope)
+			if recipientsErr != nil {
+				return nil, recipientsErr
+			}
+			validationErr = validateDailyRecapRecipients(recipients)
 		}
+		status := dp3ValidationStatus(validationErr)
 		date := DailyRecapDate{LocalDate: row.LocalDate, RecipientCount: row.RecipientCount, ValidationStatus: status}
 		if doc, ok := docByDate[row.LocalDate]; ok {
 			date.Document = &doc

@@ -17,7 +17,7 @@ const penyerahanDoc = (status: string): SlotSummary => ({
 });
 
 const linkedSlot: DistributionSlot = {
-  id: 'slot-1', schedule_id: 'schedule-1', slot_number: 7, status: 'linked',
+	id: 'slot-1', schedule_id: 'schedule-1', slot_number: 7, distribution_date: '2026-10-20', status: 'linked',
   full_name: 'Siti Aminah', nik: '7306014101900001',
   machine_option_code: 'MSN-001', machine_serial_number: 'SN-MSN-1', hose_option_code: 'HSE-001', hose_serial_number: 'SN-HSE-1', converter_serial_number: 'SN-CNV-1',
   documentation: [penyerahanDoc('complete')], created_at: '2026-09-20T00:00:00Z', updated_at: '2026-09-20T00:00:00Z',

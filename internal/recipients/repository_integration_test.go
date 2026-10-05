@@ -128,6 +128,22 @@ func TestListExcludesCancelledByDefaultAndCombinesFilters(t *testing.T) {
 	}
 }
 
+func TestListAllIgnoresTheNumericPageLimit(t *testing.T) {
+	pool := recipientsIntegrationPool(t)
+	fixture := seedRecipientFixture(t, pool)
+	repository := NewRepository(pool)
+
+	page, err := repository.List(context.Background(), Filter{
+		Page: 1, PageSize: 1, All: true, ScheduleID: fixture.scheduleID,
+	}, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !page.All || page.Total != 2 || len(page.Items) != 2 || page.PageSize != 2 {
+		t.Fatalf("expected all 2 active recipients, got %+v", page)
+	}
+}
+
 func TestListRespectsRegencyScope(t *testing.T) {
 	pool := recipientsIntegrationPool(t)
 	fixture := seedRecipientFixture(t, pool)

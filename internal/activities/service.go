@@ -29,6 +29,7 @@ type Service struct {
 	repository      repository
 	storage         media.Storage
 	programContexts programContextResolver
+	now             func() time.Time
 }
 
 type programContextResolver interface {
@@ -40,7 +41,7 @@ func NewService(repository repository, storage media.Storage, resolvers ...progr
 	if len(resolvers) > 0 {
 		resolver = resolvers[0]
 	}
-	return &Service{repository: repository, storage: storage, programContexts: resolver}
+	return &Service{repository: repository, storage: storage, programContexts: resolver, now: time.Now}
 }
 
 func (s *Service) List(ctx context.Context, filter Filter, scope auth.RegencyScope) (Page, error) {
@@ -107,11 +108,13 @@ func (s *Service) Upload(ctx context.Context, actor auth.Principal, input Upload
 	if err != nil {
 		return ActivityMedia{}, err
 	}
-	storageKey, size, checksum, err := s.storage.Put(ctx, key, folderPath, bytes.NewReader(input.Data))
+	now := s.now()
+	displayName := fmt.Sprintf("%s-%s-%s", regency.DocumentCode, activityTypeCodes[input.ActivityType], now.Format("20060102-150405"))
+	visibleFilename := displayName + activityFileExtension(mimeType)
+	storageKey, size, checksum, err := media.PutNamed(ctx, s.storage, key, visibleFilename, folderPath, bytes.NewReader(input.Data))
 	if err != nil {
 		return ActivityMedia{}, err
 	}
-	displayName := fmt.Sprintf("%s-%s-%s", regency.DocumentCode, activityTypeCodes[input.ActivityType], time.Now().Format("20060102-150405"))
 	stored, err := s.repository.Insert(ctx, actor, insertInput{
 		ProgramID: input.ProgramID, RegencyID: input.RegencyID, ActivityType: input.ActivityType, StorageKey: storageKey,
 		DisplayName: displayName, OriginalFilename: strings.TrimSpace(input.OriginalFilename),
@@ -123,6 +126,13 @@ func (s *Service) Upload(ctx context.Context, actor auth.Principal, input Upload
 	}
 	stored.ContentURL = "/api/v1/activities/media/" + stored.ID + "/content"
 	return stored, nil
+}
+
+func activityFileExtension(mimeType string) string {
+	return map[string]string{
+		"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp",
+		"video/mp4": ".mp4", "video/webm": ".webm", "video/quicktime": ".mov",
+	}[mimeType]
 }
 
 func (s *Service) Delete(ctx context.Context, actor auth.Principal, id string, meta auth.ClientMeta, scope auth.RegencyScope) error {

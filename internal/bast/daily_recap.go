@@ -184,17 +184,47 @@ func decodeDailyRecapRecipients(raw []dailyRecapRawRecipient) ([]DailyRecapRecip
 				recipient.MachineFuelType = envelope.Equipment.MachineFuelType
 			}
 		}
+		if strings.TrimSpace(recipient.MachinePower) == "" || strings.TrimSpace(recipient.MachineFuelType) == "" {
+			if machine, ok := machineFromPackageTemplate(row.PackageTemplate, row.MachineOptionCode); ok {
+				if strings.TrimSpace(recipient.MachinePower) == "" {
+					recipient.MachinePower = machine.Power
+				}
+				if strings.TrimSpace(recipient.MachineFuelType) == "" {
+					recipient.MachineFuelType = machine.FuelType
+				}
+			}
+		}
 		recipients = append(recipients, recipient)
 	}
 	return recipients, nil
 }
 
+func machineFromPackageTemplate(raw []byte, code string) (dp3SelectedMachine, bool) {
+	if len(raw) == 0 || strings.TrimSpace(code) == "" {
+		return dp3SelectedMachine{}, false
+	}
+	var values struct {
+		MachineOptions []dp3SelectedMachine `json:"machine_options"`
+	}
+	if err := json.Unmarshal(raw, &values); err != nil {
+		return dp3SelectedMachine{}, false
+	}
+	for _, machine := range values.MachineOptions {
+		if machine.Code == code {
+			return machine, true
+		}
+	}
+	return dp3SelectedMachine{}, false
+}
+
 type dailyRecapRawRecipient struct {
-	SlotNumber          int
-	FullName            string
-	FarmerCardNumber    string
-	MachineSerial       string
+	SlotNumber           int
+	FullName             string
+	FarmerCardNumber     string
+	MachineSerial        string
+	MachineOptionCode    string
 	VerificationSnapshot []byte
+	PackageTemplate      []byte
 }
 
 func formatDailyRecapFilename(regencyName, documentDate string, version int) string {
