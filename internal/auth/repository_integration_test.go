@@ -295,7 +295,7 @@ func TestIntegrationOperationalMigrationCreatesFoundation(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM documentation_template_slots slots JOIN documentation_template_versions templates ON templates.id=slots.template_version_id WHERE templates.template_code IN ('DOK-PETANI','DOK-NELAYAN') AND templates.version=1`).Scan(&documentationSlotCount); err != nil {
 		t.Fatal(err)
 	}
-	// DOK-PETANI carries the approved 13-slot three-POS photo flow (00035_farmer_documentation_slots.sql);
+	// DOK-PETANI carries the approved 13-slot three-POS photo flow (00039_farmer_documentation_slots.sql);
 	// DOK-NELAYAN still has its original 4-slot generic template.
 	if documentationSlotCount != 17 {
 		t.Fatalf("expected 17 seeded documentation slots, got %d", documentationSlotCount)

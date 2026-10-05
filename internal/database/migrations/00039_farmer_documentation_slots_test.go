@@ -55,7 +55,7 @@ func TestFarmerDocumentationSlotsMigrationCreatesTheApprovedPOSFlow(t *testing.T
 		t.Fatal(err)
 	}
 
-	migration, err := FS.ReadFile("00035_farmer_documentation_slots.sql")
+	migration, err := FS.ReadFile("00039_farmer_documentation_slots.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
