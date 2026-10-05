@@ -288,7 +288,7 @@ func (r *Repository) ListSchedules(ctx context.Context, scope auth.RegencyScope)
 	return items, rows.Err()
 }
 
-func (r *Repository) SaveSchedule(ctx context.Context, actor auth.Principal, input ScheduleInput, meta auth.ClientMeta) (Schedule, error) {
+func (r *Repository) SaveSchedule(ctx context.Context, actor auth.Principal, input ScheduleInput, scope auth.RegencyScope, meta auth.ClientMeta) (Schedule, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return Schedule{}, fmt.Errorf("begin save schedule: %w", err)
@@ -315,7 +315,10 @@ func (r *Repository) SaveSchedule(ctx context.Context, actor auth.Principal, inp
 		err = tx.QueryRow(ctx, `INSERT INTO program_schedules (program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,distribution_number_padding,receipt_policy_json,notes,supervisor_name,slot_quota) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,''),NULLIF($12,''),$13 FROM programs p JOIN package_template_versions pt ON pt.id=$3 JOIN documentation_template_versions dt ON dt.id=$4 WHERE p.id=$1 AND p.program_type=pt.program_type AND p.program_type=dt.program_type RETURNING id::text`, input.ProgramID, input.RegencyID, input.PackageTemplateVersionID, input.DocumentationTemplateVersionID, input.Name, input.StartDate, input.EndDate, input.Status, input.DistributionNumberPadding, policy, input.Notes, input.SupervisorName, input.SlotQuota).Scan(&id)
 	} else {
 		var tag pgconn.CommandTag
-		tag, err = tx.Exec(ctx, `UPDATE program_schedules s SET program_id=$2,regency_id=$3,package_template_version_id=$4,documentation_template_version_id=$5,name=$6,start_date=$7,end_date=$8,status=$9,distribution_number_padding=$10,receipt_policy_json=$11,notes=NULLIF($12,''),supervisor_name=NULLIF($13,''),slot_quota=$14,updated_at=now() WHERE s.id=$1 AND EXISTS (SELECT 1 FROM programs p JOIN package_template_versions pt ON pt.id=$4 JOIN documentation_template_versions dt ON dt.id=$5 WHERE p.id=$2 AND p.program_type=pt.program_type AND p.program_type=dt.program_type)`, id, input.ProgramID, input.RegencyID, input.PackageTemplateVersionID, input.DocumentationTemplateVersionID, input.Name, input.StartDate, input.EndDate, input.Status, input.DistributionNumberPadding, policy, input.Notes, input.SupervisorName, input.SlotQuota)
+		// The scope condition on s.regency_id guards the *current* row, so an id guessed for a
+		// schedule outside the caller's scope can't be hijacked even by setting regency_id (checked
+		// against the new value in the service layer) back into scope.
+		tag, err = tx.Exec(ctx, `UPDATE program_schedules s SET program_id=$2,regency_id=$3,package_template_version_id=$4,documentation_template_version_id=$5,name=$6,start_date=$7,end_date=$8,status=$9,distribution_number_padding=$10,receipt_policy_json=$11,notes=NULLIF($12,''),supervisor_name=NULLIF($13,''),slot_quota=$14,updated_at=now() WHERE s.id=$1 AND ($15 OR s.regency_id::text = ANY($16)) AND EXISTS (SELECT 1 FROM programs p JOIN package_template_versions pt ON pt.id=$4 JOIN documentation_template_versions dt ON dt.id=$5 WHERE p.id=$2 AND p.program_type=pt.program_type AND p.program_type=dt.program_type)`, id, input.ProgramID, input.RegencyID, input.PackageTemplateVersionID, input.DocumentationTemplateVersionID, input.Name, input.StartDate, input.EndDate, input.Status, input.DistributionNumberPadding, policy, input.Notes, input.SupervisorName, input.SlotQuota, scope.Unrestricted, scope.RegencyIDs)
 		if err == nil && tag.RowsAffected() == 0 {
 			return Schedule{}, ErrNotFound
 		}

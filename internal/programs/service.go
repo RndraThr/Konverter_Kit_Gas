@@ -23,7 +23,7 @@ type repository interface {
 	ListPrograms(context.Context) ([]Program, error)
 	SaveProgram(context.Context, auth.Principal, ProgramInput, auth.ClientMeta) (Program, error)
 	ListSchedules(context.Context, auth.RegencyScope) ([]Schedule, error)
-	SaveSchedule(context.Context, auth.Principal, ScheduleInput, auth.ClientMeta) (Schedule, error)
+	SaveSchedule(context.Context, auth.Principal, ScheduleInput, auth.RegencyScope, auth.ClientMeta) (Schedule, error)
 	ListPackageTemplates(context.Context) ([]PackageTemplate, error)
 	SavePackageTemplate(context.Context, auth.Principal, PackageTemplateInput, auth.ClientMeta) (PackageTemplate, error)
 	ListDocumentationTemplates(context.Context) ([]DocumentationTemplate, error)
@@ -81,7 +81,7 @@ func (s *Service) ListSchedules(ctx context.Context, scope auth.RegencyScope) ([
 	return s.repository.ListSchedules(ctx, scope)
 }
 
-func (s *Service) SaveSchedule(ctx context.Context, actor auth.Principal, input ScheduleInput, meta auth.ClientMeta) (Schedule, error) {
+func (s *Service) SaveSchedule(ctx context.Context, actor auth.Principal, input ScheduleInput, scope auth.RegencyScope, meta auth.ClientMeta) (Schedule, error) {
 	input.ID = strings.TrimSpace(input.ID)
 	input.ProgramID = strings.TrimSpace(input.ProgramID)
 	input.RegencyID = strings.TrimSpace(input.RegencyID)
@@ -102,10 +102,13 @@ func (s *Service) SaveSchedule(ctx context.Context, actor auth.Principal, input 
 	if input.ProgramID == "" || input.RegencyID == "" || input.PackageTemplateVersionID == "" || input.DocumentationTemplateVersionID == "" || input.Name == "" || input.StartDate.IsZero() || input.EndDate.IsZero() || input.DistributionNumberPadding < 1 || input.DistributionNumberPadding > 8 || !oneOf(input.Status, "draft", "active", "completed", "cancelled") {
 		return Schedule{}, ErrInvalidInput
 	}
+	if !scope.Allows(input.RegencyID) {
+		return Schedule{}, ErrRegencyOutOfScope
+	}
 	if input.ReceiptPolicy == nil {
 		input.ReceiptPolicy = map[string]any{"mode": "block_repeat"}
 	}
-	return s.repository.SaveSchedule(ctx, actor, input, meta)
+	return s.repository.SaveSchedule(ctx, actor, input, scope, meta)
 }
 
 func (s *Service) ListPackageTemplates(ctx context.Context) ([]PackageTemplate, error) {

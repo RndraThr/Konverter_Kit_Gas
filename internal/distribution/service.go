@@ -32,7 +32,7 @@ type mediaRepository interface {
 }
 
 type posMesinRepository interface {
-	CreateSlot(ctx context.Context, actor auth.Principal, input CreateSlotInput, meta auth.ClientMeta) (DistributionSlot, error)
+	CreateSlot(ctx context.Context, actor auth.Principal, input CreateSlotInput, scope auth.RegencyScope, meta auth.ClientMeta) (DistributionSlot, error)
 	UpdateEquipment(ctx context.Context, actor auth.Principal, input UpdateEquipmentInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
 }
 
@@ -92,7 +92,7 @@ func (s *Service) SetDistributionDate(ctx context.Context, actor auth.Principal,
 	return s.distributionDateRepository.SetDistributionDate(ctx, actor, input, meta, scope)
 }
 
-func (s *Service) CreateSlot(ctx context.Context, actor auth.Principal, input CreateSlotInput, meta auth.ClientMeta) (DistributionSlot, error) {
+func (s *Service) CreateSlot(ctx context.Context, actor auth.Principal, input CreateSlotInput, scope auth.RegencyScope, meta auth.ClientMeta) (DistributionSlot, error) {
 	input.ScheduleID = strings.TrimSpace(input.ScheduleID)
 	if input.ScheduleID == "" {
 		return DistributionSlot{}, ErrScheduleRequired
@@ -112,7 +112,7 @@ func (s *Service) CreateSlot(ctx context.Context, actor auth.Principal, input Cr
 	if s.posMesinRepository == nil {
 		return DistributionSlot{}, errors.New("distribution POS Mesin is unavailable")
 	}
-	return s.posMesinRepository.CreateSlot(ctx, actor, input, meta)
+	return s.posMesinRepository.CreateSlot(ctx, actor, input, scope, meta)
 }
 
 func (s *Service) UpdateEquipment(ctx context.Context, actor auth.Principal, input UpdateEquipmentInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {

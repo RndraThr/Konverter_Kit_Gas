@@ -19,6 +19,7 @@ var (
 	ErrZoneNotConfigured        = errors.New("regency is assigned to the unconfigured placeholder zone")
 	ErrZonePlaceholderImmutable = errors.New("placeholder zone cannot be created or modified")
 	ErrZoneProgramMismatch      = errors.New("zone does not belong to the specified program")
+	ErrRegencyOutOfScope        = errors.New("regency is outside the caller's assigned scope")
 )
 
 type ProgramType string

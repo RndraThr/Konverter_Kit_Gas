@@ -41,7 +41,7 @@ func (r *repositoryStub) SaveProgram(_ context.Context, _ auth.Principal, input 
 func (r *repositoryStub) ListSchedules(context.Context, auth.RegencyScope) ([]Schedule, error) {
 	return nil, nil
 }
-func (r *repositoryStub) SaveSchedule(_ context.Context, _ auth.Principal, input ScheduleInput, _ auth.ClientMeta) (Schedule, error) {
+func (r *repositoryStub) SaveSchedule(_ context.Context, _ auth.Principal, input ScheduleInput, _ auth.RegencyScope, _ auth.ClientMeta) (Schedule, error) {
 	r.scheduleInput = input
 	return Schedule{DistributionNumberPadding: input.DistributionNumberPadding}, nil
 }
@@ -125,7 +125,7 @@ func TestSaveProgramSetupUppercasesBusinessTextAndPreservesTechnicalKeys(t *test
 	if _, err := service.SaveSchedule(context.Background(), auth.Principal{}, ScheduleInput{
 		ProgramID: "program", RegencyID: "regency", PackageTemplateVersionID: "package", DocumentationTemplateVersionID: "document",
 		Name: " wajo tahap 1 ", Notes: " gelombang pagi ", SupervisorName: " andi saputra ", StartDate: start, EndDate: start.Add(24 * time.Hour), Status: "draft",
-	}, auth.ClientMeta{}); err != nil {
+	}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{}); err != nil {
 		t.Fatal(err)
 	}
 	if repository.scheduleInput.Notes != "GELOMBANG PAGI" || repository.scheduleInput.SupervisorName != "ANDI SAPUTRA" {
@@ -209,7 +209,7 @@ func TestSaveScheduleRejectsEndBeforeStart(t *testing.T) {
 		StartDate: time.Date(2026, 9, 10, 0, 0, 0, 0, time.UTC),
 		EndDate:   time.Date(2026, 9, 9, 0, 0, 0, 0, time.UTC), Status: "draft",
 		DistributionNumberPadding: 4,
-	}, auth.ClientMeta{})
+	}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
 	if !errors.Is(err, ErrScheduleDatesInvalid) {
 		t.Fatalf("err=%v", err)
 	}
@@ -223,7 +223,7 @@ func TestSaveScheduleDefaultsDistributionNumberPadding(t *testing.T) {
 		DocumentationTemplateVersionID: "documentation", Name: "Wajo Tahap 1",
 		StartDate: time.Date(2026, 9, 9, 0, 0, 0, 0, time.UTC),
 		EndDate:   time.Date(2026, 9, 10, 0, 0, 0, 0, time.UTC), Status: "active",
-	}, auth.ClientMeta{})
+	}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,12 +240,35 @@ func TestSaveScheduleNormalizesNameToUppercase(t *testing.T) {
 		DocumentationTemplateVersionID: "documentation", Name: "  Wajo tahap 1  ",
 		StartDate: time.Date(2026, 9, 9, 0, 0, 0, 0, time.UTC),
 		EndDate:   time.Date(2026, 9, 10, 0, 0, 0, 0, time.UTC), Status: "active",
-	}, auth.ClientMeta{})
+	}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if repository.scheduleInput.Name != "WAJO TAHAP 1" {
 		t.Fatalf("schedule name=%q", repository.scheduleInput.Name)
+	}
+}
+
+func TestSaveScheduleRejectsRegencyOutsideCallerScope(t *testing.T) {
+	repository := &repositoryStub{}
+	service := NewService(repository)
+	input := ScheduleInput{
+		ProgramID: "program", RegencyID: "regency-other", PackageTemplateVersionID: "package",
+		DocumentationTemplateVersionID: "document", Name: "Wajo Tahap 1",
+		StartDate: time.Date(2026, 9, 9, 0, 0, 0, 0, time.UTC), EndDate: time.Date(2026, 9, 10, 0, 0, 0, 0, time.UTC), Status: "draft",
+	}
+
+	_, err := service.SaveSchedule(context.Background(), auth.Principal{}, input, auth.RegencyScope{RegencyIDs: []string{"regency-mine"}}, auth.ClientMeta{})
+	if !errors.Is(err, ErrRegencyOutOfScope) {
+		t.Fatalf("err=%v, want ErrRegencyOutOfScope", err)
+	}
+
+	input.RegencyID = "regency-mine"
+	if _, err := service.SaveSchedule(context.Background(), auth.Principal{}, input, auth.RegencyScope{RegencyIDs: []string{"regency-mine"}}, auth.ClientMeta{}); err != nil {
+		t.Fatalf("in-scope save rejected: %v", err)
+	}
+	if repository.scheduleInput.RegencyID != "regency-mine" {
+		t.Fatalf("regency=%+v", repository.scheduleInput)
 	}
 }
 
@@ -257,7 +280,7 @@ func TestSaveScheduleRejectsNonPositiveSlotQuota(t *testing.T) {
 		DocumentationTemplateVersionID: "document", Name: "Test", Status: "draft",
 		StartDate: time.Now(), EndDate: time.Now().Add(24 * time.Hour),
 		SlotQuota: &zero,
-	}, auth.ClientMeta{})
+	}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
 	if !errors.Is(err, ErrSlotQuotaInvalid) {
 		t.Fatalf("err = %v, want ErrSlotQuotaInvalid", err)
 	}

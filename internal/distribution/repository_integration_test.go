@@ -118,7 +118,7 @@ func TestCreateSlotSnapshotsDocumentationStage(t *testing.T) {
 	must(t, pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,distribution_number_padding,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal Test Stage','2026-01-01','2026-12-31','active',4,'{}'::jsonb) RETURNING id::text`, programID, regencyID, packageTemplateID, docTemplateID).Scan(&scheduleID))
 
 	repo := NewRepository(pool)
-	slot, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.ClientMeta{})
+	slot, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
 	must(t, err)
 
 	if len(slot.Documentation) == 0 {
@@ -133,6 +133,48 @@ func TestCreateSlotSnapshotsDocumentationStage(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("no SlotSummary with Stage=mesin among %+v", slot.Documentation)
+	}
+}
+
+// TestCreateSlotRejectsScheduleOutsideCallerScope proves CreateSlot checks the target schedule's
+// regency against the caller's RegencyScope before creating anything — a POS Mesin-permissioned
+// officer scoped to one regency must not be able to create a distribution slot under a schedule
+// belonging to a different regency just by knowing/guessing its schedule_id.
+func TestCreateSlotRejectsScheduleOutsideCallerScope(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+
+	var regencyID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan','Scope Test','SCT',true) ON CONFLICT (document_code) DO UPDATE SET is_active=true RETURNING id::text`).Scan(&regencyID))
+	var otherRegencyID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan','Scope Test Other','SCO',true) ON CONFLICT (document_code) DO UPDATE SET is_active=true RETURNING id::text`).Scan(&otherRegencyID))
+	var programID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES($1,'Program Test Scope','farmer',2026,'active') RETURNING id::text`, "SCT-TEST-"+suffix).Scan(&programID))
+	var packageTemplateID, docTemplateID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES($1,1,'Paket Test Scope','farmer','{}'::jsonb,'published') RETURNING id::text`, "PKG-SCT-"+suffix).Scan(&packageTemplateID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES($1,1,'Dok Test Scope','farmer','published') RETURNING id::text`, "DOC-SCT-"+suffix).Scan(&docTemplateID))
+	var scheduleID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,distribution_number_padding,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal Test Scope','2026-01-01','2026-12-31','active',4,'{}'::jsonb) RETURNING id::text`, programID, regencyID, packageTemplateID, docTemplateID).Scan(&scheduleID))
+
+	repo := NewRepository(pool)
+
+	// Caller scoped only to otherRegencyID — the schedule lives in regencyID — must be rejected.
+	_, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.RegencyScope{RegencyIDs: []string{otherRegencyID}}, auth.ClientMeta{})
+	if !errors.Is(err, ErrScheduleRequired) {
+		t.Fatalf("err=%v, want ErrScheduleRequired (schedule hidden outside caller scope)", err)
+	}
+	var slotCount int
+	must(t, pool.QueryRow(ctx, `SELECT count(*) FROM distribution_slots WHERE schedule_id=$1`, scheduleID).Scan(&slotCount))
+	if slotCount != 0 {
+		t.Fatalf("slot was created despite rejected scope: count=%d", slotCount)
+	}
+
+	// Caller scoped to the schedule's actual regency succeeds.
+	created, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.RegencyScope{RegencyIDs: []string{regencyID}}, auth.ClientMeta{})
+	must(t, err)
+	if created.SlotNumber != 1 {
+		t.Fatalf("created.SlotNumber=%d, want 1", created.SlotNumber)
 	}
 }
 
@@ -155,13 +197,13 @@ func TestCreateSlotRejectsSlotBeyondQuota(t *testing.T) {
 	must(t, pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,distribution_number_padding,receipt_policy_json,slot_quota) VALUES($1,$2,$3,$4,'Jadwal Test Quota','2026-01-01','2026-12-31','active',4,'{}'::jsonb,1) RETURNING id::text`, programID, regencyID, packageTemplateID, docTemplateID).Scan(&scheduleID))
 
 	repo := NewRepository(pool)
-	first, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.ClientMeta{})
+	first, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
 	must(t, err)
 	if first.SlotNumber != 1 {
 		t.Fatalf("first.SlotNumber = %d, want 1", first.SlotNumber)
 	}
 
-	_, err = repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.ClientMeta{})
+	_, err = repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
 	if !errors.Is(err, ErrSlotQuotaExceeded) {
 		t.Fatalf("err = %v, want ErrSlotQuotaExceeded", err)
 	}
@@ -189,26 +231,26 @@ func TestCreateSlotHonoursExplicitSlotNumber(t *testing.T) {
 	repo := NewRepository(pool)
 
 	// Explicit number 3 is creatable even though no lower-numbered slots exist yet.
-	third, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID, SlotNumber: 3}, auth.ClientMeta{})
+	third, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID, SlotNumber: 3}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
 	must(t, err)
 	if third.SlotNumber != 3 {
 		t.Fatalf("third.SlotNumber = %d, want 3", third.SlotNumber)
 	}
 
 	// The same number cannot be created twice.
-	_, err = repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID, SlotNumber: 3}, auth.ClientMeta{})
+	_, err = repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID, SlotNumber: 3}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
 	if !errors.Is(err, ErrSlotNumberTaken) {
 		t.Fatalf("err = %v, want ErrSlotNumberTaken", err)
 	}
 
 	// An explicit number above quota is rejected.
-	_, err = repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID, SlotNumber: 6}, auth.ClientMeta{})
+	_, err = repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID, SlotNumber: 6}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
 	if !errors.Is(err, ErrSlotQuotaExceeded) {
 		t.Fatalf("err = %v, want ErrSlotQuotaExceeded", err)
 	}
 
 	// Omitting the number still auto-allocates the next sequential slot (max existing is 3 -> 4).
-	auto, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.ClientMeta{})
+	auto, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
 	must(t, err)
 	if auto.SlotNumber != 4 {
 		t.Fatalf("auto.SlotNumber = %d, want 4", auto.SlotNumber)
@@ -239,9 +281,9 @@ func TestListSlotCatalogReportsStatusAndCompleteness(t *testing.T) {
 	must(t, pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,distribution_number_padding,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal Test Catalog','2026-01-01','2026-12-31','active',4,'{}'::jsonb) RETURNING id::text`, programID, regencyID, packageTemplateID, docTemplateID).Scan(&scheduleID))
 
 	repo := NewRepository(pool)
-	incomplete, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.ClientMeta{})
+	incomplete, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
 	must(t, err)
-	complete, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.ClientMeta{})
+	complete, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
 	must(t, err)
 
 	// Satisfy the "complete" slot's one required documentation_slots row with an accepted media file.
@@ -600,7 +642,7 @@ func TestLinkSlotReturnsRecipientIdentity(t *testing.T) {
 	must(t, pool.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,status,package_snapshot_json) VALUES($1,$2,$3,'candidate','{}'::jsonb) RETURNING id::text`, scheduleID, nominationID, personID).Scan(new(string)))
 
 	repo := NewRepository(pool)
-	created, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.ClientMeta{})
+	created, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
 	must(t, err)
 
 	linked, err := repo.LinkSlot(ctx, auth.Principal{}, LinkSlotInput{ScheduleID: scheduleID, SlotNumber: created.SlotNumber, NIK: wantNIK}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})

@@ -191,7 +191,7 @@ func uniqueViolationConstraint(err error) (string, bool) {
 // ErrIdentifierConflict.
 const packageAllocationsScheduleDistributionNumberUniqueIndex = "package_allocations_schedule_id_distribution_number_key"
 
-func (r *Repository) CreateSlot(ctx context.Context, actor auth.Principal, input CreateSlotInput, meta auth.ClientMeta) (DistributionSlot, error) {
+func (r *Repository) CreateSlot(ctx context.Context, actor auth.Principal, input CreateSlotInput, scope auth.RegencyScope, meta auth.ClientMeta) (DistributionSlot, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return DistributionSlot{}, fmt.Errorf("begin create slot: %w", err)
@@ -200,7 +200,7 @@ func (r *Repository) CreateSlot(ctx context.Context, actor auth.Principal, input
 
 	var documentationTemplateID string
 	var slotQuota *int
-	if err := tx.QueryRow(ctx, `SELECT documentation_template_version_id, slot_quota FROM program_schedules WHERE id=$1 FOR UPDATE`, input.ScheduleID).Scan(&documentationTemplateID, &slotQuota); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT documentation_template_version_id, slot_quota FROM program_schedules WHERE id=$1 AND ($2 OR regency_id::text = ANY($3)) FOR UPDATE`, input.ScheduleID, scope.Unrestricted, scope.RegencyIDs).Scan(&documentationTemplateID, &slotQuota); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return DistributionSlot{}, ErrScheduleRequired
 		}

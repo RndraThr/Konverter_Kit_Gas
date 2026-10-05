@@ -462,6 +462,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "zone_placeholder_immutable", "Zona placeholder tidak dapat diubah")
 	case errors.Is(err, programs.ErrZoneProgramMismatch):
 		writeError(w, http.StatusConflict, "zone_program_mismatch", "Zona tidak termasuk dalam program ini")
+	case errors.Is(err, programs.ErrRegencyOutOfScope):
+		writeError(w, http.StatusForbidden, "regency_out_of_scope", "Kabupaten ini berada di luar akses Anda")
 	case errors.Is(err, bast.ErrZoneNotConfigured):
 		writeError(w, http.StatusConflict, "zone_not_configured", "Kabupaten belum dikonfigurasi ke zona")
 	case errors.Is(err, bast.ErrBrandingNotConfigured):

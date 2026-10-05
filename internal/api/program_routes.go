@@ -136,7 +136,11 @@ func (h *Handler) handleSchedules(w http.ResponseWriter, r *http.Request, rc req
 		return
 	}
 	input.ID = id
-	result, err := h.deps.Programs.SaveSchedule(r.Context(), rc.principal, input, clientMeta(r))
+	mutationScope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := h.deps.Programs.SaveSchedule(r.Context(), rc.principal, input, mutationScope, clientMeta(r))
 	if err != nil {
 		writeServiceError(w, err)
 		return

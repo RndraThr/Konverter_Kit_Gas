@@ -240,6 +240,43 @@ func TestSchedulesEndpointAllowsBASTViewerAndForwardsRegencyScope(t *testing.T) 
 	}
 }
 
+func TestSaveScheduleForwardsCallerRegencyScopeAndReportsOutOfScope(t *testing.T) {
+	secret := []byte("01234567890123456789012345678901")
+	authService := &fakeAuthService{
+		principal:          auth.Principal{UserID: "user-1"},
+		allowedPermissions: map[string]bool{"programs.manage": true},
+		regencyScope:       auth.RegencyScope{RegencyIDs: []string{"regency-1"}},
+	}
+	programService := &fakeProgramSetupService{scheduleResult: programs.Schedule{ID: "schedule-1", RegencyID: "regency-1"}}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/program-setup/schedules", strings.NewReader(`{"program_id":"program-1","regency_id":"regency-1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+	rec := httptest.NewRecorder()
+
+	NewHandler(Dependencies{Auth: authService, Programs: programService, SessionSecret: secret}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated || programService.scheduleInput.RegencyID != "regency-1" {
+		t.Fatalf("status=%d input=%+v body=%s", rec.Code, programService.scheduleInput, rec.Body.String())
+	}
+	if programService.seenRegencyScope.Unrestricted || len(programService.seenRegencyScope.RegencyIDs) != 1 || programService.seenRegencyScope.RegencyIDs[0] != "regency-1" {
+		t.Fatalf("scope not forwarded: %+v", programService.seenRegencyScope)
+	}
+
+	rejecting := &fakeProgramSetupService{scheduleErr: programs.ErrRegencyOutOfScope}
+	rejectedReq := httptest.NewRequest(http.MethodPost, "/api/v1/program-setup/schedules", strings.NewReader(`{"program_id":"program-1","regency_id":"regency-outside"}`))
+	rejectedReq.Header.Set("Content-Type", "application/json")
+	rejectedReq.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rejectedReq.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+	rejectedRec := httptest.NewRecorder()
+
+	NewHandler(Dependencies{Auth: authService, Programs: rejecting, SessionSecret: secret}).ServeHTTP(rejectedRec, rejectedReq)
+
+	if rejectedRec.Code != http.StatusForbidden || !strings.Contains(rejectedRec.Body.String(), "regency_out_of_scope") {
+		t.Fatalf("status=%d body=%s", rejectedRec.Code, rejectedRec.Body.String())
+	}
+}
+
 func TestDCP3PreviewEndpointAppliesCallerRegencyScope(t *testing.T) {
 	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"dcp3.view": true}, regencyScope: auth.RegencyScope{RegencyIDs: []string{"regency-1"}}}
 	dcp3Service := &fakeDCP3Service{}
@@ -900,6 +937,14 @@ type fakeProgramSetupService struct {
 	assignmentInput   programs.RegencyAssignmentInput
 	assignmentResult  programs.ProgramZone
 	assignErr         error
+	scheduleInput     programs.ScheduleInput
+	scheduleResult    programs.Schedule
+	scheduleErr       error
+}
+
+func (f *fakeProgramSetupService) SaveSchedule(_ context.Context, _ auth.Principal, input programs.ScheduleInput, scope auth.RegencyScope, _ auth.ClientMeta) (programs.Schedule, error) {
+	f.scheduleInput, f.seenRegencyScope = input, scope
+	return f.scheduleResult, f.scheduleErr
 }
 
 type fakeDCP3Service struct {
@@ -953,8 +998,8 @@ type fakeDistributionService struct {
 	catalogErr           error
 }
 
-func (f *fakeDistributionService) CreateSlot(_ context.Context, _ auth.Principal, input distribution.CreateSlotInput, _ auth.ClientMeta) (distribution.DistributionSlot, error) {
-	f.createInput = input
+func (f *fakeDistributionService) CreateSlot(_ context.Context, _ auth.Principal, input distribution.CreateSlotInput, scope auth.RegencyScope, _ auth.ClientMeta) (distribution.DistributionSlot, error) {
+	f.createInput, f.seenRegencyScope = input, scope
 	return f.createdSlot, f.createErr
 }
 func (f *fakeDistributionService) SearchCandidate(_ context.Context, scheduleID, nik string, scope auth.RegencyScope) (distribution.CandidateMatch, error) {

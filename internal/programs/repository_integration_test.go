@@ -180,7 +180,7 @@ func TestIntegrationRepositoryPersistsProgramSetupAndVersionsPublishedTemplate(t
 		DocumentationTemplateVersionID: documentationTemplateID, Name: "Tahap 1",
 		StartDate: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
 		EndDate:   time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC), Status: "active",
-	}, meta)
+	}, auth.RegencyScope{Unrestricted: true}, meta)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestIntegrationRepositoryPersistsProgramSetupAndVersionsPublishedTemplate(t
 		StartDate: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC),
 		EndDate:   time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC), Status: "active",
 		SupervisorName: "  Andi Amrullah  ",
-	}, meta)
+	}, auth.RegencyScope{Unrestricted: true}, meta)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +261,7 @@ func TestSaveScheduleRoundTripsSlotQuota(t *testing.T) {
 		DocumentationTemplateVersionID: documentationTemplateID, Name: "Tahap Kuota",
 		StartDate: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), EndDate: time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC),
 		Status: "active", SlotQuota: &quota,
-	}, meta)
+	}, auth.RegencyScope{Unrestricted: true}, meta)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,7 +275,7 @@ func TestSaveScheduleRoundTripsSlotQuota(t *testing.T) {
 		DocumentationTemplateVersionID: documentationTemplateID, Name: "Tahap Kuota",
 		StartDate: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), EndDate: time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC),
 		Status: "active", SlotQuota: &raised,
-	}, meta)
+	}, auth.RegencyScope{Unrestricted: true}, meta)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,6 +298,89 @@ func TestSaveScheduleRoundTripsSlotQuota(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("schedule %s not found in ListSchedules result", created.ID)
+	}
+}
+
+// TestIntegrationSaveScheduleUpdateRejectsHijackOfOutOfScopeExistingRecord proves the repository's
+// UPDATE WHERE clause — not just the service-level ErrRegencyOutOfScope check on the new value —
+// blocks an id guessed for a schedule whose *current* regency sits outside the caller's scope, even
+// when the attacker's new regency_id value is legitimately their own (so the service-level check on
+// the new value alone would pass).
+func TestIntegrationSaveScheduleUpdateRejectsHijackOfOutOfScopeExistingRecord(t *testing.T) {
+	pool := programsIntegrationPool(t)
+	repository := NewRepository(pool)
+	service := NewService(repository)
+	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	programCode := "HJK-" + suffix
+	templateCode := "HJK-PKG-" + suffix
+	victimCode := fmt.Sprintf("%c%c%c", 'A'+suffix[len(suffix)-1]%20, 'A'+suffix[len(suffix)-2]%20, 'A'+suffix[len(suffix)-3]%20)
+	attackerCode := fmt.Sprintf("%c%c%c", 'A'+suffix[len(suffix)-4]%20, 'A'+suffix[len(suffix)-5]%20, 'A'+suffix[len(suffix)-6]%20)
+	actor := auth.Principal{}
+	meta := auth.ClientMeta{IPAddress: "127.0.0.1", UserAgent: "programs-hijack-test"}
+
+	victimRegency, err := service.SaveRegency(ctx, actor, RegencyInput{ProvinceName: "Sulawesi Selatan", Name: "Kabupaten Korban " + suffix, DocumentCode: victimCode, IsActive: true}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attackerRegency, err := service.SaveRegency(ctx, actor, RegencyInput{ProvinceName: "Sulawesi Selatan", Name: "Kabupaten Penyerang " + suffix, DocumentCode: attackerCode, IsActive: true}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := service.SaveProgram(ctx, actor, ProgramInput{Code: programCode, Name: "Program Hijack", ProgramType: ProgramFarmer, FiscalYear: 2026, Status: "active"}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template, err := service.SavePackageTemplate(ctx, actor, PackageTemplateInput{
+		TemplateCode: templateCode, Name: "Template Hijack", ProgramType: ProgramFarmer,
+		Values: map[string]any{"machine_options": []any{map[string]any{"code": "m", "brand": "M", "type": "T", "power": "P", "fuel_type": "F"}}, "hose_options": []any{map[string]any{"code": "h", "brand": "H", "spec": "S"}}},
+		Status: "published",
+	}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var documentationTemplateID string
+	if err := pool.QueryRow(ctx, `SELECT id::text FROM documentation_template_versions WHERE template_code = 'DOK-PETANI' AND version = 1`).Scan(&documentationTemplateID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM program_schedules WHERE program_id IN (SELECT id FROM programs WHERE code = $1)", programCode)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM programs WHERE code = $1", programCode)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM package_template_versions WHERE template_code = $1", templateCode)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM regencies WHERE id = ANY($1)", []string{victimRegency.ID, attackerRegency.ID})
+	})
+
+	// Victim's schedule, created with unrestricted scope (simulating a different officer / admin).
+	created, err := service.SaveSchedule(ctx, actor, ScheduleInput{
+		ProgramID: program.ID, RegencyID: victimRegency.ID, PackageTemplateVersionID: template.ID,
+		DocumentationTemplateVersionID: documentationTemplateID, Name: "Tahap Korban",
+		StartDate: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), EndDate: time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC), Status: "active",
+	}, auth.RegencyScope{Unrestricted: true}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Attacker is scoped only to their own (legitimate) regency, so the service-level
+	// scope.Allows(input.RegencyID) check alone would pass here — the new value IS theirs. Only the
+	// repository's WHERE clause on the row's *current* regency_id can still catch this.
+	attackerScope := auth.RegencyScope{RegencyIDs: []string{attackerRegency.ID}}
+	_, err = service.SaveSchedule(ctx, actor, ScheduleInput{
+		ID: created.ID, ProgramID: program.ID, RegencyID: attackerRegency.ID, PackageTemplateVersionID: template.ID,
+		DocumentationTemplateVersionID: documentationTemplateID, Name: "Dibajak",
+		StartDate: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), EndDate: time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC), Status: "active",
+	}, attackerScope, meta)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("err=%v, want ErrNotFound (repository-level guard on the row's current regency_id)", err)
+	}
+
+	list, err := service.ListSchedules(ctx, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range list {
+		if item.ID == created.ID && (item.Name != "TAHAP KORBAN" || item.RegencyID != victimRegency.ID) {
+			t.Fatalf("schedule was hijacked despite rejected scope: %+v", item)
+		}
 	}
 }
 

@@ -31,7 +31,7 @@ type operationsRepositoryStub struct {
 	equipmentInput UpdateEquipmentInput
 }
 
-func (r *operationsRepositoryStub) CreateSlot(_ context.Context, _ auth.Principal, input CreateSlotInput, _ auth.ClientMeta) (DistributionSlot, error) {
+func (r *operationsRepositoryStub) CreateSlot(_ context.Context, _ auth.Principal, input CreateSlotInput, _ auth.RegencyScope, _ auth.ClientMeta) (DistributionSlot, error) {
 	r.createInput = input
 	return DistributionSlot{}, nil
 }
@@ -62,7 +62,7 @@ func TestDistributionUppercasesSerialsAndRecipientBusinessText(t *testing.T) {
 		MachineOptionCode: "shark-spwp8030", MachineSerialNumber: " ms-a1 ",
 		HoseOptionCode: "hose-set", HoseSerialNumber: " hs-b2 ",
 		ConverterOptionCode: "ergas-kit", ConverterSerialNumber: " cv-c3 ",
-	}, auth.ClientMeta{}); err != nil {
+	}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{}); err != nil {
 		t.Fatal(err)
 	}
 	if repository.createInput.MachineSerialNumber != "MS-A1" || repository.createInput.HoseSerialNumber != "" || repository.createInput.ConverterSerialNumber != "CV-C3" {

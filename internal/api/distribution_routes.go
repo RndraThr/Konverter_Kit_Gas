@@ -29,7 +29,11 @@ func (h *Handler) handleDistributionSlots(w http.ResponseWriter, r *http.Request
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	result, err := h.deps.Distribution.CreateSlot(r.Context(), rc.principal, input, clientMeta(r))
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := h.deps.Distribution.CreateSlot(r.Context(), rc.principal, input, scope, clientMeta(r))
 	if err != nil {
 		writeServiceError(w, err)
 		return

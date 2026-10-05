@@ -74,7 +74,7 @@ type ProgramSetupService interface {
 	ListPrograms(context.Context) ([]programs.Program, error)
 	SaveProgram(context.Context, auth.Principal, programs.ProgramInput, auth.ClientMeta) (programs.Program, error)
 	ListSchedules(context.Context, auth.RegencyScope) ([]programs.Schedule, error)
-	SaveSchedule(context.Context, auth.Principal, programs.ScheduleInput, auth.ClientMeta) (programs.Schedule, error)
+	SaveSchedule(context.Context, auth.Principal, programs.ScheduleInput, auth.RegencyScope, auth.ClientMeta) (programs.Schedule, error)
 	ListPackageTemplates(context.Context) ([]programs.PackageTemplate, error)
 	SavePackageTemplate(context.Context, auth.Principal, programs.PackageTemplateInput, auth.ClientMeta) (programs.PackageTemplate, error)
 	ListDocumentationTemplates(context.Context) ([]programs.DocumentationTemplate, error)
@@ -92,7 +92,7 @@ type DCP3Service interface {
 }
 
 type DistributionService interface {
-	CreateSlot(context.Context, auth.Principal, distribution.CreateSlotInput, auth.ClientMeta) (distribution.DistributionSlot, error)
+	CreateSlot(context.Context, auth.Principal, distribution.CreateSlotInput, auth.RegencyScope, auth.ClientMeta) (distribution.DistributionSlot, error)
 	SearchCandidate(context.Context, string, string, auth.RegencyScope) (distribution.CandidateMatch, error)
 	SuggestCandidates(context.Context, string, string, auth.RegencyScope) ([]distribution.CandidateMatch, error)
 	LinkSlot(context.Context, auth.Principal, distribution.LinkSlotInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
