@@ -10,6 +10,12 @@ export default async function globalSetup() {
   const fixtureDirectory = process.env.E2E_FIXTURE_DIR ?? resolve(cache, 'e2e');
   mkdirSync(cache, { recursive: true });
 
+  // The Go server serves the Vite bundle from web/static/app on disk, and that directory is no
+  // longer tracked in git (it can't be reproduced byte-for-byte across platforms), so build it
+  // here before the server starts. shell:true because npm resolves to npm.cmd on Windows.
+  const frontendBuild = spawnSync('npm', ['run', 'build'], { cwd: process.cwd(), env: process.env, stdio: 'inherit', shell: true });
+  if (frontendBuild.status !== 0) throw new Error('E2E preparation failed: npm run build');
+
   for (const args of [
     ['run', './cmd/migrate', 'up'],
     ['build', '-o', seedExecutable, './cmd/e2eseed'],

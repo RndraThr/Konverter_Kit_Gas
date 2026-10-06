@@ -18,6 +18,11 @@ frontend/playwright-report/
 frontend/*.tsbuildinfo
 *.exe
 
+# Built Vite bundle — generated from frontend/src, not committed. The Docker image, CI, and
+# local e2e all build it from source; it can't be reproduced byte-for-byte across win32/linux
+# (esbuild identifier minification differs), so committing it just caused CI bundle-diff churn.
+web/static/app/
+
 # Python-generated cache files
 __pycache__/
 *.py[cod]
