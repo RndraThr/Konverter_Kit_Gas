@@ -29,6 +29,7 @@ type Service struct {
 	repository      repository
 	storage         media.Storage
 	programContexts programContextResolver
+	videoLimiter    *media.VideoLimiter
 	now             func() time.Time
 }
 
@@ -36,12 +37,18 @@ type programContextResolver interface {
 	ResolveStorageContext(context.Context, string, string, auth.RegencyScope) (programs.StorageContext, error)
 }
 
-func NewService(repository repository, storage media.Storage, resolvers ...programContextResolver) *Service {
+func NewService(repository repository, storage media.Storage, dependencies ...any) *Service {
 	var resolver programContextResolver
-	if len(resolvers) > 0 {
-		resolver = resolvers[0]
+	var videoLimiter *media.VideoLimiter
+	for _, dependency := range dependencies {
+		switch value := dependency.(type) {
+		case programContextResolver:
+			resolver = value
+		case *media.VideoLimiter:
+			videoLimiter = value
+		}
 	}
-	return &Service{repository: repository, storage: storage, programContexts: resolver, now: time.Now}
+	return &Service{repository: repository, storage: storage, programContexts: resolver, videoLimiter: videoLimiter, now: time.Now}
 }
 
 func (s *Service) List(ctx context.Context, filter Filter, scope auth.RegencyScope) (Page, error) {

@@ -59,17 +59,23 @@ type Service struct {
 	posPenyerahanRepository    posPenyerahanRepository
 	distributionDateRepository distributionDateRepository
 	storage                    media.Storage
+	videoLimiter               *media.VideoLimiter
 }
 
-func NewService(repository any, storage ...media.Storage) *Service {
+func NewService(repository any, dependencies ...any) *Service {
 	service := &Service{}
 	service.mediaRepository, _ = repository.(mediaRepository)
 	service.posMesinRepository, _ = repository.(posMesinRepository)
 	service.posDokumenRepository, _ = repository.(posDokumenRepository)
 	service.posPenyerahanRepository, _ = repository.(posPenyerahanRepository)
 	service.distributionDateRepository, _ = repository.(distributionDateRepository)
-	if len(storage) > 0 {
-		service.storage = storage[0]
+	for _, dependency := range dependencies {
+		switch value := dependency.(type) {
+		case media.Storage:
+			service.storage = value
+		case *media.VideoLimiter:
+			service.videoLimiter = value
+		}
 	}
 	return service
 }

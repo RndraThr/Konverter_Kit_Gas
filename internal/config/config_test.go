@@ -196,6 +196,41 @@ func TestLoadFromRejectsUnknownStorageBackend(t *testing.T) {
 	}
 }
 
+func TestLoadFromParsesVideoUploadConcurrency(t *testing.T) {
+	base := map[string]string{
+		"DATABASE_URL":   "postgres://u:p@localhost/db",
+		"SESSION_SECRET": "01234567890123456789012345678901",
+	}
+	cfg, err := loadFrom(mapLookup(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MaxConcurrentVideoUploads != 3 {
+		t.Fatalf("default=%d, want 3", cfg.MaxConcurrentVideoUploads)
+	}
+	base["MAX_CONCURRENT_VIDEO_UPLOADS"] = "5"
+	cfg, err = loadFrom(mapLookup(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MaxConcurrentVideoUploads != 5 {
+		t.Fatalf("configured=%d, want 5", cfg.MaxConcurrentVideoUploads)
+	}
+}
+
+func TestLoadFromRejectsInvalidVideoUploadConcurrency(t *testing.T) {
+	for _, value := range []string{"0", "-1", "many", "17"} {
+		_, err := loadFrom(mapLookup(map[string]string{
+			"DATABASE_URL":                 "postgres://u:p@localhost/db",
+			"SESSION_SECRET":               "01234567890123456789012345678901",
+			"MAX_CONCURRENT_VIDEO_UPLOADS": value,
+		}))
+		if !errors.Is(err, ErrMaxConcurrentVideoUploadsInvalid) {
+			t.Fatalf("value=%q err=%v", value, err)
+		}
+	}
+}
+
 func restoreEnvironment(t *testing.T, keys ...string) {
 	t.Helper()
 

@@ -68,6 +68,7 @@ func run(ctx context.Context, cfg config.Config) error {
 		}
 	}
 	programService := programs.NewService(programs.NewRepository(pool))
+	videoLimiter := media.NewVideoLimiter(cfg.MaxConcurrentVideoUploads)
 	applicationLocation, err := time.LoadLocation("Asia/Jakarta")
 	if err != nil {
 		return fmt.Errorf("load application timezone: %w", err)
@@ -90,10 +91,10 @@ func run(ctx context.Context, cfg config.Config) error {
 		Audit:             audit.NewRepository(pool),
 		Programs:          programService,
 		DCP3:              dcp3.NewImportService(dcp3.NewRepository(pool), dcp3.ParseLimits{MaxBytes: 10 << 20, MaxRows: 5000, MaxColumns: 100}),
-		Distribution:      distribution.NewService(distribution.NewRepository(pool), mediaStorage),
+		Distribution:      distribution.NewService(distribution.NewRepository(pool), mediaStorage, videoLimiter),
 		Reports:           reports.NewService(reports.NewRepository(pool)),
 		Recipients:        recipients.NewService(recipients.NewRepository(pool)),
-		Activities:        activities.NewService(activities.NewRepository(pool), mediaStorage, programService),
+		Activities:        activities.NewService(activities.NewRepository(pool), mediaStorage, programService, videoLimiter),
 		BAST:              bastService,
 		BASTBranding:      bastBrandingService,
 		BASTSettings:      bastScheduleSettingsService,
@@ -112,14 +113,7 @@ func run(ctx context.Context, cfg config.Config) error {
 		SessionTTL:          cfg.SessionTTL,
 		RememberTTL:         cfg.RememberTTL,
 	})
-	server := &http.Server{
-		Addr:              cfg.Addr,
-		Handler:           handler,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       60 * time.Second,
-	}
+	server := newHTTPServer(cfg.Addr, handler)
 
 	serverErrors := make(chan error, 1)
 	go func() {
@@ -143,5 +137,16 @@ func run(ctx context.Context, cfg config.Config) error {
 			return fmt.Errorf("serve HTTP during shutdown: %w", err)
 		}
 		return nil
+	}
+}
+
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       31 * time.Minute,
+		WriteTimeout:      31 * time.Minute,
+		IdleTimeout:       60 * time.Second,
 	}
 }
