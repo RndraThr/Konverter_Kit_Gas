@@ -726,6 +726,7 @@ func TestDistributionMediaUploadAndContentHeaders(t *testing.T) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	_ = writer.WriteField("source", "camera")
+	_ = writer.WriteField("file_size", "43")
 	file, _ := writer.CreateFormFile("file", "penerima.jpg")
 	_, _ = file.Write(append([]byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}, bytes.Repeat([]byte{0}, 32)...))
 	_ = writer.Close()
@@ -735,7 +736,7 @@ func TestDistributionMediaUploadAndContentHeaders(t *testing.T) {
 	upload.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
 	uploadRecorder := httptest.NewRecorder()
 	NewHandler(Dependencies{Auth: authService, Distribution: service, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(uploadRecorder, upload)
-	if uploadRecorder.Code != http.StatusCreated || service.slotID != "slot-1" || service.upload.Source != "camera" {
+	if uploadRecorder.Code != http.StatusCreated || service.slotID != "slot-1" || service.upload.Source != "camera" || service.upload.DeclaredSize != 43 || service.upload.Data == nil {
 		t.Fatalf("upload status=%d slot=%q body=%s", uploadRecorder.Code, service.slotID, uploadRecorder.Body.String())
 	}
 
@@ -745,6 +746,57 @@ func TestDistributionMediaUploadAndContentHeaders(t *testing.T) {
 	NewHandler(Dependencies{Auth: authService, Distribution: service}).ServeHTTP(contentRecorder, content)
 	if contentRecorder.Code != http.StatusOK || contentRecorder.Header().Get("X-Content-Type-Options") != "nosniff" || !strings.HasPrefix(contentRecorder.Header().Get("Content-Disposition"), "inline") {
 		t.Fatalf("content status=%d headers=%v", contentRecorder.Code, contentRecorder.Header())
+	}
+}
+
+func TestDistributionMediaUploadRejectsFileBeforeMetadata(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"documentation.manage": true}}
+	service := &fakeDistributionService{}
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	file, _ := writer.CreateFormFile("file", "proof.jpg")
+	_, _ = file.Write([]byte{0xff, 0xd8, 0xff, 0xe0})
+	_ = writer.WriteField("source", "camera")
+	_ = writer.WriteField("file_size", "4")
+	_ = writer.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/distribution/slots/slot-1/media", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
+	recorder := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: authService, Distribution: service, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), `"code":"multipart_invalid"`) || service.upload.Data != nil {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestDistributionMediaUploadMapsPolicyAndBusyErrors(t *testing.T) {
+	for _, tt := range []struct {
+		err    error
+		status int
+		code   string
+	}{
+		{distribution.ErrMediaPolicyInvalid, http.StatusUnsupportedMediaType, "media_policy_invalid"},
+		{distribution.ErrVideoUploadBusy, http.StatusTooManyRequests, "video_upload_busy"},
+	} {
+		authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"documentation.manage": true}}
+		service := &fakeDistributionService{uploadErr: tt.err}
+		body := &bytes.Buffer{}
+		writer := multipart.NewWriter(body)
+		_ = writer.WriteField("source", "gallery")
+		_ = writer.WriteField("file_size", "12")
+		file, _ := writer.CreateFormFile("file", "proof.mp4")
+		_, _ = file.Write([]byte("\x00\x00\x00\x18ftypisom"))
+		_ = writer.Close()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/distribution/slots/slot-1/media", body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+		req.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
+		recorder := httptest.NewRecorder()
+		NewHandler(Dependencies{Auth: authService, Distribution: service, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(recorder, req)
+		if recorder.Code != tt.status || !strings.Contains(recorder.Body.String(), `"code":"`+tt.code+`"`) {
+			t.Fatalf("err=%v status=%d body=%s", tt.err, recorder.Code, recorder.Body.String())
+		}
 	}
 }
 
@@ -989,9 +1041,11 @@ type fakeDistributionService struct {
 	equippedSlot         distribution.DistributionSlot
 	equipmentErr         error
 	media                distribution.MediaFile
+	uploadErr            error
 	mediaContent         []byte
 	slotID               string
 	upload               distribution.UploadMediaInput
+	uploadReadErr        error
 	seenRegencyScope     auth.RegencyScope
 	catalogScheduleID    string
 	catalog              []distribution.SlotCatalogEntry
@@ -1032,7 +1086,10 @@ func (f *fakeDistributionService) UpdateEquipment(_ context.Context, _ auth.Prin
 }
 func (f *fakeDistributionService) UploadMedia(_ context.Context, _ auth.Principal, input distribution.UploadMediaInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.MediaFile, error) {
 	f.slotID, f.upload, f.seenRegencyScope = input.SlotID, input, scope
-	return f.media, nil
+	if input.Data != nil {
+		_, f.uploadReadErr = io.Copy(io.Discard, input.Data)
+	}
+	return f.media, f.uploadErr
 }
 func (f *fakeDistributionService) DeleteMedia(_ context.Context, _ auth.Principal, _ string, _ auth.ClientMeta, scope auth.RegencyScope) error {
 	f.seenRegencyScope = scope

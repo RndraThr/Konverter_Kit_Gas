@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
 	"konkit/internal/auth"
+	"konkit/internal/media"
 )
 
 type storageStub struct {
@@ -120,7 +122,7 @@ func (s *storageStub) Put(_ context.Context, key string, folderPath []string, so
 }
 
 func configuredMediaSlot() MediaSlot {
-	return MediaSlot{ID: "slot-1", SlotNumber: 25, DistributionDate: "2026-10-20", Label: "Foto KTP dan Nomor Urut", InputSource: "both", MinFiles: 1, MaxFiles: 1, ProgramType: "farmer", ZoneName: "Zona 1", RegencyName: "Kabupaten Wajo"}
+	return MediaSlot{ID: "slot-1", SlotNumber: 25, DistributionDate: "2026-10-20", Label: "Foto KTP dan Nomor Urut", InputSource: "both", MediaKind: "image", MinFiles: 1, MaxFiles: 1, ProgramType: "farmer", ZoneName: "Zona 1", RegencyName: "Kabupaten Wajo"}
 }
 
 func TestUploadMediaUsesProgramZoneFolderAndRejectsPlaceholder(t *testing.T) {
@@ -129,7 +131,7 @@ func TestUploadMediaUsesProgramZoneFolderAndRejectsPlaceholder(t *testing.T) {
 	repository := &mediaRepositoryStub{slot: configuredMediaSlot()}
 	service := NewService(repository, storage)
 	captured := time.Date(2026, time.April, 2, 9, 30, 0, 0, time.FixedZone("WITA", 8*60*60))
-	if _, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", Source: "camera", Data: jpeg, CapturedAt: &captured}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
+	if _, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", OriginalFilename: "proof.jpg", Source: "camera", Data: bytes.NewReader(jpeg), CapturedAt: &captured}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{"PETANI", "ZONA 1", "KABUPATEN WAJO", "DOKUMENTASI (FOTO)", "PENDISTRIBUSIAN", "20 Oktober 2026", "25"}
@@ -146,7 +148,7 @@ func TestUploadMediaUsesProgramZoneFolderAndRejectsPlaceholder(t *testing.T) {
 	storage = &storageStub{}
 	repository.slot.ZoneName = ""
 	service = NewService(repository, storage)
-	if _, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", Source: "camera", Data: jpeg}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err == nil || storage.putKey != "" {
+	if _, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", OriginalFilename: "proof.jpg", Source: "camera", Data: bytes.NewReader(jpeg)}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err == nil || storage.putKey != "" {
 		t.Fatalf("placeholder err=%v putKey=%q", err, storage.putKey)
 	}
 }
@@ -200,7 +202,7 @@ func TestUploadMediaDetectsImageAndCleansStorageWhenMetadataFails(t *testing.T) 
 	repository := &mediaRepositoryStub{slot: configuredMediaSlot()}
 	service := NewService(repository, storage)
 	jpeg := append([]byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}, bytes.Repeat([]byte{0}, 32)...)
-	media, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", OriginalFilename: "foto.txt", Source: "camera", Data: jpeg}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	media, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", OriginalFilename: "foto.txt", Source: "camera", Data: bytes.NewReader(jpeg)}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +211,7 @@ func TestUploadMediaDetectsImageAndCleansStorageWhenMetadataFails(t *testing.T) 
 	}
 
 	repository.saveErr = errors.New("database unavailable")
-	_, err = service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", OriginalFilename: "foto.jpg", Source: "camera", Data: jpeg}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	_, err = service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", OriginalFilename: "foto.jpg", Source: "camera", Data: bytes.NewReader(jpeg)}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
 	if err == nil || storage.deletedKey == "" {
 		t.Fatalf("err=%v deleted=%q", err, storage.deletedKey)
 	}
@@ -220,16 +222,16 @@ func TestUploadMediaEnforcesTypeSizeAndSlotRequirements(t *testing.T) {
 	slot.InputSource, slot.MaxFiles, slot.RequireLocation, slot.RequireCapturedAt = "camera", 1, true, true
 	locationRequired := &mediaRepositoryStub{slot: slot}
 	service := NewService(locationRequired, &storageStub{})
-	if _, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", Source: "gallery", Data: []byte("not an image")}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrMediaSourceInvalid) {
+	if _, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", OriginalFilename: "fake.jpg", Source: "gallery", Data: strings.NewReader("not an image")}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrMediaSourceInvalid) {
 		t.Fatalf("source err=%v", err)
 	}
 	jpeg := append([]byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}, bytes.Repeat([]byte{0}, 32)...)
-	if _, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", Source: "camera", Data: jpeg}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrMediaLocationRequired) {
+	if _, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", OriginalFilename: "proof.jpg", Source: "camera", Data: bytes.NewReader(jpeg)}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrMediaLocationRequired) {
 		t.Fatalf("location err=%v", err)
 	}
 	lat, lng := float64(-4.1), float64(120.2)
 	captured := time.Now()
-	if _, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", Source: "camera", Data: jpeg, Latitude: &lat, Longitude: &lng, CapturedAt: &captured}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
+	if _, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", OriginalFilename: "proof.jpg", Source: "camera", Data: bytes.NewReader(jpeg), Latitude: &lat, Longitude: &lng, CapturedAt: &captured}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -255,7 +257,7 @@ func TestUploadDeleteAndOpenMediaForwardRegencyScope(t *testing.T) {
 	service := NewService(repository, storage)
 	jpeg := append([]byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}, bytes.Repeat([]byte{0}, 32)...)
 
-	if _, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", Source: "camera", Data: jpeg}, auth.ClientMeta{}, scope); err != nil {
+	if _, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", OriginalFilename: "proof.jpg", Source: "camera", Data: bytes.NewReader(jpeg)}, auth.ClientMeta{}, scope); err != nil {
 		t.Fatal(err)
 	}
 	if len(repository.mediaScope.RegencyIDs) != 1 || repository.mediaScope.RegencyIDs[0] != "regency-1" {
@@ -278,3 +280,119 @@ func TestUploadDeleteAndOpenMediaForwardRegencyScope(t *testing.T) {
 		t.Fatalf("DeleteMedia scope=%+v", repository.mediaScope)
 	}
 }
+
+func TestUploadMediaEnforcesMediaPolicy(t *testing.T) {
+	jpeg := append([]byte{0xff, 0xd8, 0xff, 0xe0}, bytes.Repeat([]byte{0}, 32)...)
+	mp4 := append([]byte("\x00\x00\x00\x18ftypisom"), bytes.Repeat([]byte{0}, 32)...)
+	for _, tt := range []struct {
+		name, policy string
+		data         []byte
+		wantErr      error
+	}{
+		{name: "image accepts image", policy: "image", data: jpeg},
+		{name: "image rejects video", policy: "image", data: mp4, wantErr: ErrMediaPolicyInvalid},
+		{name: "video accepts video", policy: "video", data: mp4},
+		{name: "video rejects image", policy: "video", data: jpeg, wantErr: ErrMediaPolicyInvalid},
+		{name: "mixed accepts video", policy: "image_video", data: mp4},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			slot := configuredMediaSlot()
+			slot.MediaKind = tt.policy
+			service := NewService(&mediaRepositoryStub{slot: slot}, &storageStub{}, media.NewVideoLimiter(3))
+			_, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", OriginalFilename: "proof.mp4", Source: "gallery", DeclaredSize: int64(len(tt.data)), Data: bytes.NewReader(tt.data)}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("err=%v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestUploadMediaRejectsDeclaredAndActualOversizeAndCleansStorage(t *testing.T) {
+	slot := configuredMediaSlot()
+	slot.MediaKind = "video"
+	mp4 := []byte("\x00\x00\x00\x18ftypisom")
+
+	storage := &countingStorageStub{}
+	service := NewService(&mediaRepositoryStub{slot: slot}, storage, media.NewVideoLimiter(3))
+	_, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", OriginalFilename: "proof.mp4", Source: "gallery", DeclaredSize: media.MaxVideoBytes + 1, Data: bytes.NewReader(mp4)}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if !errors.Is(err, ErrMediaTooLarge) || storage.putCalls != 0 {
+		t.Fatalf("declared oversize err=%v putCalls=%d", err, storage.putCalls)
+	}
+
+	storage = &countingStorageStub{}
+	service = NewService(&mediaRepositoryStub{slot: slot}, storage, media.NewVideoLimiter(3))
+	large := io.MultiReader(bytes.NewReader(mp4), io.LimitReader(repeatingByteReader{}, media.MaxVideoBytes+1-int64(len(mp4))))
+	_, err = service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", OriginalFilename: "proof.mp4", Source: "gallery", DeclaredSize: media.MaxVideoBytes, Data: large}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if !errors.Is(err, ErrMediaTooLarge) || storage.deletedKey == "" {
+		t.Fatalf("actual oversize err=%v deleted=%q", err, storage.deletedKey)
+	}
+}
+
+func TestUploadMediaVideoLimiterDoesNotBlockImages(t *testing.T) {
+	limiter := media.NewVideoLimiter(3)
+	for range 3 {
+		if _, ok := limiter.TryAcquire(); !ok {
+			t.Fatal("failed to occupy video permit")
+		}
+	}
+	slot := configuredMediaSlot()
+	slot.MediaKind = "image_video"
+	storage := &storageStub{}
+	service := NewService(&mediaRepositoryStub{slot: slot}, storage, limiter)
+	mp4 := append([]byte("\x00\x00\x00\x18ftypisom"), bytes.Repeat([]byte{0}, 32)...)
+	_, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", OriginalFilename: "proof.mp4", Source: "gallery", Data: bytes.NewReader(mp4)}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if !errors.Is(err, ErrVideoUploadBusy) || storage.putKey != "" {
+		t.Fatalf("video err=%v put=%q", err, storage.putKey)
+	}
+	jpeg := append([]byte{0xff, 0xd8, 0xff, 0xe0}, bytes.Repeat([]byte{0}, 32)...)
+	if _, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", OriginalFilename: "proof.jpg", Source: "gallery", Data: bytes.NewReader(jpeg)}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
+		t.Fatalf("image should proceed while video permits are full: %v", err)
+	}
+}
+
+func TestUploadMediaPropagatesCancellationWithoutSavingMetadata(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	storage := &countingStorageStub{}
+	repository := &mediaRepositoryStub{slot: configuredMediaSlot()}
+	service := NewService(repository, storage, media.NewVideoLimiter(3))
+	jpeg := append([]byte{0xff, 0xd8, 0xff, 0xe0}, bytes.Repeat([]byte{0}, 32)...)
+	_, err := service.UploadMedia(ctx, auth.Principal{}, UploadMediaInput{SlotID: "slot-1", OriginalFilename: "proof.jpg", Source: "gallery", Data: bytes.NewReader(jpeg)}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if !errors.Is(err, context.Canceled) || repository.saveInput.StorageKey != "" {
+		t.Fatalf("err=%v saveInput=%+v", err, repository.saveInput)
+	}
+}
+
+type repeatingByteReader struct{}
+
+func (repeatingByteReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 0xff
+	}
+	return len(p), nil
+}
+
+type countingStorageStub struct {
+	putCalls   int
+	deletedKey string
+}
+
+func (s *countingStorageStub) Put(ctx context.Context, key string, folderPath []string, source io.Reader) (string, int64, string, error) {
+	return s.PutNamed(ctx, key, key, folderPath, source)
+}
+func (s *countingStorageStub) PutNamed(ctx context.Context, key, _ string, _ []string, source io.Reader) (string, int64, string, error) {
+	s.putCalls++
+	if err := ctx.Err(); err != nil {
+		return "", 0, "", err
+	}
+	size, err := io.Copy(io.Discard, source)
+	return key, size, "checksum", err
+}
+func (s *countingStorageStub) Open(context.Context, string) (io.ReadCloser, error) {
+	return nil, errors.New("not implemented")
+}
+func (s *countingStorageStub) Delete(_ context.Context, key string) error {
+	s.deletedKey = key
+	return nil
+}
+func (s *countingStorageStub) EnsureFolders(context.Context, [][]string) error { return nil }

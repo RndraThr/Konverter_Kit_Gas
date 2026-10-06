@@ -1,13 +1,11 @@
 package distribution
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -250,17 +248,9 @@ func normalizeIdentifier(value string) string {
 	}, value)
 }
 
-const maxMediaBytes = 10 << 20
-
 func (s *Service) UploadMedia(ctx context.Context, actor auth.Principal, input UploadMediaInput, meta auth.ClientMeta, scope auth.RegencyScope) (MediaFile, error) {
 	if s.storage == nil || s.mediaRepository == nil {
 		return MediaFile{}, ErrMediaUnavailable
-	}
-	if len(input.Data) == 0 {
-		return MediaFile{}, ErrMediaTypeInvalid
-	}
-	if len(input.Data) > maxMediaBytes {
-		return MediaFile{}, ErrMediaTooLarge
 	}
 	slot, err := s.mediaRepository.GetMediaSlot(ctx, strings.TrimSpace(input.SlotID), scope)
 	if err != nil {
@@ -279,9 +269,25 @@ func (s *Service) UploadMedia(ctx context.Context, actor auth.Principal, input U
 	if slot.RequireCapturedAt && input.CapturedAt == nil {
 		return MediaFile{}, ErrMediaCapturedAtRequired
 	}
-	mimeType := http.DetectContentType(input.Data[:min(len(input.Data), 512)])
-	if mimeType != "image/jpeg" && mimeType != "image/png" && mimeType != "image/webp" {
+	detected, err := media.DetectUpload(input.Data, input.OriginalFilename)
+	if errors.Is(err, media.ErrUnsupportedUpload) {
 		return MediaFile{}, ErrMediaTypeInvalid
+	}
+	if err != nil {
+		return MediaFile{}, err
+	}
+	if !media.PolicyAllows(slot.MediaKind, detected.Kind) {
+		return MediaFile{}, ErrMediaPolicyInvalid
+	}
+	if input.DeclaredSize > detected.MaxBytes {
+		return MediaFile{}, ErrMediaTooLarge
+	}
+	if detected.Kind == media.KindVideo {
+		release, ok := s.videoLimiter.TryAcquire()
+		if !ok {
+			return MediaFile{}, ErrVideoUploadBusy
+		}
+		defer release()
 	}
 	key, err := newStorageKey()
 	if err != nil {
@@ -306,12 +312,16 @@ func (s *Service) UploadMedia(ctx context.Context, actor auth.Principal, input U
 		capturedAt = *input.CapturedAt
 	}
 	folderPath = append(folderPath, formatDistributionFolderDate(distributionDate), strconv.Itoa(slot.SlotNumber))
-	visibleFilename := formatDistributionMediaFilename(slot.Label, mimeType, slot.AcceptedFiles+1, slot.MaxFiles)
-	storageKey, size, checksum, err := media.PutNamed(ctx, s.storage, key, visibleFilename, folderPath, bytes.NewReader(input.Data))
+	visibleFilename := formatDistributionMediaFilename(slot.Label, detected.MimeType, slot.AcceptedFiles+1, slot.MaxFiles)
+	storageKey, size, checksum, err := media.PutNamed(ctx, s.storage, key, visibleFilename, folderPath, io.LimitReader(detected.Reader, detected.MaxBytes+1))
 	if err != nil {
 		return MediaFile{}, err
 	}
-	stored, err := s.mediaRepository.SaveMedia(ctx, actor, MediaFileInput{SlotID: slot.ID, StorageKey: storageKey, OriginalFilename: visibleFilename, MimeType: mimeType, Checksum: checksum, Source: input.Source, ByteSize: size, CapturedAt: &capturedAt, Latitude: input.Latitude, Longitude: input.Longitude}, meta)
+	if size > detected.MaxBytes {
+		_ = s.storage.Delete(context.Background(), storageKey)
+		return MediaFile{}, ErrMediaTooLarge
+	}
+	stored, err := s.mediaRepository.SaveMedia(ctx, actor, MediaFileInput{SlotID: slot.ID, StorageKey: storageKey, OriginalFilename: visibleFilename, MimeType: detected.MimeType, Checksum: checksum, Source: input.Source, ByteSize: size, CapturedAt: &capturedAt, Latitude: input.Latitude, Longitude: input.Longitude}, meta)
 	if err != nil {
 		_ = s.storage.Delete(context.Background(), storageKey)
 		return MediaFile{}, err
@@ -328,7 +338,7 @@ func formatDistributionFolderDate(value time.Time) string {
 
 func formatDistributionMediaFilename(label, mimeType string, sequence, maxFiles int) string {
 	label = textnorm.BusinessUpper(strings.NewReplacer("/", "-", "\\", "-").Replace(label))
-	extension := map[string]string{"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}[mimeType]
+	extension := map[string]string{"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "video/mp4": ".mp4", "video/quicktime": ".mov", "video/webm": ".webm"}[mimeType]
 	if maxFiles > 1 {
 		return fmt.Sprintf("%s - %02d%s", label, sequence, extension)
 	}

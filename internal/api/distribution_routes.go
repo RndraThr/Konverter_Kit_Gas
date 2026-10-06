@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"io"
 	"mime"
 	"net/http"
@@ -9,9 +10,10 @@ import (
 	"time"
 
 	"konkit/internal/distribution"
+	"konkit/internal/media"
 )
 
-const maxMediaRequestBody = 11 << 20
+const maxMediaRequestBody = 501 << 20
 
 func (h *Handler) handleDistributionSlots(w http.ResponseWriter, r *http.Request, rc requestContext) {
 	if h.deps.Distribution == nil {
@@ -268,31 +270,28 @@ func (h *Handler) handleDistributionSlotMediaUpload(w http.ResponseWriter, r *ht
 	if !h.authorize(w, r, rc.principal, "documentation.manage") {
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxMediaRequestBody)
-	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		writeError(w, http.StatusRequestEntityTooLarge, "media_too_large", "Foto melebihi batas 10 MiB")
-		return
-	}
-	if r.MultipartForm != nil {
-		defer r.MultipartForm.RemoveAll()
-	}
-	file, header, err := r.FormFile("file")
+	started := time.Now()
+	kind := media.Kind("unknown")
+	loggedSize := int64(0)
+	tracked := &statusTrackingResponseWriter{ResponseWriter: w, status: http.StatusOK}
+	w = tracked
+	defer func() { logMediaUpload("distribution", kind, loggedSize, tracked.status, started) }()
+
+	upload, err := openMediaMultipart(w, r, maxMediaRequestBody, map[string]int64{
+		"source": 16, "file_size": 20, "captured_at": 64, "latitude": 32, "longitude": 32,
+	}, []string{"source", "file_size"})
 	if err != nil {
-		writeFieldError(w, http.StatusBadRequest, "validation_failed", "Foto wajib dipilih", map[string]string{"file": "Foto wajib dipilih"})
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, "media_too_large", "Berkas melebihi batas unggahan")
+		} else {
+			writeError(w, http.StatusBadRequest, "multipart_invalid", "Format unggahan tidak valid")
+		}
 		return
 	}
-	defer file.Close()
-	data, err := io.ReadAll(io.LimitReader(file, (10<<20)+1))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "media_invalid", "Foto tidak dapat dibaca")
-		return
-	}
-	if len(data) > 10<<20 {
-		writeError(w, http.StatusRequestEntityTooLarge, "media_too_large", "Foto melebihi batas 10 MiB")
-		return
-	}
-	input := distribution.UploadMediaInput{SlotID: slotID, OriginalFilename: header.Filename, Source: strings.TrimSpace(r.FormValue("source")), Data: data}
-	if raw := strings.TrimSpace(r.FormValue("captured_at")); raw != "" {
+	loggedSize = upload.DeclaredSize
+	input := distribution.UploadMediaInput{SlotID: slotID, OriginalFilename: upload.Filename, Source: strings.TrimSpace(upload.Fields["source"]), Data: upload.File, DeclaredSize: upload.DeclaredSize}
+	if raw := strings.TrimSpace(upload.Fields["captured_at"]); raw != "" {
 		value, err := time.Parse(time.RFC3339, raw)
 		if err != nil {
 			writeFieldError(w, http.StatusBadRequest, "validation_failed", "Waktu pengambilan tidak valid", map[string]string{"captured_at": "Gunakan waktu RFC3339"})
@@ -300,13 +299,13 @@ func (h *Handler) handleDistributionSlotMediaUpload(w http.ResponseWriter, r *ht
 		}
 		input.CapturedAt = &value
 	}
-	latitude, err := optionalFloat(r.FormValue("latitude"))
+	latitude, err := optionalFloat(upload.Fields["latitude"])
 	if err != nil {
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", "Koordinat tidak valid", map[string]string{"latitude": "Latitude tidak valid"})
 		return
 	}
 	input.Latitude = latitude
-	longitude, err := optionalFloat(r.FormValue("longitude"))
+	longitude, err := optionalFloat(upload.Fields["longitude"])
 	if err != nil {
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", "Koordinat tidak valid", map[string]string{"longitude": "Longitude tidak valid"})
 		return
@@ -318,9 +317,19 @@ func (h *Handler) handleDistributionSlotMediaUpload(w http.ResponseWriter, r *ht
 	}
 	result, err := h.deps.Distribution.UploadMedia(r.Context(), rc.principal, input, clientMeta(r), scope)
 	if err != nil {
-		writeServiceError(w, err)
+		var tooLarge *http.MaxBytesError
+		switch {
+		case errors.Is(err, errMultipartTrailingPart):
+			writeError(w, http.StatusBadRequest, "multipart_invalid", "Format unggahan tidak valid")
+		case errors.As(err, &tooLarge):
+			writeError(w, http.StatusRequestEntityTooLarge, "media_too_large", "Berkas melebihi batas unggahan")
+		default:
+			writeServiceError(w, err)
+		}
 		return
 	}
+	kind = mediaKindFromMIME(result.MimeType)
+	loggedSize = result.ByteSize
 	writeData(w, http.StatusCreated, result)
 }
 

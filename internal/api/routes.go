@@ -532,6 +532,10 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusRequestEntityTooLarge, "workbook_too_large", err.Error())
 	case errors.Is(err, distribution.ErrMediaTooLarge):
 		writeError(w, http.StatusRequestEntityTooLarge, "media_too_large", err.Error())
+	case errors.Is(err, distribution.ErrMediaPolicyInvalid):
+		writeError(w, http.StatusUnsupportedMediaType, "media_policy_invalid", err.Error())
+	case errors.Is(err, distribution.ErrVideoUploadBusy):
+		writeError(w, http.StatusTooManyRequests, "video_upload_busy", err.Error())
 	case errors.Is(err, administration.ErrLastSuperAdmin), errors.Is(err, administration.ErrSelfDeactivation), errors.Is(err, administration.ErrRoleInUse), errors.Is(err, administration.ErrSystemRole):
 		writeError(w, http.StatusConflict, "operation_rejected", err.Error())
 	case errors.Is(err, recipients.ErrAlreadyCancelled), errors.Is(err, recipients.ErrNotCancelled), errors.Is(err, recipients.ErrCancelNotAllowed):
