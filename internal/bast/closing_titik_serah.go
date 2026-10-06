@@ -74,13 +74,14 @@ func buildClosingTitikSerahSnapshot(ctx DP3Context, settings ScheduleSettings, l
 }
 
 // formatClosingDocumentNumber mengikuti format dokumen referensi:
-// {seq:03d}/{jumlahPaket}/{kodeKota}/KKT/CTS/{bulanRomawi}/{tahun}.
+// {seq}/{jumlahPaket}/{kodeKota}/KKT/CTS/{bulanRomawi}/{tahun}, dengan lebar digit
+// seq mengikuti jumlah digit totalPaket agar sesuai jumlah penerima per kabupaten.
 func formatClosingDocumentNumber(regencyCode, documentDate string, totalPaket, sequence int) string {
 	date, err := time.Parse("2006-01-02", documentDate)
 	if err != nil {
 		date = time.Now()
 	}
-	return fmt.Sprintf("%03d/%d/%s/KKT/CTS/%s/%d", sequence, totalPaket, strings.ToUpper(strings.TrimSpace(regencyCode)), romanMonth(date.Month()), date.Year())
+	return fmt.Sprintf("%0*d/%d/%s/KKT/CTS/%s/%d", digitWidth(totalPaket), sequence, totalPaket, strings.ToUpper(strings.TrimSpace(regencyCode)), romanMonth(date.Month()), date.Year())
 }
 
 func validateClosingSettings(settings ScheduleSettings) error {

@@ -143,7 +143,7 @@ type bundleRepositoryStub struct {
 func newBundleRepositoryStub(t *testing.T) *bundleRepositoryStub { return &bundleRepositoryStub{t: t} }
 
 func (r *bundleRepositoryStub) GetSourceContext(context.Context, string, string, auth.RegencyScope) (SourceContext, error) {
-	return SourceContext{ProgramID: "program", RegencyID: "regency", ProgramType: "farmer", RegencyCode: "WJO", RegencyName: "Wajo", ZoneName: "Zona 1", Padding: 4, SlotQuota: 2, DocumentSeries: "KSM-KKT", HasActiveLogo: true}, nil
+	return SourceContext{ProgramID: "program", RegencyID: "regency", ProgramType: "farmer", RegencyCode: "WJO", RegencyName: "Wajo", ZoneName: "Zona 1", SlotQuota: 2, DocumentSeries: "KSM-KKT", HasActiveLogo: true}, nil
 }
 func (r *bundleRepositoryStub) ListCompletedSlots(context.Context, string, string, auth.RegencyScope) ([]CompletedSlot, error) {
 	return []CompletedSlot{{ID: "slot-2", SlotNumber: 2, DistributedAt: time.Date(2024, 12, 10, 2, 0, 0, 0, time.UTC)}, {ID: "slot-1", SlotNumber: 1, DistributedAt: time.Date(2024, 12, 10, 1, 0, 0, 0, time.UTC)}}, nil

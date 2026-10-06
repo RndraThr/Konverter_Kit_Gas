@@ -25,19 +25,19 @@ func (r *Repository) GetSourceContext(ctx context.Context, programID, regencyID 
 	var placeholder *bool
 	err := r.pool.QueryRow(ctx, `
 		SELECT p.id::text,r.id::text,p.program_type,r.document_code,r.name,z.name,z.is_placeholder,
-			s.distribution_number_padding,s.slot_quota,
+			s.slot_quota,
 			EXISTS(SELECT 1 FROM program_ba_logo_assets logo WHERE logo.program_id=p.id AND logo.is_visible=true)
 		FROM programs p
 		JOIN regencies r ON r.id=$2
 		JOIN LATERAL (
-			SELECT distribution_number_padding,slot_quota FROM program_schedules
+			SELECT slot_quota FROM program_schedules
 			WHERE program_id=p.id AND regency_id=r.id
 			ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'draft' THEN 1 ELSE 2 END,created_at DESC LIMIT 1
 		) s ON true
 		LEFT JOIN program_regency_assignments a ON a.program_id=p.id AND a.regency_id=r.id
 		LEFT JOIN program_zones z ON z.id=a.zone_id
 		WHERE p.id=$1 AND ($3 OR r.id::text=ANY($4))
-	`, programID, regencyID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ProgramID, &result.RegencyID, &result.ProgramType, &result.RegencyCode, &result.RegencyName, &zoneName, &placeholder, &result.Padding, &slotQuota, &result.HasActiveLogo)
+	`, programID, regencyID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ProgramID, &result.RegencyID, &result.ProgramType, &result.RegencyCode, &result.RegencyName, &zoneName, &placeholder, &slotQuota, &result.HasActiveLogo)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return SourceContext{}, ErrNotFound
 	}

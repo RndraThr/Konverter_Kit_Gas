@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -52,10 +53,19 @@ func NewService(repository repository, location *time.Location) *Service {
 }
 
 func BuildDocumentNumber(input NumberInput) (string, error) {
-	if input.SlotNumber < 1 || input.FinalTotal < 1 || input.SlotNumber > input.FinalTotal || input.Padding < 1 || strings.TrimSpace(input.DocumentSeries) == "" || strings.TrimSpace(input.RegencyCode) == "" || input.LocalDate.IsZero() {
+	if input.SlotNumber < 1 || input.FinalTotal < 1 || input.SlotNumber > input.FinalTotal || strings.TrimSpace(input.DocumentSeries) == "" || strings.TrimSpace(input.RegencyCode) == "" || input.LocalDate.IsZero() {
 		return "", ErrInvalidInput
 	}
-	return fmt.Sprintf("%0*d/%d/%s-%s/%s/%d", input.Padding, input.SlotNumber, input.FinalTotal, strings.ToUpper(strings.TrimSpace(input.DocumentSeries)), strings.ToUpper(strings.TrimSpace(input.RegencyCode)), romanMonth(input.LocalDate.Month()), input.LocalDate.Year()), nil
+	return fmt.Sprintf("%0*d/%d/%s-%s/%s/%d", digitWidth(input.FinalTotal), input.SlotNumber, input.FinalTotal, strings.ToUpper(strings.TrimSpace(input.DocumentSeries)), strings.ToUpper(strings.TrimSpace(input.RegencyCode)), romanMonth(input.LocalDate.Month()), input.LocalDate.Year()), nil
+}
+
+// digitWidth is the number of digits needed to print total, so a document number's
+// sequence padding matches the regency's actual recipient count instead of a fixed width.
+func digitWidth(total int) int {
+	if total < 1 {
+		return 1
+	}
+	return len(strconv.Itoa(total))
 }
 
 func romanMonth(month time.Month) string {
@@ -154,11 +164,11 @@ func (s *Service) ListRecipients(ctx context.Context, programID, regencyID, loca
 		if date.Format("2006-01-02") != localDate {
 			continue
 		}
-		number, err := BuildDocumentNumber(NumberInput{SlotNumber: slot.SlotNumber, FinalTotal: lock.FinalTotal, Padding: contextData.Padding, DocumentSeries: contextData.DocumentSeries, RegencyCode: contextData.RegencyCode, LocalDate: date})
+		number, err := BuildDocumentNumber(NumberInput{SlotNumber: slot.SlotNumber, FinalTotal: lock.FinalTotal, DocumentSeries: contextData.DocumentSeries, RegencyCode: contextData.RegencyCode, LocalDate: date})
 		if err != nil {
 			return nil, ErrSlotOutOfRange
 		}
-		items = append(items, RecipientDocument{DistributionSlotID: slot.ID, SlotNumber: slot.SlotNumber, FinalTotal: lock.FinalTotal, Padding: contextData.Padding, DocumentNumber: number, LocalDate: localDate})
+		items = append(items, RecipientDocument{DistributionSlotID: slot.ID, SlotNumber: slot.SlotNumber, FinalTotal: lock.FinalTotal, DocumentNumber: number, LocalDate: localDate})
 	}
 	return items, nil
 }

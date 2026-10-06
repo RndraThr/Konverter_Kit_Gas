@@ -179,7 +179,6 @@ type RecipientDocument struct {
 	DistributionSlotID string   `json:"distribution_slot_id"`
 	SlotNumber         int      `json:"slot_number"`
 	FinalTotal         int      `json:"final_total"`
-	Padding            int      `json:"padding"`
 	DocumentNumber     string   `json:"document_number"`
 	LocalDate          string   `json:"local_date"`
 	Snapshot           Snapshot `json:"snapshot"`
@@ -195,7 +194,6 @@ type LockResult struct {
 type NumberInput struct {
 	SlotNumber     int
 	FinalTotal     int
-	Padding        int
 	DocumentSeries string
 	RegencyCode    string
 	LocalDate      time.Time
@@ -209,7 +207,6 @@ type SourceContext struct {
 	RegencyName     string
 	ZoneName        string
 	ZonePlaceholder bool
-	Padding         int
 	SlotQuota       int
 	DocumentSeries  string
 	HasActiveLogo   bool

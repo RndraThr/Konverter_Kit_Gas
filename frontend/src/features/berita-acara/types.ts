@@ -24,7 +24,6 @@ export type RecipientDocument = {
   distribution_slot_id: string;
   slot_number: number;
   final_total: number;
-  padding: number;
   document_number: string;
   local_date: string;
 };

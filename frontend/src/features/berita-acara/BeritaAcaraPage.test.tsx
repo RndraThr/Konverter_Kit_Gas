@@ -11,13 +11,13 @@ vi.mock('@/lib/api', () => ({ apiRequest: vi.fn(), apiBlobRequest: vi.fn() }));
 const schedules = { data: [
   {
     id: 'schedule-farmer', program_id: 'program-farmer', regency_id: 'regency-wajo', name: 'Wajo Petani 2026',
-    status: 'active', start_date: '2026-09-01T00:00:00Z', end_date: '2026-09-30T00:00:00Z', distribution_number_padding: 4,
+    status: 'active', start_date: '2026-09-01T00:00:00Z', end_date: '2026-09-30T00:00:00Z',
     program: { id: 'program-farmer', code: 'PETANI-2026', name: 'Program Petani 2026', program_type: 'farmer', fiscal_year: 2026, status: 'active' },
     regency: { id: 'regency-wajo', province_name: 'Sulawesi Selatan', name: 'Wajo', document_code: 'WJO', is_active: true },
   },
   {
     id: 'schedule-fisherman', program_id: 'program-fisherman', regency_id: 'regency-bone', name: 'Bone Nelayan 2026',
-    status: 'active', start_date: '2026-10-01T00:00:00Z', end_date: '2026-10-31T00:00:00Z', distribution_number_padding: 4,
+    status: 'active', start_date: '2026-10-01T00:00:00Z', end_date: '2026-10-31T00:00:00Z',
     program: { id: 'program-fisherman', code: 'NELAYAN-2026', name: 'Program Nelayan 2026', program_type: 'fisherman', fiscal_year: 2026, status: 'active' },
     regency: { id: 'regency-bone', province_name: 'Sulawesi Selatan', name: 'Bone', document_code: 'BON', is_active: true },
   },

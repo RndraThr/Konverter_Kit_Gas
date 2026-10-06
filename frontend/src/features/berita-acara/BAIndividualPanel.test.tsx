@@ -25,8 +25,8 @@ beforeEach(() => {
   vi.mocked(apiRequest).mockImplementation(async (path, init) => {
     if (path.includes('/dates')) return { data: dates };
     if (path.includes('/recipients')) return { data: [
-      { distribution_slot_id: 'slot-10', slot_number: 10, final_total: 50, padding: 4, document_number: '0010/50/KSM-KKT-WJO/XII/2024', local_date: '2024-12-10' },
-      { distribution_slot_id: 'slot-2', slot_number: 2, final_total: 50, padding: 4, document_number: '0002/50/KSM-KKT-WJO/XII/2024', local_date: '2024-12-10' },
+      { distribution_slot_id: 'slot-10', slot_number: 10, final_total: 50, document_number: '10/50/KSM-KKT-WJO/XII/2024', local_date: '2024-12-10' },
+      { distribution_slot_id: 'slot-2', slot_number: 2, final_total: 50, document_number: '02/50/KSM-KKT-WJO/XII/2024', local_date: '2024-12-10' },
     ] };
     if (path.endsWith('/lock-total') && init?.method === 'POST') return { data: { final_total: 50 } };
     if (path.endsWith('/finalize') && init?.method === 'POST') return { data: { ...dates[0].bundle, id: 'bundle-new' } };

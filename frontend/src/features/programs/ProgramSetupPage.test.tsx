@@ -15,7 +15,7 @@ const responses: Record<string, unknown> = {
     { id: 'prog-1', code: 'PETANI-2026', name: 'Program Petani 2026', program_type: 'farmer', fiscal_year: 2026, status: 'active' },
     { id: 'prog-2', code: 'NELAYAN-2027', name: 'Program Nelayan 2027', program_type: 'fisherman', fiscal_year: 2027, status: 'draft' },
   ] },
-  '/api/v1/program-setup/schedules': { data: [{ id: 'schedule-1', program_id: 'prog-1', regency_id: 'reg-1', package_template_version_id: 'package-1', documentation_template_version_id: 'document-1', name: 'Wajo Tahap 1', start_date: '2026-09-01T00:00:00Z', end_date: '2026-09-30T00:00:00Z', status: 'active', distribution_number_padding: 4, program: { id: 'prog-1', name: 'Program Petani 2026' }, regency: { id: 'reg-1', name: 'Wajo', document_code: 'WJO' } }] },
+  '/api/v1/program-setup/schedules': { data: [{ id: 'schedule-1', program_id: 'prog-1', regency_id: 'reg-1', package_template_version_id: 'package-1', documentation_template_version_id: 'document-1', name: 'Wajo Tahap 1', start_date: '2026-09-01T00:00:00Z', end_date: '2026-09-30T00:00:00Z', status: 'active', program: { id: 'prog-1', name: 'Program Petani 2026' }, regency: { id: 'reg-1', name: 'Wajo', document_code: 'WJO' } }] },
   '/api/v1/program-setup/package-templates': { data: [{ id: 'package-1', template_code: 'PETANI-LPG', version: 1, name: 'Paket Petani LPG', program_type: 'farmer', values: {}, status: 'published' }] },
   '/api/v1/program-setup/documentation-templates': { data: [{ id: 'document-1', template_code: 'DOK-PETANI', version: 1, name: 'Foto Distribusi Petani', program_type: 'farmer', status: 'published', slots: [] }] },
   '/api/v1/bast/branding?program_id=prog-1': { data: [] },

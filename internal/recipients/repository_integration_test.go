@@ -31,7 +31,7 @@ func seedRecipientFixture(t *testing.T, pool *pgxpool.Pool) recipientFixture {
 	var packageTemplateID, docTemplateID string
 	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES('PKG-RCPT',1,'Paket Test','farmer','{}'::jsonb,'published') RETURNING id::text`).Scan(&packageTemplateID))
 	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES('DOC-RCPT',1,'Dok Test','farmer','published') RETURNING id::text`).Scan(&docTemplateID))
-	must(t, pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,distribution_number_padding,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal Test Recipients','2026-01-01','2026-12-31','active',4,'{}'::jsonb) RETURNING id::text`, programID, fixture.farmerRegencyID, packageTemplateID, docTemplateID).Scan(&fixture.scheduleID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal Test Recipients','2026-01-01','2026-12-31','active','{}'::jsonb) RETURNING id::text`, programID, fixture.farmerRegencyID, packageTemplateID, docTemplateID).Scan(&fixture.scheduleID))
 
 	var personIDs, nominationIDs []string
 	insertAllocation := func(name, status string, distNumber int) string {

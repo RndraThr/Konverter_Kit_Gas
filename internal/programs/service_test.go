@@ -43,7 +43,7 @@ func (r *repositoryStub) ListSchedules(context.Context, auth.RegencyScope) ([]Sc
 }
 func (r *repositoryStub) SaveSchedule(_ context.Context, _ auth.Principal, input ScheduleInput, _ auth.RegencyScope, _ auth.ClientMeta) (Schedule, error) {
 	r.scheduleInput = input
-	return Schedule{DistributionNumberPadding: input.DistributionNumberPadding}, nil
+	return Schedule{}, nil
 }
 func (r *repositoryStub) ListPackageTemplates(context.Context) ([]PackageTemplate, error) {
 	return nil, nil
@@ -208,27 +208,9 @@ func TestSaveScheduleRejectsEndBeforeStart(t *testing.T) {
 		DocumentationTemplateVersionID: "documentation", Name: "Wajo Tahap 1",
 		StartDate: time.Date(2026, 9, 10, 0, 0, 0, 0, time.UTC),
 		EndDate:   time.Date(2026, 9, 9, 0, 0, 0, 0, time.UTC), Status: "draft",
-		DistributionNumberPadding: 4,
 	}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
 	if !errors.Is(err, ErrScheduleDatesInvalid) {
 		t.Fatalf("err=%v", err)
-	}
-}
-
-func TestSaveScheduleDefaultsDistributionNumberPadding(t *testing.T) {
-	repository := &repositoryStub{}
-	service := NewService(repository)
-	_, err := service.SaveSchedule(context.Background(), auth.Principal{}, ScheduleInput{
-		ProgramID: "program", RegencyID: "regency", PackageTemplateVersionID: "package",
-		DocumentationTemplateVersionID: "documentation", Name: "Wajo Tahap 1",
-		StartDate: time.Date(2026, 9, 9, 0, 0, 0, 0, time.UTC),
-		EndDate:   time.Date(2026, 9, 10, 0, 0, 0, 0, time.UTC), Status: "active",
-	}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if repository.scheduleInput.DistributionNumberPadding != 4 {
-		t.Fatalf("padding=%d", repository.scheduleInput.DistributionNumberPadding)
 	}
 }
 

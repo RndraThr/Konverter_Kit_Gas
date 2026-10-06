@@ -64,13 +64,14 @@ func buildClosingKabupatenSnapshot(ctx DP3Context, settings ScheduleSettings, lo
 }
 
 // formatClosingKabupatenDocumentNumber mengikuti format dokumen referensi:
-// {seq:03d}/{jumlahPaket}/{kodeKota}/KKT/CK/{bulanRomawi}/{tahun}.
+// {seq}/{jumlahPaket}/{kodeKota}/KKT/CK/{bulanRomawi}/{tahun}, dengan lebar digit
+// seq mengikuti jumlah digit totalPaket agar sesuai jumlah penerima per kabupaten.
 func formatClosingKabupatenDocumentNumber(regencyCode, documentDate string, totalPaket, sequence int) string {
 	date, err := time.Parse("2006-01-02", documentDate)
 	if err != nil {
 		date = time.Now()
 	}
-	return fmt.Sprintf("%03d/%d/%s/KKT/CK/%s/%d", sequence, totalPaket, strings.ToUpper(strings.TrimSpace(regencyCode)), romanMonth(date.Month()), date.Year())
+	return fmt.Sprintf("%0*d/%d/%s/KKT/CK/%s/%d", digitWidth(totalPaket), sequence, totalPaket, strings.ToUpper(strings.TrimSpace(regencyCode)), romanMonth(date.Month()), date.Year())
 }
 
 func validateClosingKabupatenSettings(settings ScheduleSettings) error {

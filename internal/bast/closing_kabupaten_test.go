@@ -20,7 +20,14 @@ func TestValidateClosingKabupatenRowsRequiresMachineData(t *testing.T) {
 
 func TestFormatClosingKabupatenDocumentNumber(t *testing.T) {
 	got := formatClosingKabupatenDocumentNumber("wjo", "2026-10-03", 25, 1)
-	if got != "001/25/WJO/KKT/CK/X/2026" {
+	if got != "01/25/WJO/KKT/CK/X/2026" {
+		t.Fatalf("document number=%q", got)
+	}
+}
+
+func TestFormatClosingKabupatenDocumentNumberPadsToTotalDigitWidth(t *testing.T) {
+	got := formatClosingKabupatenDocumentNumber("bgk", "2026-10-03", 200, 7)
+	if got != "007/200/BGK/KKT/CK/X/2026" {
 		t.Fatalf("document number=%q", got)
 	}
 }
@@ -71,7 +78,7 @@ func TestRenderClosingKabupatenIncludesProcurementHeadingUnderlinedTitleAndTotal
 	content := decodedPDFStreams(t, rendered.PDF)
 	for _, want := range []string{
 		"PENGADAAN BARANG", "LIQUEFIED", "PETROLEUM GAS", "TAHUN ANGGARAN 2026", "PT PERTAMINA PATRA NIAGA",
-		closingKabupatenTitle, "FORM REKAPITULASI CLOSING KABUPATEN / KOTA", "001/25/WJO/KKT/CK/X/2026", "Jumlah/Total", "PADA HARI INI",
+		closingKabupatenTitle, "FORM REKAPITULASI CLOSING KABUPATEN / KOTA", "01/25/WJO/KKT/CK/X/2026", "Jumlah/Total", "PADA HARI INI",
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("rendered closing kabupaten is missing %q", want)

@@ -93,13 +93,10 @@ func (s *Service) SaveSchedule(ctx context.Context, actor auth.Principal, input 
 	if input.EndDate.Before(input.StartDate) {
 		return Schedule{}, ErrScheduleDatesInvalid
 	}
-	if input.DistributionNumberPadding == 0 {
-		input.DistributionNumberPadding = 4
-	}
 	if input.SlotQuota != nil && *input.SlotQuota < 1 {
 		return Schedule{}, ErrSlotQuotaInvalid
 	}
-	if input.ProgramID == "" || input.RegencyID == "" || input.PackageTemplateVersionID == "" || input.DocumentationTemplateVersionID == "" || input.Name == "" || input.StartDate.IsZero() || input.EndDate.IsZero() || input.DistributionNumberPadding < 1 || input.DistributionNumberPadding > 8 || !oneOf(input.Status, "draft", "active", "completed", "cancelled") {
+	if input.ProgramID == "" || input.RegencyID == "" || input.PackageTemplateVersionID == "" || input.DocumentationTemplateVersionID == "" || input.Name == "" || input.StartDate.IsZero() || input.EndDate.IsZero() || !oneOf(input.Status, "draft", "active", "completed", "cancelled") {
 		return Schedule{}, ErrInvalidInput
 	}
 	if !scope.Allows(input.RegencyID) {

@@ -154,7 +154,6 @@ type Schedule struct {
 	StartDate                      time.Time              `json:"start_date"`
 	EndDate                        time.Time              `json:"end_date"`
 	Status                         string                 `json:"status"`
-	DistributionNumberPadding      int                    `json:"distribution_number_padding"`
 	SlotQuota                      *int                   `json:"slot_quota,omitempty"`
 	ReceiptPolicy                  map[string]any         `json:"receipt_policy"`
 	SupervisorName                 string                 `json:"supervisor_name,omitempty"`
@@ -212,7 +211,6 @@ type ScheduleInput struct {
 	StartDate                      time.Time      `json:"start_date"`
 	EndDate                        time.Time      `json:"end_date"`
 	Status                         string         `json:"status"`
-	DistributionNumberPadding      int            `json:"distribution_number_padding"`
 	SlotQuota                      *int           `json:"slot_quota,omitempty"`
 	ReceiptPolicy                  map[string]any `json:"receipt_policy"`
 	SupervisorName                 string         `json:"supervisor_name"`

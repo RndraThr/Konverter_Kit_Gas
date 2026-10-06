@@ -31,7 +31,7 @@ func TestRepositoryResolvesScopedBAContextAndCompletedSlots(t *testing.T) {
 	}
 	mustQuery(`INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES($1,1,'Paket BA','farmer','{}','published') RETURNING id::text`, []any{"BAPKG-" + suffix}, &packageID)
 	mustQuery(`INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES($1,1,'Dok BA','farmer','published') RETURNING id::text`, []any{"BADOC-" + suffix}, &documentationID)
-	mustQuery(`INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,distribution_number_padding,slot_quota,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal BA','2024-12-01','2024-12-31','active',4,50,'{}') RETURNING id::text`, []any{programID, regencyID, packageID, documentationID}, &scheduleID)
+	mustQuery(`INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,slot_quota,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal BA','2024-12-01','2024-12-31','active',50,'{}') RETURNING id::text`, []any{programID, regencyID, packageID, documentationID}, &scheduleID)
 	first := time.Date(2024, 12, 9, 18, 0, 0, 0, time.UTC)
 	var firstSlotID string
 	for _, slot := range []struct {

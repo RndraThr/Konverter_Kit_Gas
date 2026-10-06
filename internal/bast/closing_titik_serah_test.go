@@ -21,7 +21,14 @@ func TestValidateClosingRowsRequiresMachineData(t *testing.T) {
 
 func TestFormatClosingDocumentNumber(t *testing.T) {
 	got := formatClosingDocumentNumber("wjo", "2026-10-03", 23, 1)
-	if got != "001/23/WJO/KKT/CTS/X/2026" {
+	if got != "01/23/WJO/KKT/CTS/X/2026" {
+		t.Fatalf("document number=%q", got)
+	}
+}
+
+func TestFormatClosingDocumentNumberPadsToTotalDigitWidth(t *testing.T) {
+	got := formatClosingDocumentNumber("bgk", "2026-10-03", 200, 7)
+	if got != "007/200/BGK/KKT/CTS/X/2026" {
 		t.Fatalf("document number=%q", got)
 	}
 }
@@ -72,7 +79,7 @@ func TestRenderClosingTitikSerahIncludesProcurementHeadingUnderlinedTitleAndTota
 	content := decodedPDFStreams(t, rendered.PDF)
 	for _, want := range []string{
 		"PENGADAAN BARANG", "LIQUEFIED", "PETROLEUM GAS", "TAHUN ANGGARAN 2026", "PT PERTAMINA PATRA NIAGA",
-		closingTitle, "FORM REKAPITULASI CLOSING LOKASI / TITIK SERAH", "001/20/WJO/KKT/CTS/X/2026", "Jumlah/Total", "PADA HARI INI",
+		closingTitle, "FORM REKAPITULASI CLOSING LOKASI / TITIK SERAH", "01/20/WJO/KKT/CTS/X/2026", "Jumlah/Total", "PADA HARI INI",
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("rendered closing titik serah is missing %q", want)

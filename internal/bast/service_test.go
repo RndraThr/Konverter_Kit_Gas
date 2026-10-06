@@ -39,15 +39,25 @@ func (r *repositoryStub) SaveFinalDocument(context.Context, auth.Principal, Reci
 }
 
 func readyContext() SourceContext {
-	return SourceContext{ProgramID: "program-1", RegencyID: "regency-1", ProgramType: "farmer", RegencyCode: "WJO", ZoneName: "Zona 1", Padding: 4, SlotQuota: 1578, DocumentSeries: "KSM-KKT", HasActiveLogo: true}
+	return SourceContext{ProgramID: "program-1", RegencyID: "regency-1", ProgramType: "farmer", RegencyCode: "WJO", ZoneName: "Zona 1", SlotQuota: 1578, DocumentSeries: "KSM-KKT", HasActiveLogo: true}
 }
 
 func TestBuildDocumentNumberUsesRegencyTotalAndRomanMonth(t *testing.T) {
-	got, err := BuildDocumentNumber(NumberInput{SlotNumber: 102, FinalTotal: 1578, Padding: 4, DocumentSeries: "KSM-KKT", RegencyCode: "WJO", LocalDate: time.Date(2024, 12, 10, 0, 0, 0, 0, time.UTC)})
+	got, err := BuildDocumentNumber(NumberInput{SlotNumber: 102, FinalTotal: 1578, DocumentSeries: "KSM-KKT", RegencyCode: "WJO", LocalDate: time.Date(2024, 12, 10, 0, 0, 0, 0, time.UTC)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got != "0102/1578/KSM-KKT-WJO/XII/2024" {
+		t.Fatalf("number=%q", got)
+	}
+}
+
+func TestBuildDocumentNumberPadsToRegencyTotalDigitWidth(t *testing.T) {
+	got, err := BuildDocumentNumber(NumberInput{SlotNumber: 7, FinalTotal: 200, DocumentSeries: "KSM-KKT", RegencyCode: "BGK", LocalDate: time.Date(2024, 12, 10, 0, 0, 0, 0, time.UTC)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "007/200/KSM-KKT-BGK/XII/2024" {
 		t.Fatalf("number=%q", got)
 	}
 }
