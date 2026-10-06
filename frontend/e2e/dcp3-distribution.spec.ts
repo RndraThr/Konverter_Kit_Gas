@@ -35,7 +35,7 @@ test('DCP3 to completed package distribution', async ({ page }, testInfo) => {
   await navigateDashboard(page, 'Persiapan program', mobile);
   await page.getByRole('tab', { name: 'Jadwal' }).click();
   await expect(page.getByText(schedule, { exact: true })).toBeVisible();
-  await expect.poll(() => page.getByRole('tablist').evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(mobile);
+  await expect.poll(() => page.getByRole('tablist').evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(false);
   await expectNoHorizontalOverflow(page);
 
   await navigateDashboard(page, 'DCP3', mobile);

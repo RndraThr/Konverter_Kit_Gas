@@ -18,7 +18,7 @@ const workspaceValues = ['regencies', 'programs', 'zones', 'templates', 'logos',
 type Workspace = typeof workspaceValues[number];
 
 function TabLabel({ children, count, pending, icon: Icon }: { children: string; count?: number; pending: boolean; icon: LucideIcon }) {
-  return <span className={styles.tabLabel}><Icon aria-hidden="true" /><span>{children}</span><span className={styles.tabCount} aria-hidden="true">{pending ? '\u2026' : count ?? 0}</span></span>;
+  return <span className={styles.tabLabel}><Icon aria-hidden="true" /><span className={styles.tabLabelText}>{children}</span><span className={styles.tabCount} aria-hidden="true">{pending ? '\u2026' : count ?? 0}</span></span>;
 }
 
 export function ProgramSetupPage() {
