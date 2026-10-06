@@ -5,7 +5,14 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
+
+	"google.golang.org/api/drive/v3"
+	"google.golang.org/api/option"
 )
 
 type fakeDriveFilesAPI struct {
@@ -70,6 +77,55 @@ func TestGoogleDriveStoragePutNamedUsesVisibleFilename(t *testing.T) {
 	if len(api.uploadedNames) != 1 || api.uploadedNames[0] != "SELASA, 10 DESEMBER 2024.pdf" {
 		t.Fatalf("uploaded names=%v", api.uploadedNames)
 	}
+}
+
+func TestRealDriveUploadUsesEightMiBChunks(t *testing.T) {
+	const total = (8 << 20) + 1024
+	var chunkSizes []int
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/upload/drive/v3/files"):
+			w.Header().Set("Location", server.URL+"/resumable/session")
+			w.WriteHeader(http.StatusOK)
+		case r.URL.Path == "/resumable/session":
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			chunkSizes = append(chunkSizes, len(body))
+			if len(chunkSizes) == 1 {
+				w.Header().Set("X-HTTP-Status-Code-Override", "308")
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"drive-file","size":"` + strconv.Itoa(total) + `"}`))
+		default:
+			http.Error(w, "unexpected "+r.Method+" "+r.URL.String(), http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	service, err := drive.NewService(t.Context(), option.WithoutAuthentication(), option.WithEndpoint(server.URL+"/"), option.WithHTTPClient(server.Client()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	api := &realDriveFilesAPI{service: service}
+	if _, _, err := api.uploadFile(t.Context(), "proof.mp4", "parent", io.LimitReader(zeroReader{}, total)); err != nil {
+		t.Fatal(err)
+	}
+	if len(chunkSizes) != 2 || chunkSizes[0] != 8<<20 || chunkSizes[1] != 1024 {
+		t.Fatalf("chunk sizes=%v, want [%d 1024]", chunkSizes, 8<<20)
+	}
+}
+
+type zeroReader struct{}
+
+func (zeroReader) Read(p []byte) (int, error) {
+	clear(p)
+	return len(p), nil
 }
 
 func TestGoogleDriveStoragePutUsesBytesReadWhenDriveOmitsSize(t *testing.T) {

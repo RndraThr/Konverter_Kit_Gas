@@ -13,6 +13,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/drive/v3"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 )
 
@@ -32,6 +33,7 @@ type realDriveFilesAPI struct {
 }
 
 const driveFolderMimeType = "application/vnd.google-apps.folder"
+const driveUploadChunkSize = 8 << 20
 
 func (a *realDriveFilesAPI) findFolder(ctx context.Context, name, parentID string) (string, error) {
 	escaped := strings.ReplaceAll(name, `'`, `\'`)
@@ -57,7 +59,7 @@ func (a *realDriveFilesAPI) createFolder(ctx context.Context, name, parentID str
 
 func (a *realDriveFilesAPI) uploadFile(ctx context.Context, name, parentID string, r io.Reader) (string, int64, error) {
 	file := &drive.File{Name: name, Parents: []string{parentID}}
-	created, err := a.service.Files.Create(file).Media(r).Context(ctx).Do()
+	created, err := a.service.Files.Create(file).Media(r, googleapi.ChunkSize(driveUploadChunkSize)).Context(ctx).Do()
 	if err != nil {
 		return "", 0, fmt.Errorf("upload drive file %q: %w", name, err)
 	}
