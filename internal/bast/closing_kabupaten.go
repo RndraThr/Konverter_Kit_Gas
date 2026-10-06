@@ -20,18 +20,18 @@ type ClosingKabupatenRow struct {
 // ClosingKabupatenSnapshot adalah bentuk bast_aggregate_documents.snapshot_json
 // untuk Closing Kabupaten/Kota.
 type ClosingKabupatenSnapshot struct {
-	DocumentType          string               `json:"document_type"`
-	DocumentDate          string               `json:"document_date"`
-	DocumentNumber        string               `json:"document_number"`
-	RegencyName           string               `json:"regency_name"`
-	RegencyCode           string               `json:"regency_code"`
-	ProvinceName          string               `json:"province_name"`
-	ConsultantCompanyName string               `json:"consultant_company_name"`
-	FiscalYear            int                  `json:"fiscal_year"`
-	Logos                 []LogoSnapshot       `json:"logos"`
-	Signatories           closingSignatories   `json:"signatories"`
+	DocumentType          string                `json:"document_type"`
+	DocumentDate          string                `json:"document_date"`
+	DocumentNumber        string                `json:"document_number"`
+	RegencyName           string                `json:"regency_name"`
+	RegencyCode           string                `json:"regency_code"`
+	ProvinceName          string                `json:"province_name"`
+	ConsultantCompanyName string                `json:"consultant_company_name"`
+	FiscalYear            int                   `json:"fiscal_year"`
+	Logos                 []LogoSnapshot        `json:"logos"`
+	Signatories           closingSignatories    `json:"signatories"`
 	Rows                  []ClosingKabupatenRow `json:"rows"`
-	GrandTotal            int                  `json:"grand_total"`
+	GrandTotal            int                   `json:"grand_total"`
 }
 
 func buildClosingKabupatenSnapshot(ctx DP3Context, settings ScheduleSettings, logos []LogoSnapshot, documentDate string, version int, rows []ClosingKabupatenRow) ClosingKabupatenSnapshot {

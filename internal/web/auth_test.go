@@ -241,7 +241,9 @@ func TestLoginAndDashboardResponsesAreNeverCached(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
 			req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: "valid-token"})
 			return req
-		}, deps: func() Dependencies { return testDependencies(&fakeAuthService{principal: auth.Principal{UserID: "user-1", Username: "admin"}}, false) }},
+		}, deps: func() Dependencies {
+			return testDependencies(&fakeAuthService{principal: auth.Principal{UserID: "user-1", Username: "admin"}}, false)
+		}},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
