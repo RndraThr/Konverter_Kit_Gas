@@ -1,10 +1,30 @@
 import { useEffect, useRef, useState } from 'react';
 import { BrowserMultiFormatReader } from '@zxing/browser';
+import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { LoaderCircle, RefreshCw, ScanLine } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
+// The units carry 1D linear barcodes, so restrict decoding to the common linear symbologies
+// and skip 2D formats (QR/DataMatrix/…) entirely — an unrestricted reader occasionally
+// mis-decodes a linear code as some other format, producing a wrong value. TRY_HARDER trades a
+// little speed for noticeably more reliable reads under blur/glare.
+const decodeHints = new Map<DecodeHintType, unknown>([
+  [DecodeHintType.POSSIBLE_FORMATS, [
+    BarcodeFormat.CODE_128, BarcodeFormat.CODE_39, BarcodeFormat.CODE_93,
+    BarcodeFormat.CODABAR, BarcodeFormat.ITF,
+    BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A, BarcodeFormat.UPC_E,
+  ]],
+  [DecodeHintType.TRY_HARDER, true],
+]);
+
+// A single camera frame can decode to the wrong value under motion blur, glare, or a
+// partially-framed code — and those misreads are random, so they never repeat identically.
+// Requiring the same text from several consecutive decodes accepts only a value the scanner
+// keeps agreeing on, which eliminates the occasional wrong serial number.
+const REQUIRED_MATCHES = 3;
 
 function cameraErrorMessage(error: unknown): string {
   const name = error instanceof DOMException ? error.name : undefined;
@@ -52,12 +72,26 @@ export default function BarcodeScanner({ onResult, onClose }: { onResult: (text:
     if (!video) return;
     let stopped = false;
     let controls: { stop: () => void } | undefined;
+    let lastText = '';
+    let matches = 0;
     setError(null);
     setStarting(true);
-    const reader = new BrowserMultiFormatReader();
+    // Only accept a value once REQUIRED_MATCHES consecutive decodes agree on it. Empty frames
+    // (no barcode found) arrive with a null result and are ignored without resetting the streak;
+    // a decode that disagrees restarts the count on the new value.
+    const handleResult = (result: { getText: () => string } | null | undefined, _error: unknown, scanControls: { stop: () => void }) => {
+      if (!result || stopped) return;
+      const text = result.getText();
+      if (text === lastText) { matches += 1; } else { lastText = text; matches = 1; }
+      if (matches < REQUIRED_MATCHES) return;
+      stopped = true;
+      scanControls.stop();
+      onResultRef.current(text);
+    };
+    const reader = new BrowserMultiFormatReader(decodeHints);
     const started = deviceId
-      ? reader.decodeFromVideoDevice(deviceId, video, (result, _error, scanControls) => { if (result && !stopped) { stopped = true; scanControls.stop(); onResultRef.current(result.getText()); } })
-      : reader.decodeFromConstraints({ video: { facingMode: { ideal: 'environment' } } }, video, (result, _error, scanControls) => { if (result && !stopped) { stopped = true; scanControls.stop(); onResultRef.current(result.getText()); } });
+      ? reader.decodeFromVideoDevice(deviceId, video, handleResult)
+      : reader.decodeFromConstraints({ video: { facingMode: { ideal: 'environment' } } }, video, handleResult);
     started
       .then((activeControls) => {
         controls = activeControls;

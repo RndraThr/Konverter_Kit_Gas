@@ -91,14 +91,38 @@ test('retries starting the camera when "Coba lagi" is clicked', async () => {
   expect(decodeFromConstraints).toHaveBeenCalledTimes(2);
 });
 
-test('calls onResult with the decoded text once a barcode is read', async () => {
+test('calls onResult only after the same value is decoded on consecutive frames', async () => {
+  const onResult = vi.fn();
+  const scanStop = vi.fn();
+  render(<BarcodeScanner onResult={onResult} onClose={vi.fn()} />);
+  await waitFor(() => expect(lastConstraintsCallback).toBeTruthy());
+
+  const read = () => lastConstraintsCallback!({ getText: () => 'SN-1234567890' }, null, { stop: scanStop });
+  read();
+  read();
+  expect(onResult).not.toHaveBeenCalled(); // two frames is not yet enough confidence
+
+  read();
+  expect(onResult).toHaveBeenCalledExactlyOnceWith('SN-1234567890');
+  expect(scanStop).toHaveBeenCalled();
+});
+
+test('ignores a one-off misread and restarts the streak when a frame disagrees', async () => {
   const onResult = vi.fn();
   render(<BarcodeScanner onResult={onResult} onClose={vi.fn()} />);
   await waitFor(() => expect(lastConstraintsCallback).toBeTruthy());
 
-  lastConstraintsCallback!({ getText: () => 'SN-1234567890' }, null, { stop: vi.fn() });
+  const read = (text: string) => lastConstraintsCallback!({ getText: () => text }, null, { stop: vi.fn() });
+  // A stray wrong value in the middle must not count toward the correct value's streak.
+  read('SN-0000000001');
+  read('SN-0000000001');
+  read('WRONG-9999'); // misread resets the count
+  read('SN-0000000001');
+  read('SN-0000000001');
+  expect(onResult).not.toHaveBeenCalled();
 
-  expect(onResult).toHaveBeenCalledWith('SN-1234567890');
+  read('SN-0000000001');
+  expect(onResult).toHaveBeenCalledExactlyOnceWith('SN-0000000001');
 });
 
 test('lets the user switch cameras once more than one is available', async () => {
