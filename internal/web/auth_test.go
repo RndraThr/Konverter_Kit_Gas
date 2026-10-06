@@ -224,6 +224,36 @@ func TestDashboardRendersAuthenticatedReactShell(t *testing.T) {
 	}
 }
 
+// A proxy (e.g. Opera Android's data-saving compression proxy) that caches a
+// redirect-to-login response and replays it after the user holds a valid session
+// cookie would make login appear to silently bounce back. Cache-Control: no-store
+// on both the auth pages and the auth-gate redirects prevents that.
+func TestLoginAndDashboardResponsesAreNeverCached(t *testing.T) {
+	cases := []struct {
+		name    string
+		req     func() *http.Request
+		deps    func() Dependencies
+		wantGet string
+	}{
+		{name: "login page", req: func() *http.Request { return httptest.NewRequest(http.MethodGet, "/login", nil) }, deps: func() Dependencies { return testDependencies(&fakeAuthService{}, false) }},
+		{name: "dashboard anonymous redirect", req: func() *http.Request { return httptest.NewRequest(http.MethodGet, "/dashboard", nil) }, deps: func() Dependencies { return testDependencies(&fakeAuthService{}, false) }},
+		{name: "dashboard authenticated", req: func() *http.Request {
+			req := httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+			req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: "valid-token"})
+			return req
+		}, deps: func() Dependencies { return testDependencies(&fakeAuthService{principal: auth.Principal{UserID: "user-1", Username: "admin"}}, false) }},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			NewHandler(testCase.deps()).ServeHTTP(rec, testCase.req())
+			if got := rec.Header().Get("Cache-Control"); !strings.Contains(got, "no-store") {
+				t.Fatalf("Cache-Control=%q, want it to contain no-store", got)
+			}
+		})
+	}
+}
+
 func TestDashboardDescendantRendersAuthenticatedReactShell(t *testing.T) {
 	fake := &fakeAuthService{principal: auth.Principal{UserID: "user-1", Username: "admin"}}
 	req := httptest.NewRequest(http.MethodGet, "/dashboard/pengguna", nil)

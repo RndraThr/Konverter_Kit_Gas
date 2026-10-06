@@ -73,6 +73,7 @@ func (s *Server) redirectToLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	noStore(w)
 	http.Redirect(w, r, "/login", http.StatusFound)
 }
 

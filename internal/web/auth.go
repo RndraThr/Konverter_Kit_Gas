@@ -36,7 +36,16 @@ const (
 	sessionTokenContextKey
 )
 
+// noStore prevents intermediary proxies (notably Opera Android's data-saving compression
+// proxy) from caching a redirect-to-login response and replaying it on later requests even
+// after the user holds a valid session cookie.
+func noStore(w http.ResponseWriter) {
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+}
+
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
+	noStore(w)
 	switch r.Method {
 	case http.MethodGet:
 		s.loginPage(w, r)
@@ -191,6 +200,7 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) requireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		noStore(w)
 		cookie, err := r.Cookie(auth.SessionCookieName)
 		if err != nil {
 			http.Redirect(w, r, "/login", http.StatusFound)
