@@ -47,6 +47,7 @@ type SlotSummary struct {
 	MaxFiles          int         `json:"max_files,omitempty"`
 	Files             []MediaFile `json:"files,omitempty"`
 	InputSource       string      `json:"input_source,omitempty"`
+	MediaKind         string      `json:"media_kind,omitempty"`
 	RequireLocation   bool        `json:"require_location,omitempty"`
 	RequireCapturedAt bool        `json:"require_captured_at,omitempty"`
 }
@@ -145,6 +146,7 @@ type MediaSlot struct {
 	ZoneName          string
 	RegencyName       string
 	InputSource       string
+	MediaKind         string
 	RequireLocation   bool
 	RequireCapturedAt bool
 	MinFiles          int

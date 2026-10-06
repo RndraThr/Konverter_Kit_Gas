@@ -340,6 +340,37 @@ func TestSaveDocumentationTemplateRejectsInvalidStage(t *testing.T) {
 	}
 }
 
+func TestSaveDocumentationTemplateNormalizesAndValidatesMediaKind(t *testing.T) {
+	repository := &repositoryStub{}
+	service := NewService(repository)
+
+	input := DocumentationTemplateInput{
+		TemplateCode: "DOK-MEDIA", Name: "Dokumentasi Media", ProgramType: ProgramFarmer, Status: "draft",
+		Slots: []DocumentationTemplateSlotInput{
+			{SlotCode: "default_image", Label: "Default image", Stage: "mesin", MinFiles: 1, MaxFiles: 1, InputSource: "both"},
+			{SlotCode: "video", Label: "Video", Stage: "penyerahan", MinFiles: 1, MaxFiles: 1, InputSource: "gallery", MediaKind: " VIDEO "},
+			{SlotCode: "mixed", Label: "Mixed", Stage: "dokumen", MinFiles: 1, MaxFiles: 2, InputSource: "both", MediaKind: "image_video"},
+		},
+	}
+	if _, err := service.SaveDocumentationTemplate(context.Background(), auth.Principal{}, input, auth.ClientMeta{}); err != nil {
+		t.Fatal(err)
+	}
+	if got := repository.documentInput.Slots[0].MediaKind; got != "image" {
+		t.Fatalf("default media_kind=%q, want image", got)
+	}
+	if got := repository.documentInput.Slots[1].MediaKind; got != "video" {
+		t.Fatalf("normalized media_kind=%q, want video", got)
+	}
+	if got := repository.documentInput.Slots[2].MediaKind; got != "image_video" {
+		t.Fatalf("mixed media_kind=%q, want image_video", got)
+	}
+
+	input.Slots[0].MediaKind = "document"
+	if _, err := service.SaveDocumentationTemplate(context.Background(), auth.Principal{}, input, auth.ClientMeta{}); !errors.Is(err, ErrTemplateSlotInvalid) {
+		t.Fatalf("invalid media_kind err=%v, want ErrTemplateSlotInvalid", err)
+	}
+}
+
 func TestSaveZoneNormalizesCodeAndUppercasesName(t *testing.T) {
 	repository := &repositoryStub{}
 	service := NewService(repository)

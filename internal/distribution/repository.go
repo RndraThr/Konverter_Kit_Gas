@@ -25,7 +25,7 @@ func (r *Repository) GetMediaSlot(ctx context.Context, slotID string, scope auth
 	var zoneName *string
 	var isPlaceholder *bool
 	err := r.pool.QueryRow(ctx, `
-		SELECT s.id::text,dsl.slot_number,dsl.distribution_date::text,s.label_snapshot,s.input_source,s.require_location,s.require_captured_at,s.min_files,s.max_files,
+		SELECT s.id::text,dsl.slot_number,dsl.distribution_date::text,s.label_snapshot,s.input_source,s.media_kind,s.require_location,s.require_captured_at,s.min_files,s.max_files,
 			count(m.id) FILTER(WHERE m.status='accepted'), p.program_type, z.name, r.name, z.is_placeholder
 		FROM documentation_slots s
 		LEFT JOIN media_files m ON m.documentation_slot_id=s.id
@@ -37,7 +37,7 @@ func (r *Repository) GetMediaSlot(ctx context.Context, slotID string, scope auth
 		LEFT JOIN program_zones z ON z.id=pra.zone_id
 		WHERE s.id=$1 AND ($2 OR ps.regency_id::text = ANY($3))
 		GROUP BY s.id,dsl.slot_number,dsl.distribution_date,s.label_snapshot,p.program_type,z.name,r.name,z.is_placeholder
-	`, slotID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.SlotNumber, &result.DistributionDate, &result.Label, &result.InputSource, &result.RequireLocation, &result.RequireCapturedAt, &result.MinFiles, &result.MaxFiles, &result.AcceptedFiles, &result.ProgramType, &zoneName, &result.RegencyName, &isPlaceholder)
+	`, slotID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.SlotNumber, &result.DistributionDate, &result.Label, &result.InputSource, &result.MediaKind, &result.RequireLocation, &result.RequireCapturedAt, &result.MinFiles, &result.MaxFiles, &result.AcceptedFiles, &result.ProgramType, &zoneName, &result.RegencyName, &isPlaceholder)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return MediaSlot{}, ErrMediaNotFound
 	}
@@ -239,8 +239,8 @@ func (r *Repository) CreateSlot(ctx context.Context, actor auth.Principal, input
 	}
 
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO documentation_slots(distribution_slot_id,slot_code,label_snapshot,stage,is_required,min_files,max_files,input_source,require_location,require_captured_at,sort_order)
-		SELECT $1,slot_code,label,stage,is_required,min_files,max_files,input_source,require_location,require_captured_at,sort_order
+		INSERT INTO documentation_slots(distribution_slot_id,slot_code,label_snapshot,stage,is_required,min_files,max_files,input_source,media_kind,require_location,require_captured_at,sort_order)
+		SELECT $1,slot_code,label,stage,is_required,min_files,max_files,input_source,media_kind,require_location,require_captured_at,sort_order
 		FROM documentation_template_slots WHERE template_version_id=$2
 	`, slotID, documentationTemplateID); err != nil {
 		return DistributionSlot{}, fmt.Errorf("snapshot documentation slots: %w", err)
@@ -420,7 +420,7 @@ func (r *Repository) ListSlotCatalog(ctx context.Context, scheduleID string, sco
 
 func (r *Repository) listSlotDocumentation(ctx context.Context, distributionSlotID string) ([]SlotSummary, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT ds.id::text, ds.slot_code, ds.label_snapshot, ds.stage, ds.status, ds.is_required, ds.min_files, ds.max_files, ds.input_source, ds.require_location, ds.require_captured_at
+		SELECT ds.id::text, ds.slot_code, ds.label_snapshot, ds.stage, ds.status, ds.is_required, ds.min_files, ds.max_files, ds.input_source, ds.media_kind, ds.require_location, ds.require_captured_at
 		FROM documentation_slots ds WHERE ds.distribution_slot_id=$1 ORDER BY ds.sort_order
 	`, distributionSlotID)
 	if err != nil {
@@ -430,7 +430,7 @@ func (r *Repository) listSlotDocumentation(ctx context.Context, distributionSlot
 	var summaries []SlotSummary
 	for rows.Next() {
 		var summary SlotSummary
-		if err := rows.Scan(&summary.ID, &summary.Code, &summary.Label, &summary.Stage, &summary.Status, &summary.Required, &summary.MinFiles, &summary.MaxFiles, &summary.InputSource, &summary.RequireLocation, &summary.RequireCapturedAt); err != nil {
+		if err := rows.Scan(&summary.ID, &summary.Code, &summary.Label, &summary.Stage, &summary.Status, &summary.Required, &summary.MinFiles, &summary.MaxFiles, &summary.InputSource, &summary.MediaKind, &summary.RequireLocation, &summary.RequireCapturedAt); err != nil {
 			return nil, fmt.Errorf("scan slot documentation: %w", err)
 		}
 		files, err := r.listMediaFiles(ctx, summary.ID)

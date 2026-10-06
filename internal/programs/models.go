@@ -102,6 +102,7 @@ type DocumentationTemplateSlot struct {
 	MinFiles          int    `json:"min_files"`
 	MaxFiles          int    `json:"max_files"`
 	InputSource       string `json:"input_source"`
+	MediaKind         string `json:"media_kind"`
 	RequireLocation   bool   `json:"require_location"`
 	RequireCapturedAt bool   `json:"require_captured_at"`
 	Instructions      string `json:"instructions,omitempty"`
@@ -116,6 +117,7 @@ type DocumentationTemplateSlotInput struct {
 	MinFiles          int    `json:"min_files"`
 	MaxFiles          int    `json:"max_files"`
 	InputSource       string `json:"input_source"`
+	MediaKind         string `json:"media_kind"`
 	RequireLocation   bool   `json:"require_location"`
 	RequireCapturedAt bool   `json:"require_captured_at"`
 	Instructions      string `json:"instructions"`

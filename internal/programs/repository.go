@@ -257,7 +257,7 @@ func (r *Repository) SaveDocumentationTemplate(ctx context.Context, actor auth.P
 		return DocumentationTemplate{}, fmt.Errorf("save documentation template: %w", err)
 	}
 	for _, slot := range input.Slots {
-		_, err = tx.Exec(ctx, `INSERT INTO documentation_template_slots (template_version_id,slot_code,label,stage,is_required,min_files,max_files,input_source,require_location,require_captured_at,instructions,sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,''),$12)`, id, slot.SlotCode, slot.Label, slot.Stage, slot.IsRequired, slot.MinFiles, slot.MaxFiles, slot.InputSource, slot.RequireLocation, slot.RequireCapturedAt, slot.Instructions, slot.SortOrder)
+		_, err = tx.Exec(ctx, `INSERT INTO documentation_template_slots (template_version_id,slot_code,label,stage,is_required,min_files,max_files,input_source,media_kind,require_location,require_captured_at,instructions,sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NULLIF($12,''),$13)`, id, slot.SlotCode, slot.Label, slot.Stage, slot.IsRequired, slot.MinFiles, slot.MaxFiles, slot.InputSource, slot.MediaKind, slot.RequireLocation, slot.RequireCapturedAt, slot.Instructions, slot.SortOrder)
 		if err != nil {
 			return DocumentationTemplate{}, fmt.Errorf("save documentation slot: %w", err)
 		}
@@ -570,7 +570,7 @@ type queryer interface {
 }
 
 func (r *Repository) documentationSlots(ctx context.Context, db queryer, templateID string) ([]DocumentationTemplateSlot, error) {
-	rows, err := db.Query(ctx, `SELECT id::text,slot_code,label,stage,is_required,min_files,max_files,input_source,require_location,require_captured_at,COALESCE(instructions,''),sort_order FROM documentation_template_slots WHERE template_version_id=$1 ORDER BY sort_order,slot_code`, templateID)
+	rows, err := db.Query(ctx, `SELECT id::text,slot_code,label,stage,is_required,min_files,max_files,input_source,media_kind,require_location,require_captured_at,COALESCE(instructions,''),sort_order FROM documentation_template_slots WHERE template_version_id=$1 ORDER BY sort_order,slot_code`, templateID)
 	if err != nil {
 		return nil, fmt.Errorf("list documentation slots: %w", err)
 	}
@@ -578,7 +578,7 @@ func (r *Repository) documentationSlots(ctx context.Context, db queryer, templat
 	items := []DocumentationTemplateSlot{}
 	for rows.Next() {
 		var item DocumentationTemplateSlot
-		if err := rows.Scan(&item.ID, &item.SlotCode, &item.Label, &item.Stage, &item.IsRequired, &item.MinFiles, &item.MaxFiles, &item.InputSource, &item.RequireLocation, &item.RequireCapturedAt, &item.Instructions, &item.SortOrder); err != nil {
+		if err := rows.Scan(&item.ID, &item.SlotCode, &item.Label, &item.Stage, &item.IsRequired, &item.MinFiles, &item.MaxFiles, &item.InputSource, &item.MediaKind, &item.RequireLocation, &item.RequireCapturedAt, &item.Instructions, &item.SortOrder); err != nil {
 			return nil, fmt.Errorf("scan documentation slot: %w", err)
 		}
 		items = append(items, item)
