@@ -13,12 +13,10 @@ var (
 	ErrRegencyNotFound     = errors.New("regency not found")
 	ErrActivityTypeInvalid = errors.New("activity_type is not a recognized activity type")
 	ErrMediaTypeInvalid    = errors.New("file must be a supported image or video format")
-	ErrFileTooLarge        = errors.New("file exceeds the 100 MiB size limit")
+	ErrFileTooLarge        = errors.New("file exceeds the allowed size")
+	ErrVideoUploadBusy     = errors.New("video upload capacity is currently full")
 	ErrSourceInvalid       = errors.New(`source must be "camera" or "gallery"`)
 )
-
-// maxFileBytes mirrors activity_media.byte_size's CHECK constraint (100 MiB).
-const maxFileBytes = 100 << 20
 
 var activityTypeCodes = map[string]string{
 	"ceremony_sosialisasi":  "CEREMONY",
@@ -46,15 +44,6 @@ var activityTypeFolderNames = map[string]string{
 	"unloading_oli":         "Unloading Oli",
 	"unloading_selang":      "Unloading Selang Hisap & Buang",
 	"unloading_tabung_gas":  "Unloading Tabung Gas",
-}
-
-var allowedMimeTypes = map[string]string{
-	"image/jpeg":      "image",
-	"image/png":       "image",
-	"image/webp":      "image",
-	"video/mp4":       "video",
-	"video/webm":      "video",
-	"video/quicktime": "video",
 }
 
 func isValidActivityType(activityType string) bool {
@@ -106,7 +95,8 @@ type UploadInput struct {
 	ActivityType     string
 	OriginalFilename string
 	Source           string
-	Data             []byte
+	Data             io.Reader
+	DeclaredSize     int64
 }
 
 type MediaContent struct {

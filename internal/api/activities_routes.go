@@ -1,15 +1,18 @@
 package api
 
 import (
+	"errors"
 	"io"
 	"mime"
 	"net/http"
 	"strings"
+	"time"
 
 	"konkit/internal/activities"
+	"konkit/internal/media"
 )
 
-const maxActivityMediaRequestBody = 101 << 20 // 100 MiB + multipart overhead margin
+const maxActivityMediaRequestBody = 501 << 20
 
 func activityFilterFromRequest(r *http.Request) activities.Filter {
 	return activities.Filter{
@@ -42,32 +45,29 @@ func (h *Handler) handleActivitiesMedia(w http.ResponseWriter, r *http.Request, 
 		if !h.authorize(w, r, rc.principal, "activities.manage") {
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, maxActivityMediaRequestBody)
-		if err := r.ParseMultipartForm(100 << 20); err != nil {
-			writeError(w, http.StatusRequestEntityTooLarge, "media_too_large", "File melebihi batas 100 MiB")
-			return
-		}
-		if r.MultipartForm != nil {
-			defer r.MultipartForm.RemoveAll()
-		}
-		file, header, err := r.FormFile("file")
+		started := time.Now()
+		kind := media.Kind("unknown")
+		loggedSize := int64(0)
+		tracked := &statusTrackingResponseWriter{ResponseWriter: w, status: http.StatusOK}
+		w = tracked
+		defer func() { logMediaUpload("activity", kind, loggedSize, tracked.status, started) }()
+
+		upload, err := openMediaMultipart(w, r, maxActivityMediaRequestBody, map[string]int64{
+			"program_id": 128, "regency_id": 128, "activity_type": 64, "source": 16, "file_size": 20,
+		}, []string{"program_id", "regency_id", "activity_type", "source", "file_size"})
 		if err != nil {
-			writeFieldError(w, http.StatusBadRequest, "validation_failed", "File wajib dipilih", map[string]string{"file": "File wajib dipilih"})
+			var tooLarge *http.MaxBytesError
+			if errors.As(err, &tooLarge) {
+				writeError(w, http.StatusRequestEntityTooLarge, "media_too_large", "Berkas melebihi batas unggahan")
+			} else {
+				writeError(w, http.StatusBadRequest, "multipart_invalid", "Format unggahan tidak valid")
+			}
 			return
 		}
-		defer file.Close()
-		data, err := io.ReadAll(io.LimitReader(file, (100<<20)+1))
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "media_invalid", "File tidak dapat dibaca")
-			return
-		}
-		if len(data) > 100<<20 {
-			writeError(w, http.StatusRequestEntityTooLarge, "media_too_large", "File melebihi batas 100 MiB")
-			return
-		}
+		loggedSize = upload.DeclaredSize
 		input := activities.UploadInput{
-			ProgramID: strings.TrimSpace(r.FormValue("program_id")), RegencyID: strings.TrimSpace(r.FormValue("regency_id")), ActivityType: strings.TrimSpace(r.FormValue("activity_type")),
-			OriginalFilename: header.Filename, Source: strings.TrimSpace(r.FormValue("source")), Data: data,
+			ProgramID: strings.TrimSpace(upload.Fields["program_id"]), RegencyID: strings.TrimSpace(upload.Fields["regency_id"]), ActivityType: strings.TrimSpace(upload.Fields["activity_type"]),
+			OriginalFilename: upload.Filename, Source: strings.TrimSpace(upload.Fields["source"]), Data: upload.File, DeclaredSize: upload.DeclaredSize,
 		}
 		scope, ok := h.regencyScope(w, r, rc.principal)
 		if !ok {
@@ -75,9 +75,19 @@ func (h *Handler) handleActivitiesMedia(w http.ResponseWriter, r *http.Request, 
 		}
 		result, err := h.deps.Activities.Upload(r.Context(), rc.principal, input, clientMeta(r), scope)
 		if err != nil {
-			writeServiceError(w, err)
+			var tooLarge *http.MaxBytesError
+			switch {
+			case errors.Is(err, errMultipartTrailingPart):
+				writeError(w, http.StatusBadRequest, "multipart_invalid", "Format unggahan tidak valid")
+			case errors.As(err, &tooLarge):
+				writeError(w, http.StatusRequestEntityTooLarge, "media_too_large", "Berkas melebihi batas unggahan")
+			default:
+				writeServiceError(w, err)
+			}
 			return
 		}
+		kind = mediaKindFromMIME(result.MimeType)
+		loggedSize = result.ByteSize
 		writeData(w, http.StatusCreated, result)
 	default:
 		methodNotAllowed(w, http.MethodGet+", "+http.MethodPost)

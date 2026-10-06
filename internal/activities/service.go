@@ -1,13 +1,11 @@
 package activities
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
-	"net/http"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -82,16 +80,6 @@ func (s *Service) Upload(ctx context.Context, actor auth.Principal, input Upload
 	if input.Source != "camera" && input.Source != "gallery" {
 		return ActivityMedia{}, ErrSourceInvalid
 	}
-	if len(input.Data) == 0 {
-		return ActivityMedia{}, ErrMediaTypeInvalid
-	}
-	if len(input.Data) > maxFileBytes {
-		return ActivityMedia{}, ErrFileTooLarge
-	}
-	mimeType, mediaType, ok := detectMediaType(input.Data, input.OriginalFilename)
-	if !ok {
-		return ActivityMedia{}, ErrMediaTypeInvalid
-	}
 	if input.ProgramID == "" || s.programContexts == nil {
 		return ActivityMedia{}, ErrProgramRequired
 	}
@@ -102,6 +90,23 @@ func (s *Service) Upload(ctx context.Context, actor auth.Principal, input Upload
 	regency, err := s.repository.GetRegency(ctx, input.RegencyID, scope)
 	if err != nil {
 		return ActivityMedia{}, err
+	}
+	detected, err := media.DetectUpload(input.Data, input.OriginalFilename)
+	if errors.Is(err, media.ErrUnsupportedUpload) {
+		return ActivityMedia{}, ErrMediaTypeInvalid
+	}
+	if err != nil {
+		return ActivityMedia{}, err
+	}
+	if input.DeclaredSize > detected.MaxBytes {
+		return ActivityMedia{}, ErrFileTooLarge
+	}
+	if detected.Kind == media.KindVideo {
+		release, ok := s.videoLimiter.TryAcquire()
+		if !ok {
+			return ActivityMedia{}, ErrVideoUploadBusy
+		}
+		defer release()
 	}
 	key, err := newStorageKey()
 	if err != nil {
@@ -117,15 +122,19 @@ func (s *Service) Upload(ctx context.Context, actor auth.Principal, input Upload
 	}
 	now := s.now()
 	displayName := fmt.Sprintf("%s-%s-%s", regency.DocumentCode, activityTypeCodes[input.ActivityType], now.Format("20060102-150405"))
-	visibleFilename := displayName + activityFileExtension(mimeType)
-	storageKey, size, checksum, err := media.PutNamed(ctx, s.storage, key, visibleFilename, folderPath, bytes.NewReader(input.Data))
+	visibleFilename := displayName + activityFileExtension(detected.MimeType)
+	storageKey, size, checksum, err := media.PutNamed(ctx, s.storage, key, visibleFilename, folderPath, io.LimitReader(detected.Reader, detected.MaxBytes+1))
 	if err != nil {
 		return ActivityMedia{}, err
+	}
+	if size > detected.MaxBytes {
+		_ = s.storage.Delete(context.Background(), storageKey)
+		return ActivityMedia{}, ErrFileTooLarge
 	}
 	stored, err := s.repository.Insert(ctx, actor, insertInput{
 		ProgramID: input.ProgramID, RegencyID: input.RegencyID, ActivityType: input.ActivityType, StorageKey: storageKey,
 		DisplayName: displayName, OriginalFilename: strings.TrimSpace(input.OriginalFilename),
-		MediaType: mediaType, MimeType: mimeType, ByteSize: size, Checksum: checksum, Source: input.Source,
+		MediaType: string(detected.Kind), MimeType: detected.MimeType, ByteSize: size, Checksum: checksum, Source: input.Source,
 	}, meta)
 	if err != nil {
 		_ = s.storage.Delete(context.Background(), storageKey)
@@ -164,27 +173,6 @@ func (s *Service) OpenContent(ctx context.Context, id string, scope auth.Regency
 		return MediaContent{}, err
 	}
 	return MediaContent{Reader: reader, MimeType: item.MimeType, Filename: item.OriginalFilename}, nil
-}
-
-// detectMediaType sniffs the upload's mime type. http.DetectContentType
-// alone is unreliable for some video containers (e.g. .mov often sniffs as
-// application/octet-stream), so an allow-listed extension is used as a
-// fallback — never trusting the client-supplied header, only sniffed bytes
-// or the upload's own filename extension.
-func detectMediaType(data []byte, filename string) (mimeType, mediaType string, ok bool) {
-	sniffed := http.DetectContentType(data[:min(len(data), 512)])
-	if mt, found := allowedMimeTypes[sniffed]; found {
-		return sniffed, mt, true
-	}
-	switch strings.ToLower(filepath.Ext(filename)) {
-	case ".mp4":
-		return "video/mp4", "video", true
-	case ".webm":
-		return "video/webm", "video", true
-	case ".mov":
-		return "video/quicktime", "video", true
-	}
-	return "", "", false
 }
 
 func newStorageKey() (string, error) {

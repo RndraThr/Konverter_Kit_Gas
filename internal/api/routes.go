@@ -572,6 +572,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeFieldError(w, http.StatusBadRequest, "media_invalid", err.Error(), map[string]string{"file": err.Error()})
 	case errors.Is(err, activities.ErrFileTooLarge):
 		writeError(w, http.StatusRequestEntityTooLarge, "media_too_large", err.Error())
+	case errors.Is(err, activities.ErrVideoUploadBusy):
+		writeError(w, http.StatusTooManyRequests, "video_upload_busy", err.Error())
 	case errors.Is(err, bast.ErrInvalidInput):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), map[string]string{"request": err.Error()})
 	default:

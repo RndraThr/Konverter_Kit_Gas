@@ -22,6 +22,7 @@ type fakeActivitiesService struct {
 	contentErr       error
 	seenFilter       activities.Filter
 	seenUploadInput  activities.UploadInput
+	uploadReadErr    error
 	seenRegencyScope auth.RegencyScope
 	seenDeleteID     string
 }
@@ -32,6 +33,9 @@ func (f *fakeActivitiesService) List(_ context.Context, filter activities.Filter
 }
 func (f *fakeActivitiesService) Upload(_ context.Context, _ auth.Principal, input activities.UploadInput, _ auth.ClientMeta, scope auth.RegencyScope) (activities.ActivityMedia, error) {
 	f.seenUploadInput, f.seenRegencyScope = input, scope
+	if input.Data != nil {
+		_, f.uploadReadErr = io.Copy(io.Discard, input.Data)
+	}
 	return f.uploaded, f.uploadErr
 }
 func (f *fakeActivitiesService) Delete(_ context.Context, _ auth.Principal, id string, _ auth.ClientMeta, scope auth.RegencyScope) error {
@@ -73,15 +77,16 @@ func TestActivitiesUploadRequiresManagePermissionAndParsesMultipart(t *testing.T
 
 	var body strings.Builder
 	writer := multipart.NewWriter(&body)
+	_ = writer.WriteField("source", "gallery")
+	_ = writer.WriteField("activity_type", "rakor")
+	_ = writer.WriteField("program_id", "program-1")
+	_ = writer.WriteField("regency_id", "regency-1")
+	_ = writer.WriteField("file_size", "15")
 	part, err := writer.CreateFormFile("file", "foto.jpg")
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, _ = part.Write([]byte("fake jpeg bytes"))
-	_ = writer.WriteField("source", "gallery")
-	_ = writer.WriteField("activity_type", "rakor")
-	_ = writer.WriteField("program_id", "program-1")
-	_ = writer.WriteField("regency_id", "regency-1")
 	_ = writer.Close()
 
 	secret := []byte("01234567890123456789012345678901")
@@ -95,7 +100,7 @@ func TestActivitiesUploadRequiresManagePermissionAndParsesMultipart(t *testing.T
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if service.seenUploadInput.ProgramID != "program-1" || service.seenUploadInput.RegencyID != "regency-1" || service.seenUploadInput.ActivityType != "rakor" || service.seenUploadInput.Source != "gallery" || service.seenUploadInput.OriginalFilename != "foto.jpg" {
+	if service.seenUploadInput.ProgramID != "program-1" || service.seenUploadInput.RegencyID != "regency-1" || service.seenUploadInput.ActivityType != "rakor" || service.seenUploadInput.Source != "gallery" || service.seenUploadInput.OriginalFilename != "foto.jpg" || service.seenUploadInput.DeclaredSize != 15 || service.seenUploadInput.Data == nil {
 		t.Fatalf("upload input not forwarded: %+v", service.seenUploadInput)
 	}
 
@@ -108,6 +113,31 @@ func TestActivitiesUploadRequiresManagePermissionAndParsesMultipart(t *testing.T
 	NewHandler(Dependencies{Auth: viewer, Activities: service, SessionSecret: secret}).ServeHTTP(deniedRecorder, deniedReq)
 	if deniedRecorder.Code != http.StatusForbidden {
 		t.Fatalf("expected forbidden without activities.manage, got %d", deniedRecorder.Code)
+	}
+}
+
+func TestActivityUploadRejectsFileBeforeMetadata(t *testing.T) {
+	manager := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"activities.manage": true}}
+	service := &fakeActivitiesService{}
+	var body strings.Builder
+	writer := multipart.NewWriter(&body)
+	part, _ := writer.CreateFormFile("file", "foto.jpg")
+	_, _ = part.Write([]byte("fake jpeg bytes"))
+	_ = writer.WriteField("program_id", "program-1")
+	_ = writer.WriteField("regency_id", "regency-1")
+	_ = writer.WriteField("activity_type", "rakor")
+	_ = writer.WriteField("source", "gallery")
+	_ = writer.WriteField("file_size", "15")
+	_ = writer.Close()
+	secret := []byte("01234567890123456789012345678901")
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/activities/media", strings.NewReader(body.String()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: manager, Activities: service, SessionSecret: secret}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"code":"multipart_invalid"`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 
