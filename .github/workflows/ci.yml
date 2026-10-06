@@ -51,7 +51,13 @@ jobs:
           fi
 
       - name: go test (unit and integration)
-        run: go test -p 1 ./...
+        # -count=1 disables Go's test result cache. Integration tests depend on a side
+        # effect (migrations applied against a fresh, empty ephemeral Postgres service
+        # container) that Go's cache has no visibility into — TEST_DATABASE_URL is the
+        # same string every run, so a cached PASS from a prior run can make Go skip
+        # actually re-executing a package whose source didn't change, even though this
+        # run's database is brand new and still unmigrated.
+        run: go test -p 1 -count=1 ./...
 
   # ── Frontend: TypeScript + lint + unit test + build ─────
   frontend:
