@@ -24,20 +24,20 @@ var (
 )
 
 type Config struct {
-	Env                      string
-	Addr                     string
-	BaseURL                  string
-	DatabaseURL              string
-	SessionSecret            []byte
-	SessionCookieSecure      bool
-	SessionTTL               time.Duration
-	RememberTTL              time.Duration
-	StoragePath              string
-	StorageBackend           string
-	GDriveOAuthClientID      string
-	GDriveOAuthClientSecret  string
-	GDriveOAuthTokenJSON     string
-	GDriveRootFolderID       string
+	Env                     string
+	Addr                    string
+	BaseURL                 string
+	DatabaseURL             string
+	SessionSecret           []byte
+	SessionCookieSecure     bool
+	SessionTTL              time.Duration
+	RememberTTL             time.Duration
+	StoragePath             string
+	StorageBackend          string
+	GDriveOAuthClientID     string
+	GDriveOAuthClientSecret string
+	GDriveOAuthTokenJSON    string
+	GDriveRootFolderID      string
 }
 
 type lookupFunc func(string) (string, bool)

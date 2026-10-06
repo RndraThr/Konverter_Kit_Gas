@@ -53,7 +53,9 @@ func TestIntegrationUserAndRoleAdministration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), "DELETE FROM roles WHERE code = $1", roleCode+"_scoped") })
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM roles WHERE code = $1", roleCode+"_scoped")
+	})
 	if scopedRole.AllRegenciesAccess || len(scopedRole.Regencies) != 1 || scopedRole.Regencies[0].ID != regencyID {
 		t.Fatalf("scoped role regencies=%+v", scopedRole.Regencies)
 	}

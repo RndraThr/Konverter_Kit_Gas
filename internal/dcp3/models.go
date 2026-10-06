@@ -88,17 +88,17 @@ type NormalizedRow struct {
 }
 
 type ImportPreview struct {
-	ID               string                      `json:"id"`
-	ScheduleID       string                      `json:"schedule_id"`
-	ProgramType      programs.ProgramType        `json:"program_type"`
-	OriginalFilename string                      `json:"original_filename"`
-	FileChecksum     string                      `json:"file_checksum"`
-	SheetName        string                      `json:"sheet_name"`
-	Headers          []string                    `json:"headers"`
-	Rows             []RawImportRow              `json:"rows"`
-	Status           string                      `json:"status"`
+	ID               string                       `json:"id"`
+	ScheduleID       string                       `json:"schedule_id"`
+	ProgramType      programs.ProgramType         `json:"program_type"`
+	OriginalFilename string                       `json:"original_filename"`
+	FileChecksum     string                       `json:"file_checksum"`
+	SheetName        string                       `json:"sheet_name"`
+	Headers          []string                     `json:"headers"`
+	Rows             []RawImportRow               `json:"rows"`
+	Status           string                       `json:"status"`
 	MachineOptions   []programs.MachineOptionData `json:"machine_options"`
-	CreatedAt        time.Time                   `json:"created_at"`
+	CreatedAt        time.Time                    `json:"created_at"`
 }
 
 type ImportResult struct {

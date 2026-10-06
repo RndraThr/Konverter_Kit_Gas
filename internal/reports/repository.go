@@ -130,7 +130,7 @@ func (r *Repository) RecordExport(ctx context.Context, actor auth.Principal, sch
 		ResourceType: "program_schedule",
 		ResourceID:   scheduleID,
 		Metadata: map[string]any{
-			"format":                format,
+			"format":               format,
 			"allocation_status":    filter.AllocationStatus,
 			"distribution_status":  filter.DistributionStatus,
 			"documentation_status": filter.DocumentationStatus,

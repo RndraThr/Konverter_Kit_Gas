@@ -75,11 +75,11 @@ func TestBuildAllocationSnapshotMarksIncompleteWhenAmbiguous(t *testing.T) {
 func TestResolveMachineCodeFromCellMatchesCodeBrandOrBrandType(t *testing.T) {
 	raw := []byte(`{"machine_options":[{"code":"shark-spwp8030","brand":"SHARK","type":"SPWP 80-30/3\"","power":"5.5 HP","fuel_type":"Bensin"},{"code":"yanmar-tf","brand":"YANMAR","type":"TF 65","power":"6.5 HP","fuel_type":"Solar"}]}`)
 	cases := map[string]string{
-		"shark-spwp8030":        "shark-spwp8030",
-		"SHARK":                 "shark-spwp8030",
-		"shark spwp 80-30/3\"":  "shark-spwp8030",
-		"yanmar tf 65":          "yanmar-tf",
-		"YANMAR":                "yanmar-tf",
+		"shark-spwp8030":       "shark-spwp8030",
+		"SHARK":                "shark-spwp8030",
+		"shark spwp 80-30/3\"": "shark-spwp8030",
+		"yanmar tf 65":         "yanmar-tf",
+		"YANMAR":               "yanmar-tf",
 	}
 	for cell, want := range cases {
 		got, ok := ResolveMachineCodeFromCell(raw, cell)
