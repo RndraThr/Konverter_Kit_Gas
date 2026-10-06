@@ -9,6 +9,9 @@ import { Label } from '@/components/ui/label';
 import styles from './LoginPage.module.css';
 
 const slides = [
+  { imagePath: '/static/images/mesin_petani2.jpg', alt: 'Tim program bersama paket mesin pompa petani', label: 'Tim Lapangan', caption: 'Kolaborasi tim memastikan setiap paket mesin pompa siap disalurkan dan digunakan di lapangan.', focus: 'center 54%' },
+  { imagePath: '/static/images/mesin_nelayan.jpg', alt: 'Deretan mesin bantuan untuk nelayan siap didistribusikan', label: 'Kesiapan Mesin Nelayan', caption: 'Unit mesin bantuan diperiksa dan ditata sebelum memasuki tahapan distribusi program.', focus: 'center 58%' },
+  { imagePath: '/static/images/mesin_petani1.jpg', alt: 'Persiapan mesin pompa petani sebelum distribusi', label: 'Persiapan Mesin Petani', caption: 'Tim menyiapkan kelengkapan mesin pompa agar paket diterima dalam kondisi siap operasional.', focus: 'center 58%' },
   { imagePath: '/static/images/konkit-field-1.jpg', alt: 'Foto lapangan penerima program Konkit', label: 'Serah Terima', caption: 'Paket konkit, nomor penerima, dan dokumen lapangan terhubung dalam satu alur kerja.', focus: 'center 48%' },
   { imagePath: '/static/images/konkit-field-2.jpeg', alt: 'Foto kegiatan program Konkit kabupaten', label: 'Program Kabupaten', caption: 'Setiap kegiatan kabupaten dapat dipantau tanpa memisahkan database program.', focus: 'center 50%' },
   { imagePath: '/static/images/konkit-training.jpeg', alt: 'Foto pelatihan teknis Konkit', label: 'Pelatihan Teknis', caption: 'Data penerima, pemasangan, dan BAST disiapkan untuk operasional yang lebih tertib.', focus: 'center 54%' },

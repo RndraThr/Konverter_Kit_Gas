@@ -94,9 +94,12 @@ func TestFaviconIsServed(t *testing.T) {
 	}
 }
 
-func TestLoginCarouselServesAcehPhotos(t *testing.T) {
+func TestLoginCarouselServesProgramPhotos(t *testing.T) {
 	handler := newTestHandler()
 	assetPaths := []string{
+		"/static/images/mesin_petani2.jpg",
+		"/static/images/mesin_nelayan.jpg",
+		"/static/images/mesin_petani1.jpg",
 		"/static/images/konkit-aceh-socialization.jpg",
 		"/static/images/konkit-aceh-demonstration.jpg",
 		"/static/images/konkit-aceh-recipient.jpg",

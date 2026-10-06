@@ -132,10 +132,18 @@ test('offers explicit carousel controls and updates the visible field story', as
   const user = userEvent.setup();
   render(<LoginPage />);
 
-  expect(screen.getByText('Serah Terima')).toBeVisible();
-  await user.click(screen.getByRole('button', { name: 'Tampilkan foto Program Kabupaten' }));
+  expect(screen.getByText('Tim Lapangan')).toBeVisible();
+  expect(screen.getByAltText('Tim program bersama paket mesin pompa petani')).toHaveAttribute('src', '/static/images/mesin_petani2.jpg');
 
-  expect(screen.getByText('Program Kabupaten')).toBeVisible();
+  await user.click(screen.getByRole('button', { name: 'Tampilkan foto Kesiapan Mesin Nelayan' }));
+
+  expect(screen.getByText('Kesiapan Mesin Nelayan')).toBeVisible();
+  expect(screen.getByAltText('Deretan mesin bantuan untuk nelayan siap didistribusikan')).toHaveAttribute('src', '/static/images/mesin_nelayan.jpg');
+
+  await user.click(screen.getByRole('button', { name: 'Tampilkan foto Persiapan Mesin Petani' }));
+
+  expect(screen.getByText('Persiapan Mesin Petani')).toBeVisible();
+  expect(screen.getByAltText('Persiapan mesin pompa petani sebelum distribusi')).toHaveAttribute('src', '/static/images/mesin_petani1.jpg');
   expect(screen.getByRole('button', { name: 'Lanjutkan pergantian foto' })).toBeInTheDocument();
   expect(screen.getByRole('group', { name: 'Pilih foto lapangan' })).toBeInTheDocument();
   expect(screen.getByRole('region', { name: 'Cerita lapangan Konkit' }).firstElementChild).toHaveAttribute('aria-live', 'polite');
@@ -165,11 +173,11 @@ test('advances automatically, pauses on request, and clears its timer on unmount
 
   expect(story.firstElementChild).toHaveAttribute('aria-live', 'off');
   act(() => vi.advanceTimersByTime(7000));
-  expect(screen.getByText('Program Kabupaten')).toBeInTheDocument();
+  expect(screen.getByText('Kesiapan Mesin Nelayan')).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole('button', { name: 'Jeda pergantian foto' }));
   act(() => vi.advanceTimersByTime(7000));
-  expect(screen.getByText('Program Kabupaten')).toBeInTheDocument();
+  expect(screen.getByText('Kesiapan Mesin Nelayan')).toBeInTheDocument();
 
   unmount();
   expect(vi.getTimerCount()).toBe(0);
