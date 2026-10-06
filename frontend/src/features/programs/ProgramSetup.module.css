@@ -97,7 +97,7 @@
 }
 @media (max-width: 640px) {
   .panel { padding-top: 18px; }
-  .tabList { height: 58px; min-height: 58px; gap: 2px; padding: 3px; }
+  .tabList { grid-template-columns: repeat(6, minmax(50px, 1fr)); height: 58px; min-height: 58px; gap: 2px; padding: 3px; }
   .tab { height: 50px; padding: 0 5px; font-size: 11px; }
   .tabLabel { gap: 4px; }
   .tabLabel > svg { display: none; }

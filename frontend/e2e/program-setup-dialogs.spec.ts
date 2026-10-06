@@ -67,7 +67,7 @@ test('all edit dialogs remain editable and contained on a compact web viewport',
   await expect(dialog.getByLabel('Konsultan pengawas')).toBeEditable();
   await dialog.getByLabel('Nama jadwal').fill('JADWAL UI E2E');
   await dialog.getByLabel('Konsultan pengawas').fill('Pengawas UI');
-  await expect(dialog.getByLabel('Konsultan pengawas')).toHaveValue('Pengawas UI');
+  await expect(dialog.getByLabel('Konsultan pengawas')).toHaveValue('PENGAWAS UI');
   await expectFieldsContained(dialog);
   await page.screenshot({ path: testInfo.outputPath('jadwal-edit-768.png') });
   await discardEditedDialog(page, dialog);
@@ -116,7 +116,7 @@ test('workspace navigation stays contained on desktop and mobile', async ({ page
 
   const tabList = page.getByRole('tablist', { name: 'Persiapan program' });
   await expect(tabList).toBeVisible();
-  await expect(tabList.getByRole('tab')).toHaveCount(4);
+  await expect(tabList.getByRole('tab')).toHaveCount(6);
   await expect.poll(async () => tabList.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('workspace-desktop-1366.png'), fullPage: true });
 
@@ -175,7 +175,8 @@ test('repeatable template actions stack safely and add editable rows on narrow w
     await expect(newField, `${name} harus langsung mengaktifkan kolom baru`).toBeFocused();
   }
   await expect(dialog.getByLabel(/Merk mesin \d+/).last()).toBeEditable();
-  await expect(dialog.getByLabel(/Merk selang \d+/).last()).toBeEditable();
+  await expect(dialog.getByLabel(/Merk selang hisap \d+/).last()).toBeEditable();
+  await expect(dialog.getByLabel(/Merk selang buang \d+/).last()).toBeEditable();
   await expect(dialog.getByLabel(/Nama komponen \d+/).last()).toBeEditable();
   await expectFieldsContained(dialog);
   await page.screenshot({ path: testInfo.outputPath('repeatable-package-560.png') });

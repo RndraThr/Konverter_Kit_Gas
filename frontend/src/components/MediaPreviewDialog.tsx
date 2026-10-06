@@ -151,7 +151,7 @@ export function MediaPreviewDialog({ items, index, onIndexChange }: Props) {
         </div>
         {!isVideo && <div className="pointer-events-auto flex shrink-0 items-center gap-1">
           <Button type="button" variant="ghost" size="icon-sm" className="text-white hover:bg-white/15 hover:text-white" aria-label="Perkecil foto" disabled={zoom <= MIN_ZOOM} onClick={() => applyZoom(zoom - ZOOM_STEP)}><Minus aria-hidden="true" /></Button>
-          <span className="w-11 text-center text-xs font-medium tabular-nums">{zoom}%</span>
+          <span className="w-11 text-center text-xs font-medium tabular-nums" aria-label="Tingkat zoom foto">{zoom}%</span>
           <Button type="button" variant="ghost" size="icon-sm" className="text-white hover:bg-white/15 hover:text-white" aria-label="Perbesar foto" disabled={zoom >= MAX_ZOOM} onClick={() => applyZoom(zoom + ZOOM_STEP)}><Plus aria-hidden="true" /></Button>
           {(zoom !== 100 || pan.x !== 0 || pan.y !== 0) && <Button type="button" variant="ghost" size="icon-sm" className="text-white hover:bg-white/15 hover:text-white" aria-label="Reset zoom" onClick={resetZoom}><RotateCcw aria-hidden="true" /></Button>}
         </div>}

@@ -107,9 +107,9 @@ test('DCP3 to completed package distribution', async ({ page }, testInfo) => {
 	const firstPhotoSlot = page.locator('article').filter({ has: page.getByRole('heading', { name: requiredPhotoLabels[0], exact: true }) });
 	await firstPhotoSlot.getByRole('button', { name: /^Lihat / }).click();
 	await expect(page.getByRole('dialog', { name: /^Preview / })).toBeVisible();
-	await expect(page.getByLabel('Tingkat zoom foto')).toHaveValue('100');
+	await expect(page.getByLabel('Tingkat zoom foto')).toHaveText('100%');
 	await page.getByRole('button', { name: 'Perbesar foto' }).click();
-	await expect(page.getByLabel('Tingkat zoom foto')).toHaveValue('125');
+	await expect(page.getByLabel('Tingkat zoom foto')).toHaveText('125%');
 	await page.keyboard.press('Escape');
   await expect(page.getByRole('button', { name: 'Selesaikan Distribusi' })).toBeEnabled();
   await page.getByRole('button', { name: 'Selesaikan Distribusi' }).click();
