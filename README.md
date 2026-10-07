@@ -256,6 +256,22 @@ Langkah di atas mengasumsikan VPS kosong/khusus, dengan Caddy sebagai reverse pr
    server {
        server_name konkit.ptkiansantang.com;
 
+       # Upload dokumentasi diteruskan sebagai stream agar video besar tidak
+       # dibuffer penuh ke disk sementara nginx sebelum mencapai aplikasi.
+       location ~ ^/api/v1/(activities/media|distribution/slots/[^/]+/media)$ {
+           proxy_pass http://localhost:8090;
+           proxy_http_version 1.1;
+           client_max_body_size 510M;
+           client_body_timeout 30m;
+           proxy_request_buffering off;
+           proxy_send_timeout 30m;
+           proxy_read_timeout 30m;
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+       }
+
        location / {
            proxy_pass http://localhost:8090;
            proxy_http_version 1.1;
@@ -271,6 +287,7 @@ Langkah di atas mengasumsikan VPS kosong/khusus, dengan Caddy sebagai reverse pr
        listen 80;
    }
    ```
+   Batas nginx `510M` hanya memberi ruang untuk multipart overhead. Aplikasi tetap menegakkan batas sebenarnya: foto maksimal 25 MiB dan video maksimal 500 MiB. Jalankan `nginx -t` setiap kali konfigurasi diubah dan reload nginx hanya jika pemeriksaan tersebut berhasil.
    ```bash
    ln -sf /etc/nginx/sites-available/konkit.ptkiansantang.com /etc/nginx/sites-enabled/konkit.ptkiansantang.com
    nginx -t   # WAJIB: cek syntax dulu sebelum reload, supaya kalau ada typo tidak menjatuhkan situs lain di server yang sama
