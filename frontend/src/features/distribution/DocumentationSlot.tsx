@@ -3,8 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { apiRequest } from '../../lib/api';
 import { uploadRequest } from '../../lib/upload';
-import { useCan } from '../../lib/permissions';
-import type { DataResponse, MediaFile, SlotSummary } from './types';
+import type { DataResponse, MediaFile, MediaStorageState, SlotSummary } from './types';
 import styles from './Distribution.module.css';
 import { Badge } from '@/components/ui/badge';
 import { MediaPreviewDialog } from '@/components/MediaPreviewDialog';
@@ -27,13 +26,27 @@ const videoAccept = 'video/mp4,video/webm,video/quicktime';
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
 
-export function DocumentationSlot({ slot, onChanged }: { slot: SlotSummary; onChanged: (slot: SlotSummary) => void }) {
-  const canManage = useCan('documentation.manage');
+type Props = {
+  slot: SlotSummary;
+  canManage: boolean;
+  onChanged: (slot: SlotSummary) => void;
+  onRetryMove?: (file: MediaFile) => void;
+};
+
+const storageStateCopy: Record<MediaStorageState, { label: string; detail?: string }> = {
+  staging: { label: 'Tersimpan sementara', detail: 'Menunggu tanggal dan penerima' },
+  moving: { label: 'Sedang dipindahkan' },
+  final: { label: 'Tersimpan di folder final' },
+  move_failed: { label: 'Pemindahan gagal — akan dicoba kembali' },
+};
+
+export function DocumentationSlot({ slot, canManage, onChanged, onRetryMove }: Props) {
   const [files, setFiles] = useState<MediaFile[]>(slot.files ?? []);
   const [queue, setQueue] = useState<QueuedFile[]>([]);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
   const [fileError, setFileError] = useState('');
+  const [moveError, setMoveError] = useState('');
   const processingRef = useRef(false);
   const queueRef = useRef<QueuedFile[]>([]);
   useEffect(() => setFiles(slot.files ?? []), [slot.files]);
@@ -74,6 +87,15 @@ export function DocumentationSlot({ slot, onChanged }: { slot: SlotSummary; onCh
   const remove = useMutation({
     mutationFn: (id: string) => apiRequest<void>(`/api/v1/distribution/media/${id}`, { method: 'DELETE' }),
     onSuccess: (_, id) => publish(files.filter((file) => file.id !== id)),
+  });
+  const retryMove = useMutation({
+    mutationFn: (id: string) => apiRequest<DataResponse<MediaFile>>(`/api/v1/distribution/media/${id}/retry-move`, { method: 'POST' }),
+    onSuccess: ({ data }) => {
+      setMoveError('');
+      publish(files.map((file) => file.id === data.id ? data : file));
+      onRetryMove?.(data);
+    },
+    onError: (cause) => setMoveError(cause instanceof Error ? cause.message : 'Pemindahan media belum dapat dicoba kembali.'),
   });
 
   // Processes the queue one upload at a time so a photo selected mid-upload
@@ -152,15 +174,26 @@ export function DocumentationSlot({ slot, onChanged }: { slot: SlotSummary; onCh
     </header>
 
     {(files.length > 0 || queue.length > 0) && <div className="grid grid-cols-3 gap-2">
-      {files.map((file, index) => <figure key={file.id} className="relative aspect-4/3 overflow-hidden rounded-md border bg-muted">
-        <button type="button" aria-label={`Lihat ${file.original_filename}`} className="absolute inset-0 size-full cursor-zoom-in focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring" onClick={() => setPreviewIndex(index)}>
-          {file.mime_type.startsWith('video/') ? <video src={file.content_url} preload="metadata" className="size-full object-cover" /> : <img src={file.content_url} alt="" className="size-full object-cover" />}
-        </button>
-        <figcaption className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex items-center justify-between gap-1 bg-black/70 px-2 py-1 text-[10px] text-white">
-          <span className="truncate">{file.original_filename}</span>
-          {canManage && <button className={cn(styles.removeMedia, 'pointer-events-auto')} type="button" aria-label={`Hapus ${file.original_filename}`} title="Hapus foto" onClick={() => remove.mutate(file.id)}><Trash2 className="size-3.5" /></button>}
-        </figcaption>
-      </figure>)}
+      {files.map((file, index) => {
+        const storageCopy = storageStateCopy[file.storage_state];
+        return <div key={file.id} className="min-w-0 space-y-1.5">
+          <figure className="relative aspect-4/3 overflow-hidden rounded-md border bg-muted">
+            <button type="button" aria-label={`Lihat ${file.original_filename}`} className="absolute inset-0 size-full cursor-zoom-in focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring" onClick={() => setPreviewIndex(index)}>
+              {file.mime_type.startsWith('video/') ? <video src={file.content_url} preload="metadata" className="size-full object-cover" /> : <img src={file.content_url} alt="" className="size-full object-cover" />}
+            </button>
+            <figcaption className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex items-center justify-between gap-1 bg-black/70 px-2 py-1 text-[10px] text-white">
+              <span className="truncate">{file.original_filename}</span>
+              {canManage && <button className={cn(styles.removeMedia, 'pointer-events-auto')} type="button" aria-label={`Hapus ${file.original_filename}`} title="Hapus foto" onClick={() => remove.mutate(file.id)}><Trash2 className="size-3.5" aria-hidden="true" /></button>}
+            </figcaption>
+          </figure>
+          <div className="space-y-0.5 text-[11px] leading-tight">
+            <p className={cn('font-medium', file.storage_state === 'move_failed' ? 'text-destructive' : 'text-muted-foreground')}>{storageCopy.label}</p>
+            {storageCopy.detail && <p className="text-muted-foreground">{storageCopy.detail}</p>}
+            {file.storage_state === 'move_failed' && file.storage_last_error && <p className="text-destructive">{file.storage_last_error}</p>}
+            {canManage && file.storage_state === 'move_failed' && <button type="button" className="inline-flex min-h-11 items-center gap-1 text-xs font-medium text-primary underline-offset-4 hover:underline disabled:opacity-50" aria-label={`Coba pindahkan lagi ${file.original_filename}`} disabled={retryMove.isPending} onClick={() => { setMoveError(''); retryMove.mutate(file.id); }}><RefreshCw className="size-3.5" aria-hidden="true" />Coba lagi</button>}
+          </div>
+        </div>;
+      })}
       {queue.map((item) => <figure key={item.id} className="relative aspect-4/3 overflow-hidden rounded-md border bg-muted">
         {acceptedVideoTypes.has(item.file.type) ? <video src={item.previewURL} aria-label={`Preview ${slot.label}`} preload="metadata" className="size-full object-cover opacity-50" /> : <img src={item.previewURL} alt={`Preview ${slot.label}`} className="size-full object-cover opacity-50" />}
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/40 text-center text-white">
@@ -196,6 +229,7 @@ export function DocumentationSlot({ slot, onChanged }: { slot: SlotSummary; onCh
     </div>}
     {uploadError && <p role="alert" className="text-sm text-destructive">{uploadError.file.name}: {uploadError.errorMessage ?? 'Foto belum dapat diunggah.'}</p>}
     {fileError && <p role="alert" className="text-sm text-destructive">{fileError}</p>}
+    {moveError && <p role="alert" className="text-sm text-destructive">{moveError}</p>}
     <MediaPreviewDialog items={files.map((mediaFile) => ({ id: mediaFile.id, url: mediaFile.content_url, title: mediaFile.original_filename, mediaType: mediaFile.mime_type.startsWith('video/') ? 'video' : 'image' }))} index={previewIndex} onIndexChange={setPreviewIndex} />
   </article>;
 }

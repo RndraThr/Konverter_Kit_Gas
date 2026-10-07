@@ -1,6 +1,12 @@
 import type { Schedule } from '../programs/types';
 
-export type MediaFile = { id: string; slot_id: string; original_filename: string; mime_type: string; byte_size: number; source: string; status: string; content_url: string; captured_at?: string };
+export type MediaStorageState = 'staging' | 'moving' | 'final' | 'move_failed';
+
+export type MediaFile = {
+  id: string; slot_id: string; original_filename: string; mime_type: string;
+  byte_size: number; source: string; status: string; content_url: string;
+  captured_at?: string; storage_state: MediaStorageState; storage_last_error?: string;
+};
 
 export type SlotSummary = {
   id?: string; code: string; label: string; stage: 'mesin' | 'dokumen' | 'penyerahan'; status: string;
@@ -11,22 +17,26 @@ export type SlotSummary = {
 
 export type DistributionSlot = {
 	id: string; schedule_id: string; slot_number: number; status: 'open' | 'linked' | 'completed' | 'cancelled';
-	distribution_date: string;
+	distribution_date: string | null;
   allocation_id?: string; full_name?: string; nik?: string;
+  sector_identifier?: string; address?: string; village?: string; district?: string; phone_number?: string;
   machine_option_code?: string; machine_serial_number?: string;
   hose_option_code?: string; hose_serial_number?: string;
   converter_option_code?: string; converter_serial_number?: string;
-  documentation: SlotSummary[]; distributed_at?: string; created_at: string; updated_at: string;
+  documentation: SlotSummary[]; distributed_at?: string;
+  needs_recompletion: boolean; reopened_at?: string; reopened_by?: string; reopened_stage?: RevisionStage; revision_reason?: string;
+  created_at: string; updated_at: string;
 };
 
 export type CreateSlotInput = {
 	schedule_id: string;
 	slot_number?: number;
-	distribution_date: string;
-  machine_option_code: string; machine_serial_number: string;
-  hose_option_code: string; hose_serial_number: string;
-  converter_option_code: string; converter_serial_number: string;
 };
+
+export type RevisionStage = 'mesin' | 'dokumen' | 'penyerahan';
+export type ReopenSlotInput = { schedule_id: string; slot_number: number; stage: RevisionStage; reason: string };
+export type UpdateRecipientInput = { schedule_id: string; slot_number: number; address: string; village: string; district: string; phone_number: string; sector_identifier: string };
+export type ReplaceRecipientInput = UpdateRecipientInput & { nik: string };
 
 export type UpdateEquipmentInput = {
   machine_option_code: string; machine_serial_number: string;
@@ -48,7 +58,7 @@ export type LinkSlotInput = {
 
 export type EquipmentOption = { code: string; brand: string; type?: string; spec?: string };
 
-export type SlotCatalogEntry = { slot_number: number; status: 'open' | 'linked' | 'completed' | 'cancelled'; documentation_complete: boolean };
+export type SlotCatalogEntry = { slot_number: number; status: 'open' | 'linked' | 'completed' | 'cancelled'; documentation_complete: boolean; needs_recompletion?: boolean };
 
 export type DataResponse<T> = { data: T };
 export type ScheduleResponse = DataResponse<Schedule[]>;

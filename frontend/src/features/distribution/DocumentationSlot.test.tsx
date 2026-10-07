@@ -14,15 +14,17 @@ vi.mock('../../lib/api', async () => {
 });
 vi.mock('../../lib/upload', () => ({ uploadRequest: vi.fn() }));
 
-function renderSlot(files: MediaFile[] = [], required = true, mediaKind: 'image' | 'video' | 'image_video' = 'image') {
+type TestMediaFile = Omit<MediaFile, 'storage_state'> & { storage_state?: MediaFile['storage_state'] };
+
+function renderSlot(files: TestMediaFile[] = [], required = true, mediaKind: 'image' | 'video' | 'image_video' = 'image', canManage = true) {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   return render(<QueryClientProvider client={client}><PermissionsProvider permissions={['documentation.manage']}><DocumentationSlot slot={{
-    id: 'slot-1', code: 'signed_bast', label: 'BAST bertanda tangan', stage: 'penyerahan', status: 'missing', required, min_files: 1, max_files: 2, media_kind: mediaKind, files,
-  }} onChanged={vi.fn()} /></PermissionsProvider></QueryClientProvider>);
+    id: 'slot-1', code: 'signed_bast', label: 'BAST bertanda tangan', stage: 'penyerahan', status: 'missing', required, min_files: 1, max_files: 2, media_kind: mediaKind, files: files.map((file) => ({ ...file, storage_state: file.storage_state ?? 'final' })),
+  }} canManage={canManage} onChanged={vi.fn()} /></PermissionsProvider></QueryClientProvider>);
 }
 
 beforeEach(() => {
-  vi.mocked(uploadRequest).mockResolvedValue({ data: { id: 'media-1', slot_id: 'slot-1', original_filename: 'bast.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'camera', status: 'accepted', content_url: '/api/v1/distribution/media/media-1/content' } });
+  vi.mocked(uploadRequest).mockResolvedValue({ data: { id: 'media-1', slot_id: 'slot-1', original_filename: 'bast.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'camera', status: 'accepted', content_url: '/api/v1/distribution/media/media-1/content', storage_state: 'staging' } });
 });
 
 afterEach(() => {
@@ -155,7 +157,7 @@ test('pinch-zooms by tracking the distance between two pointers', () => {
 
 test('uploads a dropped image as a gallery file', async () => {
   vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:dropped'), revokeObjectURL: vi.fn() });
-  vi.mocked(uploadRequest).mockResolvedValue({ data: { id: 'media-2', slot_id: 'slot-1', original_filename: 'drop.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: '/media/drop.jpg' } });
+  vi.mocked(uploadRequest).mockResolvedValue({ data: { id: 'media-2', slot_id: 'slot-1', original_filename: 'drop.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: '/media/drop.jpg', storage_state: 'staging' } });
   renderSlot();
   const file = new File(['image'], 'drop.jpg', { type: 'image/jpeg' });
 
@@ -180,7 +182,7 @@ test('uploads several dropped photos one at a time without losing track of eithe
   vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:preview'), revokeObjectURL: vi.fn() });
   vi.mocked(uploadRequest).mockImplementation(async (_path, body) => {
     const name = body.get('file') instanceof File ? (body.get('file') as File).name : '';
-    return { data: { id: `media-${name}`, slot_id: 'slot-1', original_filename: name, mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: `/media/${name}` } };
+    return { data: { id: `media-${name}`, slot_id: 'slot-1', original_filename: name, mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: `/media/${name}`, storage_state: 'staging' as const } };
   });
   renderSlot([], true);
   const first = new File(['a'], 'first.jpg', { type: 'image/jpeg' });
@@ -195,7 +197,7 @@ test('uploads several dropped photos one at a time without losing track of eithe
 
 test('caps a multi-file selection at the slot\'s remaining capacity with a clear message', async () => {
   vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:preview'), revokeObjectURL: vi.fn() });
-  vi.mocked(uploadRequest).mockResolvedValue({ data: { id: 'media-only', slot_id: 'slot-1', original_filename: 'only.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: '/media/only.jpg' } });
+  vi.mocked(uploadRequest).mockResolvedValue({ data: { id: 'media-only', slot_id: 'slot-1', original_filename: 'only.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: '/media/only.jpg', storage_state: 'staging' } });
   renderSlot([{ id: 'media-existing', slot_id: 'slot-1', original_filename: 'existing.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: '/media/existing.jpg' }], true);
   const first = new File(['a'], 'only.jpg', { type: 'image/jpeg' });
   const second = new File(['b'], 'extra.jpg', { type: 'image/jpeg' });
@@ -263,4 +265,58 @@ test('associates camera and gallery inputs with visible focus controls', () => {
   const galleryControl = screen.getByLabelText('Pilih galeri').closest('label');
   expect(cameraControl).toHaveClass(styles.captureControl);
   expect(galleryControl).toHaveClass(styles.captureControl);
+});
+
+test('hides upload, drag-drop, and delete controls when the owning POS cannot manage media', () => {
+  renderSlot([{ id: 'media-1', slot_id: 'slot-1', original_filename: 'bast.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: '/media/bast.jpg' }], true, 'image', false);
+
+  expect(screen.queryByLabelText('Buka kamera')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Pilih galeri')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Unggah foto BAST bertanda tangan melalui galeri')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Hapus bast.jpg' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Lihat bast.jpg' })).toBeVisible();
+});
+
+test.each([
+  ['staging', 'Tersimpan sementara', 'Menunggu tanggal dan penerima'],
+  ['moving', 'Sedang dipindahkan', null],
+  ['final', 'Tersimpan di folder final', null],
+  ['move_failed', 'Pemindahan gagal — akan dicoba kembali', null],
+] as const)('shows storage state %s while keeping preview available', (storageState, label, detail) => {
+  renderSlot([{ id: `media-${storageState}`, slot_id: 'slot-1', original_filename: `${storageState}.jpg`, mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: `/media/${storageState}.jpg`, storage_state: storageState }]);
+
+  expect(screen.getByText(label)).toBeVisible();
+  if (detail) expect(screen.getByText(detail)).toBeVisible();
+  expect(screen.getByRole('button', { name: `Lihat ${storageState}.jpg` })).toBeVisible();
+});
+
+test('offers retry only for failed moves and publishes the returned media state', async () => {
+  const onChanged = vi.fn();
+  const onRetryMove = vi.fn();
+  const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+  const failed: MediaFile = { id: 'media-failed', slot_id: 'slot-1', original_filename: 'failed.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: '/media/failed.jpg', storage_state: 'move_failed', storage_last_error: 'Drive timeout' };
+  vi.mocked(apiRequest).mockResolvedValue({ data: { ...failed, storage_state: 'moving', storage_last_error: '' } });
+  render(<QueryClientProvider client={client}><DocumentationSlot slot={{ id: 'slot-1', code: 'proof', label: 'Bukti', stage: 'mesin', status: 'complete', required: true, min_files: 1, max_files: 2, media_kind: 'image', files: [failed] }} canManage onChanged={onChanged} onRetryMove={onRetryMove} /></QueryClientProvider>);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Coba pindahkan lagi failed.jpg' }));
+
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/media/media-failed/retry-move', { method: 'POST' }));
+  expect(await screen.findByText('Sedang dipindahkan')).toBeVisible();
+  expect(onRetryMove).toHaveBeenCalledWith(expect.objectContaining({ id: 'media-failed', storage_state: 'moving' }));
+  expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ files: [expect.objectContaining({ storage_state: 'moving' })] }));
+});
+
+test('does not offer move retry for staging, moving, or final media', () => {
+  renderSlot((['staging', 'moving', 'final'] as const).map((storageState) => ({ id: `media-${storageState}`, slot_id: 'slot-1', original_filename: `${storageState}.jpg`, mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: `/media/${storageState}.jpg`, storage_state: storageState })));
+
+  expect(screen.queryByRole('button', { name: /Coba pindahkan lagi/ })).not.toBeInTheDocument();
+});
+
+test('shows the backend reason when retrying a failed move is rejected', async () => {
+  vi.mocked(apiRequest).mockRejectedValue(new ApiError(409, 'media_move_not_retryable', 'Tanggal dan penerima belum lengkap'));
+  renderSlot([{ id: 'media-failed', slot_id: 'slot-1', original_filename: 'failed.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: '/media/failed.jpg', storage_state: 'move_failed' }]);
+
+  fireEvent.click(screen.getByRole('button', { name: 'Coba pindahkan lagi failed.jpg' }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('Tanggal dan penerima belum lengkap');
 });
