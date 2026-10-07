@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"konkit/internal/audit"
 	"konkit/internal/auth"
+	"konkit/internal/media"
 	"konkit/internal/programs"
 
 	"github.com/jackc/pgx/v5"
@@ -100,6 +102,15 @@ func (r *Repository) SaveMedia(ctx context.Context, actor auth.Principal, input 
 	if err := updateSlotStatus(ctx, tx, input.SlotID); err != nil {
 		return MediaFile{}, err
 	}
+	if input.StorageState == "staging" {
+		var distributionSlotID string
+		if err := tx.QueryRow(ctx, `SELECT distribution_slot_id::text FROM documentation_slots WHERE id=$1`, input.SlotID).Scan(&distributionSlotID); err != nil {
+			return MediaFile{}, fmt.Errorf("resolve staged media distribution slot: %w", err)
+		}
+		if err := r.queueMediaMove(ctx, tx, distributionSlotID, result.ID); err != nil {
+			return MediaFile{}, err
+		}
+	}
 	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "documentation.media_uploaded", ResourceType: "media_file", ResourceID: result.ID, Metadata: map[string]any{"slot_id": input.SlotID, "mime_type": input.MimeType, "byte_size": input.ByteSize, "source": input.Source}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
 		return MediaFile{}, err
 	}
@@ -171,6 +182,9 @@ func (r *Repository) DeleteMedia(ctx context.Context, actor auth.Principal, medi
 	if err != nil {
 		return MediaFile{}, fmt.Errorf("mark media deleted: %w", err)
 	}
+	if _, err := tx.Exec(ctx, `DELETE FROM distribution_media_move_jobs WHERE media_file_id=$1`, mediaID); err != nil {
+		return MediaFile{}, fmt.Errorf("delete media move job: %w", err)
+	}
 	if err := updateSlotStatus(ctx, tx, result.SlotID); err != nil {
 		return MediaFile{}, err
 	}
@@ -223,6 +237,129 @@ func updateSlotStatus(ctx context.Context, tx pgx.Tx, slotID string) error {
 		return fmt.Errorf("update documentation slot status: %w", err)
 	}
 	return nil
+}
+
+func (r *Repository) queueMediaMovesForSlot(ctx context.Context, tx pgx.Tx, distributionSlotID string) error {
+	return r.queueMediaMove(ctx, tx, distributionSlotID, "")
+}
+
+func (r *Repository) queueMediaMove(ctx context.Context, tx pgx.Tx, distributionSlotID, mediaID string) error {
+	var distributionDate *time.Time
+	var slotNumber int
+	var hasRecipient bool
+	var programType, regencyName string
+	var zoneName *string
+	var zonePlaceholder *bool
+	if err := tx.QueryRow(ctx, `
+		SELECT ds.distribution_date,ds.slot_number,(ds.recipient_person_id IS NOT NULL),p.program_type,z.name,r.name,z.is_placeholder
+		FROM distribution_slots ds
+		JOIN program_schedules ps ON ps.id=ds.schedule_id
+		JOIN programs p ON p.id=ps.program_id
+		JOIN regencies r ON r.id=ps.regency_id
+		LEFT JOIN program_regency_assignments pra ON pra.program_id=ps.program_id AND pra.regency_id=ps.regency_id
+		LEFT JOIN program_zones z ON z.id=pra.zone_id
+		WHERE ds.id=$1
+	`, distributionSlotID).Scan(&distributionDate, &slotNumber, &hasRecipient, &programType, &zoneName, &regencyName, &zonePlaceholder); err != nil {
+		return fmt.Errorf("resolve media move target: %w", err)
+	}
+	if distributionDate == nil || !hasRecipient {
+		return nil
+	}
+	if zoneName == nil || zonePlaceholder == nil || *zonePlaceholder {
+		return programs.ErrZoneNotConfigured
+	}
+	basePath, err := media.BuildFolderPath(media.FolderPathInput{
+		ProgramType: programType,
+		ZoneName:    *zoneName,
+		RegencyName: regencyName,
+		Category:    media.FolderPhotos,
+	})
+	if err != nil {
+		return err
+	}
+	targetPath, err := media.BuildDistributionFinalPath(basePath, *distributionDate, slotNumber)
+	if err != nil {
+		return err
+	}
+
+	rows, err := tx.Query(ctx, `
+		UPDATE media_files m
+		SET storage_state='moving',storage_last_error='',
+			storage_target_generation=storage_target_generation+1,updated_at=now()
+		FROM documentation_slots ds
+		WHERE m.documentation_slot_id=ds.id
+		  AND ds.distribution_slot_id=$1 AND m.status='accepted'
+		  AND (NULLIF($2,'') IS NULL OR m.id=NULLIF($2,'')::uuid)
+		RETURNING m.id::text,m.storage_target_generation
+	`, distributionSlotID, mediaID)
+	if err != nil {
+		return fmt.Errorf("prepare media moves: %w", err)
+	}
+	type generatedMove struct {
+		mediaID    string
+		generation int64
+	}
+	moves := make([]generatedMove, 0)
+	for rows.Next() {
+		var move generatedMove
+		if err := rows.Scan(&move.mediaID, &move.generation); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan prepared media move: %w", err)
+		}
+		moves = append(moves, move)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("prepare media moves: %w", err)
+	}
+	rows.Close()
+
+	for _, move := range moves {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO distribution_media_move_jobs(media_file_id,target_path,target_generation,status,attempts,next_attempt_at,locked_at,last_error)
+			VALUES($1,$2,$3,'queued',0,now(),NULL,'')
+			ON CONFLICT(media_file_id) DO UPDATE SET
+				target_path=EXCLUDED.target_path,target_generation=EXCLUDED.target_generation,
+				status='queued',attempts=0,next_attempt_at=now(),locked_at=NULL,last_error='',updated_at=now()
+		`, move.mediaID, targetPath, move.generation); err != nil {
+			return fmt.Errorf("queue media move: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r *Repository) RetryMediaMove(ctx context.Context, actor auth.Principal, mediaID string, meta auth.ClientMeta, scope auth.RegencyScope) (MediaFile, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return MediaFile{}, fmt.Errorf("begin media move retry: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var distributionSlotID string
+	err = tx.QueryRow(ctx, `
+		SELECT ds.id::text
+		FROM media_files m
+		JOIN documentation_slots docs ON docs.id=m.documentation_slot_id
+		JOIN distribution_slots ds ON ds.id=docs.distribution_slot_id
+		JOIN program_schedules ps ON ps.id=ds.schedule_id
+		WHERE m.id=$1 AND m.status='accepted' AND ($2 OR ps.regency_id::text=ANY($3))
+		FOR UPDATE OF m
+	`, mediaID, scope.Unrestricted, scope.RegencyIDs).Scan(&distributionSlotID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return MediaFile{}, ErrMediaNotFound
+	}
+	if err != nil {
+		return MediaFile{}, fmt.Errorf("lock media move retry: %w", err)
+	}
+	if err := r.queueMediaMove(ctx, tx, distributionSlotID, mediaID); err != nil {
+		return MediaFile{}, err
+	}
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "documentation.media_move_retried", ResourceType: "media_file", ResourceID: mediaID, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+		return MediaFile{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return MediaFile{}, fmt.Errorf("commit media move retry: %w", err)
+	}
+	return r.GetMedia(ctx, mediaID, scope)
 }
 
 func isUniqueViolation(err error) bool {
@@ -381,29 +518,24 @@ func (r *Repository) SetDistributionDate(ctx context.Context, actor auth.Princip
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var slotID string
-	var hasMedia bool
 	err = tx.QueryRow(ctx, `
-		SELECT ds.id::text, EXISTS(
-			SELECT 1 FROM documentation_slots docs
-			JOIN media_files media ON media.documentation_slot_id=docs.id
-			WHERE docs.distribution_slot_id=ds.id AND media.status='accepted'
-		)
+		SELECT ds.id::text
 		FROM distribution_slots ds
 		JOIN program_schedules ps ON ps.id=ds.schedule_id
 		WHERE ds.schedule_id=$1 AND ds.slot_number=$2 AND ($3 OR ps.regency_id::text = ANY($4))
 		FOR UPDATE OF ds
-	`, input.ScheduleID, input.SlotNumber, scope.Unrestricted, scope.RegencyIDs).Scan(&slotID, &hasMedia)
+	`, input.ScheduleID, input.SlotNumber, scope.Unrestricted, scope.RegencyIDs).Scan(&slotID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return DistributionSlot{}, ErrSlotNotFound
 	}
 	if err != nil {
 		return DistributionSlot{}, fmt.Errorf("lock distribution date: %w", err)
 	}
-	if hasMedia {
-		return DistributionSlot{}, ErrDistributionDateLocked
-	}
 	if _, err := tx.Exec(ctx, `UPDATE distribution_slots SET distribution_date=$2::date,updated_at=now() WHERE id=$1`, slotID, input.DistributionDate); err != nil {
 		return DistributionSlot{}, fmt.Errorf("update distribution date: %w", err)
+	}
+	if err := r.queueMediaMovesForSlot(ctx, tx, slotID); err != nil {
+		return DistributionSlot{}, err
 	}
 	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "distribution.date_updated", ResourceType: "distribution_slot", ResourceID: slotID, Metadata: map[string]any{"distribution_date": input.DistributionDate}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
 		return DistributionSlot{}, err
@@ -730,6 +862,9 @@ func (r *Repository) LinkSlot(ctx context.Context, actor auth.Principal, input L
 	if _, err := tx.Exec(ctx, `UPDATE distribution_slots SET allocation_id=$2, recipient_person_id=$3, status='linked', updated_at=now() WHERE id=$1`, slotID, allocationID, personID); err != nil {
 		return DistributionSlot{}, fmt.Errorf("link distribution slot: %w", err)
 	}
+	if err := r.queueMediaMovesForSlot(ctx, tx, slotID); err != nil {
+		return DistributionSlot{}, err
+	}
 
 	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "distribution.slot_linked", ResourceType: "distribution_slot", ResourceID: slotID, Metadata: map[string]any{"allocation_id": allocationID, "slot_number": input.SlotNumber}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
 		return DistributionSlot{}, err
@@ -843,6 +978,9 @@ func (r *Repository) ReplaceRecipient(ctx context.Context, actor auth.Principal,
 	}
 	if _, err := tx.Exec(ctx, `UPDATE distribution_slots SET allocation_id=$2,recipient_person_id=$3,updated_at=now() WHERE id=$1`, slotID, newAllocationID, newPersonID); err != nil {
 		return DistributionSlot{}, fmt.Errorf("replace slot recipient: %w", err)
+	}
+	if err := r.queueMediaMovesForSlot(ctx, tx, slotID); err != nil {
+		return DistributionSlot{}, err
 	}
 	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "distribution.recipient_replaced", ResourceType: "distribution_slot", ResourceID: slotID, Metadata: map[string]any{"old_allocation_id": *oldAllocationID, "new_allocation_id": newAllocationID, "old_person_id": *oldPersonID, "new_person_id": newPersonID}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
 		return DistributionSlot{}, err

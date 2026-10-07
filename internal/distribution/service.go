@@ -28,6 +28,10 @@ type mediaRepository interface {
 	RestoreMedia(context.Context, string) error
 }
 
+type mediaMoveRepository interface {
+	RetryMediaMove(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) (MediaFile, error)
+}
+
 type posMesinRepository interface {
 	CreateSlot(ctx context.Context, actor auth.Principal, input CreateSlotInput, scope auth.RegencyScope, meta auth.ClientMeta) (DistributionSlot, error)
 }
@@ -68,6 +72,7 @@ type distributionDateRepository interface {
 
 type Service struct {
 	mediaRepository            mediaRepository
+	mediaMoveRepository        mediaMoveRepository
 	posMesinRepository         posMesinRepository
 	posDokumenRepository       posDokumenRepository
 	posDokumenEquipment        posDokumenEquipmentRepository
@@ -83,6 +88,7 @@ type Service struct {
 func NewService(repository any, dependencies ...any) *Service {
 	service := &Service{}
 	service.mediaRepository, _ = repository.(mediaRepository)
+	service.mediaMoveRepository, _ = repository.(mediaMoveRepository)
 	service.posMesinRepository, _ = repository.(posMesinRepository)
 	service.posDokumenRepository, _ = repository.(posDokumenRepository)
 	service.posDokumenEquipment, _ = repository.(posDokumenEquipmentRepository)
@@ -449,6 +455,17 @@ func (s *Service) DeleteMedia(ctx context.Context, actor auth.Principal, mediaID
 		return err
 	}
 	return nil
+}
+
+func (s *Service) RetryMediaMove(ctx context.Context, actor auth.Principal, mediaID string, meta auth.ClientMeta, scope auth.RegencyScope) (MediaFile, error) {
+	if s.mediaMoveRepository == nil {
+		return MediaFile{}, ErrMediaUnavailable
+	}
+	mediaID = strings.TrimSpace(mediaID)
+	if mediaID == "" {
+		return MediaFile{}, ErrMediaNotFound
+	}
+	return s.mediaMoveRepository.RetryMediaMove(ctx, actor, mediaID, meta, scope)
 }
 
 func (s *Service) OpenMedia(ctx context.Context, mediaID string, scope auth.RegencyScope) (MediaContent, error) {

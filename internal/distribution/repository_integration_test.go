@@ -337,12 +337,28 @@ func seedMediaFixture(t *testing.T, pool *pgxpool.Pool) mediaFixture {
 	// this helper's several callers never collide on regencies_name_province_uq or similar unique
 	// constraints (each test's rows are torn down via t.Cleanup below, but names must still be
 	// distinct across tests that run in the same process before their cleanups fire).
-	suffix := t.Name()
+	suffix := strings.ReplaceAll(t.Name(), "/", "-")
+	nextRegencyCode := func() string {
+		var code string
+		must(t, pool.QueryRow(ctx, `
+			SELECT chr(65+(g%26)::int)||chr(65+((g/26)%26)::int)||chr(65+((g/676)%26)::int)
+			FROM generate_series(0,17575) AS g
+			WHERE NOT EXISTS (
+				SELECT 1 FROM regencies
+				WHERE document_code=chr(65+(g%26)::int)||chr(65+((g/26)%26)::int)||chr(65+((g/676)%26)::int)
+			)
+			ORDER BY g DESC LIMIT 1
+		`).Scan(&code))
+		return code
+	}
+	primaryCode := nextRegencyCode()
+	suffix += "-" + primaryCode
 
 	var regencyID string
-	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan',$1,'MDT',true) RETURNING id::text`, "Media Test "+suffix).Scan(&regencyID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan',$1,$2,true) RETURNING id::text`, "Media Test "+suffix+" "+primaryCode, primaryCode).Scan(&regencyID))
+	secondaryCode := nextRegencyCode()
 	var otherRegencyID string
-	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan',$1,'MDO',true) RETURNING id::text`, "Media Test Other "+suffix).Scan(&otherRegencyID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan',$1,$2,true) RETURNING id::text`, "Media Test Other "+suffix+" "+secondaryCode, secondaryCode).Scan(&otherRegencyID))
 
 	var programID string
 	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES($1,'Program Test Media','farmer',2026,'active') RETURNING id::text`, "MED-TEST-"+suffix).Scan(&programID))
@@ -397,27 +413,179 @@ func seedMediaFixture(t *testing.T, pool *pgxpool.Pool) mediaFixture {
 	return mediaFixture{documentationSlotID: documentationSlotID, mediaID: mediaID, distributionSlotID: distributionSlotID, scheduleID: scheduleID, programID: programID, packageTemplateID: packageTemplateID, slotNumber: 1, regencyID: regencyID, otherRegencyID: otherRegencyID}
 }
 
-func TestSetDistributionDateLocksAfterFirstMediaUpload(t *testing.T) {
+func addCandidateForMediaFixture(t *testing.T, pool *pgxpool.Pool, fixture mediaFixture) string {
+	t.Helper()
+	ctx := context.Background()
+	nik := fmt.Sprintf("%016d", time.Now().UnixNano()%1e16)
+	var personID, nominationID, allocationID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO people(full_name,nik) VALUES('Queue Candidate',$1) RETURNING id::text`, nik).Scan(&personID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO candidate_nominations(person_id,program_type,source_snapshot_json,status) VALUES($1,'farmer','{}','ready') RETURNING id::text`, personID).Scan(&nominationID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,status,package_snapshot_json) VALUES($1,$2,$3,'candidate','{}') RETURNING id::text`, fixture.scheduleID, nominationID, personID).Scan(&allocationID))
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM package_allocations WHERE id=$1`, allocationID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM candidate_nominations WHERE id=$1`, nominationID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE id=$1`, personID)
+	})
+	return nik
+}
+
+func TestIntegrationMediaMoveQueueDateFirstAndRecipientFirst(t *testing.T) {
+	for _, order := range []string{"date-first", "recipient-first"} {
+		t.Run(order, func(t *testing.T) {
+			pool := distributionIntegrationPool(t)
+			ctx := context.Background()
+			fixture := seedMediaFixture(t, pool)
+			nik := addCandidateForMediaFixture(t, pool, fixture)
+			must(t, func() error {
+				_, err := pool.Exec(ctx, `UPDATE media_files SET storage_state='staging' WHERE id=$1`, fixture.mediaID)
+				return err
+			}())
+			repo := NewRepository(pool)
+			dateInput := SetDistributionDateInput{ScheduleID: fixture.scheduleID, SlotNumber: fixture.slotNumber, DistributionDate: "2026-10-20"}
+			linkInput := LinkSlotInput{ScheduleID: fixture.scheduleID, SlotNumber: fixture.slotNumber, NIK: nik}
+
+			if order == "date-first" {
+				if _, err := repo.SetDistributionDate(ctx, auth.Principal{}, dateInput, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
+					t.Fatal(err)
+				}
+			} else if _, err := repo.LinkSlot(ctx, auth.Principal{}, linkInput, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
+				t.Fatal(err)
+			}
+			var jobsBefore int
+			must(t, pool.QueryRow(ctx, `SELECT count(*) FROM distribution_media_move_jobs WHERE media_file_id=$1`, fixture.mediaID).Scan(&jobsBefore))
+			if jobsBefore != 0 {
+				t.Fatalf("jobs before slot ready=%d, want 0", jobsBefore)
+			}
+
+			if order == "date-first" {
+				if _, err := repo.LinkSlot(ctx, auth.Principal{}, linkInput, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
+					t.Fatal(err)
+				}
+			} else if _, err := repo.SetDistributionDate(ctx, auth.Principal{}, dateInput, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
+				t.Fatal(err)
+			}
+
+			var state, jobStatus string
+			var generation, jobGeneration int64
+			var targetPath []string
+			must(t, pool.QueryRow(ctx, `
+				SELECT m.storage_state,m.storage_target_generation,j.status,j.target_generation,j.target_path
+				FROM media_files m JOIN distribution_media_move_jobs j ON j.media_file_id=m.id WHERE m.id=$1
+			`, fixture.mediaID).Scan(&state, &generation, &jobStatus, &jobGeneration, &targetPath))
+			if state != "moving" || jobStatus != "queued" || generation != 1 || jobGeneration != 1 || !strings.HasSuffix(strings.Join(targetPath, "/"), "DOKUMENTASI (FOTO)/PENDISTRIBUSIAN/20 Oktober 2026/1") {
+				t.Fatalf("state=%q job=%q generations=%d/%d target=%v", state, jobStatus, generation, jobGeneration, targetPath)
+			}
+
+			stored, err := repo.SaveMedia(ctx, auth.Principal{}, MediaFileInput{
+				SlotID: fixture.documentationSlotID, StorageKey: "ready-upload-" + order, OriginalFilename: "ready.jpg", MimeType: "image/jpeg",
+				ByteSize: 128, Checksum: strings.Repeat("b", 64), Source: "camera", StorageState: "final",
+			}, auth.ClientMeta{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var readyUploadJobs int
+			must(t, pool.QueryRow(ctx, `SELECT count(*) FROM distribution_media_move_jobs WHERE media_file_id=$1`, stored.ID).Scan(&readyUploadJobs))
+			if readyUploadJobs != 0 || stored.StorageState != "final" {
+				t.Fatalf("ready upload jobs=%d state=%q", readyUploadJobs, stored.StorageState)
+			}
+
+			raced, err := repo.SaveMedia(ctx, auth.Principal{}, MediaFileInput{
+				SlotID: fixture.documentationSlotID, StorageKey: "raced-upload-" + order, OriginalFilename: "raced.jpg", MimeType: "image/jpeg",
+				ByteSize: 128, Checksum: strings.Repeat("c", 64), Source: "camera", StorageState: "staging",
+			}, auth.ClientMeta{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var racedState string
+			var racedJobs int
+			must(t, pool.QueryRow(ctx, `SELECT storage_state FROM media_files WHERE id=$1`, raced.ID).Scan(&racedState))
+			must(t, pool.QueryRow(ctx, `SELECT count(*) FROM distribution_media_move_jobs WHERE media_file_id=$1`, raced.ID).Scan(&racedJobs))
+			if racedState != "moving" || racedJobs != 1 {
+				t.Fatalf("raced upload state=%q jobs=%d", racedState, racedJobs)
+			}
+		})
+	}
+}
+
+func TestIntegrationDateChangeDuringMoveQueuesNewestGeneration(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	ctx := context.Background()
+	fixture := seedMediaFixture(t, pool)
+	nik := addCandidateForMediaFixture(t, pool, fixture)
+	must(t, func() error {
+		_, err := pool.Exec(ctx, `UPDATE media_files SET storage_state='staging' WHERE id=$1`, fixture.mediaID)
+		return err
+	}())
+	repo := NewRepository(pool)
+	if _, err := repo.SetDistributionDate(ctx, auth.Principal{}, SetDistributionDateInput{ScheduleID: fixture.scheduleID, SlotNumber: fixture.slotNumber, DistributionDate: "2026-10-20"}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.LinkSlot(ctx, auth.Principal{}, LinkSlotInput{ScheduleID: fixture.scheduleID, SlotNumber: fixture.slotNumber, NIK: nik}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
+		t.Fatal(err)
+	}
+	must(t, func() error {
+		_, err := pool.Exec(ctx, `UPDATE distribution_media_move_jobs SET status='processing',locked_at=now() WHERE media_file_id=$1`, fixture.mediaID)
+		return err
+	}())
+	if _, err := repo.SetDistributionDate(ctx, auth.Principal{}, SetDistributionDateInput{ScheduleID: fixture.scheduleID, SlotNumber: fixture.slotNumber, DistributionDate: "2026-10-21"}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
+		t.Fatal(err)
+	}
+	var mediaGeneration, jobGeneration int64
+	var status string
+	var target []string
+	must(t, pool.QueryRow(ctx, `SELECT m.storage_target_generation,j.target_generation,j.status,j.target_path FROM media_files m JOIN distribution_media_move_jobs j ON j.media_file_id=m.id WHERE m.id=$1`, fixture.mediaID).Scan(&mediaGeneration, &jobGeneration, &status, &target))
+	if mediaGeneration != 2 || jobGeneration != 2 || status != "queued" || !strings.HasSuffix(strings.Join(target, "/"), "/21 Oktober 2026/1") {
+		t.Fatalf("mediaGen=%d jobGen=%d status=%q target=%v", mediaGeneration, jobGeneration, status, target)
+	}
+}
+
+func TestIntegrationDeleteQueuedMediaCannotRetry(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	ctx := context.Background()
+	fixture := seedMediaFixture(t, pool)
+	nik := addCandidateForMediaFixture(t, pool, fixture)
+	must(t, func() error {
+		_, err := pool.Exec(ctx, `UPDATE media_files SET storage_state='staging' WHERE id=$1`, fixture.mediaID)
+		return err
+	}())
+	repo := NewRepository(pool)
+	if _, err := repo.SetDistributionDate(ctx, auth.Principal{}, SetDistributionDateInput{ScheduleID: fixture.scheduleID, SlotNumber: fixture.slotNumber, DistributionDate: "2026-10-20"}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.LinkSlot(ctx, auth.Principal{}, LinkSlotInput{ScheduleID: fixture.scheduleID, SlotNumber: fixture.slotNumber, NIK: nik}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.DeleteMedia(ctx, auth.Principal{}, fixture.mediaID, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
+		t.Fatal(err)
+	}
+	var jobs int
+	must(t, pool.QueryRow(ctx, `SELECT count(*) FROM distribution_media_move_jobs WHERE media_file_id=$1`, fixture.mediaID).Scan(&jobs))
+	if jobs != 0 {
+		t.Fatalf("queued job survived media deletion: %d", jobs)
+	}
+	if _, err := repo.RetryMediaMove(ctx, auth.Principal{}, fixture.mediaID, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrMediaNotFound) {
+		t.Fatalf("retry deleted media err=%v, want ErrMediaNotFound", err)
+	}
+}
+
+func TestSetDistributionDateRemainsEditableAfterMediaUpload(t *testing.T) {
 	pool := distributionIntegrationPool(t)
 	fixture := seedMediaFixture(t, pool)
 	repo := NewRepository(pool)
 	ctx := context.Background()
 	input := SetDistributionDateInput{ScheduleID: fixture.scheduleID, SlotNumber: fixture.slotNumber, DistributionDate: "2026-10-20"}
 
-	if _, err := repo.SetDistributionDate(ctx, auth.Principal{}, input, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrDistributionDateLocked) {
-		t.Fatalf("locked err=%v", err)
-	}
-
-	must(t, func() error {
-		_, err := pool.Exec(ctx, `DELETE FROM media_files WHERE id=$1`, fixture.mediaID)
-		return err
-	}())
 	updated, err := repo.SetDistributionDate(ctx, auth.Principal{}, input, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if updated.DistributionDate == nil || *updated.DistributionDate != "2026-10-20" {
 		t.Fatalf("distribution_date=%v", updated.DistributionDate)
+	}
+	input.DistributionDate = "2026-10-21"
+	updated, err = repo.SetDistributionDate(ctx, auth.Principal{}, input, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if err != nil || updated.DistributionDate == nil || *updated.DistributionDate != "2026-10-21" {
+		t.Fatalf("second update=%+v err=%v", updated, err)
 	}
 }
 
@@ -634,7 +802,7 @@ func TestGetMediaSlotScopedToDistributionSlots(t *testing.T) {
 	if slot.SlotNumber != 1 || slot.Label != "Foto Alat" {
 		t.Fatalf("slot identity = number %d label %q", slot.SlotNumber, slot.Label)
 	}
-	if slot.ProgramType != "farmer" || slot.ZoneName != "Zona 1" || slot.RegencyName != "Media Test "+t.Name() {
+	if slot.ProgramType != "farmer" || slot.ZoneName != "Zona 1" || !strings.HasPrefix(slot.RegencyName, "Media Test "+strings.ReplaceAll(t.Name(), "/", "-")) {
 		t.Fatalf("slot storage context = %+v", slot)
 	}
 	documentationStage, err := repo.DocumentationSlotStage(ctx, fixture.documentationSlotID, auth.RegencyScope{RegencyIDs: []string{fixture.regencyID}})

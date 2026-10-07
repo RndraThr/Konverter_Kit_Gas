@@ -141,6 +141,29 @@ func (r *revisionRepositoryStub) ReopenSlot(_ context.Context, _ auth.Principal,
 	return DistributionSlot{ID: "slot-1", Status: "linked", NeedsRecompletion: true}, nil
 }
 
+type mediaMoveRepositoryStub struct {
+	seenID string
+	scope  auth.RegencyScope
+}
+
+func (r *mediaMoveRepositoryStub) RetryMediaMove(_ context.Context, _ auth.Principal, mediaID string, _ auth.ClientMeta, scope auth.RegencyScope) (MediaFile, error) {
+	r.seenID, r.scope = mediaID, scope
+	return MediaFile{ID: mediaID, StorageState: "moving"}, nil
+}
+
+func TestRetryMediaMoveTrimsIDAndDelegates(t *testing.T) {
+	repository := &mediaMoveRepositoryStub{}
+	service := NewService(repository)
+	scope := auth.RegencyScope{RegencyIDs: []string{"regency-1"}}
+	result, err := service.RetryMediaMove(context.Background(), auth.Principal{}, " media-1 ", auth.ClientMeta{}, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.StorageState != "moving" || repository.seenID != "media-1" || len(repository.scope.RegencyIDs) != 1 {
+		t.Fatalf("result=%+v id=%q scope=%+v", result, repository.seenID, repository.scope)
+	}
+}
+
 func TestReopenSlotRequiresReasonAndValidStage(t *testing.T) {
 	service := NewService(&revisionRepositoryStub{})
 	for _, input := range []ReopenSlotInput{
