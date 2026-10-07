@@ -721,8 +721,8 @@ func TestReportsExportReturnsAttachmentHeaders(t *testing.T) {
 }
 
 func TestDistributionMediaUploadAndContentHeaders(t *testing.T) {
-	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"documentation.manage": true, "distribution.view": true}}
-	service := &fakeDistributionService{media: distribution.MediaFile{ID: "media-1", MimeType: "image/jpeg", OriginalFilename: "penerima.jpg"}, mediaContent: []byte("jpeg-content")}
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_dokumen": true, "distribution.view": true}}
+	service := &fakeDistributionService{documentationStage: "dokumen", media: distribution.MediaFile{ID: "media-1", MimeType: "image/jpeg", OriginalFilename: "penerima.jpg"}, mediaContent: []byte("jpeg-content")}
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	_ = writer.WriteField("source", "camera")
@@ -750,8 +750,8 @@ func TestDistributionMediaUploadAndContentHeaders(t *testing.T) {
 }
 
 func TestDistributionMediaUploadRejectsFileBeforeMetadata(t *testing.T) {
-	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"documentation.manage": true}}
-	service := &fakeDistributionService{}
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_dokumen": true}}
+	service := &fakeDistributionService{documentationStage: "dokumen"}
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	file, _ := writer.CreateFormFile("file", "proof.jpg")
@@ -779,8 +779,8 @@ func TestDistributionMediaUploadMapsPolicyAndBusyErrors(t *testing.T) {
 		{distribution.ErrMediaPolicyInvalid, http.StatusUnsupportedMediaType, "media_policy_invalid"},
 		{distribution.ErrVideoUploadBusy, http.StatusTooManyRequests, "video_upload_busy"},
 	} {
-		authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"documentation.manage": true}}
-		service := &fakeDistributionService{uploadErr: tt.err}
+		authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_dokumen": true}}
+		service := &fakeDistributionService{documentationStage: "dokumen", uploadErr: tt.err}
 		body := &bytes.Buffer{}
 		writer := multipart.NewWriter(body)
 		_ = writer.WriteField("source", "gallery")
@@ -815,7 +815,7 @@ func TestDistributionDateUpdateUsesOneDateForTheSlotNumber(t *testing.T) {
 }
 
 func TestDistributionEquipmentUpdateUsesSlotNumberFromThePath(t *testing.T) {
-	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_mesin": true}}
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_dokumen": true}}
 	service := &fakeDistributionService{equippedSlot: distribution.DistributionSlot{ID: "slot-1", SlotNumber: 3, MachineOptionCode: "shark-spwp8030"}}
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/distribution/slots/3/equipment?schedule_id=schedule-1", strings.NewReader(`{"machine_option_code":"shark-spwp8030","machine_serial_number":"msn-9"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -828,8 +828,65 @@ func TestDistributionEquipmentUpdateUsesSlotNumberFromThePath(t *testing.T) {
 	}
 }
 
-func TestDistributionEquipmentUpdateReportsLockedEquipment(t *testing.T) {
+func TestDistributionEquipmentUpdateRejectsPosMesinOnly(t *testing.T) {
 	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_mesin": true}}
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/distribution/slots/3/equipment?schedule_id=schedule-1", strings.NewReader(`{"machine_option_code":"shark"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: authService, Distribution: &fakeDistributionService{}, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDistributionRecipientAndReopenRoutes(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_dokumen": true}}
+	service := &fakeDistributionService{recipientSlot: distribution.DistributionSlot{ID: "slot-1", Status: "linked"}, reopenedSlot: distribution.DistributionSlot{ID: "slot-1", Status: "linked", NeedsRecompletion: true}}
+	for _, tt := range []struct{ method, path, body string }{
+		{http.MethodPatch, "/api/v1/distribution/slots/3/recipient?schedule_id=schedule-1", `{"address":"JL. BARU"}`},
+		{http.MethodPost, "/api/v1/distribution/slots/3/replace-recipient?schedule_id=schedule-1", `{"nik":"9171031707010004"}`},
+		{http.MethodPost, "/api/v1/distribution/slots/3/reopen?schedule_id=schedule-1", `{"stage":"dokumen","reason":"Koreksi"}`},
+	} {
+		req := httptest.NewRequest(tt.method, tt.path, strings.NewReader(tt.body))
+		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+		req.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
+		rec := httptest.NewRecorder()
+		NewHandler(Dependencies{Auth: authService, Distribution: service, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s %s status=%d body=%s", tt.method, tt.path, rec.Code, rec.Body.String())
+		}
+	}
+	if service.recipientInput.ScheduleID != "schedule-1" || service.recipientInput.SlotNumber != 3 || service.replaceInput.NIK != "9171031707010004" || service.reopenInput.Stage != "dokumen" {
+		t.Fatalf("recipient=%+v replace=%+v reopen=%+v", service.recipientInput, service.replaceInput, service.reopenInput)
+	}
+}
+
+func TestDistributionMediaPermissionRequiresMatchingPOSStage(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"documentation.manage": true}}
+	service := &fakeDistributionService{documentationStage: "dokumen", media: distribution.MediaFile{ID: "media-1"}}
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("source", "camera")
+	_ = writer.WriteField("file_size", "4")
+	file, _ := writer.CreateFormFile("file", "proof.jpg")
+	_, _ = file.Write([]byte{0xff, 0xd8, 0xff, 0xe0})
+	_ = writer.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/distribution/slots/docs-1/media", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: authService, Distribution: service, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestDistributionEquipmentUpdateReportsLockedEquipment(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_dokumen": true}}
 	service := &fakeDistributionService{equipmentErr: distribution.ErrEquipmentLocked}
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/distribution/slots/3/equipment?schedule_id=schedule-1", strings.NewReader(`{"machine_option_code":"shark-spwp8030"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -1040,6 +1097,13 @@ type fakeDistributionService struct {
 	equipmentInput       distribution.UpdateEquipmentInput
 	equippedSlot         distribution.DistributionSlot
 	equipmentErr         error
+	recipientInput       distribution.UpdateRecipientInput
+	replaceInput         distribution.ReplaceRecipientInput
+	reopenInput          distribution.ReopenSlotInput
+	recipientSlot        distribution.DistributionSlot
+	reopenedSlot         distribution.DistributionSlot
+	documentationStage   string
+	mediaStage           string
 	media                distribution.MediaFile
 	uploadErr            error
 	mediaContent         []byte
@@ -1083,6 +1147,24 @@ func (f *fakeDistributionService) SetDistributionDate(_ context.Context, _ auth.
 func (f *fakeDistributionService) UpdateEquipment(_ context.Context, _ auth.Principal, input distribution.UpdateEquipmentInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.DistributionSlot, error) {
 	f.equipmentInput, f.seenRegencyScope = input, scope
 	return f.equippedSlot, f.equipmentErr
+}
+func (f *fakeDistributionService) UpdateRecipient(_ context.Context, _ auth.Principal, input distribution.UpdateRecipientInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.DistributionSlot, error) {
+	f.recipientInput, f.seenRegencyScope = input, scope
+	return f.recipientSlot, nil
+}
+func (f *fakeDistributionService) ReplaceRecipient(_ context.Context, _ auth.Principal, input distribution.ReplaceRecipientInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.DistributionSlot, error) {
+	f.replaceInput, f.seenRegencyScope = input, scope
+	return f.recipientSlot, nil
+}
+func (f *fakeDistributionService) ReopenSlot(_ context.Context, _ auth.Principal, input distribution.ReopenSlotInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.DistributionSlot, error) {
+	f.reopenInput, f.seenRegencyScope = input, scope
+	return f.reopenedSlot, nil
+}
+func (f *fakeDistributionService) DocumentationSlotStage(_ context.Context, _ string, _ auth.RegencyScope) (string, error) {
+	return f.documentationStage, nil
+}
+func (f *fakeDistributionService) MediaStage(_ context.Context, _ string, _ auth.RegencyScope) (string, error) {
+	return f.mediaStage, nil
 }
 func (f *fakeDistributionService) UploadMedia(_ context.Context, _ auth.Principal, input distribution.UploadMediaInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.MediaFile, error) {
 	f.slotID, f.upload, f.seenRegencyScope = input.SlotID, input, scope

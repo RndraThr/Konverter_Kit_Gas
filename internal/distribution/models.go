@@ -182,20 +182,21 @@ type UpdateEquipmentInput struct {
 }
 
 type MediaSlot struct {
-	ID                string
-	SlotNumber        int
-	DistributionDate  string
-	Label             string
-	ProgramType       string
-	ZoneName          string
-	RegencyName       string
-	InputSource       string
-	MediaKind         string
-	RequireLocation   bool
-	RequireCapturedAt bool
-	MinFiles          int
-	MaxFiles          int
-	AcceptedFiles     int
+	ID                 string
+	SlotNumber         int
+	DistributionDate   string
+	DistributionStatus string
+	Label              string
+	ProgramType        string
+	ZoneName           string
+	RegencyName        string
+	InputSource        string
+	MediaKind          string
+	RequireLocation    bool
+	RequireCapturedAt  bool
+	MinFiles           int
+	MaxFiles           int
+	AcceptedFiles      int
 }
 
 type UploadMediaInput struct {

@@ -634,6 +634,14 @@ func TestGetMediaSlotScopedToDistributionSlots(t *testing.T) {
 	if slot.ProgramType != "farmer" || slot.ZoneName != "Zona 1" || slot.RegencyName != "Media Test "+t.Name() {
 		t.Fatalf("slot storage context = %+v", slot)
 	}
+	documentationStage, err := repo.DocumentationSlotStage(ctx, fixture.documentationSlotID, auth.RegencyScope{RegencyIDs: []string{fixture.regencyID}})
+	if err != nil || documentationStage != "penyerahan" {
+		t.Fatalf("documentation stage=%q err=%v", documentationStage, err)
+	}
+	mediaStage, err := repo.MediaStage(ctx, fixture.mediaID, auth.RegencyScope{RegencyIDs: []string{fixture.regencyID}})
+	if err != nil || mediaStage != "penyerahan" {
+		t.Fatalf("media stage=%q err=%v", mediaStage, err)
+	}
 }
 
 // TestGetMediaSlotRejectsOutOfScopeRegency proves a caller scoped to a different regency cannot
@@ -704,6 +712,25 @@ func TestDeleteMediaWithinScopeSucceeds(t *testing.T) {
 	}
 	if deleted.Status != "deleted" {
 		t.Fatalf("deleted.Status = %q, want deleted", deleted.Status)
+	}
+}
+
+func TestDeleteMediaRejectsCompletedDistributionSlot(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	fixture := seedMediaFixture(t, pool)
+	ctx := context.Background()
+	must(t, func() error {
+		_, err := pool.Exec(ctx, `UPDATE distribution_slots SET status='completed' WHERE id=$1`, fixture.distributionSlotID)
+		return err
+	}())
+	_, err := NewRepository(pool).DeleteMedia(ctx, auth.Principal{}, fixture.mediaID, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if !errors.Is(err, ErrAlreadyCompleted) {
+		t.Fatalf("err=%v, want ErrAlreadyCompleted", err)
+	}
+	var status string
+	must(t, pool.QueryRow(ctx, `SELECT status FROM media_files WHERE id=$1`, fixture.mediaID).Scan(&status))
+	if status != "accepted" {
+		t.Fatalf("media status=%q", status)
 	}
 }
 

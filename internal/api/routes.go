@@ -520,6 +520,10 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "slot_not_linked", "Nomor bagi ini belum terhubung ke penerima")
 	case errors.Is(err, distribution.ErrAlreadyCompleted):
 		writeError(w, http.StatusConflict, "already_completed", "Distribusi untuk nomor bagi ini sudah selesai")
+	case errors.Is(err, distribution.ErrRevisionNotCompleted):
+		writeError(w, http.StatusConflict, "revision_not_completed", "Hanya distribusi selesai yang dapat dibuka untuk revisi")
+	case errors.Is(err, distribution.ErrRecipientNotLinked):
+		writeError(w, http.StatusConflict, "recipient_not_linked", "Nomor bagi belum terhubung ke penerima")
 	case errors.Is(err, distribution.ErrSlotQuotaExceeded):
 		writeError(w, http.StatusConflict, "slot_quota_exceeded", "Kuota slot untuk jadwal ini sudah tercapai")
 	case errors.Is(err, distribution.ErrSlotNumberTaken):
@@ -554,6 +558,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, distribution.ErrScheduleRequired), errors.Is(err, distribution.ErrQueryRequired),
 		errors.Is(err, distribution.ErrNIKInvalid), errors.Is(err, distribution.ErrSlotNumberRequired), errors.Is(err, distribution.ErrDistributionDateRequired):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), validationFields(err))
+	case errors.Is(err, distribution.ErrRevisionReasonRequired), errors.Is(err, distribution.ErrRevisionStageInvalid):
+		writeFieldError(w, http.StatusUnprocessableEntity, "validation_failed", err.Error(), map[string]string{"revision": err.Error()})
 	case errors.Is(err, reports.ErrScheduleRequired), errors.Is(err, reports.ErrFilterInvalid):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), map[string]string{"request": err.Error()})
 	case errors.Is(err, recipients.ErrFullNameRequired), errors.Is(err, recipients.ErrNIKInvalid):

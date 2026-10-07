@@ -100,6 +100,11 @@ type DistributionService interface {
 	CompleteSlot(context.Context, auth.Principal, distribution.CompleteSlotInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
 	SetDistributionDate(context.Context, auth.Principal, distribution.SetDistributionDateInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
 	UpdateEquipment(context.Context, auth.Principal, distribution.UpdateEquipmentInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
+	UpdateRecipient(context.Context, auth.Principal, distribution.UpdateRecipientInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
+	ReplaceRecipient(context.Context, auth.Principal, distribution.ReplaceRecipientInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
+	ReopenSlot(context.Context, auth.Principal, distribution.ReopenSlotInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
+	DocumentationSlotStage(context.Context, string, auth.RegencyScope) (string, error)
+	MediaStage(context.Context, string, auth.RegencyScope) (string, error)
 	UploadMedia(context.Context, auth.Principal, distribution.UploadMediaInput, auth.ClientMeta, auth.RegencyScope) (distribution.MediaFile, error)
 	DeleteMedia(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) error
 	OpenMedia(context.Context, string, auth.RegencyScope) (distribution.MediaContent, error)

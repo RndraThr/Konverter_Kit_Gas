@@ -25,7 +25,7 @@ func (r *Repository) GetMediaSlot(ctx context.Context, slotID string, scope auth
 	var zoneName *string
 	var isPlaceholder *bool
 	err := r.pool.QueryRow(ctx, `
-		SELECT s.id::text,dsl.slot_number,dsl.distribution_date::text,s.label_snapshot,s.input_source,s.media_kind,s.require_location,s.require_captured_at,s.min_files,s.max_files,
+		SELECT s.id::text,dsl.slot_number,dsl.distribution_date::text,dsl.status,s.label_snapshot,s.input_source,s.media_kind,s.require_location,s.require_captured_at,s.min_files,s.max_files,
 			count(m.id) FILTER(WHERE m.status='accepted'), p.program_type, z.name, r.name, z.is_placeholder
 		FROM documentation_slots s
 		LEFT JOIN media_files m ON m.documentation_slot_id=s.id
@@ -36,8 +36,8 @@ func (r *Repository) GetMediaSlot(ctx context.Context, slotID string, scope auth
 		LEFT JOIN program_regency_assignments pra ON pra.program_id=ps.program_id AND pra.regency_id=ps.regency_id
 		LEFT JOIN program_zones z ON z.id=pra.zone_id
 		WHERE s.id=$1 AND ($2 OR ps.regency_id::text = ANY($3))
-		GROUP BY s.id,dsl.slot_number,dsl.distribution_date,s.label_snapshot,p.program_type,z.name,r.name,z.is_placeholder
-	`, slotID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.SlotNumber, &result.DistributionDate, &result.Label, &result.InputSource, &result.MediaKind, &result.RequireLocation, &result.RequireCapturedAt, &result.MinFiles, &result.MaxFiles, &result.AcceptedFiles, &result.ProgramType, &zoneName, &result.RegencyName, &isPlaceholder)
+		GROUP BY s.id,dsl.slot_number,dsl.distribution_date,dsl.status,s.label_snapshot,p.program_type,z.name,r.name,z.is_placeholder
+	`, slotID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.SlotNumber, &result.DistributionDate, &result.DistributionStatus, &result.Label, &result.InputSource, &result.MediaKind, &result.RequireLocation, &result.RequireCapturedAt, &result.MinFiles, &result.MaxFiles, &result.AcceptedFiles, &result.ProgramType, &zoneName, &result.RegencyName, &isPlaceholder)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return MediaSlot{}, ErrMediaNotFound
 	}
@@ -49,6 +49,41 @@ func (r *Repository) GetMediaSlot(ctx context.Context, slotID string, scope auth
 	}
 	result.ZoneName = *zoneName
 	return result, nil
+}
+
+func (r *Repository) DocumentationSlotStage(ctx context.Context, documentationSlotID string, scope auth.RegencyScope) (string, error) {
+	var stage string
+	err := r.pool.QueryRow(ctx, `
+		SELECT s.stage FROM documentation_slots s
+		JOIN distribution_slots ds ON ds.id=s.distribution_slot_id
+		JOIN program_schedules ps ON ps.id=ds.schedule_id
+		WHERE s.id=$1 AND ($2 OR ps.regency_id::text=ANY($3))
+	`, documentationSlotID, scope.Unrestricted, scope.RegencyIDs).Scan(&stage)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrMediaNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("get documentation stage: %w", err)
+	}
+	return stage, nil
+}
+
+func (r *Repository) MediaStage(ctx context.Context, mediaID string, scope auth.RegencyScope) (string, error) {
+	var stage string
+	err := r.pool.QueryRow(ctx, `
+		SELECT s.stage FROM media_files m
+		JOIN documentation_slots s ON s.id=m.documentation_slot_id
+		JOIN distribution_slots ds ON ds.id=s.distribution_slot_id
+		JOIN program_schedules ps ON ps.id=ds.schedule_id
+		WHERE m.id=$1 AND m.status='accepted' AND ($2 OR ps.regency_id::text=ANY($3))
+	`, mediaID, scope.Unrestricted, scope.RegencyIDs).Scan(&stage)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrMediaNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("get media stage: %w", err)
+	}
+	return stage, nil
 }
 
 func (r *Repository) SaveMedia(ctx context.Context, actor auth.Principal, input MediaFileInput, meta auth.ClientMeta) (MediaFile, error) {
@@ -100,6 +135,24 @@ func (r *Repository) DeleteMedia(ctx context.Context, actor auth.Principal, medi
 		return MediaFile{}, fmt.Errorf("begin media delete: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	var distributionStatus string
+	err = tx.QueryRow(ctx, `
+		SELECT dsl.status FROM media_files m
+		JOIN documentation_slots s ON s.id=m.documentation_slot_id
+		JOIN distribution_slots dsl ON dsl.id=s.distribution_slot_id
+		JOIN program_schedules ps ON ps.id=dsl.schedule_id
+		WHERE m.id=$1 AND m.status='accepted' AND ($2 OR ps.regency_id::text=ANY($3))
+		FOR UPDATE OF m,dsl
+	`, mediaID, scope.Unrestricted, scope.RegencyIDs).Scan(&distributionStatus)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return MediaFile{}, ErrMediaNotFound
+	}
+	if err != nil {
+		return MediaFile{}, fmt.Errorf("lock media delete: %w", err)
+	}
+	if distributionStatus == "completed" {
+		return MediaFile{}, ErrAlreadyCompleted
+	}
 	var result MediaFile
 	err = tx.QueryRow(ctx, `
 		UPDATE media_files m

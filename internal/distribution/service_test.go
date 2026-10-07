@@ -334,6 +334,18 @@ func TestUploadMediaEnforcesMediaPolicy(t *testing.T) {
 	}
 }
 
+func TestUploadMediaRejectsCompletedDistributionSlot(t *testing.T) {
+	slot := configuredMediaSlot()
+	slot.DistributionStatus = "completed"
+	storage := &countingStorageStub{}
+	service := NewService(&mediaRepositoryStub{slot: slot}, storage)
+	jpeg := append([]byte{0xff, 0xd8, 0xff, 0xe0}, bytes.Repeat([]byte{0}, 32)...)
+	_, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", OriginalFilename: "proof.jpg", Source: "gallery", Data: bytes.NewReader(jpeg)}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if !errors.Is(err, ErrAlreadyCompleted) || storage.putCalls != 0 {
+		t.Fatalf("err=%v putCalls=%d", err, storage.putCalls)
+	}
+}
+
 func TestUploadMediaRejectsDeclaredAndActualOversizeAndCleansStorage(t *testing.T) {
 	slot := configuredMediaSlot()
 	slot.MediaKind = "video"

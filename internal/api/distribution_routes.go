@@ -213,6 +213,15 @@ func (h *Handler) handleDistributionSlot(w http.ResponseWriter, r *http.Request,
 		case parts[1] == "equipment" && r.Method == http.MethodPatch:
 			h.handleDistributionEquipmentUpdate(w, r, rc, slotNumber)
 			return
+		case parts[1] == "recipient" && r.Method == http.MethodPatch:
+			h.handleDistributionRecipientUpdate(w, r, rc, slotNumber)
+			return
+		case parts[1] == "replace-recipient" && r.Method == http.MethodPost:
+			h.handleDistributionRecipientReplace(w, r, rc, slotNumber)
+			return
+		case parts[1] == "reopen" && r.Method == http.MethodPost:
+			h.handleDistributionSlotReopen(w, r, rc, slotNumber)
+			return
 		}
 	}
 	writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
@@ -241,7 +250,7 @@ func (h *Handler) handleDistributionDateUpdate(w http.ResponseWriter, r *http.Re
 }
 
 func (h *Handler) handleDistributionEquipmentUpdate(w http.ResponseWriter, r *http.Request, rc requestContext, slotNumber int) {
-	if !h.authorize(w, r, rc.principal, "distribution.pos_mesin") {
+	if !h.authorize(w, r, rc.principal, "distribution.pos_dokumen") {
 		return
 	}
 	var input distribution.UpdateEquipmentInput
@@ -262,12 +271,100 @@ func (h *Handler) handleDistributionEquipmentUpdate(w http.ResponseWriter, r *ht
 	writeData(w, http.StatusOK, result)
 }
 
+func (h *Handler) handleDistributionRecipientUpdate(w http.ResponseWriter, r *http.Request, rc requestContext, slotNumber int) {
+	if !h.authorize(w, r, rc.principal, "distribution.pos_dokumen") {
+		return
+	}
+	var input distribution.UpdateRecipientInput
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	input.ScheduleID, input.SlotNumber = r.URL.Query().Get("schedule_id"), slotNumber
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := h.deps.Distribution.UpdateRecipient(r.Context(), rc.principal, input, clientMeta(r), scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
+}
+
+func (h *Handler) handleDistributionRecipientReplace(w http.ResponseWriter, r *http.Request, rc requestContext, slotNumber int) {
+	if !h.authorize(w, r, rc.principal, "distribution.pos_dokumen") {
+		return
+	}
+	var input distribution.ReplaceRecipientInput
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	input.ScheduleID, input.SlotNumber = r.URL.Query().Get("schedule_id"), slotNumber
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := h.deps.Distribution.ReplaceRecipient(r.Context(), rc.principal, input, clientMeta(r), scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
+}
+
+func (h *Handler) handleDistributionSlotReopen(w http.ResponseWriter, r *http.Request, rc requestContext, slotNumber int) {
+	var input distribution.ReopenSlotInput
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	permission, ok := distributionStagePermission(strings.TrimSpace(input.Stage))
+	if !ok {
+		writeServiceError(w, distribution.ErrRevisionStageInvalid)
+		return
+	}
+	if !h.authorize(w, r, rc.principal, permission) {
+		return
+	}
+	input.ScheduleID, input.SlotNumber = r.URL.Query().Get("schedule_id"), slotNumber
+	scope, allowed := h.regencyScope(w, r, rc.principal)
+	if !allowed {
+		return
+	}
+	result, err := h.deps.Distribution.ReopenSlot(r.Context(), rc.principal, input, clientMeta(r), scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
+}
+
+func distributionStagePermission(stage string) (string, bool) {
+	permissions := map[string]string{"mesin": "distribution.pos_mesin", "dokumen": "distribution.pos_dokumen", "penyerahan": "distribution.pos_penyerahan"}
+	permission, ok := permissions[stage]
+	return permission, ok
+}
+
 func (h *Handler) handleDistributionSlotMediaUpload(w http.ResponseWriter, r *http.Request, rc requestContext, slotID string) {
 	if h.deps.Distribution == nil {
 		writeUnavailable(w)
 		return
 	}
-	if !h.authorize(w, r, rc.principal, "documentation.manage") {
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	stage, err := h.deps.Distribution.DocumentationSlotStage(r.Context(), slotID, scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	permission, validStage := distributionStagePermission(stage)
+	if !validStage {
+		writeServiceError(w, distribution.ErrRevisionStageInvalid)
+		return
+	}
+	if !h.authorize(w, r, rc.principal, permission) {
 		return
 	}
 	started := time.Now()
@@ -311,10 +408,6 @@ func (h *Handler) handleDistributionSlotMediaUpload(w http.ResponseWriter, r *ht
 		return
 	}
 	input.Longitude = longitude
-	scope, ok := h.regencyScope(w, r, rc.principal)
-	if !ok {
-		return
-	}
 	result, err := h.deps.Distribution.UploadMedia(r.Context(), rc.principal, input, clientMeta(r), scope)
 	if err != nil {
 		var tooLarge *http.MaxBytesError
@@ -361,11 +454,21 @@ func (h *Handler) handleDistributionMedia(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if len(parts) == 1 && r.Method == http.MethodDelete {
-		if !h.authorize(w, r, rc.principal, "documentation.manage") {
-			return
-		}
 		scope, ok := h.regencyScope(w, r, rc.principal)
 		if !ok {
+			return
+		}
+		stage, err := h.deps.Distribution.MediaStage(r.Context(), parts[0], scope)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		permission, validStage := distributionStagePermission(stage)
+		if !validStage {
+			writeServiceError(w, distribution.ErrRevisionStageInvalid)
+			return
+		}
+		if !h.authorize(w, r, rc.principal, permission) {
 			return
 		}
 		if err := h.deps.Distribution.DeleteMedia(r.Context(), rc.principal, parts[0], clientMeta(r), scope); err != nil {

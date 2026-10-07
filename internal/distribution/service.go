@@ -353,6 +353,9 @@ func (s *Service) UploadMedia(ctx context.Context, actor auth.Principal, input U
 	if err != nil {
 		return MediaFile{}, err
 	}
+	if slot.DistributionStatus == "completed" {
+		return MediaFile{}, ErrAlreadyCompleted
+	}
 	input.Source = strings.TrimSpace(input.Source)
 	if (slot.InputSource != "both" && slot.InputSource != input.Source) || (input.Source != "camera" && input.Source != "gallery") {
 		return MediaFile{}, ErrMediaSourceInvalid
