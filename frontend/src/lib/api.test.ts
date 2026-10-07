@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest';
-import { apiRequest } from './api';
+import { apiRequest, getBootstrap, getCSRFToken } from './api';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -28,4 +28,13 @@ test('lets the browser set the multipart boundary for FormData', async () => {
 
   const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
   expect(new Headers(request.headers).has('Content-Type')).toBe(false);
+});
+
+test('exposes the bootstrap CSRF token read-only to upload clients', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ data: { id: 'u1' }, meta: { csrf_token: 'csrf-from-bootstrap' } }), {
+    status: 200,
+    headers: { 'Content-Type': 'application/json' },
+  })));
+  await getBootstrap();
+  expect(getCSRFToken()).toBe('csrf-from-bootstrap');
 });

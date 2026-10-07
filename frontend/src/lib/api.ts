@@ -22,6 +22,10 @@ type ErrorResponse = {
 
 let csrfToken = '';
 
+export function getCSRFToken(): string {
+  return csrfToken;
+}
+
 export class ApiError extends Error {
   constructor(
     public readonly status: number,
