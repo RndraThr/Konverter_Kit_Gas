@@ -686,6 +686,142 @@ func (r *Repository) LinkSlot(ctx context.Context, actor auth.Principal, input L
 	return r.getSlotByID(ctx, slotID)
 }
 
+func (r *Repository) UpdateRecipient(ctx context.Context, actor auth.Principal, input UpdateRecipientInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return DistributionSlot{}, fmt.Errorf("begin recipient update: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var slotID, status, personID, programType string
+	err = tx.QueryRow(ctx, `
+		SELECT ds.id::text,ds.status,p.id::text,cn.program_type
+		FROM distribution_slots ds
+		JOIN program_schedules ps ON ps.id=ds.schedule_id
+		LEFT JOIN package_allocations pa ON pa.id=ds.allocation_id
+		LEFT JOIN candidate_nominations cn ON cn.id=pa.nomination_id
+		LEFT JOIN people p ON p.id=ds.recipient_person_id
+		WHERE ds.schedule_id=$1 AND ds.slot_number=$2 AND ($3 OR ps.regency_id::text=ANY($4))
+		FOR UPDATE OF ds
+	`, input.ScheduleID, input.SlotNumber, scope.Unrestricted, scope.RegencyIDs).Scan(&slotID, &status, &personID, &programType)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return DistributionSlot{}, ErrSlotNotFound
+	}
+	if err != nil {
+		return DistributionSlot{}, fmt.Errorf("lock recipient slot: %w", err)
+	}
+	if status == "completed" {
+		return DistributionSlot{}, ErrAlreadyCompleted
+	}
+	if status != "linked" {
+		return DistributionSlot{}, ErrRecipientNotLinked
+	}
+	if err := updateRecipientDetails(ctx, tx, personID, programType, input.Address, input.Village, input.District, input.PhoneNumber, input.SectorIdentifier); err != nil {
+		return DistributionSlot{}, err
+	}
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "distribution.recipient_updated", ResourceType: "distribution_slot", ResourceID: slotID, Metadata: map[string]any{"slot_number": input.SlotNumber, "person_id": personID}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+		return DistributionSlot{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return DistributionSlot{}, fmt.Errorf("commit recipient update: %w", err)
+	}
+	return r.getSlotByID(ctx, slotID)
+}
+
+func (r *Repository) ReplaceRecipient(ctx context.Context, actor auth.Principal, input ReplaceRecipientInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return DistributionSlot{}, fmt.Errorf("begin recipient replacement: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var slotID, status string
+	var oldAllocationID, oldPersonID *string
+	err = tx.QueryRow(ctx, `
+		SELECT ds.id::text,ds.status,ds.allocation_id::text,ds.recipient_person_id::text
+		FROM distribution_slots ds JOIN program_schedules ps ON ps.id=ds.schedule_id
+		WHERE ds.schedule_id=$1 AND ds.slot_number=$2 AND ($3 OR ps.regency_id::text=ANY($4))
+		FOR UPDATE OF ds
+	`, input.ScheduleID, input.SlotNumber, scope.Unrestricted, scope.RegencyIDs).Scan(&slotID, &status, &oldAllocationID, &oldPersonID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return DistributionSlot{}, ErrSlotNotFound
+	}
+	if err != nil {
+		return DistributionSlot{}, fmt.Errorf("lock recipient replacement slot: %w", err)
+	}
+	if status == "completed" {
+		return DistributionSlot{}, ErrAlreadyCompleted
+	}
+	if status != "linked" || oldAllocationID == nil || oldPersonID == nil {
+		return DistributionSlot{}, ErrRecipientNotLinked
+	}
+
+	var newAllocationID, newPersonID, programType string
+	err = tx.QueryRow(ctx, `
+		SELECT pa.id::text,p.id::text,cn.program_type
+		FROM package_allocations pa
+		JOIN candidate_nominations cn ON cn.id=pa.nomination_id
+		JOIN people p ON p.id=cn.person_id
+		WHERE pa.schedule_id=$1 AND p.nik=$2 AND pa.distribution_number IS NULL
+		FOR UPDATE OF pa
+	`, input.ScheduleID, input.NIK).Scan(&newAllocationID, &newPersonID, &programType)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return DistributionSlot{}, ErrCandidateNotFound
+	}
+	if err != nil {
+		return DistributionSlot{}, fmt.Errorf("lock replacement candidate: %w", err)
+	}
+	var previouslyReceived bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM distribution_slots WHERE recipient_person_id=$1 AND status='completed' AND id<>$2)`, newPersonID, slotID).Scan(&previouslyReceived); err != nil {
+		return DistributionSlot{}, fmt.Errorf("check replacement history: %w", err)
+	}
+	if previouslyReceived {
+		return DistributionSlot{}, ErrPreviouslyReceived
+	}
+	if err := updateRecipientDetails(ctx, tx, newPersonID, programType, input.Address, input.Village, input.District, input.PhoneNumber, input.SectorIdentifier); err != nil {
+		return DistributionSlot{}, err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE package_allocations SET distribution_number=NULL,status='candidate',actual_recipient_person_id=NULL,updated_at=now() WHERE id=$1`, *oldAllocationID); err != nil {
+		return DistributionSlot{}, fmt.Errorf("release previous allocation: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE package_allocations SET distribution_number=$2,status='ready',actual_recipient_person_id=$3,updated_at=now() WHERE id=$1`, newAllocationID, input.SlotNumber, newPersonID); err != nil {
+		return DistributionSlot{}, fmt.Errorf("assign replacement allocation: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE distribution_slots SET allocation_id=$2,recipient_person_id=$3,updated_at=now() WHERE id=$1`, slotID, newAllocationID, newPersonID); err != nil {
+		return DistributionSlot{}, fmt.Errorf("replace slot recipient: %w", err)
+	}
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "distribution.recipient_replaced", ResourceType: "distribution_slot", ResourceID: slotID, Metadata: map[string]any{"old_allocation_id": *oldAllocationID, "new_allocation_id": newAllocationID, "old_person_id": *oldPersonID, "new_person_id": newPersonID}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+		return DistributionSlot{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return DistributionSlot{}, fmt.Errorf("commit recipient replacement: %w", err)
+	}
+	return r.getSlotByID(ctx, slotID)
+}
+
+func updateRecipientDetails(ctx context.Context, tx pgx.Tx, personID, programType, address, village, district, phoneNumber, sectorIdentifier string) error {
+	if _, err := tx.Exec(ctx, `UPDATE people SET address=COALESCE(NULLIF($2,''),address),village=COALESCE(NULLIF($3,''),village),district=COALESCE(NULLIF($4,''),district),phone_number=COALESCE(NULLIF($5,''),phone_number),updated_at=now() WHERE id=$1`, personID, address, village, district, phoneNumber); err != nil {
+		return fmt.Errorf("update recipient details: %w", err)
+	}
+	if sectorIdentifier == "" {
+		return nil
+	}
+	identifierType := "kusuka"
+	if programType == "farmer" {
+		identifierType = "farmer_card"
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO person_sector_identifiers(person_id,identifier_type,normalized_value,display_value) VALUES($1,$2,$3,$3)
+		ON CONFLICT (person_id,identifier_type) DO UPDATE SET normalized_value=EXCLUDED.normalized_value,display_value=EXCLUDED.display_value,updated_at=now()
+	`, personID, identifierType, sectorIdentifier); err != nil {
+		if constraint, ok := uniqueViolationConstraint(err); ok && constraint != "" {
+			return ErrIdentifierConflict
+		}
+		return fmt.Errorf("upsert recipient sector identifier: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) SearchSlot(ctx context.Context, scheduleID, query string, scope auth.RegencyScope) (DistributionSlot, error) {
 	digits := stripNonDigits.ReplaceAllString(query, "")
 	var id string

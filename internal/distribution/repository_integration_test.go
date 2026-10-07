@@ -754,4 +754,60 @@ func TestLinkSlotReturnsRecipientIdentity(t *testing.T) {
 	if linked.NIK != wantNIK {
 		t.Fatalf("linked.NIK = %q, want %q", linked.NIK, wantNIK)
 	}
+
+	sectorID := "KP" + suffix
+	replacementSectorID := "KR" + suffix
+	updated, err := repo.UpdateRecipient(ctx, auth.Principal{}, UpdateRecipientInput{ScheduleID: scheduleID, SlotNumber: created.SlotNumber, Address: "JL. BARU", Village: "DESA BARU", District: "WAJO", PhoneNumber: "081234567", SectorIdentifier: sectorID}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.NIK != wantNIK || updated.Address != "JL. BARU" || updated.SectorIdentifier != sectorID {
+		t.Fatalf("updated recipient=%+v", updated)
+	}
+
+	newNIK := fmt.Sprintf("%016d", (time.Now().UnixNano()+1)%1e16)
+	var newPersonID, newNominationID, newAllocationID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO people(full_name,nik) VALUES('Replacement Candidate',$1) RETURNING id::text`, newNIK).Scan(&newPersonID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO candidate_nominations(person_id,program_type,source_snapshot_json,status) VALUES($1,'farmer','{}','ready') RETURNING id::text`, newPersonID).Scan(&newNominationID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,status,package_snapshot_json) VALUES($1,$2,$3,'candidate','{}') RETURNING id::text`, scheduleID, newNominationID, newPersonID).Scan(&newAllocationID))
+	replaced, err := repo.ReplaceRecipient(ctx, auth.Principal{}, ReplaceRecipientInput{ScheduleID: scheduleID, SlotNumber: created.SlotNumber, NIK: newNIK, Address: "JL. PENGGANTI", SectorIdentifier: replacementSectorID}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replaced.NIK != newNIK || replaced.Address != "JL. PENGGANTI" || replaced.SectorIdentifier != replacementSectorID {
+		t.Fatalf("replaced recipient=%+v", replaced)
+	}
+	var oldAllocationStatus string
+	var oldDistributionNumber *int
+	must(t, pool.QueryRow(ctx, `SELECT status,distribution_number FROM package_allocations WHERE nomination_id=$1`, nominationID).Scan(&oldAllocationStatus, &oldDistributionNumber))
+	if oldAllocationStatus != "candidate" || oldDistributionNumber != nil {
+		t.Fatalf("old allocation status=%q number=%v", oldAllocationStatus, oldDistributionNumber)
+	}
+
+	conflictNIK := fmt.Sprintf("%016d", (time.Now().UnixNano()+2)%1e16)
+	var conflictPersonID, conflictNominationID, conflictAllocationID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO people(full_name,nik) VALUES('Used Candidate',$1) RETURNING id::text`, conflictNIK).Scan(&conflictPersonID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO candidate_nominations(person_id,program_type,source_snapshot_json,status) VALUES($1,'farmer','{}','ready') RETURNING id::text`, conflictPersonID).Scan(&conflictNominationID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,actual_recipient_person_id,distribution_number,status,package_snapshot_json) VALUES($1,$2,$3,$3,99,'ready','{}') RETURNING id::text`, scheduleID, conflictNominationID, conflictPersonID).Scan(&conflictAllocationID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO distribution_slots(schedule_id,slot_number,status,allocation_id,recipient_person_id) VALUES($1,99,'linked',$2,$3) RETURNING id::text`, scheduleID, conflictAllocationID, conflictPersonID).Scan(new(string)))
+	beforeAllocation := replaced.AllocationID
+	_, err = repo.ReplaceRecipient(ctx, auth.Principal{}, ReplaceRecipientInput{ScheduleID: scheduleID, SlotNumber: created.SlotNumber, NIK: conflictNIK}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if !errors.Is(err, ErrCandidateNotFound) {
+		t.Fatalf("conflict err=%v", err)
+	}
+	afterConflict, err := repo.SearchSlot(ctx, scheduleID, fmt.Sprint(created.SlotNumber), auth.RegencyScope{Unrestricted: true})
+	if err != nil || afterConflict.AllocationID == nil || beforeAllocation == nil || *afterConflict.AllocationID != *beforeAllocation || afterConflict.NIK != newNIK {
+		t.Fatalf("replacement rollback slot=%+v err=%v", afterConflict, err)
+	}
+
+	must(t, func() error {
+		_, err := pool.Exec(ctx, `UPDATE distribution_slots SET status='completed' WHERE id=$1`, created.ID)
+		return err
+	}())
+	if _, err := repo.UpdateRecipient(ctx, auth.Principal{}, UpdateRecipientInput{ScheduleID: scheduleID, SlotNumber: created.SlotNumber, Address: "DITOLAK"}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrAlreadyCompleted) {
+		t.Fatalf("completed update err=%v", err)
+	}
+	if _, err := repo.ReplaceRecipient(ctx, auth.Principal{}, ReplaceRecipientInput{ScheduleID: scheduleID, SlotNumber: created.SlotNumber, NIK: wantNIK}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrAlreadyCompleted) {
+		t.Fatalf("completed replace err=%v", err)
+	}
 }
