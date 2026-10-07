@@ -14,7 +14,7 @@ type distributionDateRepositoryStub struct {
 
 func (r *distributionDateRepositoryStub) SetDistributionDate(_ context.Context, _ auth.Principal, input SetDistributionDateInput, _ auth.ClientMeta, _ auth.RegencyScope) (DistributionSlot, error) {
 	r.seen = input
-	return DistributionSlot{ID: "slot-1", DistributionDate: input.DistributionDate}, nil
+	return DistributionSlot{ID: "slot-1", DistributionDate: &input.DistributionDate}, nil
 }
 
 func TestSetDistributionDateValidatesAndDelegates(t *testing.T) {
@@ -29,7 +29,7 @@ func TestSetDistributionDateValidatesAndDelegates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.DistributionDate != "2026-10-20" || repository.seen.ScheduleID != "schedule-1" {
+	if result.DistributionDate == nil || *result.DistributionDate != "2026-10-20" || repository.seen.ScheduleID != "schedule-1" {
 		t.Fatalf("result=%+v seen=%+v", result, repository.seen)
 	}
 }

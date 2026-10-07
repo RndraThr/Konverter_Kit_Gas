@@ -2,7 +2,10 @@ package media
 
 import (
 	"errors"
+	"fmt"
+	"strconv"
 	"strings"
+	"time"
 	"unicode"
 )
 
@@ -24,6 +27,43 @@ type FolderPathInput struct {
 	ProgramType, ZoneName, RegencyName string
 	Category                           FolderCategory
 	Child                              string
+}
+
+func BuildDistributionStagingPath(base []string, scheduleID string, slotNumber int) ([]string, error) {
+	scheduleID = strings.TrimSpace(scheduleID)
+	if err := validateDistributionPathInput(base, scheduleID, slotNumber); err != nil {
+		return nil, err
+	}
+	path := append([]string(nil), base...)
+	return append(path, "PENDISTRIBUSIAN", "_PENDING", scheduleID, strconv.Itoa(slotNumber)), nil
+}
+
+func BuildDistributionFinalPath(base []string, date time.Time, slotNumber int) ([]string, error) {
+	if err := validateDistributionPathInput(base, "final", slotNumber); err != nil || date.IsZero() {
+		return nil, ErrInvalidFolderPath
+	}
+	months := [...]string{"", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"}
+	local := date.In(time.FixedZone("Asia/Jakarta", 7*60*60))
+	dateSegment := fmt.Sprintf("%d %s %d", local.Day(), months[local.Month()], local.Year())
+	path := append([]string(nil), base...)
+	return append(path, "PENDISTRIBUSIAN", dateSegment, strconv.Itoa(slotNumber)), nil
+}
+
+func validateDistributionPathInput(base []string, identity string, slotNumber int) error {
+	if len(base) == 0 || strings.TrimSpace(identity) == "" || slotNumber < 1 {
+		return ErrInvalidFolderPath
+	}
+	for _, segment := range append(append([]string(nil), base...), identity) {
+		if strings.TrimSpace(segment) == "" {
+			return ErrInvalidFolderPath
+		}
+		for _, r := range segment {
+			if r == '/' || r == '\\' || unicode.IsControl(r) {
+				return ErrInvalidFolderPath
+			}
+		}
+	}
+	return nil
 }
 
 // ErrInvalidFolderPath is returned by BuildFolderPath when a required field

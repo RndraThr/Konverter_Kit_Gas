@@ -12,7 +12,7 @@ func TestBuildEquipmentVerificationSnapshotResolvesSelectedTemplateValues(t *tes
 		"converter_options":[{"code":"converter-1","brand":"ERGAS"}]
 	}`)
 
-	got, err := buildEquipmentVerificationSnapshot(packageJSON, CreateSlotInput{
+	got, err := buildEquipmentVerificationSnapshot(packageJSON, UpdateEquipmentInput{
 		MachineOptionCode: "machine-1", MachineSerialNumber: "M-001",
 		HoseOptionCode: "hose-1", HoseSerialNumber: "H-001",
 		ConverterOptionCode: "converter-1", ConverterSerialNumber: "C-001",
@@ -41,7 +41,7 @@ func TestBuildEquipmentVerificationSnapshotRejectsUnknownSelectedCode(t *testing
 		"converter_options":[{"code":"converter-1","brand":"ERGAS"}]
 	}`)
 
-	_, err := buildEquipmentVerificationSnapshot(packageJSON, CreateSlotInput{
+	_, err := buildEquipmentVerificationSnapshot(packageJSON, UpdateEquipmentInput{
 		MachineOptionCode: "machine-renamed", MachineSerialNumber: "M-001",
 		HoseOptionCode: "hose-1", HoseSerialNumber: "H-001",
 		ConverterOptionCode: "converter-1", ConverterSerialNumber: "C-001",
@@ -57,7 +57,7 @@ func TestBuildEquipmentVerificationSnapshotDefaultsMissingHoseSerial(t *testing.
 		"hose_options":[{"code":"hose-1","brand":"TRILLIUNHOSE","spec":"6 M"}],
 		"converter_options":[{"code":"converter-1","brand":"ERGAS"}]
 	}`)
-	got, err := buildEquipmentVerificationSnapshot(packageJSON, CreateSlotInput{
+	got, err := buildEquipmentVerificationSnapshot(packageJSON, UpdateEquipmentInput{
 		MachineOptionCode: "machine-1", HoseOptionCode: "hose-1", ConverterOptionCode: "converter-1",
 	})
 	if err != nil {

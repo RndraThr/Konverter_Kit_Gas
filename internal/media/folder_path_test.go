@@ -2,7 +2,9 @@ package media
 
 import (
 	"errors"
+	"fmt"
 	"testing"
+	"time"
 )
 
 func TestBuildFolderPathFarmerPhotosExample(t *testing.T) {
@@ -24,6 +26,31 @@ func TestBuildFolderPathFarmerPhotosExample(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("segment %d: got %q, want %q (full: got=%v want=%v)", i, got[i], want[i], got, want)
 		}
+	}
+}
+
+func TestBuildDistributionStagingPath(t *testing.T) {
+	base := []string{"PETANI", "ZONA 1", "WAJO", "DOKUMENTASI (FOTO)"}
+	got, err := BuildDistributionStagingPath(base, "schedule-123", 25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"PETANI", "ZONA 1", "WAJO", "DOKUMENTASI (FOTO)", "PENDISTRIBUSIAN", "_PENDING", "schedule-123", "25"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestBuildDistributionFinalPath(t *testing.T) {
+	base := []string{"PETANI", "ZONA 1", "WAJO", "DOKUMENTASI (FOTO)"}
+	date := time.Date(2026, time.October, 20, 0, 0, 0, 0, time.UTC)
+	got, err := BuildDistributionFinalPath(base, date, 25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"PETANI", "ZONA 1", "WAJO", "DOKUMENTASI (FOTO)", "PENDISTRIBUSIAN", "20 Oktober 2026", "25"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("got %v, want %v", got, want)
 	}
 }
 

@@ -120,6 +120,9 @@ func TestCreateSlotSnapshotsDocumentationStage(t *testing.T) {
 	repo := NewRepository(pool)
 	slot, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
 	must(t, err)
+	if slot.DistributionDate != nil {
+		t.Fatalf("new POS Mesin slot distribution_date=%v, want nil", slot.DistributionDate)
+	}
 
 	if len(slot.Documentation) == 0 {
 		t.Fatal("slot.Documentation is empty, want at least one snapshotted documentation slot")
@@ -413,8 +416,8 @@ func TestSetDistributionDateLocksAfterFirstMediaUpload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.DistributionDate != "2026-10-20" {
-		t.Fatalf("distribution_date=%q", updated.DistributionDate)
+	if updated.DistributionDate == nil || *updated.DistributionDate != "2026-10-20" {
+		t.Fatalf("distribution_date=%v", updated.DistributionDate)
 	}
 }
 

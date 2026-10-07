@@ -90,15 +90,9 @@ func TestDistributionUppercasesSerialsAndRecipientBusinessText(t *testing.T) {
 	repository := &operationsRepositoryStub{}
 	service := NewService(repository)
 	if _, err := service.CreateSlot(context.Background(), auth.Principal{}, CreateSlotInput{
-		ScheduleID: "schedule-1", SlotNumber: 1, DistributionDate: "2026-10-20",
-		MachineOptionCode: "shark-spwp8030", MachineSerialNumber: " ms-a1 ",
-		HoseOptionCode: "hose-set", HoseSerialNumber: " hs-b2 ",
-		ConverterOptionCode: "ergas-kit", ConverterSerialNumber: " cv-c3 ",
+		ScheduleID: "schedule-1", SlotNumber: 1,
 	}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{}); err != nil {
 		t.Fatal(err)
-	}
-	if repository.createInput.MachineSerialNumber != "" || repository.createInput.HoseSerialNumber != "" || repository.createInput.ConverterSerialNumber != "" || repository.createInput.MachineOptionCode != "" || repository.createInput.HoseOptionCode != "" || repository.createInput.ConverterOptionCode != "" {
-		t.Fatalf("create retained equipment: %+v", repository.createInput)
 	}
 
 	if _, err := service.LinkSlot(context.Background(), auth.Principal{}, LinkSlotInput{
@@ -149,10 +143,11 @@ func (s *storageStub) Put(_ context.Context, key string, folderPath []string, so
 }
 
 func configuredMediaSlot() MediaSlot {
-	return MediaSlot{ID: "slot-1", SlotNumber: 25, DistributionDate: "2026-10-20", Label: "Foto KTP dan Nomor Urut", InputSource: "both", MediaKind: "image", MinFiles: 1, MaxFiles: 1, ProgramType: "farmer", ZoneName: "Zona 1", RegencyName: "Kabupaten Wajo"}
+	date := "2026-10-20"
+	return MediaSlot{ID: "slot-1", ScheduleID: "schedule-1", SlotNumber: 25, DistributionDate: &date, HasRecipient: true, Label: "Foto KTP dan Nomor Urut", InputSource: "both", MediaKind: "image", MinFiles: 1, MaxFiles: 1, ProgramType: "farmer", ZoneName: "Zona 1", RegencyName: "Kabupaten Wajo"}
 }
 
-func TestUploadMediaUsesProgramZoneFolderAndRejectsPlaceholder(t *testing.T) {
+func TestUploadReadySlotUsesFinalPathAndFinalState(t *testing.T) {
 	jpeg := append([]byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}, bytes.Repeat([]byte{0}, 32)...)
 	storage := &storageStub{}
 	repository := &mediaRepositoryStub{slot: configuredMediaSlot()}
@@ -171,12 +166,36 @@ func TestUploadMediaUsesProgramZoneFolderAndRejectsPlaceholder(t *testing.T) {
 	if repository.saveInput.CapturedAt == nil || !repository.saveInput.CapturedAt.Equal(captured) {
 		t.Fatalf("captured_at=%v, want %v", repository.saveInput.CapturedAt, captured)
 	}
+	if repository.saveInput.StorageState != "final" {
+		t.Fatalf("storage_state=%q, want final", repository.saveInput.StorageState)
+	}
 
 	storage = &storageStub{}
 	repository.slot.ZoneName = ""
 	service = NewService(repository, storage)
 	if _, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", OriginalFilename: "proof.jpg", Source: "camera", Data: bytes.NewReader(jpeg)}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err == nil || storage.putKey != "" {
 		t.Fatalf("placeholder err=%v putKey=%q", err, storage.putKey)
+	}
+}
+
+func TestUploadMachineMediaWithoutDateUsesPersistentStagingPath(t *testing.T) {
+	jpeg := append([]byte{0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0x00}, bytes.Repeat([]byte{0}, 32)...)
+	slot := configuredMediaSlot()
+	slot.DistributionDate = nil
+	slot.HasRecipient = false
+	storage := &storageStub{}
+	repository := &mediaRepositoryStub{slot: slot}
+	service := NewService(repository, storage)
+
+	if _, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{SlotID: "slot-1", OriginalFilename: "proof.jpg", Source: "camera", Data: bytes.NewReader(jpeg)}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"PETANI", "ZONA 1", "KABUPATEN WAJO", "DOKUMENTASI (FOTO)", "PENDISTRIBUSIAN", "_PENDING", "schedule-1", "25"}
+	if fmt.Sprint(storage.folderPath) != fmt.Sprint(want) {
+		t.Fatalf("folderPath=%v, want %v", storage.folderPath, want)
+	}
+	if repository.saveInput.StorageState != "staging" {
+		t.Fatalf("storage_state=%q, want staging", repository.saveInput.StorageState)
 	}
 }
 func (s *storageStub) Open(context.Context, string) (io.ReadCloser, error) {
@@ -208,7 +227,7 @@ func (r *mediaRepositoryStub) SaveMedia(_ context.Context, _ auth.Principal, inp
 	if r.saveErr != nil {
 		return MediaFile{}, r.saveErr
 	}
-	r.media = MediaFile{ID: "media-1", SlotID: input.SlotID, StorageKey: input.StorageKey, MimeType: input.MimeType, ByteSize: input.ByteSize, Status: "accepted"}
+	r.media = MediaFile{ID: "media-1", SlotID: input.SlotID, StorageKey: input.StorageKey, MimeType: input.MimeType, ByteSize: input.ByteSize, Status: "accepted", StorageState: input.StorageState}
 	return r.media, nil
 }
 func (r *mediaRepositoryStub) GetMedia(_ context.Context, _ string, scope auth.RegencyScope) (MediaFile, error) {
@@ -414,13 +433,15 @@ func (repeatingByteReader) Read(p []byte) (int, error) {
 type countingStorageStub struct {
 	putCalls   int
 	deletedKey string
+	folderPath []string
 }
 
 func (s *countingStorageStub) Put(ctx context.Context, key string, folderPath []string, source io.Reader) (string, int64, string, error) {
 	return s.PutNamed(ctx, key, key, folderPath, source)
 }
-func (s *countingStorageStub) PutNamed(ctx context.Context, key, _ string, _ []string, source io.Reader) (string, int64, string, error) {
+func (s *countingStorageStub) PutNamed(ctx context.Context, key, _ string, folderPath []string, source io.Reader) (string, int64, string, error) {
 	s.putCalls++
+	s.folderPath = append([]string(nil), folderPath...)
 	if err := ctx.Err(); err != nil {
 		return "", 0, "", err
 	}
@@ -435,3 +456,43 @@ func (s *countingStorageStub) Delete(_ context.Context, key string) error {
 	return nil
 }
 func (s *countingStorageStub) EnsureFolders(context.Context, [][]string) error { return nil }
+
+type boundedReadRequest struct {
+	reader io.Reader
+	max    int
+}
+
+func (r *boundedReadRequest) Read(p []byte) (int, error) {
+	if len(p) > 64<<10 {
+		return 0, fmt.Errorf("non-streaming read buffer requested: %d bytes", len(p))
+	}
+	if len(p) > r.max {
+		r.max = len(p)
+	}
+	return r.reader.Read(p)
+}
+
+func TestUploadLargeVideoToStagingRemainsStreaming(t *testing.T) {
+	slot := configuredMediaSlot()
+	slot.DistributionDate = nil
+	slot.HasRecipient = false
+	slot.MediaKind = "video"
+	storage := &countingStorageStub{}
+	repository := &mediaRepositoryStub{slot: slot}
+	service := NewService(repository, storage, media.NewVideoLimiter(1))
+	prefix := []byte("\x00\x00\x00\x18ftypisom")
+	reader := &boundedReadRequest{reader: io.MultiReader(bytes.NewReader(prefix), io.LimitReader(repeatingByteReader{}, 2<<20))}
+
+	result, err := service.UploadMedia(context.Background(), auth.Principal{}, UploadMediaInput{
+		SlotID: "slot-1", OriginalFilename: "proof.mp4", Source: "gallery", DeclaredSize: media.MaxVideoBytes, Data: reader,
+	}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ByteSize <= 0 || reader.max > 64<<10 {
+		t.Fatalf("size=%d max read request=%d", result.ByteSize, reader.max)
+	}
+	if repository.saveInput.StorageState != "staging" || !strings.Contains(strings.Join(storage.folderPath, "/"), "PENDISTRIBUSIAN/_PENDING/schedule-1/25") {
+		t.Fatalf("state=%q path=%v", repository.saveInput.StorageState, storage.folderPath)
+	}
+}

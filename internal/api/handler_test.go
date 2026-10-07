@@ -486,13 +486,13 @@ func TestDistributionSlotsRequiresPosMesinAndForwardsCreateSlotInput(t *testing.
 	secret := []byte("01234567890123456789012345678901")
 	service := &fakeDistributionService{createdSlot: distribution.DistributionSlot{ID: "slot-1", ScheduleID: "schedule-1", SlotNumber: 1, Status: "open"}}
 	operator := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_mesin": true}}
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/distribution/slots", strings.NewReader(`{"schedule_id":"schedule-1","machine_option_code":"M1","machine_serial_number":"SN-1"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/distribution/slots", strings.NewReader(`{"schedule_id":"schedule-1","slot_number":4}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
 	req.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
 	rec := httptest.NewRecorder()
 	NewHandler(Dependencies{Auth: operator, Distribution: service, SessionSecret: secret}).ServeHTTP(rec, req)
-	if rec.Code != http.StatusCreated || service.createInput.ScheduleID != "schedule-1" || service.createInput.MachineOptionCode != "M1" || service.createInput.MachineSerialNumber != "SN-1" {
+	if rec.Code != http.StatusCreated || service.createInput.ScheduleID != "schedule-1" || service.createInput.SlotNumber != 4 {
 		t.Fatalf("status=%d input=%+v body=%s", rec.Code, service.createInput, rec.Body.String())
 	}
 
@@ -802,7 +802,8 @@ func TestDistributionMediaUploadMapsPolicyAndBusyErrors(t *testing.T) {
 
 func TestDistributionDateUpdateUsesOneDateForTheSlotNumber(t *testing.T) {
 	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_mesin": true}}
-	service := &fakeDistributionService{datedSlot: distribution.DistributionSlot{ID: "slot-1", SlotNumber: 3, DistributionDate: "2026-10-20"}}
+	date := "2026-10-20"
+	service := &fakeDistributionService{datedSlot: distribution.DistributionSlot{ID: "slot-1", SlotNumber: 3, DistributionDate: &date}}
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/distribution/slots/3/date?schedule_id=schedule-1", strings.NewReader(`{"distribution_date":"2026-10-20"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})

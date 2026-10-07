@@ -25,7 +25,7 @@ func (r *Repository) GetMediaSlot(ctx context.Context, slotID string, scope auth
 	var zoneName *string
 	var isPlaceholder *bool
 	err := r.pool.QueryRow(ctx, `
-		SELECT s.id::text,dsl.slot_number,dsl.distribution_date::text,dsl.status,s.label_snapshot,s.input_source,s.media_kind,s.require_location,s.require_captured_at,s.min_files,s.max_files,
+		SELECT s.id::text,dsl.schedule_id::text,dsl.slot_number,dsl.distribution_date::text,(dsl.recipient_person_id IS NOT NULL),dsl.status,s.label_snapshot,s.input_source,s.media_kind,s.require_location,s.require_captured_at,s.min_files,s.max_files,
 			count(m.id) FILTER(WHERE m.status='accepted'), p.program_type, z.name, r.name, z.is_placeholder
 		FROM documentation_slots s
 		LEFT JOIN media_files m ON m.documentation_slot_id=s.id
@@ -36,8 +36,8 @@ func (r *Repository) GetMediaSlot(ctx context.Context, slotID string, scope auth
 		LEFT JOIN program_regency_assignments pra ON pra.program_id=ps.program_id AND pra.regency_id=ps.regency_id
 		LEFT JOIN program_zones z ON z.id=pra.zone_id
 		WHERE s.id=$1 AND ($2 OR ps.regency_id::text = ANY($3))
-		GROUP BY s.id,dsl.slot_number,dsl.distribution_date,dsl.status,s.label_snapshot,p.program_type,z.name,r.name,z.is_placeholder
-	`, slotID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.SlotNumber, &result.DistributionDate, &result.DistributionStatus, &result.Label, &result.InputSource, &result.MediaKind, &result.RequireLocation, &result.RequireCapturedAt, &result.MinFiles, &result.MaxFiles, &result.AcceptedFiles, &result.ProgramType, &zoneName, &result.RegencyName, &isPlaceholder)
+		GROUP BY s.id,dsl.schedule_id,dsl.slot_number,dsl.distribution_date,dsl.recipient_person_id,dsl.status,s.label_snapshot,p.program_type,z.name,r.name,z.is_placeholder
+	`, slotID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.ScheduleID, &result.SlotNumber, &result.DistributionDate, &result.HasRecipient, &result.DistributionStatus, &result.Label, &result.InputSource, &result.MediaKind, &result.RequireLocation, &result.RequireCapturedAt, &result.MinFiles, &result.MaxFiles, &result.AcceptedFiles, &result.ProgramType, &zoneName, &result.RegencyName, &isPlaceholder)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return MediaSlot{}, ErrMediaNotFound
 	}
@@ -93,7 +93,7 @@ func (r *Repository) SaveMedia(ctx context.Context, actor auth.Principal, input 
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var result MediaFile
-	err = tx.QueryRow(ctx, `INSERT INTO media_files(documentation_slot_id,storage_key,original_filename,mime_type,byte_size,checksum,source,captured_at,latitude,longitude,uploaded_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NULLIF($11,'')::uuid) RETURNING id::text,documentation_slot_id::text,storage_key::text,original_filename,mime_type,byte_size,source,captured_at,latitude::float8,longitude::float8,status,uploaded_at`, input.SlotID, input.StorageKey, input.OriginalFilename, input.MimeType, input.ByteSize, input.Checksum, input.Source, input.CapturedAt, input.Latitude, input.Longitude, actor.UserID).Scan(&result.ID, &result.SlotID, &result.StorageKey, &result.OriginalFilename, &result.MimeType, &result.ByteSize, &result.Source, &result.CapturedAt, &result.Latitude, &result.Longitude, &result.Status, &result.UploadedAt)
+	err = tx.QueryRow(ctx, `INSERT INTO media_files(documentation_slot_id,storage_key,original_filename,mime_type,byte_size,checksum,source,captured_at,latitude,longitude,storage_state,uploaded_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,COALESCE(NULLIF($11,''),'final'),NULLIF($12,'')::uuid) RETURNING id::text,documentation_slot_id::text,storage_key::text,original_filename,mime_type,byte_size,source,captured_at,latitude::float8,longitude::float8,status,storage_state,storage_last_error,uploaded_at`, input.SlotID, input.StorageKey, input.OriginalFilename, input.MimeType, input.ByteSize, input.Checksum, input.Source, input.CapturedAt, input.Latitude, input.Longitude, input.StorageState, actor.UserID).Scan(&result.ID, &result.SlotID, &result.StorageKey, &result.OriginalFilename, &result.MimeType, &result.ByteSize, &result.Source, &result.CapturedAt, &result.Latitude, &result.Longitude, &result.Status, &result.StorageState, &result.StorageLastError, &result.UploadedAt)
 	if err != nil {
 		return MediaFile{}, fmt.Errorf("save media metadata: %w", err)
 	}
@@ -112,13 +112,13 @@ func (r *Repository) SaveMedia(ctx context.Context, actor auth.Principal, input 
 func (r *Repository) GetMedia(ctx context.Context, mediaID string, scope auth.RegencyScope) (MediaFile, error) {
 	var result MediaFile
 	err := r.pool.QueryRow(ctx, `
-		SELECT m.id::text,m.documentation_slot_id::text,m.storage_key::text,m.original_filename,m.mime_type,m.byte_size,m.source,m.captured_at,m.latitude::float8,m.longitude::float8,m.status,m.uploaded_at
+		SELECT m.id::text,m.documentation_slot_id::text,m.storage_key::text,m.original_filename,m.mime_type,m.byte_size,m.source,m.captured_at,m.latitude::float8,m.longitude::float8,m.status,m.storage_state,m.storage_last_error,m.uploaded_at
 		FROM media_files m
 		JOIN documentation_slots s ON s.id=m.documentation_slot_id
 		JOIN distribution_slots dsl ON dsl.id=s.distribution_slot_id
 		JOIN program_schedules ps ON ps.id=dsl.schedule_id
 		WHERE m.id=$1 AND m.status='accepted' AND ($2 OR ps.regency_id::text = ANY($3))
-	`, mediaID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.SlotID, &result.StorageKey, &result.OriginalFilename, &result.MimeType, &result.ByteSize, &result.Source, &result.CapturedAt, &result.Latitude, &result.Longitude, &result.Status, &result.UploadedAt)
+	`, mediaID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.SlotID, &result.StorageKey, &result.OriginalFilename, &result.MimeType, &result.ByteSize, &result.Source, &result.CapturedAt, &result.Latitude, &result.Longitude, &result.Status, &result.StorageState, &result.StorageLastError, &result.UploadedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return MediaFile{}, ErrMediaNotFound
 	}
@@ -163,8 +163,8 @@ func (r *Repository) DeleteMedia(ctx context.Context, actor auth.Principal, medi
 		WHERE m.documentation_slot_id=s.id
 			AND m.id=$1 AND m.status='accepted'
 			AND ($2 OR ps.regency_id::text = ANY($3))
-		RETURNING m.id::text,m.documentation_slot_id::text,m.storage_key::text,m.original_filename,m.mime_type,m.byte_size,m.source,m.captured_at,m.latitude::float8,m.longitude::float8,m.status,m.uploaded_at
-	`, mediaID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.SlotID, &result.StorageKey, &result.OriginalFilename, &result.MimeType, &result.ByteSize, &result.Source, &result.CapturedAt, &result.Latitude, &result.Longitude, &result.Status, &result.UploadedAt)
+		RETURNING m.id::text,m.documentation_slot_id::text,m.storage_key::text,m.original_filename,m.mime_type,m.byte_size,m.source,m.captured_at,m.latitude::float8,m.longitude::float8,m.status,m.storage_state,m.storage_last_error,m.uploaded_at
+	`, mediaID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.SlotID, &result.StorageKey, &result.OriginalFilename, &result.MimeType, &result.ByteSize, &result.Source, &result.CapturedAt, &result.Latitude, &result.Longitude, &result.Status, &result.StorageState, &result.StorageLastError, &result.UploadedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return MediaFile{}, ErrMediaNotFound
 	}
@@ -200,7 +200,7 @@ func (r *Repository) RestoreMedia(ctx context.Context, mediaID string) error {
 }
 
 func (r *Repository) listMedia(ctx context.Context, slotID string) ([]MediaFile, error) {
-	rows, err := r.pool.Query(ctx, `SELECT id::text,documentation_slot_id::text,original_filename,mime_type,byte_size,source,captured_at,latitude::float8,longitude::float8,status,uploaded_at FROM media_files WHERE documentation_slot_id=$1 AND status='accepted' ORDER BY uploaded_at,id`, slotID)
+	rows, err := r.pool.Query(ctx, `SELECT id::text,documentation_slot_id::text,original_filename,mime_type,byte_size,source,captured_at,latitude::float8,longitude::float8,status,storage_state,storage_last_error,uploaded_at FROM media_files WHERE documentation_slot_id=$1 AND status='accepted' ORDER BY uploaded_at,id`, slotID)
 	if err != nil {
 		return nil, err
 	}
@@ -208,7 +208,7 @@ func (r *Repository) listMedia(ctx context.Context, slotID string) ([]MediaFile,
 	result := []MediaFile{}
 	for rows.Next() {
 		var item MediaFile
-		if err := rows.Scan(&item.ID, &item.SlotID, &item.OriginalFilename, &item.MimeType, &item.ByteSize, &item.Source, &item.CapturedAt, &item.Latitude, &item.Longitude, &item.Status, &item.UploadedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.SlotID, &item.OriginalFilename, &item.MimeType, &item.ByteSize, &item.Source, &item.CapturedAt, &item.Latitude, &item.Longitude, &item.Status, &item.StorageState, &item.StorageLastError, &item.UploadedAt); err != nil {
 			return nil, err
 		}
 		item.ContentURL = "/api/v1/distribution/media/" + item.ID + "/content"
@@ -285,9 +285,9 @@ func (r *Repository) CreateSlot(ctx context.Context, actor auth.Principal, input
 	var slotID string
 	if err := tx.QueryRow(ctx, `
 		INSERT INTO distribution_slots (schedule_id, slot_number, distribution_date)
-		VALUES ($1,$2,COALESCE(NULLIF($3,'')::date,(CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Jakarta')::date))
+		VALUES ($1,$2,NULL)
 		RETURNING id::text
-	`, input.ScheduleID, slotNumber, input.DistributionDate).Scan(&slotID); err != nil {
+	`, input.ScheduleID, slotNumber).Scan(&slotID); err != nil {
 		return DistributionSlot{}, fmt.Errorf("insert distribution slot: %w", err)
 	}
 
@@ -464,7 +464,8 @@ func (r *Repository) ReopenSlot(ctx context.Context, actor auth.Principal, input
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	var slotID, status, distributionDate string
+	var slotID, status string
+	var distributionDate *string
 	var allocationID *string
 	err = tx.QueryRow(ctx, `
 		SELECT ds.id::text, ds.status, ds.allocation_id::text, ds.distribution_date::text
@@ -579,7 +580,7 @@ func (r *Repository) listSlotDocumentation(ctx context.Context, distributionSlot
 // it exists so this file compiles in isolation while POS Mesin lands ahead of the other POS stations.
 func (r *Repository) listMediaFiles(ctx context.Context, documentationSlotID string) ([]MediaFile, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, documentation_slot_id::text, storage_key::text, original_filename, mime_type, byte_size, source, captured_at, latitude, longitude, status, uploaded_at
+		SELECT id::text, documentation_slot_id::text, storage_key::text, original_filename, mime_type, byte_size, source, captured_at, latitude, longitude, status, storage_state, storage_last_error, uploaded_at
 		FROM media_files WHERE documentation_slot_id=$1 AND status='accepted' ORDER BY uploaded_at
 	`, documentationSlotID)
 	if err != nil {
@@ -589,7 +590,7 @@ func (r *Repository) listMediaFiles(ctx context.Context, documentationSlotID str
 	var files []MediaFile
 	for rows.Next() {
 		var file MediaFile
-		if err := rows.Scan(&file.ID, &file.SlotID, &file.StorageKey, &file.OriginalFilename, &file.MimeType, &file.ByteSize, &file.Source, &file.CapturedAt, &file.Latitude, &file.Longitude, &file.Status, &file.UploadedAt); err != nil {
+		if err := rows.Scan(&file.ID, &file.SlotID, &file.StorageKey, &file.OriginalFilename, &file.MimeType, &file.ByteSize, &file.Source, &file.CapturedAt, &file.Latitude, &file.Longitude, &file.Status, &file.StorageState, &file.StorageLastError, &file.UploadedAt); err != nil {
 			return nil, fmt.Errorf("scan media file: %w", err)
 		}
 		file.ContentURL = "/api/v1/distribution/media/" + file.ID + "/content"
@@ -906,7 +907,7 @@ func (r *Repository) CompleteSlot(ctx context.Context, actor auth.Principal, inp
 	var allocationIDPtr, personIDPtr *string
 	var fullName, nik, sectorIdentifier string
 	var packageJSON []byte
-	var equipmentSelection CreateSlotInput
+	var equipmentSelection UpdateEquipmentInput
 	err = tx.QueryRow(ctx, `
 		SELECT ds.id::text, ds.status, pa.id::text, p.id::text, COALESCE(p.full_name,''), COALESCE(p.nik,''), COALESCE(psi.normalized_value,''),
 			pt.values_json, COALESCE(ds.machine_option_code,''), COALESCE(ds.machine_serial_number,''),

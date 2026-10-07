@@ -3,6 +3,7 @@ package distribution
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 
 	"konkit/internal/auth"
@@ -31,21 +32,26 @@ func TestCreateSlotRequiresScheduleID(t *testing.T) {
 	}
 }
 
-func TestCreateSlotRequiresValidDistributionDate(t *testing.T) {
-	service := &Service{posMesinRepository: &mesinRepositoryStub{}}
-	for _, date := range []string{"", "20-10-2026"} {
-		_, err := service.CreateSlot(context.Background(), auth.Principal{}, CreateSlotInput{ScheduleID: "schedule-1", DistributionDate: date}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
-		if !errors.Is(err, ErrDistributionDateRequired) {
-			t.Fatalf("date %q err = %v", date, err)
-		}
+func TestCreateSlotDoesNotAcceptOrRequireDistributionDate(t *testing.T) {
+	repository := &mesinRepositoryStub{created: DistributionSlot{ID: "slot-1", SlotNumber: 7, Status: "open"}}
+	service := &Service{posMesinRepository: repository}
+	result, err := service.CreateSlot(context.Background(), auth.Principal{}, CreateSlotInput{ScheduleID: " schedule-1 ", SlotNumber: 7}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ID != "slot-1" || repository.seenInput.ScheduleID != "schedule-1" || repository.seenInput.SlotNumber != 7 {
+		t.Fatalf("result=%+v input=%+v", result, repository.seenInput)
+	}
+	if _, exists := reflect.TypeOf(CreateSlotInput{}).FieldByName("DistributionDate"); exists {
+		t.Fatal("CreateSlotInput must not accept distribution_date at POS Mesin")
 	}
 }
 
-func TestCreateSlotIgnoresLegacyEquipmentFieldsAndDelegates(t *testing.T) {
+func TestCreateSlotDelegatesExplicitSlotNumber(t *testing.T) {
 	repo := &mesinRepositoryStub{created: DistributionSlot{ID: "slot-1", SlotNumber: 1, Status: "open"}}
 	service := &Service{posMesinRepository: repo}
 	result, err := service.CreateSlot(context.Background(), auth.Principal{}, CreateSlotInput{
-		ScheduleID: "schedule-1", DistributionDate: "2026-10-20", MachineSerialNumber: "  MS-001  ", HoseSerialNumber: " HS-001 ", ConverterSerialNumber: " CV-001 ",
+		ScheduleID: "schedule-1", SlotNumber: 1,
 	}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
 	if err != nil {
 		t.Fatal(err)
@@ -53,7 +59,7 @@ func TestCreateSlotIgnoresLegacyEquipmentFieldsAndDelegates(t *testing.T) {
 	if result.SlotNumber != 1 || result.Status != "open" {
 		t.Fatalf("result = %+v", result)
 	}
-	if repo.seenInput.MachineOptionCode != "" || repo.seenInput.MachineSerialNumber != "" || repo.seenInput.HoseOptionCode != "" || repo.seenInput.HoseSerialNumber != "" || repo.seenInput.ConverterOptionCode != "" || repo.seenInput.ConverterSerialNumber != "" {
-		t.Fatalf("legacy equipment leaked through create: %+v", repo.seenInput)
+	if repo.seenInput.SlotNumber != 1 {
+		t.Fatalf("slot number not delegated: %+v", repo.seenInput)
 	}
 }

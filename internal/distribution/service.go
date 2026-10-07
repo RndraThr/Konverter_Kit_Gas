@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -126,18 +125,6 @@ func (s *Service) CreateSlot(ctx context.Context, actor auth.Principal, input Cr
 	if input.ScheduleID == "" {
 		return DistributionSlot{}, ErrScheduleRequired
 	}
-	input.DistributionDate = strings.TrimSpace(input.DistributionDate)
-	if _, err := time.Parse("2006-01-02", input.DistributionDate); err != nil {
-		return DistributionSlot{}, ErrDistributionDateRequired
-	}
-	// POS Mesin owns only the date and documentation. Discard legacy equipment
-	// fields so older/direct clients cannot bypass POS Dokumen ownership.
-	input.MachineOptionCode = ""
-	input.MachineSerialNumber = ""
-	input.HoseOptionCode = ""
-	input.HoseSerialNumber = ""
-	input.ConverterOptionCode = ""
-	input.ConverterSerialNumber = ""
 	if s.posMesinRepository == nil {
 		return DistributionSlot{}, errors.New("distribution POS Mesin is unavailable")
 	}
@@ -396,22 +383,32 @@ func (s *Service) UploadMedia(ctx context.Context, actor auth.Principal, input U
 	if strings.TrimSpace(slot.ZoneName) == "" {
 		return MediaFile{}, programs.ErrZoneNotConfigured
 	}
-	folderPath, err := media.BuildFolderPath(media.FolderPathInput{
+	basePath, err := media.BuildFolderPath(media.FolderPathInput{
 		ProgramType: slot.ProgramType, ZoneName: slot.ZoneName, RegencyName: slot.RegencyName,
-		Category: media.FolderPhotos, Child: "PENDISTRIBUSIAN",
+		Category: media.FolderPhotos,
 	})
 	if err != nil {
 		return MediaFile{}, err
 	}
-	distributionDate, err := time.Parse("2006-01-02", slot.DistributionDate)
+	storageState := "staging"
+	var folderPath []string
+	if slot.DistributionDate != nil && slot.HasRecipient {
+		distributionDate, parseErr := time.Parse("2006-01-02", *slot.DistributionDate)
+		if parseErr != nil {
+			return MediaFile{}, ErrDistributionDateRequired
+		}
+		folderPath, err = media.BuildDistributionFinalPath(basePath, distributionDate, slot.SlotNumber)
+		storageState = "final"
+	} else {
+		folderPath, err = media.BuildDistributionStagingPath(basePath, slot.ScheduleID, slot.SlotNumber)
+	}
 	if err != nil {
-		return MediaFile{}, ErrDistributionDateRequired
+		return MediaFile{}, err
 	}
 	capturedAt := time.Now()
 	if input.CapturedAt != nil {
 		capturedAt = *input.CapturedAt
 	}
-	folderPath = append(folderPath, formatDistributionFolderDate(distributionDate), strconv.Itoa(slot.SlotNumber))
 	visibleFilename := formatDistributionMediaFilename(slot.Label, detected.MimeType, slot.AcceptedFiles+1, slot.MaxFiles)
 	storageKey, size, checksum, err := media.PutNamed(ctx, s.storage, key, visibleFilename, folderPath, io.LimitReader(detected.Reader, detected.MaxBytes+1))
 	if err != nil {
@@ -421,19 +418,13 @@ func (s *Service) UploadMedia(ctx context.Context, actor auth.Principal, input U
 		_ = s.storage.Delete(context.Background(), storageKey)
 		return MediaFile{}, ErrMediaTooLarge
 	}
-	stored, err := s.mediaRepository.SaveMedia(ctx, actor, MediaFileInput{SlotID: slot.ID, StorageKey: storageKey, OriginalFilename: visibleFilename, MimeType: detected.MimeType, Checksum: checksum, Source: input.Source, ByteSize: size, CapturedAt: &capturedAt, Latitude: input.Latitude, Longitude: input.Longitude}, meta)
+	stored, err := s.mediaRepository.SaveMedia(ctx, actor, MediaFileInput{SlotID: slot.ID, StorageKey: storageKey, OriginalFilename: visibleFilename, MimeType: detected.MimeType, Checksum: checksum, Source: input.Source, ByteSize: size, StorageState: storageState, CapturedAt: &capturedAt, Latitude: input.Latitude, Longitude: input.Longitude}, meta)
 	if err != nil {
 		_ = s.storage.Delete(context.Background(), storageKey)
 		return MediaFile{}, err
 	}
 	stored.ContentURL = "/api/v1/distribution/media/" + stored.ID + "/content"
 	return stored, nil
-}
-
-func formatDistributionFolderDate(value time.Time) string {
-	months := [...]string{"", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"}
-	local := value.In(time.FixedZone("Asia/Jakarta", 7*60*60))
-	return fmt.Sprintf("%d %s %d", local.Day(), months[local.Month()], local.Year())
 }
 
 func formatDistributionMediaFilename(label, mimeType string, sequence, maxFiles int) string {

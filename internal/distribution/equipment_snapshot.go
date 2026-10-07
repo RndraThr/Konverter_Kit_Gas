@@ -45,7 +45,7 @@ type equipmentVerificationSnapshot struct {
 	ConverterSerial     string `json:"converter_serial"`
 }
 
-func buildEquipmentVerificationSnapshot(packageJSON []byte, selected CreateSlotInput) (equipmentVerificationSnapshot, error) {
+func buildEquipmentVerificationSnapshot(packageJSON []byte, selected UpdateEquipmentInput) (equipmentVerificationSnapshot, error) {
 	var values packageEquipmentValues
 	if err := json.Unmarshal(packageJSON, &values); err != nil {
 		return equipmentVerificationSnapshot{}, fmt.Errorf("decode package equipment: %w", err)

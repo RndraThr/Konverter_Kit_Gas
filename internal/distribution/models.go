@@ -62,7 +62,7 @@ type DistributionSlot struct {
 	ID                    string        `json:"id"`
 	ScheduleID            string        `json:"schedule_id"`
 	SlotNumber            int           `json:"slot_number"`
-	DistributionDate      string        `json:"distribution_date"`
+	DistributionDate      *string       `json:"distribution_date"`
 	Status                string        `json:"status"`
 	AllocationID          *string       `json:"allocation_id,omitempty"`
 	FullName              string        `json:"full_name,omitempty"`
@@ -96,15 +96,8 @@ type SlotCatalogEntry struct {
 }
 
 type CreateSlotInput struct {
-	ScheduleID            string `json:"schedule_id"`
-	SlotNumber            int    `json:"slot_number"`
-	DistributionDate      string `json:"distribution_date"`
-	MachineOptionCode     string `json:"machine_option_code"`
-	MachineSerialNumber   string `json:"machine_serial_number"`
-	HoseOptionCode        string `json:"hose_option_code"`
-	HoseSerialNumber      string `json:"hose_serial_number"`
-	ConverterOptionCode   string `json:"converter_option_code"`
-	ConverterSerialNumber string `json:"converter_serial_number"`
+	ScheduleID string `json:"schedule_id"`
+	SlotNumber int    `json:"slot_number"`
 }
 
 type CandidateMatch struct {
@@ -183,8 +176,10 @@ type UpdateEquipmentInput struct {
 
 type MediaSlot struct {
 	ID                 string
+	ScheduleID         string
 	SlotNumber         int
-	DistributionDate   string
+	DistributionDate   *string
+	HasRecipient       bool
 	DistributionStatus string
 	Label              string
 	ProgramType        string
@@ -213,6 +208,7 @@ type UploadMediaInput struct {
 type MediaFileInput struct {
 	SlotID, StorageKey, OriginalFilename, MimeType, Checksum, Source string
 	ByteSize                                                         int64
+	StorageState                                                     string
 	CapturedAt                                                       *time.Time
 	Latitude, Longitude                                              *float64
 }
@@ -229,6 +225,8 @@ type MediaFile struct {
 	Latitude         *float64   `json:"latitude,omitempty"`
 	Longitude        *float64   `json:"longitude,omitempty"`
 	Status           string     `json:"status"`
+	StorageState     string     `json:"storage_state"`
+	StorageLastError string     `json:"storage_last_error,omitempty"`
 	ContentURL       string     `json:"content_url"`
 	UploadedAt       time.Time  `json:"uploaded_at"`
 }
