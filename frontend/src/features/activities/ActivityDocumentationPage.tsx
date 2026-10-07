@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Camera, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ImageIcon, ImagePlus, PlayCircle, RefreshCw, Trash2, UploadCloud, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Camera, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ImageIcon, ImagePlus, PlayCircle, RefreshCw, Trash2, UploadCloud, Video, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -14,14 +14,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { apiRequest } from '../../lib/api';
+import { uploadRequest } from '../../lib/upload';
 import { useCan } from '../../lib/permissions';
 import { cn } from '@/lib/utils';
 import { buildPageItems } from './pagination';
 import type { ActivityMedia, ActivityMediaPage, ActivityType, ProgramOption, ProgramZone } from './types';
 
-type PendingFile = { file: File; source: 'camera' | 'gallery'; previewURL: string; programID: string; regencyID: string; activityType: ActivityType };
+type PendingFile = { file: File; source: 'camera' | 'gallery'; previewURL: string; programID: string; regencyID: string; activityType: ActivityType; progress: number; controller: AbortController | null };
 type ActivityTypeOption = { value: ActivityType; label: string };
 const acceptedTypes = 'image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime';
+const acceptedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const acceptedVideoTypes = new Set(['video/mp4', 'video/webm', 'video/quicktime']);
+const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
 
 type Props =
   | { label: string; activityType: ActivityType; activityTypes?: undefined }
@@ -42,8 +47,11 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
   const [dragging, setDragging] = useState(false);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ActivityMedia | null>(null);
+  const [fileError, setFileError] = useState('');
+  const pendingRef = useRef<PendingFile | null>(null);
 
-  useEffect(() => () => { if (pending?.previewURL) URL.revokeObjectURL(pending.previewURL); }, [pending]);
+  useEffect(() => { pendingRef.current = pending; }, [pending]);
+  useEffect(() => () => { if (pendingRef.current?.previewURL) URL.revokeObjectURL(pendingRef.current.previewURL); }, []);
 
   const programs = useQuery({ queryKey: ['program-setup', 'programs'], queryFn: () => apiRequest<{ data: ProgramOption[] }>('/api/v1/program-setup/programs') });
   const zones = useQuery({
@@ -63,13 +71,24 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
   const setPage = (value: number) => setParams((prev) => { const next = new URLSearchParams(prev); next.set('page', String(value)); return next; });
 
   const upload = useMutation({
-    mutationFn: ({ file, source, programID: uploadProgramID, regencyID: uploadRegencyID, activityType: uploadActivityType }: PendingFile) => {
+    mutationFn: (item: PendingFile) => {
+      const { file, source, programID: uploadProgramID, regencyID: uploadRegencyID, activityType: uploadActivityType } = item;
+      const controller = new AbortController();
+      setPending((current) => current?.file === file ? { ...current, controller } : current);
       const body = new FormData();
-      body.set('file', file); body.set('source', source); body.set('activity_type', uploadActivityType); body.set('program_id', uploadProgramID); body.set('regency_id', uploadRegencyID);
-      return apiRequest<{ data: ActivityMedia }>('/api/v1/activities/media', { method: 'POST', body });
+      body.set('program_id', uploadProgramID);
+      body.set('regency_id', uploadRegencyID);
+      body.set('activity_type', uploadActivityType);
+      body.set('source', source);
+      body.set('file_size', String(file.size));
+      body.set('file', file);
+      return uploadRequest<{ data: ActivityMedia }>('/api/v1/activities/media', body, {
+        signal: controller.signal,
+        onProgress: (progress) => setPending((current) => current?.file === file ? { ...current, progress } : current),
+      });
     },
-    onSuccess: (_data, variables) => { setPending((current) => current === variables ? null : current); client.invalidateQueries({ queryKey: ['activities', variables.activityType, variables.programID, variables.regencyID] }); toast.success('Dokumentasi berhasil diunggah.'); },
-    onError: () => toast.error('Gagal mengunggah dokumentasi.'),
+    onSuccess: (_data, variables) => { URL.revokeObjectURL(variables.previewURL); setPending((current) => current?.file === variables.file ? null : current); client.invalidateQueries({ queryKey: ['activities', variables.activityType, variables.programID, variables.regencyID] }); toast.success('Dokumentasi berhasil diunggah.'); },
+    onError: (error) => { if (!(error instanceof DOMException && error.name === 'AbortError')) toast.error(error instanceof Error ? error.message : 'Gagal mengunggah dokumentasi.'); },
   });
   const remove = useMutation({
     mutationFn: (id: string) => apiRequest<void>(`/api/v1/activities/media/${id}`, { method: 'DELETE' }),
@@ -79,19 +98,30 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
 
   const choose = (file: File | undefined, source: 'camera' | 'gallery') => {
     if (!file || !programID || !regencyID) return;
-    const selected = { file, source, previewURL: URL.createObjectURL(file), programID, regencyID, activityType };
+    const isImage = acceptedImageTypes.has(file.type);
+    const isVideo = acceptedVideoTypes.has(file.type);
+    if (!isImage && !isVideo) { setFileError('Gunakan foto JPEG, PNG, WebP atau video MP4, WebM, MOV.'); return; }
+    if (isImage && file.size > MAX_IMAGE_BYTES) { setFileError('Ukuran foto maksimal 25 MiB.'); return; }
+    if (isVideo && file.size > MAX_VIDEO_BYTES) { setFileError('Ukuran video maksimal 500 MiB.'); return; }
+    setFileError('');
+    const selected = { file, source, previewURL: URL.createObjectURL(file), programID, regencyID, activityType, progress: 0, controller: null };
     upload.reset();
     setPending(selected); upload.mutate(selected);
   };
 
   const cancelFailedUpload = () => {
+    pending?.controller?.abort();
+    if (pending?.previewURL) URL.revokeObjectURL(pending.previewURL);
     upload.reset();
     setPending(null);
   };
 
   useEffect(() => {
+    pendingRef.current?.controller?.abort();
+    if (pendingRef.current?.previewURL) URL.revokeObjectURL(pendingRef.current.previewURL);
     upload.reset();
     setPending(null);
+    setFileError('');
     setPreviewIndex(null);
     setPendingDelete(null);
   }, [activityType]);
@@ -147,10 +177,13 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
           <UploadCloud className="size-5 text-muted-foreground" aria-hidden="true" />
           <span className="text-xs text-muted-foreground">Seret foto atau video ke sini, atau pilih dari bawah</span>
           <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-            <label className="inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"><Camera className="size-4" aria-hidden="true" /><span className="hidden sm:inline">Ambil Foto</span><span className="sm:hidden">Kamera</span><input className="sr-only" type="file" aria-label="Ambil Foto" accept={acceptedTypes} capture="environment" disabled={Boolean(pending)} onChange={(e) => choose(e.target.files?.[0], 'camera')} /></label>
+            <label className="inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"><Camera className="size-4" aria-hidden="true" /><span className="hidden sm:inline">Ambil Foto</span><span className="sm:hidden">Kamera</span><input className="sr-only" type="file" aria-label="Ambil Foto" accept="image/jpeg,image/png,image/webp" capture="environment" disabled={Boolean(pending)} onChange={(e) => { choose(e.target.files?.[0], 'camera'); e.target.value = ''; }} /></label>
+            <label className="inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"><Video className="size-4" aria-hidden="true" /><span className="hidden sm:inline">Rekam Video</span><span className="sm:hidden">Video</span><input className="sr-only" type="file" aria-label="Rekam Video" accept="video/mp4,video/webm,video/quicktime" capture="environment" disabled={Boolean(pending)} onChange={(e) => { choose(e.target.files?.[0], 'camera'); e.target.value = ''; }} /></label>
             <label className="inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"><ImagePlus className="size-4" aria-hidden="true" /><span className="hidden sm:inline">Pilih dari Galeri</span><span className="sm:hidden">Galeri</span><input className="sr-only" type="file" aria-label="Pilih dari Galeri" accept={acceptedTypes} disabled={Boolean(pending)} onChange={(e) => choose(e.target.files?.[0], 'gallery')} /></label>
           </div>
         </div>}
+        {fileError && <p role="alert" className="text-sm text-destructive">{fileError}</p>}
+        {upload.isError && <p role="alert" className="text-sm text-destructive">{upload.error instanceof Error ? upload.error.message : 'Gagal mengunggah dokumentasi.'}</p>}
       </CardContent>
     </Card>
 
@@ -186,11 +219,12 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
         : <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
           {pending && <figure className="group relative aspect-square overflow-hidden rounded-lg border-2 border-dashed border-primary/40 bg-primary/5">
             {pending.file.type.startsWith('video/')
-              ? <video aria-label="Preview unggahan video" src={pending.previewURL} className="size-full object-cover opacity-50" muted />
+              ? <video aria-label="Preview unggahan video" src={pending.previewURL} preload="metadata" className="size-full object-cover opacity-50" muted />
               : <img src={pending.previewURL} alt="Preview unggahan" className="size-full object-cover opacity-50" />}
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/30">
               {upload.isPending && <div className="size-6 animate-spin rounded-full border-2 border-white border-t-transparent" />}
-              {upload.isPending && <span className="text-xs font-medium text-white">Mengunggah&hellip;</span>}
+              {upload.isPending && <span className="text-xs font-medium text-white">{pending.progress}%</span>}
+              {upload.isPending && <Button type="button" size="xs" variant="secondary" aria-label="Batalkan unggahan" onClick={cancelFailedUpload}><X aria-hidden="true" />Batalkan</Button>}
             </div>
             <figcaption className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-black/70 px-2 py-1.5">
               <span className="truncate text-xs text-white">{upload.isError ? 'Upload gagal' : pending.file.name}</span>
@@ -203,7 +237,7 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
           {items.map((item, itemIndex) => <figure key={item.id} className="group relative aspect-square overflow-hidden rounded-lg border bg-muted transition-shadow hover:shadow-md hover:ring-2 hover:ring-ring/20">
             <button type="button" aria-label={`Lihat ${item.display_name}`} className="absolute inset-0 size-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => setPreviewIndex(itemIndex)}>
               {item.media_type === 'video'
-                ? <><video src={item.content_url} className="size-full object-cover" muted /><PlayCircle aria-hidden="true" className="absolute inset-0 m-auto size-10 text-white drop-shadow-lg transition-transform group-hover:scale-110" /></>
+                ? <><video src={item.content_url} preload="metadata" className="size-full object-cover" muted /><PlayCircle aria-hidden="true" className="absolute inset-0 m-auto size-10 text-white drop-shadow-lg transition-transform group-hover:scale-110" /></>
                 : <img src={item.content_url} alt={item.display_name} className="size-full object-cover transition-transform duration-200 group-hover:scale-105" loading="lazy" />}
               <span className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-linear-to-t from-black/80 to-transparent px-2.5 py-2 pt-6 text-left text-xs text-white">
                 {item.media_type === 'video' ? <PlayCircle className="size-3 shrink-0" /> : <ImageIcon className="size-3 shrink-0" />}

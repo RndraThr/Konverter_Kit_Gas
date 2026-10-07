@@ -12,6 +12,7 @@ test('plays video items with native controls instead of the zoomable image', () 
   const video = screen.getByRole('dialog', { name: 'Preview clip.mp4' }).querySelector('video')
   expect(video).toHaveAttribute('src', '/media/clip.mp4')
   expect(video).toHaveAttribute('controls')
+  expect(video).toHaveAttribute('preload', 'metadata')
   expect(screen.queryByLabelText('Perbesar foto')).not.toBeInTheDocument()
 })
 

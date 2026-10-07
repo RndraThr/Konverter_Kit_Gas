@@ -1,7 +1,8 @@
-import { Camera, CheckCircle2, CircleAlert, ImagePlus, RefreshCw, Trash2, UploadCloud, X } from 'lucide-react';
+import { Camera, CheckCircle2, CircleAlert, ImagePlus, RefreshCw, Trash2, UploadCloud, Video, X } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { apiRequest } from '../../lib/api';
+import { uploadRequest } from '../../lib/upload';
 import { useCan } from '../../lib/permissions';
 import type { DataResponse, MediaFile, SlotSummary } from './types';
 import styles from './Distribution.module.css';
@@ -9,8 +10,22 @@ import { Badge } from '@/components/ui/badge';
 import { MediaPreviewDialog } from '@/components/MediaPreviewDialog';
 import { cn } from '@/lib/utils';
 
-type QueuedFile = { id: string; file: File; source: 'camera' | 'gallery'; previewURL: string; status: 'queued' | 'uploading' | 'error'; errorMessage?: string };
+type QueuedFile = {
+  id: string;
+  file: File;
+  source: 'camera' | 'gallery';
+  previewURL: string;
+  status: 'queued' | 'uploading' | 'error';
+  progress: number;
+  controller: AbortController | null;
+  errorMessage?: string;
+};
 const acceptedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const acceptedVideoTypes = new Set(['video/mp4', 'video/webm', 'video/quicktime']);
+const imageAccept = 'image/jpeg,image/png,image/webp';
+const videoAccept = 'video/mp4,video/webm,video/quicktime';
+const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
 
 export function DocumentationSlot({ slot, onChanged }: { slot: SlotSummary; onChanged: (slot: SlotSummary) => void }) {
   const canManage = useCan('documentation.manage');
@@ -33,9 +48,17 @@ export function DocumentationSlot({ slot, onChanged }: { slot: SlotSummary; onCh
   const upload = useMutation({
     mutationFn: (item: QueuedFile) => {
       if (!slot.id) throw new Error('Slot dokumentasi tidak valid');
-      const body = new FormData(); body.set('file', item.file); body.set('source', item.source);
+      const controller = new AbortController();
+      setQueue((current) => current.map((entry) => entry.id === item.id ? { ...entry, controller } : entry));
+      const body = new FormData();
+      body.set('source', item.source);
+      body.set('file_size', String(item.file.size));
       body.set('captured_at', new Date(item.file.lastModified || Date.now()).toISOString());
-      return apiRequest<DataResponse<MediaFile>>(`/api/v1/distribution/slots/${slot.id}/media`, { method: 'POST', body });
+      body.set('file', item.file);
+      return uploadRequest<DataResponse<MediaFile>>(`/api/v1/distribution/slots/${slot.id}/media`, body, {
+        signal: controller.signal,
+        onProgress: (progress) => setQueue((current) => current.map((entry) => entry.id === item.id ? { ...entry, progress } : entry)),
+      });
     },
     onSuccess: ({ data }, item) => {
       publish([...files, data]);
@@ -43,7 +66,8 @@ export function DocumentationSlot({ slot, onChanged }: { slot: SlotSummary; onCh
       setQueue((current) => current.filter((entry) => entry.id !== item.id));
     },
     onError: (error, item) => {
-      const errorMessage = error instanceof Error ? error.message : 'Foto belum dapat diunggah.';
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      const errorMessage = error instanceof Error ? error.message : 'Media belum dapat diunggah.';
       setQueue((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: 'error', errorMessage } : entry));
     },
   });
@@ -69,6 +93,11 @@ export function DocumentationSlot({ slot, onChanged }: { slot: SlotSummary; onCh
   const maxFiles = slot.max_files ?? 1;
   const complete = files.length >= required;
   const inputSource = slot.input_source ?? 'both';
+  const mediaKind = slot.media_kind ?? 'image';
+  const allowsImages = mediaKind !== 'video';
+  const allowsVideos = mediaKind !== 'image';
+  const mediaLabel = mediaKind === 'image' ? 'foto' : mediaKind === 'video' ? 'video' : 'media';
+  const acceptedTypes = [allowsImages ? imageAccept : '', allowsVideos ? videoAccept : ''].filter(Boolean).join(',');
   const remainingCapacity = Math.max(0, maxFiles - files.length - queue.length);
   const canAddMore = canManage && remainingCapacity > 0;
 
@@ -77,23 +106,29 @@ export function DocumentationSlot({ slot, onChanged }: { slot: SlotSummary; onCh
     if (!incoming.length) return;
     let remaining = remainingCapacity;
     const accepted: File[] = [];
-    let rejectedType = false, rejectedCapacity = false;
+    let rejectedType = false, rejectedCapacity = false, rejectedImageSize = false, rejectedVideoSize = false;
     for (const file of incoming) {
-      if (!acceptedImageTypes.has(file.type)) { rejectedType = true; continue; }
+      const isImage = acceptedImageTypes.has(file.type);
+      const isVideo = acceptedVideoTypes.has(file.type);
+      if ((!isImage && !isVideo) || (isImage && !allowsImages) || (isVideo && !allowsVideos)) { rejectedType = true; continue; }
+      if (isImage && file.size > MAX_IMAGE_BYTES) { rejectedImageSize = true; continue; }
+      if (isVideo && file.size > MAX_VIDEO_BYTES) { rejectedVideoSize = true; continue; }
       if (remaining <= 0) { rejectedCapacity = true; continue; }
       accepted.push(file);
       remaining -= 1;
     }
-    if (rejectedType) setFileError('Gunakan file JPEG, PNG, atau WebP.');
-    else if (rejectedCapacity) setFileError(`Hanya ${remainingCapacity} foto lagi yang dapat ditambahkan pada slot ini.`);
+    if (rejectedImageSize) setFileError('Ukuran foto maksimal 25 MiB.');
+    else if (rejectedVideoSize) setFileError('Ukuran video maksimal 500 MiB.');
+    else if (rejectedType) setFileError(mediaKind === 'video' ? 'Gunakan video MP4, WebM, atau MOV.' : mediaKind === 'image_video' ? 'Gunakan foto JPEG, PNG, WebP atau video MP4, WebM, MOV.' : 'Gunakan file JPEG, PNG, atau WebP.');
+    else if (rejectedCapacity) setFileError(`Hanya ${remainingCapacity} ${mediaLabel} lagi yang dapat ditambahkan pada slot ini.`);
     else setFileError('');
     if (!accepted.length) return;
-    setQueue((current) => [...current, ...accepted.map((file) => ({ id: crypto.randomUUID(), file, source, previewURL: URL.createObjectURL(file), status: 'queued' as const }))]);
+    setQueue((current) => [...current, ...accepted.map((file) => ({ id: crypto.randomUUID(), file, source, previewURL: URL.createObjectURL(file), status: 'queued' as const, progress: 0, controller: null }))]);
   };
-  const retry = (id: string) => setQueue((current) => current.map((item) => item.id === id ? { ...item, status: 'queued' as const, errorMessage: undefined } : item));
+  const retry = (id: string) => setQueue((current) => current.map((item) => item.id === id ? { ...item, status: 'queued' as const, progress: 0, controller: null, errorMessage: undefined } : item));
   const cancelQueued = (id: string) => setQueue((current) => {
     const item = current.find((entry) => entry.id === id);
-    if (item) URL.revokeObjectURL(item.previewURL);
+    if (item) { item.controller?.abort(); URL.revokeObjectURL(item.previewURL); }
     return current.filter((entry) => entry.id !== id);
   });
   const uploadError = queue.find((item) => item.status === 'error');
@@ -108,7 +143,7 @@ export function DocumentationSlot({ slot, onChanged }: { slot: SlotSummary; onCh
           <h4 className="text-sm font-medium">{slot.label}</h4>
           <Badge variant={slot.required ? 'default' : 'outline'}>{slot.required ? 'Wajib' : 'Opsional'}</Badge>
         </div>
-        <p className="text-xs text-muted-foreground">{files.length} dari {required} foto{slot.required ? ' wajib' : ''}</p>
+        <p className="text-xs text-muted-foreground">{files.length} dari {required} {mediaLabel}{slot.required ? ' wajib' : ''}</p>
       </div>
       <span className={cn('inline-flex shrink-0 items-center gap-1 text-xs font-medium', complete ? 'text-primary' : 'text-accent-foreground')}>
         {complete ? <CheckCircle2 className="size-4" aria-hidden="true" /> : <CircleAlert className="size-4" aria-hidden="true" />}
@@ -119,7 +154,7 @@ export function DocumentationSlot({ slot, onChanged }: { slot: SlotSummary; onCh
     {(files.length > 0 || queue.length > 0) && <div className="grid grid-cols-3 gap-2">
       {files.map((file, index) => <figure key={file.id} className="relative aspect-4/3 overflow-hidden rounded-md border bg-muted">
         <button type="button" aria-label={`Lihat ${file.original_filename}`} className="absolute inset-0 size-full cursor-zoom-in focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring" onClick={() => setPreviewIndex(index)}>
-          <img src={file.content_url} alt="" className="size-full object-cover" />
+          {file.mime_type.startsWith('video/') ? <video src={file.content_url} preload="metadata" className="size-full object-cover" /> : <img src={file.content_url} alt="" className="size-full object-cover" />}
         </button>
         <figcaption className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex items-center justify-between gap-1 bg-black/70 px-2 py-1 text-[10px] text-white">
           <span className="truncate">{file.original_filename}</span>
@@ -127,10 +162,11 @@ export function DocumentationSlot({ slot, onChanged }: { slot: SlotSummary; onCh
         </figcaption>
       </figure>)}
       {queue.map((item) => <figure key={item.id} className="relative aspect-4/3 overflow-hidden rounded-md border bg-muted">
-        <img src={item.previewURL} alt={`Preview ${slot.label}`} className="size-full object-cover opacity-50" />
+        {acceptedVideoTypes.has(item.file.type) ? <video src={item.previewURL} aria-label={`Preview ${slot.label}`} preload="metadata" className="size-full object-cover opacity-50" /> : <img src={item.previewURL} alt={`Preview ${slot.label}`} className="size-full object-cover opacity-50" />}
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/40 text-center text-white">
           {item.status === 'uploading' && <UploadCloud className="size-5 animate-pulse" aria-hidden="true" />}
-          <span className="text-[10px] font-medium">{item.status === 'error' ? 'Upload gagal' : 'Mengunggah...'}</span>
+          <span className="text-[10px] font-medium">{item.status === 'error' ? 'Upload gagal' : item.status === 'uploading' ? `${item.progress}%` : 'Menunggu...'}</span>
+          {item.status === 'uploading' && <button className={styles.removeMedia} type="button" aria-label="Batalkan unggahan" title="Batalkan unggahan" onClick={() => cancelQueued(item.id)}><X className="size-4" /></button>}
           {item.status === 'error' && <div className="flex items-center gap-1">
             <button className={styles.removeMedia} type="button" aria-label="Coba unggah lagi" title="Coba unggah lagi" onClick={() => retry(item.id)}><RefreshCw className="size-4" /></button>
             <button className={styles.removeMedia} type="button" aria-label="Batalkan unggahan" title="Batalkan unggahan" onClick={() => cancelQueued(item.id)}><X className="size-4" /></button>
@@ -140,10 +176,13 @@ export function DocumentationSlot({ slot, onChanged }: { slot: SlotSummary; onCh
     </div>}
 
     {canAddMore && <div className="grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)]">
-      {inputSource !== 'gallery' && <label className={cn(styles.captureControl, 'inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted')}><Camera className="size-4" aria-hidden="true" />Buka kamera<input className="sr-only" aria-label="Buka kamera" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={(event) => { chooseMany(event.target.files, 'camera'); event.target.value = ''; }} /></label>}
+      {inputSource !== 'gallery' && <div className="flex flex-wrap gap-2">
+        {allowsImages && <label className={cn(styles.captureControl, 'inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted')}><Camera className="size-4" aria-hidden="true" />Buka kamera<input className="sr-only" aria-label="Buka kamera" type="file" accept={imageAccept} capture="environment" onChange={(event) => { chooseMany(event.target.files, 'camera'); event.target.value = ''; }} /></label>}
+        {allowsVideos && <label className={cn(styles.captureControl, 'inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted')}><Video className="size-4" aria-hidden="true" />Rekam video<input className="sr-only" aria-label="Rekam video" type="file" accept={videoAccept} capture="environment" onChange={(event) => { chooseMany(event.target.files, 'camera'); event.target.value = ''; }} /></label>}
+      </div>}
       {inputSource !== 'camera' && <div
         role="group"
-        aria-label={`Unggah foto ${slot.label} melalui galeri`}
+        aria-label={`Unggah ${mediaLabel} ${slot.label} melalui galeri`}
         className={cn('flex min-h-24 flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-3 text-center transition-colors', dragging ? 'border-primary bg-primary/10' : 'border-border bg-muted/25')}
         onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
         onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
@@ -151,12 +190,12 @@ export function DocumentationSlot({ slot, onChanged }: { slot: SlotSummary; onCh
         onDrop={(event) => { event.preventDefault(); setDragging(false); chooseMany(event.dataTransfer.files, 'gallery'); }}
       >
         <UploadCloud className="size-5 text-muted-foreground" aria-hidden="true" />
-        <span className="text-xs text-muted-foreground">Seret {maxFiles > 1 ? 'foto-foto' : 'foto'} ke sini atau</span>
-        <label className={cn(styles.captureControl, 'inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted')}><ImagePlus className="size-4" aria-hidden="true" />Pilih galeri<input className="sr-only" aria-label="Pilih galeri" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => { chooseMany(event.target.files, 'gallery'); event.target.value = ''; }} /></label>
+        <span className="text-xs text-muted-foreground">Seret {mediaLabel} ke sini atau</span>
+        <label className={cn(styles.captureControl, 'inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted')}><ImagePlus className="size-4" aria-hidden="true" />Pilih galeri<input className="sr-only" aria-label="Pilih galeri" type="file" accept={acceptedTypes} multiple onChange={(event) => { chooseMany(event.target.files, 'gallery'); event.target.value = ''; }} /></label>
       </div>}
     </div>}
     {uploadError && <p role="alert" className="text-sm text-destructive">{uploadError.file.name}: {uploadError.errorMessage ?? 'Foto belum dapat diunggah.'}</p>}
     {fileError && <p role="alert" className="text-sm text-destructive">{fileError}</p>}
-    <MediaPreviewDialog items={files.map((mediaFile) => ({ id: mediaFile.id, url: mediaFile.content_url, title: mediaFile.original_filename }))} index={previewIndex} onIndexChange={setPreviewIndex} />
+    <MediaPreviewDialog items={files.map((mediaFile) => ({ id: mediaFile.id, url: mediaFile.content_url, title: mediaFile.original_filename, mediaType: mediaFile.mime_type.startsWith('video/') ? 'video' : 'image' }))} index={previewIndex} onIndexChange={setPreviewIndex} />
   </article>;
 }

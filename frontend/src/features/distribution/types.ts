@@ -5,6 +5,7 @@ export type MediaFile = { id: string; slot_id: string; original_filename: string
 export type SlotSummary = {
   id?: string; code: string; label: string; stage: 'mesin' | 'dokumen' | 'penyerahan'; status: string;
   required?: boolean; min_files?: number; max_files?: number;
+  media_kind?: 'image' | 'video' | 'image_video';
   input_source?: 'camera' | 'gallery' | 'both'; require_location?: boolean; require_captured_at?: boolean; files?: MediaFile[];
 };
 

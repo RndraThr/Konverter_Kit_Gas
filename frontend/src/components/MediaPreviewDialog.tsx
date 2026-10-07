@@ -173,7 +173,7 @@ export function MediaPreviewDialog({ items, index, onIndexChange }: Props) {
         </>}
         <div className="flex size-full items-center justify-center">
           {isVideo
-            ? <video src={item.url} controls autoPlay className="max-h-dvh max-w-[100vw] object-contain" />
+            ? <video src={item.url} controls autoPlay preload="metadata" className="max-h-dvh max-w-[100vw] object-contain" />
             : <img
                 src={item.url}
                 alt={item.title}

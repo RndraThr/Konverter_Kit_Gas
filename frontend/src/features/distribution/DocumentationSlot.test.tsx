@@ -1,23 +1,29 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { apiRequest, ApiError } from '../../lib/api';
 import { PermissionsProvider } from '../../lib/permissions';
 import { DocumentationSlot } from './DocumentationSlot';
 import styles from './Distribution.module.css';
 import type { MediaFile } from './types';
+import { uploadRequest } from '../../lib/upload';
 
 vi.mock('../../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../../lib/api')>('../../lib/api');
   return { ...actual, apiRequest: vi.fn() };
 });
+vi.mock('../../lib/upload', () => ({ uploadRequest: vi.fn() }));
 
-function renderSlot(files: MediaFile[] = [], required = true) {
+function renderSlot(files: MediaFile[] = [], required = true, mediaKind: 'image' | 'video' | 'image_video' = 'image') {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   return render(<QueryClientProvider client={client}><PermissionsProvider permissions={['documentation.manage']}><DocumentationSlot slot={{
-    id: 'slot-1', code: 'signed_bast', label: 'BAST bertanda tangan', stage: 'penyerahan', status: 'missing', required, min_files: 1, max_files: 2, files,
+    id: 'slot-1', code: 'signed_bast', label: 'BAST bertanda tangan', stage: 'penyerahan', status: 'missing', required, min_files: 1, max_files: 2, media_kind: mediaKind, files,
   }} onChanged={vi.fn()} /></PermissionsProvider></QueryClientProvider>);
 }
+
+beforeEach(() => {
+  vi.mocked(uploadRequest).mockResolvedValue({ data: { id: 'media-1', slot_id: 'slot-1', original_filename: 'bast.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'camera', status: 'accepted', content_url: '/api/v1/distribution/media/media-1/content' } });
+});
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -27,7 +33,6 @@ afterEach(() => {
 
 test('offers camera and gallery then uploads an image preview', async () => {
   vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:preview'), revokeObjectURL: vi.fn() });
-  vi.mocked(apiRequest).mockResolvedValue({ data: { id: 'media-1', slot_id: 'slot-1', original_filename: 'bast.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'camera', status: 'accepted', content_url: '/api/v1/distribution/media/media-1/content' } });
   renderSlot();
 
   const camera = screen.getByLabelText('Buka kamera');
@@ -40,13 +45,13 @@ test('offers camera and gallery then uploads an image preview', async () => {
   expect(screen.getByAltText('Preview BAST bertanda tangan')).toHaveAttribute('src', 'blob:preview');
   expect(await screen.findByText('1 dari 1 foto wajib')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Hapus bast.jpg' })).toBeVisible();
-  const request = vi.mocked(apiRequest).mock.calls[0];
-  expect((request[1]?.body as FormData).get('captured_at')).toBeTruthy();
+  const request = vi.mocked(uploadRequest).mock.calls[0];
+  expect((request[1] as FormData).get('captured_at')).toBeTruthy();
 });
 
 test('shows a retry action when upload fails', async () => {
   vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:preview'), revokeObjectURL: vi.fn() });
-  vi.mocked(apiRequest).mockRejectedValue(new Error('offline'));
+  vi.mocked(uploadRequest).mockRejectedValue(new Error('offline'));
   renderSlot();
   fireEvent.change(screen.getByLabelText('Pilih galeri'), { target: { files: [new File(['image'], 'bast.jpg', { type: 'image/jpeg' })] } });
   expect(await screen.findByRole('button', { name: 'Coba unggah lagi' })).toBeVisible();
@@ -54,7 +59,7 @@ test('shows a retry action when upload fails', async () => {
 
 test('shows the backend reason when an upload fails', async () => {
   vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:preview'), revokeObjectURL: vi.fn() });
-  vi.mocked(apiRequest).mockRejectedValue(new ApiError(409, 'zone_not_configured', 'Kabupaten belum dikonfigurasi ke zona'));
+  vi.mocked(uploadRequest).mockRejectedValue(new ApiError(409, 'zone_not_configured', 'Kabupaten belum dikonfigurasi ke zona'));
   renderSlot();
 
   fireEvent.change(screen.getByLabelText('Pilih galeri'), { target: { files: [new File(['image'], 'bast.jpg', { type: 'image/jpeg' })] } });
@@ -150,15 +155,15 @@ test('pinch-zooms by tracking the distance between two pointers', () => {
 
 test('uploads a dropped image as a gallery file', async () => {
   vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:dropped'), revokeObjectURL: vi.fn() });
-  vi.mocked(apiRequest).mockResolvedValue({ data: { id: 'media-2', slot_id: 'slot-1', original_filename: 'drop.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: '/media/drop.jpg' } });
+  vi.mocked(uploadRequest).mockResolvedValue({ data: { id: 'media-2', slot_id: 'slot-1', original_filename: 'drop.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: '/media/drop.jpg' } });
   renderSlot();
   const file = new File(['image'], 'drop.jpg', { type: 'image/jpeg' });
 
   fireEvent.drop(screen.getByLabelText('Unggah foto BAST bertanda tangan melalui galeri'), { dataTransfer: { files: [file] } });
 
   expect(await screen.findByRole('button', { name: 'Lihat drop.jpg' })).toBeVisible();
-  const request = vi.mocked(apiRequest).mock.calls[0];
-  expect((request[1]?.body as FormData).get('source')).toBe('gallery');
+  const request = vi.mocked(uploadRequest).mock.calls[0];
+  expect((request[1] as FormData).get('source')).toBe('gallery');
 });
 
 test('rejects a non-image dropped into the gallery zone', async () => {
@@ -168,13 +173,13 @@ test('rejects a non-image dropped into the gallery zone', async () => {
   fireEvent.drop(screen.getByLabelText('Unggah foto BAST bertanda tangan melalui galeri'), { dataTransfer: { files: [file] } });
 
   expect(await screen.findByRole('alert')).toHaveTextContent('Gunakan file JPEG, PNG, atau WebP.');
-  await waitFor(() => expect(apiRequest).not.toHaveBeenCalled());
+  await waitFor(() => expect(uploadRequest).not.toHaveBeenCalled());
 });
 
 test('uploads several dropped photos one at a time without losing track of either', async () => {
   vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:preview'), revokeObjectURL: vi.fn() });
-  vi.mocked(apiRequest).mockImplementation(async (_path, init) => {
-    const name = (init?.body as FormData).get('file') instanceof File ? ((init?.body as FormData).get('file') as File).name : '';
+  vi.mocked(uploadRequest).mockImplementation(async (_path, body) => {
+    const name = body.get('file') instanceof File ? (body.get('file') as File).name : '';
     return { data: { id: `media-${name}`, slot_id: 'slot-1', original_filename: name, mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: `/media/${name}` } };
   });
   renderSlot([], true);
@@ -185,12 +190,12 @@ test('uploads several dropped photos one at a time without losing track of eithe
 
   expect(await screen.findByRole('button', { name: 'Lihat first.jpg' })).toBeVisible();
   expect(await screen.findByRole('button', { name: 'Lihat second.jpg' })).toBeVisible();
-  expect(apiRequest).toHaveBeenCalledTimes(2);
+  expect(uploadRequest).toHaveBeenCalledTimes(2);
 });
 
 test('caps a multi-file selection at the slot\'s remaining capacity with a clear message', async () => {
   vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:preview'), revokeObjectURL: vi.fn() });
-  vi.mocked(apiRequest).mockResolvedValue({ data: { id: 'media-only', slot_id: 'slot-1', original_filename: 'only.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: '/media/only.jpg' } });
+  vi.mocked(uploadRequest).mockResolvedValue({ data: { id: 'media-only', slot_id: 'slot-1', original_filename: 'only.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: '/media/only.jpg' } });
   renderSlot([{ id: 'media-existing', slot_id: 'slot-1', original_filename: 'existing.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: '/media/existing.jpg' }], true);
   const first = new File(['a'], 'only.jpg', { type: 'image/jpeg' });
   const second = new File(['b'], 'extra.jpg', { type: 'image/jpeg' });
@@ -198,8 +203,50 @@ test('caps a multi-file selection at the slot\'s remaining capacity with a clear
   fireEvent.change(screen.getByLabelText('Pilih galeri'), { target: { files: [first, second] } });
 
   expect(await screen.findByRole('alert')).toHaveTextContent('Hanya 1 foto lagi yang dapat ditambahkan pada slot ini.');
-  await waitFor(() => expect(apiRequest).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(uploadRequest).toHaveBeenCalledTimes(1));
   expect(screen.queryByRole('button', { name: 'Lihat extra.jpg' })).not.toBeInTheDocument();
+});
+
+test('renders policy-specific camera controls and native capture hints', () => {
+  const imageView = renderSlot([], true, 'image');
+  expect(screen.getByLabelText('Buka kamera')).toHaveAttribute('accept', 'image/jpeg,image/png,image/webp');
+  expect(screen.queryByLabelText('Rekam video')).not.toBeInTheDocument();
+  imageView.unmount();
+  const videoView = renderSlot([], true, 'video');
+  expect(screen.getByLabelText('Rekam video')).toHaveAttribute('accept', 'video/mp4,video/webm,video/quicktime');
+  expect(screen.getByLabelText('Rekam video')).toHaveAttribute('capture', 'environment');
+  expect(screen.queryByLabelText('Buka kamera')).not.toBeInTheDocument();
+  videoView.unmount();
+  renderSlot([], true, 'image_video');
+  expect(screen.getByLabelText('Buka kamera')).toBeVisible();
+  expect(screen.getByLabelText('Rekam video')).toBeVisible();
+});
+
+test('rejects files above client limits and appends metadata before the file', async () => {
+  renderSlot([], true, 'image_video');
+  const oversized = new File(['x'], 'large.mp4', { type: 'video/mp4' });
+  Object.defineProperty(oversized, 'size', { value: (500 * 1024 * 1024) + 1 });
+  fireEvent.change(screen.getByLabelText('Pilih galeri'), { target: { files: [oversized] } });
+  expect(await screen.findByRole('alert')).toHaveTextContent('500 MiB');
+  expect(uploadRequest).not.toHaveBeenCalled();
+
+  const image = new File(['image'], 'proof.jpg', { type: 'image/jpeg', lastModified: 1 });
+  fireEvent.change(screen.getByLabelText('Pilih galeri'), { target: { files: [image] } });
+  await waitFor(() => expect(uploadRequest).toHaveBeenCalledOnce());
+  const body = vi.mocked(uploadRequest).mock.calls[0][1];
+  expect(Array.from(body.keys())).toEqual(['source', 'file_size', 'captured_at', 'file']);
+});
+
+test('shows progress and can cancel an active upload', async () => {
+  vi.mocked(uploadRequest).mockImplementation((_path, _body, options) => {
+    options?.onProgress?.(42);
+    return new Promise((_resolve, reject) => options?.signal?.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError'))));
+  });
+  renderSlot([], true, 'video');
+  fireEvent.change(screen.getByLabelText('Pilih galeri'), { target: { files: [new File(['video'], 'proof.mp4', { type: 'video/mp4' })] } });
+  expect(await screen.findByText('42%')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Batalkan unggahan' }));
+  await waitFor(() => expect(screen.queryByText('42%')).not.toBeInTheDocument());
 });
 
 test('does not describe an optional slot as mandatory', () => {

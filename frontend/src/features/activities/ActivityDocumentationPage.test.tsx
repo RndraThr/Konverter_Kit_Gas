@@ -1,13 +1,20 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, expect, test, vi } from 'vitest';
-import { apiRequest } from '../../lib/api';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { apiRequest, ApiError } from '../../lib/api';
+import { uploadRequest } from '../../lib/upload';
 import { PermissionsProvider } from '../../lib/permissions';
 import { ActivityDocumentationPage } from './ActivityDocumentationPage';
 import type { ActivityMediaPage } from './types';
 
-vi.mock('../../lib/api', () => ({ apiRequest: vi.fn() }));
+vi.mock('../../lib/api', async () => {
+  const actual = await vi.importActual<typeof import('../../lib/api')>('../../lib/api');
+  return { ...actual, apiRequest: vi.fn() };
+});
+vi.mock('../../lib/upload', () => ({ uploadRequest: vi.fn() }));
+
+beforeEach(() => { vi.mocked(uploadRequest).mockReset(); });
 
 function renderPage(permissions: string[], initialEntries: string[] = ['/dokumentasi/rakor']) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -135,12 +142,12 @@ test('hides upload controls without activities.manage', async () => {
 });
 
 test('uploads a photo dropped onto the upload zone', async () => {
+  vi.mocked(uploadRequest).mockImplementation(async (_path, body) => {
+    expect(body.get('source')).toBe('gallery');
+    return { data: { id: 'media-2', display_name: 'WJO-RAKOR-20260916-160000', media_type: 'image', content_url: '/api/v1/activities/media/media-2/content' } as never };
+  });
   vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
     const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
-    if (path === '/api/v1/activities/media' && init?.method === 'POST') {
-      expect((init.body as FormData).get('source')).toBe('gallery');
-      return Promise.resolve({ data: { id: 'media-2', display_name: 'WJO-RAKOR-20260916-160000', media_type: 'image', content_url: '/api/v1/activities/media/media-2/content' } });
-    }
     if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
     return Promise.reject(new Error(`Unexpected request: ${path}`));
   });
@@ -154,11 +161,9 @@ test('uploads a photo dropped onto the upload zone', async () => {
 });
 
 test('uploads a photo via the gallery picker', async () => {
+  vi.mocked(uploadRequest).mockResolvedValue({ data: { id: 'media-2', display_name: 'WJO-RAKOR-20260916-160000', media_type: 'image', content_url: '/api/v1/activities/media/media-2/content' } as never });
   vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
     const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
-    if (path === '/api/v1/activities/media' && init?.method === 'POST') {
-      return Promise.resolve({ data: { id: 'media-2', display_name: 'WJO-RAKOR-20260916-160000', media_type: 'image', content_url: '/api/v1/activities/media/media-2/content' } });
-    }
     if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
     return Promise.reject(new Error(`Unexpected request: ${path}`));
   });
@@ -170,9 +175,9 @@ test('uploads a photo via the gallery picker', async () => {
 });
 
 test('renders a video element while a video upload is pending', async () => {
+  vi.mocked(uploadRequest).mockImplementation(() => new Promise(() => undefined));
   vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
     const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
-    if (path === '/api/v1/activities/media' && init?.method === 'POST') return new Promise(() => undefined);
     if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
     return Promise.reject(new Error(`Unexpected request: ${path}`));
   });
@@ -185,17 +190,64 @@ test('renders a video element while a video upload is pending', async () => {
   expect(screen.getByRole('combobox', { name: 'Kabupaten / Kota' })).toBeDisabled();
 });
 
+test('validates media sizes and sends activity metadata before the file', async () => {
+  mockApi();
+  vi.mocked(uploadRequest).mockResolvedValue({ data: { id: 'media-2' } as never });
+  renderPage(['activities.view', 'activities.manage'], ['/dokumentasi/rakor?regency_id=regency-1']);
+  const gallery = await screen.findByLabelText('Pilih dari Galeri');
+
+  const largeImage = new File(['image'], 'large.jpg', { type: 'image/jpeg' });
+  Object.defineProperty(largeImage, 'size', { value: (25 * 1024 * 1024) + 1 });
+  fireEvent.change(gallery, { target: { files: [largeImage] } });
+  expect(await screen.findByRole('alert')).toHaveTextContent('25 MiB');
+  expect(uploadRequest).not.toHaveBeenCalled();
+
+  const largeVideo = new File(['video'], 'large.mp4', { type: 'video/mp4' });
+  Object.defineProperty(largeVideo, 'size', { value: (500 * 1024 * 1024) + 1 });
+  fireEvent.change(gallery, { target: { files: [largeVideo] } });
+  expect(await screen.findByRole('alert')).toHaveTextContent('500 MiB');
+  expect(uploadRequest).not.toHaveBeenCalled();
+
+  fireEvent.change(gallery, { target: { files: [new File(['photo'], 'proof.jpg', { type: 'image/jpeg' })] } });
+  await waitFor(() => expect(uploadRequest).toHaveBeenCalledOnce());
+  expect(Array.from(vi.mocked(uploadRequest).mock.calls[0][1].keys())).toEqual(['program_id', 'regency_id', 'activity_type', 'source', 'file_size', 'file']);
+});
+
+test('shows native upload progress and cancels an active video upload', async () => {
+  mockApi();
+  vi.mocked(uploadRequest).mockImplementation((_path, _body, options) => {
+    options?.onProgress?.(42);
+    return new Promise((_resolve, reject) => options?.signal?.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError'))));
+  });
+  renderPage(['activities.view', 'activities.manage'], ['/dokumentasi/rakor?regency_id=regency-1']);
+
+  fireEvent.change(await screen.findByLabelText('Rekam Video'), { target: { files: [new File(['video'], 'proof.mp4', { type: 'video/mp4' })] } });
+  expect(await screen.findByText('42%')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Batalkan unggahan' }));
+  await waitFor(() => expect(screen.queryByLabelText('Preview unggahan video')).not.toBeInTheDocument());
+});
+
+test('preserves a backend upload reason for the operator', async () => {
+  mockApi();
+  vi.mocked(uploadRequest).mockRejectedValue(new ApiError(429, 'video_upload_busy', 'Unggahan video sedang penuh, coba lagi sebentar.'));
+  renderPage(['activities.view', 'activities.manage'], ['/dokumentasi/rakor?regency_id=regency-1']);
+
+  fireEvent.change(await screen.findByLabelText('Pilih dari Galeri'), { target: { files: [new File(['video'], 'proof.mp4', { type: 'video/mp4' })] } });
+  expect(await screen.findByRole('alert')).toHaveTextContent('Unggahan video sedang penuh, coba lagi sebentar.');
+  expect(screen.getByText('Coba lagi')).toBeVisible();
+});
+
 test('offers retry and cancel actions after an upload fails', async () => {
   let uploadAttempts = 0;
+  vi.mocked(uploadRequest).mockImplementation(async (_path, body) => {
+    uploadAttempts += 1;
+    if (uploadAttempts === 1) throw new Error('upload failed');
+    expect(body.get('program_id')).toBe('program-1');
+    expect(body.get('regency_id')).toBe('regency-1');
+    return { data: { id: 'media-2' } as never };
+  });
   vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
     const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
-    if (path === '/api/v1/activities/media' && init?.method === 'POST') {
-      uploadAttempts += 1;
-      if (uploadAttempts === 1) return Promise.reject(new Error('upload failed'));
-      expect((init.body as FormData).get('program_id')).toBe('program-1');
-      expect((init.body as FormData).get('regency_id')).toBe('regency-1');
-      return Promise.resolve({ data: { id: 'media-2' } });
-    }
     if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
     return Promise.reject(new Error(`Unexpected request: ${path}`));
   });
@@ -273,12 +325,12 @@ test('switching tabs refetches the gallery for the newly selected activity type'
 
 test('uploads to the currently active tab, not the first option', async () => {
   let sentActivityType: string | null = null;
+  vi.mocked(uploadRequest).mockImplementation((_path, body) => {
+    sentActivityType = body.get('activity_type') as string;
+    return new Promise(() => undefined);
+  });
   vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
     const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
-    if (path === '/api/v1/activities/media' && init?.method === 'POST') {
-      sentActivityType = (init.body as FormData).get('activity_type') as string;
-      return new Promise(() => undefined);
-    }
     if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
     return Promise.reject(new Error(`Unexpected request: ${path}`));
   });
@@ -303,9 +355,9 @@ test('does not render tabs in single-activity-type mode', async () => {
 });
 
 test('clears a failed upload when navigating to another activity type', async () => {
+  vi.mocked(uploadRequest).mockRejectedValue(new Error('upload failed'));
   vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
     const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
-    if (path === '/api/v1/activities/media' && init?.method === 'POST') return Promise.reject(new Error('upload failed'));
     if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
     return Promise.reject(new Error(`Unexpected request: ${path}`));
   });
