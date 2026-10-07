@@ -317,7 +317,10 @@ func TestListSlotCatalogReportsStatusAndCompleteness(t *testing.T) {
 type mediaFixture struct {
 	documentationSlotID string
 	mediaID             string
+	distributionSlotID  string
 	scheduleID          string
+	programID           string
+	packageTemplateID   string
 	slotNumber          int
 	regencyID           string
 	otherRegencyID      string
@@ -388,7 +391,7 @@ func seedMediaFixture(t *testing.T, pool *pgxpool.Pool) mediaFixture {
 		}
 	})
 
-	return mediaFixture{documentationSlotID: documentationSlotID, mediaID: mediaID, scheduleID: scheduleID, slotNumber: 1, regencyID: regencyID, otherRegencyID: otherRegencyID}
+	return mediaFixture{documentationSlotID: documentationSlotID, mediaID: mediaID, distributionSlotID: distributionSlotID, scheduleID: scheduleID, programID: programID, packageTemplateID: packageTemplateID, slotNumber: 1, regencyID: regencyID, otherRegencyID: otherRegencyID}
 }
 
 func TestSetDistributionDateLocksAfterFirstMediaUpload(t *testing.T) {
@@ -434,7 +437,7 @@ func TestUpdateEquipmentIgnoresMediaFromOtherStages(t *testing.T) {
 	}
 }
 
-func TestUpdateEquipmentLocksAfterMesinMediaUpload(t *testing.T) {
+func TestUpdateEquipmentAllowsMesinMediaUpload(t *testing.T) {
 	pool := distributionIntegrationPool(t)
 	ctx := context.Background()
 	suffix := t.Name()
@@ -474,17 +477,113 @@ func TestUpdateEquipmentLocksAfterMesinMediaUpload(t *testing.T) {
 	repo := NewRepository(pool)
 	input := UpdateEquipmentInput{ScheduleID: scheduleID, SlotNumber: 1, MachineOptionCode: "yanmar-tf85", MachineSerialNumber: "msn-2"}
 
-	if _, err := repo.UpdateEquipment(ctx, auth.Principal{}, input, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrEquipmentLocked) {
-		t.Fatalf("locked err=%v", err)
-	}
-
-	must(t, func() error { _, err := pool.Exec(ctx, `DELETE FROM media_files WHERE id=$1`, mediaID); return err }())
 	updated, err := repo.UpdateEquipment(ctx, auth.Principal{}, input, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if updated.MachineOptionCode != "yanmar-tf85" || updated.MachineSerialNumber != "msn-2" {
 		t.Fatalf("slot=%+v", updated)
+	}
+}
+
+func TestReopenCompletedSlotRejectsOpenSlot(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	fixture := seedMediaFixture(t, pool)
+	_, err := NewRepository(pool).ReopenSlot(context.Background(), auth.Principal{}, ReopenSlotInput{
+		ScheduleID: fixture.scheduleID, SlotNumber: fixture.slotNumber, Stage: "mesin", Reason: "Koreksi tanggal",
+	}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if !errors.Is(err, ErrRevisionNotCompleted) {
+		t.Fatalf("err=%v, want ErrRevisionNotCompleted", err)
+	}
+}
+
+func TestReopenCompletedSlotResetsCompletionAndInvalidatesBA(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	fixture := seedMediaFixture(t, pool)
+	ctx := context.Background()
+
+	var personID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO people(full_name,nik) VALUES('Penerima Revisi',$1) RETURNING id::text`, fmt.Sprintf("%016d", time.Now().UnixNano()%1e16)).Scan(&personID))
+	var nominationID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO candidate_nominations(person_id,program_type,source_snapshot_json,status) VALUES($1,'farmer','{}','ready') RETURNING id::text`, personID).Scan(&nominationID))
+	var allocationID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,actual_recipient_person_id,distribution_number,status,package_snapshot_json) VALUES($1,$2,$3,$3,1,'distributed','{}') RETURNING id::text`, fixture.scheduleID, nominationID, personID).Scan(&allocationID))
+	must(t, func() error {
+		_, err := pool.Exec(ctx, `UPDATE distribution_slots SET allocation_id=$2,recipient_person_id=$3,status='completed',verification_snapshot_json='{"equipment":{"machine_serial":"OLD"}}',distributed_at=now(),completed_at=now() WHERE id=$1`, fixture.distributionSlotID, allocationID, personID)
+		return err
+	}())
+
+	var individualID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO bast_individual_documents(distribution_slot_id,program_id,regency_id,local_date,slot_number,final_total,document_number,package_template_version_id,snapshot_json,revision,status) VALUES($1,$2,$3,'2026-10-07',1,1,'1/1/TEST',$4,'{}',1,'final') RETURNING id::text`, fixture.distributionSlotID, fixture.programID, fixture.regencyID, fixture.packageTemplateID).Scan(&individualID))
+	var bundleID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO bast_daily_bundles(program_id,regency_id,local_date,document_type,filename,recipient_count,page_count,checksum,version,status) VALUES($1,$2,'2026-10-07','individual','bundle.pdf',1,1,$3,1,'active') RETURNING id::text`, fixture.programID, fixture.regencyID, strings.Repeat("d", 64)).Scan(&bundleID))
+	must(t, func() error {
+		_, err := pool.Exec(ctx, `INSERT INTO bast_daily_bundle_items(bundle_id,individual_document_id,item_order,page_start,page_end) VALUES($1,$2,1,1,1)`, bundleID, individualID)
+		return err
+	}())
+	var aggregateID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO bast_aggregate_documents(schedule_id,program_id,regency_id,document_type,document_date,filename,recipient_count,page_count,version,status,checksum,snapshot_json) VALUES($1,$2,$3,'dp3','2026-10-07','dp3.pdf',1,1,1,'active',$4,'{}') RETURNING id::text`, fixture.scheduleID, fixture.programID, fixture.regencyID, strings.Repeat("e", 64)).Scan(&aggregateID))
+
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM bast_daily_bundle_items WHERE bundle_id=$1`, bundleID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM bast_daily_bundles WHERE id=$1`, bundleID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM bast_individual_documents WHERE id=$1`, individualID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM bast_aggregate_documents WHERE id=$1`, aggregateID)
+		_, _ = pool.Exec(context.Background(), `UPDATE distribution_slots SET allocation_id=NULL,recipient_person_id=NULL,status='open' WHERE id=$1`, fixture.distributionSlotID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM package_allocations WHERE id=$1`, allocationID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM candidate_nominations WHERE id=$1`, nominationID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE id=$1`, personID)
+	})
+
+	result, err := NewRepository(pool).ReopenSlot(ctx, auth.Principal{}, ReopenSlotInput{ScheduleID: fixture.scheduleID, SlotNumber: 1, Stage: "dokumen", Reason: "Koreksi nomor seri"}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "linked" || !result.NeedsRecompletion || result.ReopenedStage != "dokumen" || result.RevisionReason != "Koreksi nomor seri" || result.DistributedAt != nil {
+		t.Fatalf("reopened slot=%+v", result)
+	}
+	var allocationStatus, individualStatus, bundleStatus, aggregateStatus string
+	var snapshot string
+	must(t, pool.QueryRow(ctx, `SELECT status FROM package_allocations WHERE id=$1`, allocationID).Scan(&allocationStatus))
+	must(t, pool.QueryRow(ctx, `SELECT verification_snapshot_json::text FROM distribution_slots WHERE id=$1`, fixture.distributionSlotID).Scan(&snapshot))
+	must(t, pool.QueryRow(ctx, `SELECT status FROM bast_individual_documents WHERE id=$1`, individualID).Scan(&individualStatus))
+	must(t, pool.QueryRow(ctx, `SELECT status FROM bast_daily_bundles WHERE id=$1`, bundleID).Scan(&bundleStatus))
+	must(t, pool.QueryRow(ctx, `SELECT status FROM bast_aggregate_documents WHERE id=$1`, aggregateID).Scan(&aggregateStatus))
+	if allocationStatus != "ready" || snapshot != "{}" || individualStatus != "stale" || bundleStatus != "stale" || aggregateStatus != "stale" {
+		t.Fatalf("allocation=%s snapshot=%s individual=%s bundle=%s aggregate=%s", allocationStatus, snapshot, individualStatus, bundleStatus, aggregateStatus)
+	}
+
+	// Reset only the operational rows, then prove the row lock serializes two
+	// officers attempting to reopen the same completed slot.
+	must(t, func() error {
+		_, err := pool.Exec(ctx, `UPDATE package_allocations SET status='distributed' WHERE id=$1`, allocationID)
+		return err
+	}())
+	must(t, func() error {
+		_, err := pool.Exec(ctx, `UPDATE distribution_slots SET status='completed',needs_recompletion=false,distributed_at=now(),completed_at=now() WHERE id=$1`, fixture.distributionSlotID)
+		return err
+	}())
+	errorsCh := make(chan error, 2)
+	for range 2 {
+		go func() {
+			_, reopenErr := NewRepository(pool).ReopenSlot(ctx, auth.Principal{}, ReopenSlotInput{ScheduleID: fixture.scheduleID, SlotNumber: 1, Stage: "dokumen", Reason: "Koreksi bersamaan"}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+			errorsCh <- reopenErr
+		}()
+	}
+	succeeded, conflicted := 0, 0
+	for range 2 {
+		reopenErr := <-errorsCh
+		switch {
+		case reopenErr == nil:
+			succeeded++
+		case errors.Is(reopenErr, ErrRevisionNotCompleted):
+			conflicted++
+		default:
+			t.Fatalf("concurrent reopen err=%v", reopenErr)
+		}
+	}
+	if succeeded != 1 || conflicted != 1 {
+		t.Fatalf("concurrent reopen succeeded=%d conflicted=%d", succeeded, conflicted)
 	}
 }
 
