@@ -631,19 +631,22 @@ func (r *Repository) SetDistributionDate(ctx context.Context, actor auth.Princip
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	var slotID string
+	var slotID, slotStatus string
 	err = tx.QueryRow(ctx, `
-		SELECT ds.id::text
+		SELECT ds.id::text,ds.status
 		FROM distribution_slots ds
 		JOIN program_schedules ps ON ps.id=ds.schedule_id
 		WHERE ds.schedule_id=$1 AND ds.slot_number=$2 AND ($3 OR ps.regency_id::text = ANY($4))
 		FOR UPDATE OF ds
-	`, input.ScheduleID, input.SlotNumber, scope.Unrestricted, scope.RegencyIDs).Scan(&slotID)
+	`, input.ScheduleID, input.SlotNumber, scope.Unrestricted, scope.RegencyIDs).Scan(&slotID, &slotStatus)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return DistributionSlot{}, ErrSlotNotFound
 	}
 	if err != nil {
 		return DistributionSlot{}, fmt.Errorf("lock distribution date: %w", err)
+	}
+	if slotStatus == "completed" {
+		return DistributionSlot{}, ErrAlreadyCompleted
 	}
 	if _, err := tx.Exec(ctx, `UPDATE distribution_slots SET distribution_date=$2::date,updated_at=now() WHERE id=$1`, slotID, input.DistributionDate); err != nil {
 		return DistributionSlot{}, fmt.Errorf("update distribution date: %w", err)
@@ -1157,11 +1160,12 @@ func (r *Repository) CompleteSlot(ctx context.Context, actor auth.Principal, inp
 
 	var slotID, status string
 	var allocationIDPtr, personIDPtr *string
+	var distributionDate *time.Time
 	var fullName, nik, sectorIdentifier string
 	var packageJSON []byte
 	var equipmentSelection UpdateEquipmentInput
 	err = tx.QueryRow(ctx, `
-		SELECT ds.id::text, ds.status, pa.id::text, p.id::text, COALESCE(p.full_name,''), COALESCE(p.nik,''), COALESCE(psi.normalized_value,''),
+		SELECT ds.id::text, ds.status,ds.distribution_date, pa.id::text, p.id::text, COALESCE(p.full_name,''), COALESCE(p.nik,''), COALESCE(psi.normalized_value,''),
 			pt.values_json, COALESCE(ds.machine_option_code,''), COALESCE(ds.machine_serial_number,''),
 			COALESCE(ds.hose_option_code,''), COALESCE(ds.hose_serial_number,''),
 			COALESCE(ds.converter_option_code,''), COALESCE(ds.converter_serial_number,'')
@@ -1174,7 +1178,7 @@ func (r *Repository) CompleteSlot(ctx context.Context, actor auth.Principal, inp
 		WHERE ds.schedule_id=$1 AND ds.slot_number=$2 AND ($3 OR ps.regency_id::text = ANY($4))
 		FOR UPDATE OF ds
 	`, input.ScheduleID, input.SlotNumber, scope.Unrestricted, scope.RegencyIDs).Scan(
-		&slotID, &status, &allocationIDPtr, &personIDPtr, &fullName, &nik, &sectorIdentifier,
+		&slotID, &status, &distributionDate, &allocationIDPtr, &personIDPtr, &fullName, &nik, &sectorIdentifier,
 		&packageJSON, &equipmentSelection.MachineOptionCode, &equipmentSelection.MachineSerialNumber,
 		&equipmentSelection.HoseOptionCode, &equipmentSelection.HoseSerialNumber,
 		&equipmentSelection.ConverterOptionCode, &equipmentSelection.ConverterSerialNumber,
@@ -1196,6 +1200,9 @@ func (r *Repository) CompleteSlot(ctx context.Context, actor auth.Principal, inp
 	}
 	if status != "linked" {
 		return DistributionSlot{}, ErrSlotNotLinked
+	}
+	if distributionDate == nil {
+		return DistributionSlot{}, ErrDistributionDateRequired
 	}
 	if allocationIDPtr == nil || personIDPtr == nil {
 		return DistributionSlot{}, fmt.Errorf("linked distribution slot %s is missing its allocation or recipient link", slotID)
@@ -1225,6 +1232,32 @@ func (r *Repository) CompleteSlot(ctx context.Context, actor auth.Principal, inp
 	}
 	if incomplete {
 		return DistributionSlot{}, ErrDocumentationIncomplete
+	}
+	var hasFailedMove bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM documentation_slots ds
+			JOIN media_files m ON m.documentation_slot_id=ds.id
+			WHERE ds.distribution_slot_id=$1 AND ds.is_required AND m.status='accepted' AND m.storage_state='move_failed'
+		)
+	`, slotID).Scan(&hasFailedMove); err != nil {
+		return DistributionSlot{}, fmt.Errorf("check failed media moves: %w", err)
+	}
+	if hasFailedMove {
+		return DistributionSlot{}, ErrMediaMoveFailed
+	}
+	var hasPendingMove bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM documentation_slots ds
+			JOIN media_files m ON m.documentation_slot_id=ds.id
+			WHERE ds.distribution_slot_id=$1 AND ds.is_required AND m.status='accepted' AND m.storage_state<>'final'
+		)
+	`, slotID).Scan(&hasPendingMove); err != nil {
+		return DistributionSlot{}, fmt.Errorf("check pending media moves: %w", err)
+	}
+	if hasPendingMove {
+		return DistributionSlot{}, ErrMediaMovePending
 	}
 	equipmentSnapshot, err := buildEquipmentVerificationSnapshot(packageJSON, equipmentSelection)
 	if err != nil {

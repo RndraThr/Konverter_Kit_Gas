@@ -107,6 +107,7 @@ type DistributionService interface {
 	MediaStage(context.Context, string, auth.RegencyScope) (string, error)
 	UploadMedia(context.Context, auth.Principal, distribution.UploadMediaInput, auth.ClientMeta, auth.RegencyScope) (distribution.MediaFile, error)
 	DeleteMedia(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) error
+	RetryMediaMove(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) (distribution.MediaFile, error)
 	OpenMedia(context.Context, string, auth.RegencyScope) (distribution.MediaContent, error)
 	ListSlotCatalog(context.Context, string, auth.RegencyScope) ([]distribution.SlotCatalogEntry, error)
 }

@@ -555,6 +555,9 @@ func TestIntegrationDeleteQueuedMediaCannotRetry(t *testing.T) {
 	if _, err := repo.LinkSlot(ctx, auth.Principal{}, LinkSlotInput{ScheduleID: fixture.scheduleID, SlotNumber: fixture.slotNumber, NIK: nik}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := repo.RetryMediaMove(ctx, auth.Principal{}, fixture.mediaID, auth.ClientMeta{}, auth.RegencyScope{RegencyIDs: []string{fixture.otherRegencyID}}); !errors.Is(err, ErrMediaNotFound) {
+		t.Fatalf("cross-regency retry err=%v, want ErrMediaNotFound", err)
+	}
 	if _, err := repo.DeleteMedia(ctx, auth.Principal{}, fixture.mediaID, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -565,6 +568,35 @@ func TestIntegrationDeleteQueuedMediaCannotRetry(t *testing.T) {
 	}
 	if _, err := repo.RetryMediaMove(ctx, auth.Principal{}, fixture.mediaID, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrMediaNotFound) {
 		t.Fatalf("retry deleted media err=%v, want ErrMediaNotFound", err)
+	}
+}
+
+func TestCompleteSlotRejectsFailedMediaMoveBeforePending(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	ctx := context.Background()
+	fixture := seedMediaFixture(t, pool)
+	nik := addCandidateForMediaFixture(t, pool, fixture)
+	must(t, func() error {
+		_, err := pool.Exec(ctx, `UPDATE media_files SET storage_state='staging' WHERE id=$1`, fixture.mediaID)
+		return err
+	}())
+	repo := NewRepository(pool)
+	if _, err := repo.SetDistributionDate(ctx, auth.Principal{}, SetDistributionDateInput{ScheduleID: fixture.scheduleID, SlotNumber: fixture.slotNumber, DistributionDate: "2026-10-20"}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
+		t.Fatal(err)
+	}
+	sectorIdentifier := fmt.Sprintf("KPMOVE%d", time.Now().UnixNano())
+	if _, err := repo.LinkSlot(ctx, auth.Principal{}, LinkSlotInput{ScheduleID: fixture.scheduleID, SlotNumber: fixture.slotNumber, NIK: nik, SectorIdentifier: sectorIdentifier}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.CompleteSlot(ctx, auth.Principal{}, CompleteSlotInput{ScheduleID: fixture.scheduleID, SlotNumber: fixture.slotNumber}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrMediaMovePending) {
+		t.Fatalf("moving completion err=%v, want ErrMediaMovePending", err)
+	}
+	must(t, func() error {
+		_, err := pool.Exec(ctx, `UPDATE media_files SET storage_state='move_failed',storage_last_error='drive timeout' WHERE id=$1`, fixture.mediaID)
+		return err
+	}())
+	if _, err := repo.CompleteSlot(ctx, auth.Principal{}, CompleteSlotInput{ScheduleID: fixture.scheduleID, SlotNumber: fixture.slotNumber}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrMediaMoveFailed) {
+		t.Fatalf("failed completion err=%v, want ErrMediaMoveFailed", err)
 	}
 }
 
@@ -1007,5 +1039,8 @@ func TestLinkSlotReturnsRecipientIdentity(t *testing.T) {
 	}
 	if _, err := repo.ReplaceRecipient(ctx, auth.Principal{}, ReplaceRecipientInput{ScheduleID: scheduleID, SlotNumber: created.SlotNumber, NIK: wantNIK}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrAlreadyCompleted) {
 		t.Fatalf("completed replace err=%v", err)
+	}
+	if _, err := repo.SetDistributionDate(ctx, auth.Principal{}, SetDistributionDateInput{ScheduleID: scheduleID, SlotNumber: created.SlotNumber, DistributionDate: "2026-10-22"}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrAlreadyCompleted) {
+		t.Fatalf("completed date update err=%v", err)
 	}
 }

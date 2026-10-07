@@ -801,7 +801,7 @@ func TestDistributionMediaUploadMapsPolicyAndBusyErrors(t *testing.T) {
 }
 
 func TestDistributionDateUpdateUsesOneDateForTheSlotNumber(t *testing.T) {
-	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_mesin": true}}
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_dokumen": true}}
 	date := "2026-10-20"
 	service := &fakeDistributionService{datedSlot: distribution.DistributionSlot{ID: "slot-1", SlotNumber: 3, DistributionDate: &date}}
 	req := httptest.NewRequest(http.MethodPatch, "/api/v1/distribution/slots/3/date?schedule_id=schedule-1", strings.NewReader(`{"distribution_date":"2026-10-20"}`))
@@ -812,6 +812,63 @@ func TestDistributionDateUpdateUsesOneDateForTheSlotNumber(t *testing.T) {
 	NewHandler(Dependencies{Auth: authService, Distribution: service, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || service.dateInput.ScheduleID != "schedule-1" || service.dateInput.SlotNumber != 3 || service.dateInput.DistributionDate != "2026-10-20" {
 		t.Fatalf("status=%d input=%+v body=%s", rec.Code, service.dateInput, rec.Body.String())
+	}
+
+	mesinOnly := &fakeAuthService{principal: auth.Principal{UserID: "user-2"}, allowedPermissions: map[string]bool{"distribution.pos_mesin": true}}
+	deniedReq := httptest.NewRequest(http.MethodPatch, "/api/v1/distribution/slots/3/date?schedule_id=schedule-1", strings.NewReader(`{"distribution_date":"2026-10-21"}`))
+	deniedReq.Header.Set("Content-Type", "application/json")
+	deniedReq.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	deniedReq.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
+	deniedRecorder := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: mesinOnly, Distribution: service, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(deniedRecorder, deniedReq)
+	if deniedRecorder.Code != http.StatusForbidden {
+		t.Fatalf("POS Mesin date update status=%d body=%s", deniedRecorder.Code, deniedRecorder.Body.String())
+	}
+}
+
+func TestRetryMediaMoveRequiresPosDokumenAndForwardsScope(t *testing.T) {
+	secret := []byte("01234567890123456789012345678901")
+	service := &fakeDistributionService{retriedMedia: distribution.MediaFile{ID: "media-1", StorageState: "moving"}}
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_dokumen": true}}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/distribution/media/media-1/retry-move", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+	recorder := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: authService, Distribution: service, SessionSecret: secret}).ServeHTTP(recorder, req)
+	if recorder.Code != http.StatusOK || service.retryMediaID != "media-1" {
+		t.Fatalf("status=%d id=%q body=%s", recorder.Code, service.retryMediaID, recorder.Body.String())
+	}
+
+	service.retryMediaErr = distribution.ErrMediaNotFound
+	notFoundReq := httptest.NewRequest(http.MethodPost, "/api/v1/distribution/media/deleted-or-cross-regency/retry-move", nil)
+	notFoundReq.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	notFoundReq.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+	notFoundRecorder := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: authService, Distribution: service, SessionSecret: secret}).ServeHTTP(notFoundRecorder, notFoundReq)
+	if notFoundRecorder.Code != http.StatusNotFound {
+		t.Fatalf("not found status=%d body=%s", notFoundRecorder.Code, notFoundRecorder.Body.String())
+	}
+}
+
+func TestCompleteReturnsDistinctMediaMoveConflicts(t *testing.T) {
+	secret := []byte("01234567890123456789012345678901")
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_penyerahan": true}}
+	for _, tt := range []struct {
+		err  error
+		code string
+	}{
+		{distribution.ErrMediaMoveFailed, "media_move_failed"},
+		{distribution.ErrMediaMovePending, "media_move_pending"},
+	} {
+		service := &fakeDistributionService{completeErr: tt.err}
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/distribution/slots/1/complete?schedule_id=schedule-1", nil)
+		req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+		req.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+		recorder := httptest.NewRecorder()
+		NewHandler(Dependencies{Auth: authService, Distribution: service, SessionSecret: secret}).ServeHTTP(recorder, req)
+		if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), `"code":"`+tt.code+`"`) {
+			t.Fatalf("err=%v status=%d body=%s", tt.err, recorder.Code, recorder.Body.String())
+		}
 	}
 }
 
@@ -1094,6 +1151,9 @@ type fakeDistributionService struct {
 	completedSlot        distribution.DistributionSlot
 	completeErr          error
 	dateInput            distribution.SetDistributionDateInput
+	retriedMedia         distribution.MediaFile
+	retryMediaID         string
+	retryMediaErr        error
 	datedSlot            distribution.DistributionSlot
 	equipmentInput       distribution.UpdateEquipmentInput
 	equippedSlot         distribution.DistributionSlot
@@ -1144,6 +1204,11 @@ func (f *fakeDistributionService) CompleteSlot(_ context.Context, _ auth.Princip
 func (f *fakeDistributionService) SetDistributionDate(_ context.Context, _ auth.Principal, input distribution.SetDistributionDateInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.DistributionSlot, error) {
 	f.dateInput, f.seenRegencyScope = input, scope
 	return f.datedSlot, nil
+}
+
+func (f *fakeDistributionService) RetryMediaMove(_ context.Context, _ auth.Principal, mediaID string, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.MediaFile, error) {
+	f.retryMediaID, f.seenRegencyScope = mediaID, scope
+	return f.retriedMedia, f.retryMediaErr
 }
 func (f *fakeDistributionService) UpdateEquipment(_ context.Context, _ auth.Principal, input distribution.UpdateEquipmentInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.DistributionSlot, error) {
 	f.equipmentInput, f.seenRegencyScope = input, scope

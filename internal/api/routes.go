@@ -510,6 +510,10 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "identity_incomplete", "Identitas wajib penerima belum lengkap")
 	case errors.Is(err, distribution.ErrDocumentationIncomplete):
 		writeError(w, http.StatusConflict, "documentation_incomplete", "Dokumentasi wajib belum lengkap")
+	case errors.Is(err, distribution.ErrMediaMoveFailed):
+		writeError(w, http.StatusConflict, "media_move_failed", "Pemindahan dokumentasi gagal. Coba pindahkan lagi sebelum menyelesaikan distribusi")
+	case errors.Is(err, distribution.ErrMediaMovePending):
+		writeError(w, http.StatusConflict, "media_move_pending", "Dokumentasi masih dipindahkan ke folder final")
 	case errors.Is(err, distribution.ErrEquipmentOptionNotFound):
 		writeError(w, http.StatusConflict, "equipment_option_not_found", "Pilihan mesin, selang, atau konkit tidak ditemukan pada template paket jadwal")
 	case errors.Is(err, distribution.ErrPreviouslyReceived):

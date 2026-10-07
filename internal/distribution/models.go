@@ -21,6 +21,8 @@ var (
 	ErrMediaLocationRequired    = errors.New("documentation location is required")
 	ErrMediaCapturedAtRequired  = errors.New("documentation capture time is required")
 	ErrMediaLimitReached        = errors.New("documentation slot has reached its file limit")
+	ErrMediaMovePending         = errors.New("documentation media is still being moved")
+	ErrMediaMoveFailed          = errors.New("documentation media move failed")
 	ErrIdentityIncomplete       = errors.New("recipient identity is incomplete")
 	ErrDocumentationIncomplete  = errors.New("required documentation is incomplete")
 	ErrEquipmentOptionNotFound  = errors.New("selected equipment option is not available in the schedule package template")

@@ -228,7 +228,7 @@ func (h *Handler) handleDistributionSlot(w http.ResponseWriter, r *http.Request,
 }
 
 func (h *Handler) handleDistributionDateUpdate(w http.ResponseWriter, r *http.Request, rc requestContext, slotNumber int) {
-	if !h.authorize(w, r, rc.principal, "distribution.pos_mesin") {
+	if !h.authorize(w, r, rc.principal, "distribution.pos_dokumen") {
 		return
 	}
 	var input distribution.SetDistributionDateInput
@@ -432,6 +432,22 @@ func (h *Handler) handleDistributionMedia(w http.ResponseWriter, r *http.Request
 		return
 	}
 	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) == 2 && parts[1] == "retry-move" && r.Method == http.MethodPost {
+		if !h.authorize(w, r, rc.principal, "distribution.pos_dokumen") {
+			return
+		}
+		scope, ok := h.regencyScope(w, r, rc.principal)
+		if !ok {
+			return
+		}
+		result, err := h.deps.Distribution.RetryMediaMove(r.Context(), rc.principal, parts[0], clientMeta(r), scope)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeData(w, http.StatusOK, result)
+		return
+	}
 	if len(parts) == 2 && parts[1] == "content" && r.Method == http.MethodGet {
 		if !h.authorize(w, r, rc.principal, "distribution.view") {
 			return
