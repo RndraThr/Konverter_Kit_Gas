@@ -77,3 +77,19 @@ test('allows a viewer to see the inline preview but not finalize a ready bundle'
 	expect(screen.queryByRole('button', { name: 'Finalisasi & sinkronkan' })).not.toBeInTheDocument();
 	expect(screen.queryByRole('button', { name: 'Kunci total kabupaten' })).not.toBeInTheDocument();
 });
+
+test('shows a stale daily bundle as downloadable history and keeps finalization available', async () => {
+  vi.mocked(apiRequest).mockImplementation(async (path) => {
+    if (path.includes('/dates')) return { data: [{
+      ...dates[0],
+      bundle: { ...dates[0].bundle, id: 'stale-bundle', status: 'stale' },
+    }] };
+    throw new Error(`unexpected ${path}`);
+  });
+
+  renderPanel();
+
+  expect((await screen.findAllByText('Perlu dibuat ulang')).length).toBeGreaterThan(0);
+  expect(screen.getByRole('button', { name: 'Unduh PDF' })).toHaveAttribute('href', '/api/v1/bast/individual/bundles/stale-bundle/content');
+  expect(screen.getByRole('button', { name: 'Finalisasi & sinkronkan' })).toBeEnabled();
+});

@@ -11,7 +11,7 @@ import (
 	"konkit/internal/auth"
 )
 
-func TestRepositoryResolvesScopedBAContextAndCompletedSlots(t *testing.T) {
+func TestRepositoryResolvesScopedBAContextAndCompletedSlotsIncludingStaleHistory(t *testing.T) {
 	pool := bastIntegrationPool(t)
 	ctx := context.Background()
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
@@ -152,5 +152,29 @@ func TestRepositoryResolvesScopedBAContextAndCompletedSlots(t *testing.T) {
 	conflicting.StorageKey = "bundle-key-2"
 	if _, err := repository.ActivateBundle(ctx, auth.Principal{}, conflicting, auth.ClientMeta{}); !errors.Is(err, ErrBundleConflict) {
 		t.Fatalf("conflict err=%v", err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE bast_daily_bundles SET status='stale' WHERE id=$1`, activated.Bundle.ID); err != nil {
+		t.Fatal(err)
+	}
+	staleBundles, err := repository.ListActiveBundles(ctx, programID, regencyID, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(staleBundles) != 1 || staleBundles[0].ID != activated.Bundle.ID || staleBundles[0].Status != "stale" {
+		t.Fatalf("stale bundles=%+v", staleBundles)
+	}
+	staleDownload, err := repository.GetActiveBundleByID(ctx, activated.Bundle.ID, scope)
+	if err != nil || staleDownload.Status != "stale" {
+		t.Fatalf("stale download=%+v err=%v", staleDownload, err)
+	}
+	replacement := activation
+	replacement.Checksum = strings.Repeat("d", 64)
+	replacement.StorageKey = "bundle-key-2"
+	replaced, err := repository.ActivateBundle(ctx, auth.Principal{}, replacement, auth.ClientMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if replaced.Bundle.Version != 2 || replaced.Bundle.Status != "active" {
+		t.Fatalf("replacement=%+v", replaced)
 	}
 }

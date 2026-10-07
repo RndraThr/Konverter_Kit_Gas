@@ -69,6 +69,7 @@ export function ClosingKabupatenPanel({ scheduleID, regencyName, programType, de
 
   const activeDoc = documents.data?.data.find((doc) => doc.status === 'active');
   const versions = documents.data?.data ?? [];
+  const historicalDocs = versions.filter((doc) => doc.status !== 'active');
   const busy = finalize.isPending;
 
   return <div className="grid gap-5">
@@ -100,9 +101,9 @@ export function ClosingKabupatenPanel({ scheduleID, regencyName, programType, de
             <Button nativeButton={false} render={<a href={`/api/v1/bast/closing-kabupaten/documents/${activeDoc.id}/content`} />} variant="outline"><Download />Unduh PDF</Button>
           </div>}
 
-          {versions.length > 1 && <div className="grid gap-2 rounded-lg border p-3">
+          {historicalDocs.length > 0 && <div className="grid gap-2 rounded-lg border p-3">
             <strong className="text-sm">Riwayat versi</strong>
-            {versions.filter((doc) => doc.status === 'superseded').map((doc) => <div className="flex items-center justify-between gap-3 text-sm" key={doc.id}><span className="text-muted-foreground">Versi {doc.version} · {doc.document_date}</span><Button nativeButton={false} render={<a href={`/api/v1/bast/closing-kabupaten/documents/${doc.id}/content`} />} variant="ghost" size="sm"><Download />Unduh</Button></div>)}
+            {historicalDocs.map((doc) => <div className="flex items-center justify-between gap-3 text-sm" key={doc.id}><span className="flex flex-wrap items-center gap-2 text-muted-foreground">Versi {doc.version} · {doc.document_date}{doc.status === 'stale' && <Badge variant="destructive">Perlu dibuat ulang</Badge>}</span><Button nativeButton={false} render={<a href={`/api/v1/bast/closing-kabupaten/documents/${doc.id}/content`} />} variant="ghost" size="sm"><Download />Unduh</Button></div>)}
           </div>}
 
           {status === 'ready' && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="Closing Kabupaten" />}

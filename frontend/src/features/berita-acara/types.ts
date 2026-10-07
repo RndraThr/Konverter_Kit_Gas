@@ -7,7 +7,7 @@ export type DailyBundle = {
   recipient_count: number;
   page_count: number;
   version: number;
-  status: 'active' | 'superseded' | 'failed';
+  status: 'active' | 'superseded' | 'stale' | 'failed';
   checksum: string;
   last_error?: string;
   synced_at?: string;
@@ -80,7 +80,7 @@ export type AggregateDocument = {
   recipient_count: number;
   page_count: number;
   version: number;
-  status: 'active' | 'superseded';
+  status: 'active' | 'superseded' | 'stale';
   checksum: string;
   last_error?: string;
   finalized_at: string;

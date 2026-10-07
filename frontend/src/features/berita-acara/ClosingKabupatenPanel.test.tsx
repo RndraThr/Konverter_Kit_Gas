@@ -50,3 +50,15 @@ test('shows a configuration message and skips the preview fetch when there are n
   expect(await screen.findByText('Belum ada distribusi selesai pada jadwal ini.')).toBeVisible()
   expect(apiBlobRequest).not.toHaveBeenCalled()
 })
+
+test('keeps a stale closing kabupaten downloadable while allowing finalization again', async () => {
+  vi.mocked(apiRequest).mockImplementation(async (path) => {
+    if (path.includes('/rows')) return { data: rows }
+    if (path.includes('/documents')) return { data: [{ id: 'stale-kabupaten', version: 1, status: 'stale', document_date: '2026-10-03' }] }
+    throw new Error(`unexpected ${path}`)
+  })
+  renderPanel()
+  expect(await screen.findByText('Perlu dibuat ulang')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Unduh' })).toHaveAttribute('href', '/api/v1/bast/closing-kabupaten/documents/stale-kabupaten/content')
+  expect(screen.getByRole('button', { name: 'Finalisasi & sinkronkan' })).toBeEnabled()
+})

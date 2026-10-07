@@ -56,3 +56,15 @@ test('shows the API reason when a ready preview request still fails', async () =
 
   expect(await screen.findByText('Snapshot verifikasi distribusi belum lengkap')).toBeVisible()
 })
+
+test('keeps a stale daily recap downloadable while allowing finalization again', async () => {
+  vi.mocked(apiRequest).mockImplementation(async (path) => {
+    if (path.includes('/dates')) return { data: dates }
+    if (path.includes('/documents')) return { data: [{ id: 'stale-daily', version: 1, status: 'stale', document_date: '2026-10-02' }] }
+    throw new Error(`unexpected ${path}`)
+  })
+  renderPanel()
+  expect(await screen.findByText('Perlu dibuat ulang')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Unduh' })).toHaveAttribute('href', '/api/v1/bast/daily-recap/documents/stale-daily/content')
+  expect(screen.getByRole('button', { name: 'Finalisasi & sinkronkan' })).toBeEnabled()
+})

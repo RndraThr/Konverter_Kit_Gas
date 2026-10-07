@@ -8,7 +8,7 @@ import (
 	"konkit/internal/auth"
 )
 
-func TestIntegrationAggregateDocumentLifecycle(t *testing.T) {
+func TestIntegrationAggregateDocumentLifecycleIncludingStaleHistory(t *testing.T) {
 	pool := bastIntegrationPool(t)
 	ctx := context.Background()
 	repository := NewRepository(pool)
@@ -91,5 +91,25 @@ func TestIntegrationAggregateDocumentLifecycle(t *testing.T) {
 		ExpectedVersion: 3, ExpectedActiveID: first.Document.ID,
 	}, meta); err == nil {
 		t.Fatal("expected conflict when expected active id is stale")
+	}
+
+	if _, err := pool.Exec(ctx, `UPDATE bast_aggregate_documents SET status='stale' WHERE id=$1`, second.Document.ID); err != nil {
+		t.Fatal(err)
+	}
+	stale, err := repository.GetAggregateByID(ctx, second.Document.ID, scope)
+	if err != nil || stale.Status != "stale" {
+		t.Fatalf("stale document=%+v err=%v", stale, err)
+	}
+	third, err := repository.ActivateAggregate(ctx, auth.Principal{}, AggregateActivation{
+		ScheduleID: scheduleID, ProgramID: programID, RegencyID: regencyID,
+		DocumentType: AggregateDocumentDP3, DocumentDate: documentDate, Filename: "DP3 - TEST - V3.pdf",
+		RecipientCount: 3, PageCount: 2, Checksum: strings.Repeat("d", 64), StorageKey: "key-3", Snapshot: []byte(`{"document_type":"dp3","v":3}`),
+		ExpectedVersion: 3, ExpectedActiveID: "",
+	}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if third.Document.Version != 3 || third.Document.Status != "active" {
+		t.Fatalf("third activation=%+v", third)
 	}
 }

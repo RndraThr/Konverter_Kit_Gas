@@ -281,7 +281,7 @@ func (r *Repository) LockRegencyTotal(ctx context.Context, actor auth.Principal,
 }
 
 func (r *Repository) ListActiveBundles(ctx context.Context, programID, regencyID string, scope auth.RegencyScope) ([]DailyBundle, error) {
-	rows, err := r.pool.Query(ctx, `SELECT b.id::text,b.program_id::text,b.regency_id::text,b.local_date::text,b.filename,b.recipient_count,b.page_count,b.version,b.status,b.checksum,b.storage_key,COALESCE(b.last_error,''),b.synced_at FROM bast_daily_bundles b WHERE b.program_id=$1 AND b.regency_id=$2 AND b.status='active' AND ($3 OR b.regency_id::text=ANY($4)) ORDER BY b.local_date DESC`, programID, regencyID, scope.Unrestricted, scope.RegencyIDs)
+	rows, err := r.pool.Query(ctx, `SELECT DISTINCT ON (b.local_date) b.id::text,b.program_id::text,b.regency_id::text,b.local_date::text,b.filename,b.recipient_count,b.page_count,b.version,b.status,b.checksum,b.storage_key,COALESCE(b.last_error,''),b.synced_at FROM bast_daily_bundles b WHERE b.program_id=$1 AND b.regency_id=$2 AND b.document_type='individual' AND b.status IN ('active','stale') AND ($3 OR b.regency_id::text=ANY($4)) ORDER BY b.local_date DESC,CASE WHEN b.status='active' THEN 0 ELSE 1 END,b.version DESC`, programID, regencyID, scope.Unrestricted, scope.RegencyIDs)
 	if err != nil {
 		return nil, fmt.Errorf("list BA bundles: %w", err)
 	}
@@ -311,7 +311,7 @@ func (r *Repository) GetActiveBundle(ctx context.Context, programID, regencyID, 
 
 func (r *Repository) GetActiveBundleByID(ctx context.Context, id string, scope auth.RegencyScope) (DailyBundle, error) {
 	var item DailyBundle
-	err := r.pool.QueryRow(ctx, `SELECT id::text,program_id::text,regency_id::text,local_date::text,filename,recipient_count,page_count,version,status,checksum,storage_key,COALESCE(last_error,''),synced_at FROM bast_daily_bundles WHERE id=$1 AND document_type='individual' AND status='active' AND ($2 OR regency_id::text=ANY($3))`, id, scope.Unrestricted, scope.RegencyIDs).Scan(&item.ID, &item.ProgramID, &item.RegencyID, &item.LocalDate, &item.Filename, &item.RecipientCount, &item.PageCount, &item.Version, &item.Status, &item.Checksum, &item.StorageKey, &item.LastError, &item.SyncedAt)
+	err := r.pool.QueryRow(ctx, `SELECT id::text,program_id::text,regency_id::text,local_date::text,filename,recipient_count,page_count,version,status,checksum,storage_key,COALESCE(last_error,''),synced_at FROM bast_daily_bundles WHERE id=$1 AND document_type='individual' AND status IN ('active','superseded','stale') AND ($2 OR regency_id::text=ANY($3))`, id, scope.Unrestricted, scope.RegencyIDs).Scan(&item.ID, &item.ProgramID, &item.RegencyID, &item.LocalDate, &item.Filename, &item.RecipientCount, &item.PageCount, &item.Version, &item.Status, &item.Checksum, &item.StorageKey, &item.LastError, &item.SyncedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return DailyBundle{}, ErrNotFound
 	}

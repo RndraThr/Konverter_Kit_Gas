@@ -80,6 +80,7 @@ export function DP3Panel({ scheduleID, regencyName, programType, defaultDate }: 
   const data = summary.data?.data;
   const activeDoc = documents.data?.data.find((doc) => doc.status === 'active');
   const versions = documents.data?.data ?? [];
+  const historicalDocs = versions.filter((doc) => doc.status !== 'active');
   // preview.isPending is excluded: react-query v5 reports isPending=true for
   // a disabled query (never fetched), which would permanently disable these
   // action buttons whenever the preview isn't ready yet.
@@ -115,9 +116,9 @@ export function DP3Panel({ scheduleID, regencyName, programType, defaultDate }: 
             <Button nativeButton={false} render={<a href={`/api/v1/bast/dp3/documents/${activeDoc.id}/content`} />} variant="outline"><Download />Unduh PDF</Button>
           </div>}
 
-          {versions.length > 1 && <div className="grid gap-2 rounded-lg border p-3">
+          {historicalDocs.length > 0 && <div className="grid gap-2 rounded-lg border p-3">
             <strong className="text-sm">Riwayat versi</strong>
-            {versions.filter((doc) => doc.status === 'superseded').map((doc) => <div className="flex items-center justify-between gap-3 text-sm" key={doc.id}><span className="text-muted-foreground">Versi {doc.version} · {doc.document_date}</span><Button nativeButton={false} render={<a href={`/api/v1/bast/dp3/documents/${doc.id}/content`} />} variant="ghost" size="sm"><Download />Unduh</Button></div>)}
+            {historicalDocs.map((doc) => <div className="flex items-center justify-between gap-3 text-sm" key={doc.id}><span className="flex flex-wrap items-center gap-2 text-muted-foreground">Versi {doc.version} · {doc.document_date}{doc.status === 'stale' && <Badge variant="destructive">Perlu dibuat ulang</Badge>}</span><Button nativeButton={false} render={<a href={`/api/v1/bast/dp3/documents/${doc.id}/content`} />} variant="ghost" size="sm"><Download />Unduh</Button></div>)}
           </div>}
 
           {status === 'ready' && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="DP3" />}

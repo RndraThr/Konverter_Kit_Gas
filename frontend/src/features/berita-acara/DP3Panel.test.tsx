@@ -44,3 +44,22 @@ test('does not fetch a preview while the document is not ready', async () => {
   expect(await screen.findByText('Belum ada penerima pada jadwal ini.')).toBeVisible()
   expect(apiBlobRequest).not.toHaveBeenCalled()
 })
+
+test('shows a stale DP3 as downloadable history and keeps finalization available', async () => {
+  vi.mocked(apiRequest).mockImplementation(async (path) => {
+    if (path.includes('/summary')) return { data: { total_recipients: 2, numbered_recipients: 2, unmounted_recipients: 0, validation_status: 'ready' } }
+    if (path.includes('/documents')) return { data: [{
+      id: 'stale-1', schedule_id: 'schedule-1', program_id: 'program-1', regency_id: 'regency-1',
+      document_type: 'dp3', document_date: '2026-10-03', filename: 'DP3-lama.pdf',
+      recipient_count: 2, page_count: 1, version: 1, status: 'stale', checksum: 'checksum',
+      finalized_at: '2026-10-03T00:00:00Z',
+    }] }
+    throw new Error(`unexpected ${path}`)
+  })
+
+  renderPanel()
+
+  expect(await screen.findByText('Perlu dibuat ulang')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Unduh' })).toHaveAttribute('href', '/api/v1/bast/dp3/documents/stale-1/content')
+  expect(screen.getByRole('button', { name: 'Finalisasi & sinkronkan' })).toBeEnabled()
+})

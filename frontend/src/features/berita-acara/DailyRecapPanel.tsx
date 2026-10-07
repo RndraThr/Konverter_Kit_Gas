@@ -80,6 +80,7 @@ export function DailyRecapPanel({ scheduleID, regencyName, programType }: Props)
   const selectedReady = selected?.validation_status === 'ready';
   const activeDoc = documents.data?.data.find((doc) => doc.status === 'active');
   const versions = documents.data?.data ?? [];
+  const historicalDocs = versions.filter((doc) => doc.status !== 'active');
   const recips = recipients.data?.data ?? [];
   const variants = groupVariants(recips);
   // preview.isPending is excluded: react-query v5 reports isPending=true for
@@ -121,9 +122,9 @@ export function DailyRecapPanel({ scheduleID, regencyName, programType }: Props)
               <Button nativeButton={false} render={<a href={`/api/v1/bast/daily-recap/documents/${activeDoc.id}/content`} />} variant="outline"><Download />Unduh PDF</Button>
             </div>}
 
-            {versions.length > 1 && <div className="grid gap-2 rounded-lg border p-3">
+            {historicalDocs.length > 0 && <div className="grid gap-2 rounded-lg border p-3">
               <strong className="text-sm">Riwayat versi</strong>
-              {versions.filter((doc) => doc.status === 'superseded').map((doc) => <div className="flex items-center justify-between gap-3 text-sm" key={doc.id}><span className="text-muted-foreground">Versi {doc.version}</span><Button nativeButton={false} render={<a href={`/api/v1/bast/daily-recap/documents/${doc.id}/content`} />} variant="ghost" size="sm"><Download />Unduh</Button></div>)}
+              {historicalDocs.map((doc) => <div className="flex items-center justify-between gap-3 text-sm" key={doc.id}><span className="flex flex-wrap items-center gap-2 text-muted-foreground">Versi {doc.version}{doc.status === 'stale' && <Badge variant="destructive">Perlu dibuat ulang</Badge>}</span><Button nativeButton={false} render={<a href={`/api/v1/bast/daily-recap/documents/${doc.id}/content`} />} variant="ghost" size="sm"><Download />Unduh</Button></div>)}
             </div>}
 
             {!selectedReady && selected && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">{validationMessage[selected.validation_status] ?? selected.validation_status}</div>}

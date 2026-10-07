@@ -90,7 +90,7 @@ export function BAIndividualPanel({ programID, regencyID, regencyName, programTy
           type="button"
         >
           <span><strong className="block text-sm">{formatLocalDate(item.local_date)}</strong><span className="text-xs text-muted-foreground">{item.recipient_count} penerima</span></span>
-          <StatusBadge status={item.validation_status} hasBundle={Boolean(item.bundle)} />
+          <StatusBadge status={item.validation_status} bundleStatus={item.bundle?.status} />
         </button>)}
       </CardContent>
     </Card>
@@ -108,7 +108,7 @@ export function BAIndividualPanel({ programID, regencyID, regencyName, programTy
           {selected?.validation_status === 'configuration_required' && <DataState kind="error" title="Konfigurasi belum lengkap" description="Pastikan zona dan profil dokumen program sudah dipublikasikan." />}
           {selected?.validation_status === 'total_not_locked' && !ready && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-4 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100"><strong>Total pembagian belum dikunci.</strong><p className="mt-1">Nomor BA memakai total pembagian kabupaten sebagai penyebut. Kunci total sebelum preview atau finalisasi.</p></div>}
           {selected?.bundle && <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center">
-            <div><div className="flex items-center gap-2"><FileCheck2 className="size-4 text-emerald-600" /><strong className="text-sm">{selected.bundle.filename}</strong></div><p className="mt-1 text-xs text-muted-foreground">Versi {selected.bundle.version} · {selected.bundle.page_count} halaman · {selected.bundle.recipient_count} penerima</p></div>
+            <div><div className="flex flex-wrap items-center gap-2"><FileCheck2 className={selected.bundle.status === 'stale' ? 'size-4 text-amber-600' : 'size-4 text-emerald-600'} /><strong className="text-sm">{selected.bundle.filename}</strong>{selected.bundle.status === 'stale' && <Badge variant="destructive">Perlu dibuat ulang</Badge>}</div><p className="mt-1 text-xs text-muted-foreground">Versi {selected.bundle.version} · {selected.bundle.page_count} halaman · {selected.bundle.recipient_count} penerima</p></div>
             <Button nativeButton={false} render={<a href={`/api/v1/bast/individual/bundles/${selected.bundle.id}/content`} />} variant="outline"><Download />Unduh PDF</Button>
           </div>}
           {operationError && <p className="text-sm text-destructive" role="alert">{operationError}</p>}
@@ -129,8 +129,9 @@ export function BAIndividualPanel({ programID, regencyID, regencyName, programTy
   </div>;
 }
 
-function StatusBadge({ status, hasBundle }: { status: DateSummary['validation_status']; hasBundle: boolean }) {
-  if (hasBundle) return <Badge className="shrink-0 bg-emerald-600 text-white">Tersinkron</Badge>;
+function StatusBadge({ status, bundleStatus }: { status: DateSummary['validation_status']; bundleStatus?: DailyBundle['status'] }) {
+  if (bundleStatus === 'active') return <Badge className="shrink-0 bg-emerald-600 text-white">Tersinkron</Badge>;
+  if (bundleStatus === 'stale') return <Badge className="shrink-0" variant="destructive">Perlu dibuat ulang</Badge>;
   if (status === 'ready') return <Badge className="shrink-0" variant="secondary">Siap</Badge>;
   if (status === 'total_not_locked') return <Badge className="shrink-0" variant="outline">Perlu lock</Badge>;
   return <Badge className="shrink-0" variant="destructive">Perlu konfigurasi</Badge>;
