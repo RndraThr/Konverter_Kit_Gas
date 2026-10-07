@@ -194,6 +194,7 @@ test('repeatable template actions stack safely and add editable rows on narrow w
   await addSlot.click();
   const newSlot = dialog.getByLabel('Kode slot').last();
   await expect(newSlot).toBeEditable();
+	await expect(dialog.getByRole('combobox', { name: 'Jenis media' }).last()).toContainText('Foto saja');
   await expect(newSlot).toBeInViewport();
   await expect(newSlot).toBeFocused();
   await expectFieldsContained(dialog);
