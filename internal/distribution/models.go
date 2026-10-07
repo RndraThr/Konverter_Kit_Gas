@@ -236,3 +236,11 @@ type MediaContent struct {
 	MimeType string
 	Filename string
 }
+
+type MediaMoveJob struct {
+	MediaFileID      string
+	StorageKey       string
+	TargetPath       []string
+	TargetGeneration int64
+	Attempts         int
+}

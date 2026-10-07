@@ -362,6 +362,120 @@ func (r *Repository) RetryMediaMove(ctx context.Context, actor auth.Principal, m
 	return r.GetMedia(ctx, mediaID, scope)
 }
 
+func (r *Repository) ClaimMediaMove(ctx context.Context, now time.Time, leaseDuration time.Duration) (MediaMoveJob, bool, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return MediaMoveJob{}, false, fmt.Errorf("begin media move claim: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var job MediaMoveJob
+	err = tx.QueryRow(ctx, `
+		WITH candidate AS (
+			SELECT j.media_file_id
+			FROM distribution_media_move_jobs j
+			JOIN media_files m ON m.id=j.media_file_id
+			WHERE m.status='accepted' AND (
+				(j.status IN ('queued','retry') AND j.next_attempt_at <= $1)
+				OR (j.status='processing' AND (j.locked_at IS NULL OR j.locked_at < $2))
+			)
+			ORDER BY j.next_attempt_at,j.updated_at
+			FOR UPDATE OF j SKIP LOCKED
+			LIMIT 1
+		)
+		UPDATE distribution_media_move_jobs j
+		SET status='processing',attempts=j.attempts+1,locked_at=$1,updated_at=$1
+		FROM candidate c,media_files m
+		WHERE j.media_file_id=c.media_file_id AND m.id=j.media_file_id
+		RETURNING j.media_file_id::text,m.storage_key::text,j.target_path,j.target_generation,j.attempts
+	`, now, now.Add(-leaseDuration)).Scan(&job.MediaFileID, &job.StorageKey, &job.TargetPath, &job.TargetGeneration, &job.Attempts)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return MediaMoveJob{}, false, nil
+	}
+	if err != nil {
+		return MediaMoveJob{}, false, fmt.Errorf("claim media move: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return MediaMoveJob{}, false, fmt.Errorf("commit media move claim: %w", err)
+	}
+	return job, true, nil
+}
+
+func (r *Repository) CompleteMediaMove(ctx context.Context, mediaID string, generation int64) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin media move completion: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var mediaGeneration, jobGeneration int64
+	err = tx.QueryRow(ctx, `
+		SELECT m.storage_target_generation,j.target_generation
+		FROM media_files m
+		JOIN distribution_media_move_jobs j ON j.media_file_id=m.id
+		WHERE m.id=$1 AND m.status='accepted'
+		FOR UPDATE OF m,j
+	`, mediaID).Scan(&mediaGeneration, &jobGeneration)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("lock media move completion: %w", err)
+	}
+	if mediaGeneration == generation && jobGeneration == generation {
+		if _, err := tx.Exec(ctx, `UPDATE media_files SET storage_state='final',storage_last_error='',updated_at=now() WHERE id=$1`, mediaID); err != nil {
+			return fmt.Errorf("finalize media move: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM distribution_media_move_jobs WHERE media_file_id=$1 AND target_generation=$2`, mediaID, generation); err != nil {
+			return fmt.Errorf("delete completed media move: %w", err)
+		}
+	} else {
+		if _, err := tx.Exec(ctx, `UPDATE distribution_media_move_jobs SET status='queued',next_attempt_at=now(),locked_at=NULL,updated_at=now() WHERE media_file_id=$1`, mediaID); err != nil {
+			return fmt.Errorf("requeue newer media target: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit media move completion: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) FailMediaMove(ctx context.Context, mediaID string, generation int64, message string, nextAttempt time.Time) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin media move failure: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var mediaGeneration, jobGeneration int64
+	err = tx.QueryRow(ctx, `
+		SELECT m.storage_target_generation,j.target_generation
+		FROM media_files m
+		JOIN distribution_media_move_jobs j ON j.media_file_id=m.id
+		WHERE m.id=$1 AND m.status='accepted'
+		FOR UPDATE OF m,j
+	`, mediaID).Scan(&mediaGeneration, &jobGeneration)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("lock failed media move: %w", err)
+	}
+	if mediaGeneration == generation && jobGeneration == generation {
+		if _, err := tx.Exec(ctx, `UPDATE media_files SET storage_state='move_failed',storage_last_error=$2,updated_at=now() WHERE id=$1`, mediaID, message); err != nil {
+			return fmt.Errorf("mark media move failed: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `UPDATE distribution_media_move_jobs SET status='retry',next_attempt_at=$3,locked_at=NULL,last_error=$2,updated_at=now() WHERE media_file_id=$1 AND target_generation=$4`, mediaID, message, nextAttempt, generation); err != nil {
+			return fmt.Errorf("schedule media move retry: %w", err)
+		}
+	} else {
+		if _, err := tx.Exec(ctx, `UPDATE distribution_media_move_jobs SET status='queued',next_attempt_at=now(),locked_at=NULL,updated_at=now() WHERE media_file_id=$1`, mediaID); err != nil {
+			return fmt.Errorf("preserve newer media target: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit media move failure: %w", err)
+	}
+	return nil
+}
+
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
