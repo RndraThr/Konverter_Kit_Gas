@@ -36,6 +36,11 @@ type Storage interface {
 	EnsureFolders(ctx context.Context, paths [][]string) error
 }
 
+type MovableStorage interface {
+	Storage
+	Move(ctx context.Context, storageKey string, targetPath []string) error
+}
+
 type namedStorage interface {
 	PutNamed(ctx context.Context, key, filename string, folderPath []string, source io.Reader) (storageKey string, size int64, checksum string, err error)
 }
@@ -153,16 +158,30 @@ func (s *LocalStorage) EnsureFolders(ctx context.Context, paths [][]string) erro
 		return err
 	}
 	for _, folderPath := range paths {
-		if len(folderPath) == 0 {
-			return ErrInvalidFolderPath
+		if err := validateFolderPath(folderPath); err != nil {
+			return err
 		}
-		for _, segment := range folderPath {
-			if strings.TrimSpace(segment) == "" {
-				return ErrInvalidFolderPath
-			}
-			if strings.ContainsAny(segment, `/\`) {
-				return ErrInvalidFolderPath
-			}
+	}
+	return nil
+}
+
+func (s *LocalStorage) Move(ctx context.Context, storageKey string, targetPath []string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if _, err := s.path(storageKey); err != nil {
+		return err
+	}
+	return validateFolderPath(targetPath)
+}
+
+func validateFolderPath(folderPath []string) error {
+	if len(folderPath) == 0 {
+		return ErrInvalidFolderPath
+	}
+	for _, segment := range folderPath {
+		if strings.TrimSpace(segment) == "" || strings.ContainsAny(segment, `/\`) {
+			return ErrInvalidFolderPath
 		}
 	}
 	return nil

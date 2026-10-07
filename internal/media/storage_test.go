@@ -106,6 +106,34 @@ func TestLocalStorageEnsureFolders(t *testing.T) {
 	}
 }
 
+func TestLocalStorageMoveValidatesTargetAndKeepsStableKey(t *testing.T) {
+	storage, err := NewLocalStorage(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := "550e8400-e29b-41d4-a716-446655440123"
+	if _, _, _, err := storage.Put(context.Background(), key, nil, bytes.NewBufferString("staged photo")); err != nil {
+		t.Fatal(err)
+	}
+	if err := storage.Move(context.Background(), key, []string{"PETANI", "WAJO", "7 OKTOBER 2026"}); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := storage.Open(context.Background(), key)
+	if err != nil {
+		t.Fatalf("stable key no longer opens after move: %v", err)
+	}
+	content, err := io.ReadAll(reader)
+	_ = reader.Close()
+	if err != nil || string(content) != "staged photo" {
+		t.Fatalf("content=%q err=%v", content, err)
+	}
+	for _, target := range [][]string{nil, {}, {"PETANI", ""}, {"PETANI", "WAJO/SELATAN"}} {
+		if err := storage.Move(context.Background(), key, target); !errors.Is(err, ErrInvalidFolderPath) {
+			t.Fatalf("target=%v err=%v, want ErrInvalidFolderPath", target, err)
+		}
+	}
+}
+
 func TestLocalStorageRequiresDirectoryPath(t *testing.T) {
 	root := t.TempDir()
 	file := filepath.Join(root, "not-a-directory")

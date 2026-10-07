@@ -24,12 +24,15 @@ type fakeDriveFilesAPI struct {
 	nextID                 int
 	deleteErr              error
 	deletedIDs             []string
+	parentsByFileID        map[string][]string
+	moveCalls              int
 }
 
 func newFakeDriveFilesAPI() *fakeDriveFilesAPI {
 	return &fakeDriveFilesAPI{
 		foldersByParentAndName: map[string]string{},
 		uploaded:               map[string][]byte{},
+		parentsByFileID:        map[string][]string{},
 	}
 }
 
@@ -157,6 +160,16 @@ func (f *fakeDriveFilesAPI) deleteFile(_ context.Context, id string) error {
 	}
 	f.deletedIDs = append(f.deletedIDs, id)
 	delete(f.uploaded, id)
+	return nil
+}
+
+func (f *fakeDriveFilesAPI) getFileParents(_ context.Context, id string) ([]string, error) {
+	return append([]string(nil), f.parentsByFileID[id]...), nil
+}
+
+func (f *fakeDriveFilesAPI) moveFile(_ context.Context, id, targetParentID string) error {
+	f.moveCalls++
+	f.parentsByFileID[id] = []string{targetParentID}
 	return nil
 }
 
@@ -300,5 +313,37 @@ func TestGoogleDriveStorageEnsureFoldersRejectsEmptyPath(t *testing.T) {
 	err := storage.EnsureFolders(context.Background(), [][]string{{}})
 	if !errors.Is(err, ErrInvalidFolderPath) {
 		t.Fatalf("err=%v, want ErrInvalidFolderPath", err)
+	}
+}
+
+func TestGoogleDriveMoveResolvesTargetAndChangesParent(t *testing.T) {
+	api := newFakeDriveFilesAPI()
+	api.foldersByParentAndName["root-1/PETANI"] = "folder-petani"
+	api.foldersByParentAndName["folder-petani/WAJO"] = "folder-wajo"
+	api.parentsByFileID["drive-file-1"] = []string{"staging-folder"}
+	storage := &GoogleDriveStorage{api: api, cache: newFakeFolderCache(), rootFolderID: "root-1"}
+
+	if err := storage.Move(context.Background(), "drive-file-1", []string{"PETANI", "WAJO"}); err != nil {
+		t.Fatal(err)
+	}
+	if api.moveCalls != 1 {
+		t.Fatalf("move calls=%d, want 1", api.moveCalls)
+	}
+	if parents := api.parentsByFileID["drive-file-1"]; len(parents) != 1 || parents[0] != "folder-wajo" {
+		t.Fatalf("parents=%v, want [folder-wajo]", parents)
+	}
+}
+
+func TestGoogleDriveMoveIsIdempotentWhenAlreadyInTarget(t *testing.T) {
+	api := newFakeDriveFilesAPI()
+	api.foldersByParentAndName["root-1/PETANI"] = "folder-petani"
+	api.parentsByFileID["drive-file-2"] = []string{"folder-petani"}
+	storage := &GoogleDriveStorage{api: api, cache: newFakeFolderCache(), rootFolderID: "root-1"}
+
+	if err := storage.Move(context.Background(), "drive-file-2", []string{"PETANI"}); err != nil {
+		t.Fatal(err)
+	}
+	if api.moveCalls != 0 {
+		t.Fatalf("idempotent move made %d update calls, want 0", api.moveCalls)
 	}
 }

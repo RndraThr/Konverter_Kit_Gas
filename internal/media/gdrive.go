@@ -26,6 +26,8 @@ type driveFilesAPI interface {
 	uploadFile(ctx context.Context, name, parentID string, r io.Reader) (id string, size int64, err error)
 	downloadFile(ctx context.Context, id string) (io.ReadCloser, error)
 	deleteFile(ctx context.Context, id string) error
+	getFileParents(ctx context.Context, id string) ([]string, error)
+	moveFile(ctx context.Context, fileID, targetParentID string) error
 }
 
 type realDriveFilesAPI struct {
@@ -77,6 +79,34 @@ func (a *realDriveFilesAPI) downloadFile(ctx context.Context, id string) (io.Rea
 func (a *realDriveFilesAPI) deleteFile(ctx context.Context, id string) error {
 	if err := a.service.Files.Delete(id).Context(ctx).Do(); err != nil {
 		return fmt.Errorf("delete drive file %q: %w", id, err)
+	}
+	return nil
+}
+
+func (a *realDriveFilesAPI) getFileParents(ctx context.Context, id string) ([]string, error) {
+	file, err := a.service.Files.Get(id).Fields("parents").Context(ctx).Do()
+	if err != nil {
+		return nil, fmt.Errorf("get drive file %q parents: %w", id, err)
+	}
+	return file.Parents, nil
+}
+
+func (a *realDriveFilesAPI) moveFile(ctx context.Context, fileID, targetParentID string) error {
+	parents, err := a.getFileParents(ctx, fileID)
+	if err != nil {
+		return err
+	}
+	for _, parentID := range parents {
+		if parentID == targetParentID {
+			return nil
+		}
+	}
+	call := a.service.Files.Update(fileID, &drive.File{}).AddParents(targetParentID)
+	if len(parents) > 0 {
+		call = call.RemoveParents(strings.Join(parents, ","))
+	}
+	if _, err := call.Context(ctx).Do(); err != nil {
+		return fmt.Errorf("move drive file %q: %w", fileID, err)
 	}
 	return nil
 }
@@ -203,6 +233,26 @@ func (s *GoogleDriveStorage) Open(ctx context.Context, storageKey string) (io.Re
 
 func (s *GoogleDriveStorage) Delete(ctx context.Context, storageKey string) error {
 	return s.api.deleteFile(ctx, storageKey)
+}
+
+func (s *GoogleDriveStorage) Move(ctx context.Context, storageKey string, targetPath []string) error {
+	if err := validateFolderPath(targetPath); err != nil {
+		return err
+	}
+	targetParentID, err := s.resolveFolder(ctx, targetPath)
+	if err != nil {
+		return fmt.Errorf("resolve drive move target: %w", err)
+	}
+	parents, err := s.api.getFileParents(ctx, storageKey)
+	if err != nil {
+		return err
+	}
+	for _, parentID := range parents {
+		if parentID == targetParentID {
+			return nil
+		}
+	}
+	return s.api.moveFile(ctx, storageKey, targetParentID)
 }
 
 // hashingReader wraps an io.Reader and computes a SHA-256 checksum of
