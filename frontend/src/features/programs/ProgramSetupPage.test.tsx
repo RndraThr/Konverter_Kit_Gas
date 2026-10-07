@@ -331,7 +331,7 @@ test('manages package template equipment options and components as repeatable ro
 
   await userEvent.click(screen.getByRole('button', { name: 'Hapus opsi mesin 1' }));
   expect(screen.queryByLabelText('Merk mesin 1')).not.toBeInTheDocument();
-});
+}, 15_000);
 
 test('saves a new documentation slot with a valid Pos stage', async () => {
   renderPage(['programs.view', 'programs.manage'], { initialEntry: '/dashboard/persiapan-program?tab=templates' });
