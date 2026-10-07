@@ -31,13 +31,30 @@ type mediaRepository interface {
 
 type posMesinRepository interface {
 	CreateSlot(ctx context.Context, actor auth.Principal, input CreateSlotInput, scope auth.RegencyScope, meta auth.ClientMeta) (DistributionSlot, error)
-	UpdateEquipment(ctx context.Context, actor auth.Principal, input UpdateEquipmentInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
 }
 
 type posDokumenRepository interface {
 	SearchCandidate(ctx context.Context, scheduleID, nik string, scope auth.RegencyScope) (CandidateMatch, error)
 	SuggestCandidates(ctx context.Context, scheduleID, nikPrefix string, limit int, scope auth.RegencyScope) ([]CandidateMatch, error)
 	LinkSlot(ctx context.Context, actor auth.Principal, input LinkSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
+}
+
+type posDokumenEquipmentRepository interface {
+	UpdateEquipment(ctx context.Context, actor auth.Principal, input UpdateEquipmentInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
+}
+
+type posDokumenRecipientRepository interface {
+	UpdateRecipient(ctx context.Context, actor auth.Principal, input UpdateRecipientInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
+	ReplaceRecipient(ctx context.Context, actor auth.Principal, input ReplaceRecipientInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
+}
+
+type revisionRepository interface {
+	ReopenSlot(ctx context.Context, actor auth.Principal, input ReopenSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
+}
+
+type mediaStageRepository interface {
+	DocumentationSlotStage(ctx context.Context, documentationSlotID string, scope auth.RegencyScope) (string, error)
+	MediaStage(ctx context.Context, mediaID string, scope auth.RegencyScope) (string, error)
 }
 
 type posPenyerahanRepository interface {
@@ -54,8 +71,12 @@ type Service struct {
 	mediaRepository            mediaRepository
 	posMesinRepository         posMesinRepository
 	posDokumenRepository       posDokumenRepository
+	posDokumenEquipment        posDokumenEquipmentRepository
+	posDokumenRecipient        posDokumenRecipientRepository
 	posPenyerahanRepository    posPenyerahanRepository
 	distributionDateRepository distributionDateRepository
+	revisionRepository         revisionRepository
+	mediaStageRepository       mediaStageRepository
 	storage                    media.Storage
 	videoLimiter               *media.VideoLimiter
 }
@@ -65,8 +86,12 @@ func NewService(repository any, dependencies ...any) *Service {
 	service.mediaRepository, _ = repository.(mediaRepository)
 	service.posMesinRepository, _ = repository.(posMesinRepository)
 	service.posDokumenRepository, _ = repository.(posDokumenRepository)
+	service.posDokumenEquipment, _ = repository.(posDokumenEquipmentRepository)
+	service.posDokumenRecipient, _ = repository.(posDokumenRecipientRepository)
 	service.posPenyerahanRepository, _ = repository.(posPenyerahanRepository)
 	service.distributionDateRepository, _ = repository.(distributionDateRepository)
+	service.revisionRepository, _ = repository.(revisionRepository)
+	service.mediaStageRepository, _ = repository.(mediaStageRepository)
 	for _, dependency := range dependencies {
 		switch value := dependency.(type) {
 		case media.Storage:
@@ -105,14 +130,14 @@ func (s *Service) CreateSlot(ctx context.Context, actor auth.Principal, input Cr
 	if _, err := time.Parse("2006-01-02", input.DistributionDate); err != nil {
 		return DistributionSlot{}, ErrDistributionDateRequired
 	}
-	input.MachineOptionCode = strings.TrimSpace(input.MachineOptionCode)
-	input.MachineSerialNumber = textnorm.BusinessUpper(input.MachineSerialNumber)
-	input.HoseOptionCode = strings.TrimSpace(input.HoseOptionCode)
-	// Selang pada paket distribusi tidak memiliki serial number. Always discard
-	// client-supplied values so direct API calls cannot create new hose serials.
+	// POS Mesin owns only the date and documentation. Discard legacy equipment
+	// fields so older/direct clients cannot bypass POS Dokumen ownership.
+	input.MachineOptionCode = ""
+	input.MachineSerialNumber = ""
+	input.HoseOptionCode = ""
 	input.HoseSerialNumber = ""
-	input.ConverterOptionCode = strings.TrimSpace(input.ConverterOptionCode)
-	input.ConverterSerialNumber = textnorm.BusinessUpper(input.ConverterSerialNumber)
+	input.ConverterOptionCode = ""
+	input.ConverterSerialNumber = ""
 	if s.posMesinRepository == nil {
 		return DistributionSlot{}, errors.New("distribution POS Mesin is unavailable")
 	}
@@ -135,10 +160,10 @@ func (s *Service) UpdateEquipment(ctx context.Context, actor auth.Principal, inp
 	input.HoseSerialNumber = ""
 	input.ConverterOptionCode = strings.TrimSpace(input.ConverterOptionCode)
 	input.ConverterSerialNumber = textnorm.BusinessUpper(input.ConverterSerialNumber)
-	if s.posMesinRepository == nil {
-		return DistributionSlot{}, errors.New("distribution POS Mesin is unavailable")
+	if s.posDokumenEquipment == nil {
+		return DistributionSlot{}, errors.New("distribution POS Dokumen is unavailable")
 	}
-	return s.posMesinRepository.UpdateEquipment(ctx, actor, input, meta, scope)
+	return s.posDokumenEquipment.UpdateEquipment(ctx, actor, input, meta, scope)
 }
 
 func (s *Service) SearchCandidate(ctx context.Context, scheduleID, nik string, scope auth.RegencyScope) (CandidateMatch, error) {
@@ -181,15 +206,83 @@ func (s *Service) LinkSlot(ctx context.Context, actor auth.Principal, input Link
 	if len(input.NIK) != 16 {
 		return DistributionSlot{}, ErrNIKInvalid
 	}
-	input.Address = textnorm.BusinessUpper(input.Address)
-	input.Village = textnorm.BusinessUpper(input.Village)
-	input.District = textnorm.BusinessUpper(input.District)
-	input.PhoneNumber = stripNonDigits.ReplaceAllString(input.PhoneNumber, "")
-	input.SectorIdentifier = normalizeIdentifier(input.SectorIdentifier)
+	input.Address, input.Village, input.District, input.PhoneNumber, input.SectorIdentifier = normalizeRecipientFields(input.Address, input.Village, input.District, input.PhoneNumber, input.SectorIdentifier)
 	if s.posDokumenRepository == nil {
 		return DistributionSlot{}, errors.New("distribution POS Dokumen is unavailable")
 	}
 	return s.posDokumenRepository.LinkSlot(ctx, actor, input, meta, scope)
+}
+
+func (s *Service) UpdateRecipient(ctx context.Context, actor auth.Principal, input UpdateRecipientInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
+	input.ScheduleID = strings.TrimSpace(input.ScheduleID)
+	if input.ScheduleID == "" {
+		return DistributionSlot{}, ErrScheduleRequired
+	}
+	if input.SlotNumber < 1 {
+		return DistributionSlot{}, ErrSlotNumberRequired
+	}
+	input.Address, input.Village, input.District, input.PhoneNumber, input.SectorIdentifier = normalizeRecipientFields(input.Address, input.Village, input.District, input.PhoneNumber, input.SectorIdentifier)
+	if s.posDokumenRecipient == nil {
+		return DistributionSlot{}, errors.New("distribution POS Dokumen is unavailable")
+	}
+	return s.posDokumenRecipient.UpdateRecipient(ctx, actor, input, meta, scope)
+}
+
+func (s *Service) ReplaceRecipient(ctx context.Context, actor auth.Principal, input ReplaceRecipientInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
+	input.ScheduleID = strings.TrimSpace(input.ScheduleID)
+	if input.ScheduleID == "" {
+		return DistributionSlot{}, ErrScheduleRequired
+	}
+	if input.SlotNumber < 1 {
+		return DistributionSlot{}, ErrSlotNumberRequired
+	}
+	input.NIK = stripNonDigits.ReplaceAllString(input.NIK, "")
+	if len(input.NIK) != 16 {
+		return DistributionSlot{}, ErrNIKInvalid
+	}
+	input.Address, input.Village, input.District, input.PhoneNumber, input.SectorIdentifier = normalizeRecipientFields(input.Address, input.Village, input.District, input.PhoneNumber, input.SectorIdentifier)
+	if s.posDokumenRecipient == nil {
+		return DistributionSlot{}, errors.New("distribution POS Dokumen is unavailable")
+	}
+	return s.posDokumenRecipient.ReplaceRecipient(ctx, actor, input, meta, scope)
+}
+
+func (s *Service) ReopenSlot(ctx context.Context, actor auth.Principal, input ReopenSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
+	input.ScheduleID = strings.TrimSpace(input.ScheduleID)
+	if input.ScheduleID == "" {
+		return DistributionSlot{}, ErrScheduleRequired
+	}
+	if input.SlotNumber < 1 {
+		return DistributionSlot{}, ErrSlotNumberRequired
+	}
+	input.Stage = strings.TrimSpace(input.Stage)
+	switch input.Stage {
+	case "mesin", "dokumen", "penyerahan":
+	default:
+		return DistributionSlot{}, ErrRevisionStageInvalid
+	}
+	input.Reason = strings.TrimSpace(input.Reason)
+	if input.Reason == "" {
+		return DistributionSlot{}, ErrRevisionReasonRequired
+	}
+	if s.revisionRepository == nil {
+		return DistributionSlot{}, ErrSlotNotFound
+	}
+	return s.revisionRepository.ReopenSlot(ctx, actor, input, meta, scope)
+}
+
+func (s *Service) DocumentationSlotStage(ctx context.Context, documentationSlotID string, scope auth.RegencyScope) (string, error) {
+	if s.mediaStageRepository == nil {
+		return "", ErrMediaNotFound
+	}
+	return s.mediaStageRepository.DocumentationSlotStage(ctx, strings.TrimSpace(documentationSlotID), scope)
+}
+
+func (s *Service) MediaStage(ctx context.Context, mediaID string, scope auth.RegencyScope) (string, error) {
+	if s.mediaStageRepository == nil {
+		return "", ErrMediaNotFound
+	}
+	return s.mediaStageRepository.MediaStage(ctx, strings.TrimSpace(mediaID), scope)
 }
 
 func (s *Service) SearchSlot(ctx context.Context, scheduleID, query string, scope auth.RegencyScope) (DistributionSlot, error) {
@@ -246,6 +339,10 @@ func normalizeIdentifier(value string) string {
 		}
 		return -1
 	}, value)
+}
+
+func normalizeRecipientFields(address, village, district, phoneNumber, sectorIdentifier string) (string, string, string, string, string) {
+	return textnorm.BusinessUpper(address), textnorm.BusinessUpper(village), textnorm.BusinessUpper(district), stripNonDigits.ReplaceAllString(phoneNumber, ""), normalizeIdentifier(sectorIdentifier)
 }
 
 func (s *Service) UploadMedia(ctx context.Context, actor auth.Principal, input UploadMediaInput, meta auth.ClientMeta, scope auth.RegencyScope) (MediaFile, error) {

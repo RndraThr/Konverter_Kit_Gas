@@ -33,6 +33,36 @@ type operationsRepositoryStub struct {
 	equipmentInput UpdateEquipmentInput
 }
 
+type mediaStageRepositoryStub struct {
+	documentationID string
+	mediaID         string
+	scope           auth.RegencyScope
+}
+
+func (r *mediaStageRepositoryStub) DocumentationSlotStage(_ context.Context, id string, scope auth.RegencyScope) (string, error) {
+	r.documentationID, r.scope = id, scope
+	return "dokumen", nil
+}
+
+func (r *mediaStageRepositoryStub) MediaStage(_ context.Context, id string, scope auth.RegencyScope) (string, error) {
+	r.mediaID, r.scope = id, scope
+	return "penyerahan", nil
+}
+
+func TestMediaStageLookupsTrimIDsAndForwardScope(t *testing.T) {
+	repository := &mediaStageRepositoryStub{}
+	service := NewService(repository)
+	scope := auth.RegencyScope{RegencyIDs: []string{"regency-1"}}
+	stage, err := service.DocumentationSlotStage(context.Background(), " docs-1 ", scope)
+	if err != nil || stage != "dokumen" || repository.documentationID != "docs-1" || len(repository.scope.RegencyIDs) != 1 {
+		t.Fatalf("documentation stage=%q id=%q scope=%+v err=%v", stage, repository.documentationID, repository.scope, err)
+	}
+	stage, err = service.MediaStage(context.Background(), " media-1 ", scope)
+	if err != nil || stage != "penyerahan" || repository.mediaID != "media-1" {
+		t.Fatalf("media stage=%q id=%q err=%v", stage, repository.mediaID, err)
+	}
+}
+
 func (r *operationsRepositoryStub) CreateSlot(_ context.Context, _ auth.Principal, input CreateSlotInput, _ auth.RegencyScope, _ auth.ClientMeta) (DistributionSlot, error) {
 	r.createInput = input
 	return DistributionSlot{}, nil
@@ -67,11 +97,8 @@ func TestDistributionUppercasesSerialsAndRecipientBusinessText(t *testing.T) {
 	}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{}); err != nil {
 		t.Fatal(err)
 	}
-	if repository.createInput.MachineSerialNumber != "MS-A1" || repository.createInput.HoseSerialNumber != "" || repository.createInput.ConverterSerialNumber != "CV-C3" {
-		t.Fatalf("serials=%+v", repository.createInput)
-	}
-	if repository.createInput.MachineOptionCode != "shark-spwp8030" || repository.createInput.HoseOptionCode != "hose-set" || repository.createInput.ConverterOptionCode != "ergas-kit" {
-		t.Fatalf("option codes changed: %+v", repository.createInput)
+	if repository.createInput.MachineSerialNumber != "" || repository.createInput.HoseSerialNumber != "" || repository.createInput.ConverterSerialNumber != "" || repository.createInput.MachineOptionCode != "" || repository.createInput.HoseOptionCode != "" || repository.createInput.ConverterOptionCode != "" {
+		t.Fatalf("create retained equipment: %+v", repository.createInput)
 	}
 
 	if _, err := service.LinkSlot(context.Background(), auth.Principal{}, LinkSlotInput{

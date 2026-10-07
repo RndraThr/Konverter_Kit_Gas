@@ -41,7 +41,7 @@ func TestCreateSlotRequiresValidDistributionDate(t *testing.T) {
 	}
 }
 
-func TestCreateSlotTrimsEquipmentFieldsAndDelegates(t *testing.T) {
+func TestCreateSlotIgnoresLegacyEquipmentFieldsAndDelegates(t *testing.T) {
 	repo := &mesinRepositoryStub{created: DistributionSlot{ID: "slot-1", SlotNumber: 1, Status: "open"}}
 	service := &Service{posMesinRepository: repo}
 	result, err := service.CreateSlot(context.Background(), auth.Principal{}, CreateSlotInput{
@@ -53,7 +53,7 @@ func TestCreateSlotTrimsEquipmentFieldsAndDelegates(t *testing.T) {
 	if result.SlotNumber != 1 || result.Status != "open" {
 		t.Fatalf("result = %+v", result)
 	}
-	if repo.seenInput.MachineSerialNumber != "MS-001" || repo.seenInput.HoseSerialNumber != "" || repo.seenInput.ConverterSerialNumber != "CV-001" {
-		t.Fatalf("seenInput not trimmed: %+v", repo.seenInput)
+	if repo.seenInput.MachineOptionCode != "" || repo.seenInput.MachineSerialNumber != "" || repo.seenInput.HoseOptionCode != "" || repo.seenInput.HoseSerialNumber != "" || repo.seenInput.ConverterOptionCode != "" || repo.seenInput.ConverterSerialNumber != "" {
+		t.Fatalf("legacy equipment leaked through create: %+v", repo.seenInput)
 	}
 }

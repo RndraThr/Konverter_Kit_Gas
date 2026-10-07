@@ -36,6 +36,10 @@ var (
 	ErrDistributionDateRequired = errors.New("distribution date is required")
 	ErrDistributionDateLocked   = errors.New("distribution date is locked after documentation is uploaded")
 	ErrEquipmentLocked          = errors.New("equipment is locked after POS Mesin documentation is uploaded")
+	ErrRevisionReasonRequired   = errors.New("distribution revision reason is required")
+	ErrRevisionStageInvalid     = errors.New("distribution revision stage is invalid")
+	ErrRevisionNotCompleted     = errors.New("only completed distribution slots can be reopened")
+	ErrRecipientNotLinked       = errors.New("distribution slot is not linked to a recipient")
 )
 
 type SlotSummary struct {
@@ -63,6 +67,11 @@ type DistributionSlot struct {
 	AllocationID          *string       `json:"allocation_id,omitempty"`
 	FullName              string        `json:"full_name,omitempty"`
 	NIK                   string        `json:"nik,omitempty"`
+	SectorIdentifier      string        `json:"sector_identifier,omitempty"`
+	Address               string        `json:"address,omitempty"`
+	Village               string        `json:"village,omitempty"`
+	District              string        `json:"district,omitempty"`
+	PhoneNumber           string        `json:"phone_number,omitempty"`
 	MachineOptionCode     string        `json:"machine_option_code,omitempty"`
 	MachineSerialNumber   string        `json:"machine_serial_number,omitempty"`
 	HoseOptionCode        string        `json:"hose_option_code,omitempty"`
@@ -71,6 +80,11 @@ type DistributionSlot struct {
 	ConverterSerialNumber string        `json:"converter_serial_number,omitempty"`
 	Documentation         []SlotSummary `json:"documentation"`
 	DistributedAt         *time.Time    `json:"distributed_at,omitempty"`
+	NeedsRecompletion     bool          `json:"needs_recompletion"`
+	ReopenedAt            *time.Time    `json:"reopened_at,omitempty"`
+	ReopenedBy            *string       `json:"reopened_by,omitempty"`
+	ReopenedStage         string        `json:"reopened_stage,omitempty"`
+	RevisionReason        string        `json:"revision_reason,omitempty"`
 	CreatedAt             time.Time     `json:"created_at"`
 	UpdatedAt             time.Time     `json:"updated_at"`
 }
@@ -115,6 +129,34 @@ type LinkSlotInput struct {
 	District         string `json:"district"`
 	PhoneNumber      string `json:"phone_number"`
 	SectorIdentifier string `json:"sector_identifier"`
+}
+
+type UpdateRecipientInput struct {
+	ScheduleID       string `json:"schedule_id"`
+	SlotNumber       int    `json:"slot_number"`
+	Address          string `json:"address"`
+	Village          string `json:"village"`
+	District         string `json:"district"`
+	PhoneNumber      string `json:"phone_number"`
+	SectorIdentifier string `json:"sector_identifier"`
+}
+
+type ReplaceRecipientInput struct {
+	ScheduleID       string `json:"schedule_id"`
+	SlotNumber       int    `json:"slot_number"`
+	NIK              string `json:"nik"`
+	Address          string `json:"address"`
+	Village          string `json:"village"`
+	District         string `json:"district"`
+	PhoneNumber      string `json:"phone_number"`
+	SectorIdentifier string `json:"sector_identifier"`
+}
+
+type ReopenSlotInput struct {
+	ScheduleID string `json:"schedule_id"`
+	SlotNumber int    `json:"slot_number"`
+	Stage      string `json:"stage"`
+	Reason     string `json:"reason"`
 }
 
 type CompleteSlotInput struct {
