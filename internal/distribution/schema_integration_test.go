@@ -65,3 +65,45 @@ func TestMigrationCreatesDistributionSlotsAndSeedsPOSPermissions(t *testing.T) {
 		t.Fatalf("expected super_admin granted all 3 POS permissions, got %d", superAdminGrants)
 	}
 }
+
+func TestDistributionSchemaSupportsStagedMedia(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	ctx := context.Background()
+
+	var nullable string
+	if err := pool.QueryRow(ctx, `
+		SELECT is_nullable
+		FROM information_schema.columns
+		WHERE table_schema='public' AND table_name='distribution_slots' AND column_name='distribution_date'
+	`).Scan(&nullable); err != nil {
+		t.Fatal(err)
+	}
+	if nullable != "YES" {
+		t.Fatalf("expected distribution_slots.distribution_date nullable, got %s", nullable)
+	}
+
+	var jobTableExists bool
+	if err := pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.tables
+			WHERE table_schema='public' AND table_name='distribution_media_move_jobs'
+		)
+	`).Scan(&jobTableExists); err != nil {
+		t.Fatal(err)
+	}
+	if !jobTableExists {
+		t.Fatal("expected distribution_media_move_jobs table to exist")
+	}
+
+	var storageColumnCount int
+	if err := pool.QueryRow(ctx, `
+		SELECT count(*) FROM information_schema.columns
+		WHERE table_schema='public' AND table_name='media_files'
+		  AND column_name IN ('storage_state','storage_last_error','storage_target_generation')
+	`).Scan(&storageColumnCount); err != nil {
+		t.Fatal(err)
+	}
+	if storageColumnCount != 3 {
+		t.Fatalf("expected 3 staged-media columns, got %d", storageColumnCount)
+	}
+}
