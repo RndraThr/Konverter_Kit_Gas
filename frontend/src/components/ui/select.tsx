@@ -3,7 +3,7 @@ import { Select as SelectPrimitive } from "@base-ui/react/select"
 import { cn } from "@/lib/utils"
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react"
 
-type SelectItemEntry = { value: any; label: React.ReactNode }
+type SelectItemEntry = { value: unknown; label: React.ReactNode }
 
 function collectSelectItems(children: React.ReactNode, acc: SelectItemEntry[] = []): SelectItemEntry[] {
   React.Children.forEach(children, (child) => {
