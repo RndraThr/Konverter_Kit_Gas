@@ -7,6 +7,8 @@ type Props = {
   isError: boolean;
   label: string;
   errorDescription?: string;
+  /** Halaman awal yang ditampilkan (fragment #page=N pada viewer PDF browser). */
+  page?: number;
 };
 
 /**
@@ -14,7 +16,7 @@ type Props = {
  * yang membuka tab baru. Dipakai bersama oleh seluruh panel Berita Acara
  * (BA Perorangan, DP3, Rekap Harian, Closing Titik Serah).
  */
-export function PdfPreview({ blob, isPending, isError, label, errorDescription }: Props) {
+export function PdfPreview({ blob, isPending, isError, label, errorDescription, page }: Props) {
   const [url, setUrl] = useState('');
 
   useEffect(() => {
@@ -30,5 +32,7 @@ export function PdfPreview({ blob, isPending, isError, label, errorDescription }
   if (isPending) return <DataState kind="loading" title="Menyiapkan preview" description={`Membuat pratinjau ${label}.`} />;
   if (isError) return <DataState kind="error" title="Preview belum dapat dimuat" description={errorDescription || 'Lengkapi konfigurasi dokumen, lalu coba lagi.'} />;
   if (!url) return <DataState kind="empty" title="Preview belum tersedia" description="Lengkapi data agar pratinjau dapat ditampilkan." />;
-  return <iframe title={`Preview ${label}`} src={url} className="h-[75vh] w-full rounded-lg border bg-muted/10" />;
+  // key memaksa iframe dimuat ulang saat halaman berganti; viewer PDF browser
+  // tidak selalu bereaksi pada perubahan fragment saja.
+  return <iframe key={page ?? 0} title={`Preview ${label}`} src={page ? `${url}#page=${page}` : url} className="h-[75vh] w-full rounded-lg border bg-muted/10" />;
 }

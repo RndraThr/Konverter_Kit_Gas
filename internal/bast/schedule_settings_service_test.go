@@ -70,13 +70,25 @@ func TestScheduleSettingsInputNormalizesRakordaDefaults(t *testing.T) {
 	if input.RakordaRowCount != 45 {
 		t.Fatalf("rakorda_row_count=%d, want 45", input.RakordaRowCount)
 	}
+	if input.SosialisasiRowCount != 51 {
+		t.Fatalf("sosialisasi_row_count=%d, want 51", input.SosialisasiRowCount)
+	}
+	if input.Training10RowCount != 51 {
+		t.Fatalf("training_10_row_count=%d, want 51", input.Training10RowCount)
+	}
 }
 
-func TestScheduleSettingsInputRejectsRakordaRowCountOutsideRange(t *testing.T) {
+func TestScheduleSettingsInputRejectsAttendanceRowCountOutsideRange(t *testing.T) {
 	for _, rows := range []int{4, 201} {
-		input := ScheduleSettingsInput{ScheduleID: "sched-1", RakordaRowCount: rows}
-		if err := input.normalize(); !errors.Is(err, ErrInvalidInput) {
-			t.Fatalf("rows=%d err=%v", rows, err)
+		for _, input := range []ScheduleSettingsInput{
+			{ScheduleID: "sched-1", RakordaRowCount: rows},
+			{ScheduleID: "sched-1", SosialisasiRowCount: rows},
+			{ScheduleID: "sched-1", Training10RowCount: rows},
+			{ScheduleID: "sched-1", Training100RowCount: rows},
+		} {
+			if err := input.normalize(); !errors.Is(err, ErrInvalidInput) {
+				t.Fatalf("input=%+v err=%v", input, err)
+			}
 		}
 	}
 }

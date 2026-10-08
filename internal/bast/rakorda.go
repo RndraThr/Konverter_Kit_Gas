@@ -8,25 +8,39 @@ import (
 	"konkit/internal/textnorm"
 )
 
-const rakordaRowsPerPage = 25
-
-// RakordaSnapshot is the immutable input used to render a blank attendance
-// sheet. Only the sequence number is printed; the remaining cells are filled
-// by hand at the event.
+// RakordaSnapshot is the immutable input used to render an attendance sheet.
+// RAKORDA and Sosialisasi print blank numbered rows to be filled by hand;
+// Training 10%/100% print Participants taken from the day's distribution.
 type RakordaSnapshot struct {
-	DocumentDate string         `json:"document_date"`
-	Location     string         `json:"location"`
-	RegencyName  string         `json:"regency_name"`
-	ProvinceName string         `json:"province_name"`
-	ZoneName     string         `json:"zone_name"`
-	FiscalYear   int            `json:"fiscal_year"`
-	RowCount     int            `json:"row_count"`
-	Logos        []LogoSnapshot `json:"logos"`
+	DocumentDate string                `json:"document_date"`
+	Location     string                `json:"location"`
+	RegencyName  string                `json:"regency_name"`
+	ProvinceName string                `json:"province_name"`
+	ZoneName     string                `json:"zone_name"`
+	FiscalYear   int                   `json:"fiscal_year"`
+	RowCount     int                   `json:"row_count"`
+	Participants []ActivityParticipant `json:"participants,omitempty"`
+	Logos        []LogoSnapshot        `json:"logos"`
+	Signatories  closingSignatories    `json:"signatories"`
 }
 
-func buildRakordaSnapshot(ctx DP3Context, settings ScheduleSettings, logos []LogoSnapshot, documentDate string) (RakordaSnapshot, error) {
+func buildRakordaSnapshot(spec rakordaDocumentSpec, ctx DP3Context, settings ScheduleSettings, logos []LogoSnapshot, documentDate string, participants []ActivityParticipant) (RakordaSnapshot, error) {
 	documentDate = strings.TrimSpace(documentDate)
-	if _, err := time.Parse("2006-01-02", documentDate); err != nil || strings.TrimSpace(settings.RakordaLocation) == "" || settings.RakordaRowCount < 5 || settings.RakordaRowCount > 200 {
+	location, rowCount := spec.settings(settings)
+	if spec.participants != participantsNone {
+		// Baris Training mengikuti jumlah peserta tanggal tersebut.
+		participants = selectParticipants(spec.participants, participants)
+		rowCount = len(participants)
+		if rowCount == 0 {
+			return RakordaSnapshot{}, ErrAggregateNoRecipients
+		}
+	} else {
+		participants = nil
+		if rowCount < 5 || rowCount > 200 {
+			return RakordaSnapshot{}, ErrInvalidInput
+		}
+	}
+	if _, err := time.Parse("2006-01-02", documentDate); err != nil || strings.TrimSpace(location) == "" {
 		return RakordaSnapshot{}, ErrInvalidInput
 	}
 	if ctx.ZonePlaceholder || strings.TrimSpace(ctx.ZoneName) == "" {
@@ -36,12 +50,20 @@ func buildRakordaSnapshot(ctx DP3Context, settings ScheduleSettings, logos []Log
 	sort.SliceStable(sortedLogos, func(i, j int) bool { return sortedLogos[i].SortOrder < sortedLogos[j].SortOrder })
 	return RakordaSnapshot{
 		DocumentDate: documentDate,
-		Location:     textnorm.BusinessUpper(settings.RakordaLocation),
+		Location:     textnorm.BusinessUpper(location),
 		RegencyName:  textnorm.BusinessUpper(ctx.RegencyName),
 		ProvinceName: textnorm.BusinessUpper(ctx.ProvinceName),
 		ZoneName:     textnorm.BusinessUpper(ctx.ZoneName),
 		FiscalYear:   ctx.FiscalYear,
-		RowCount:     settings.RakordaRowCount,
+		RowCount:     rowCount,
+		Participants: participants,
 		Logos:        sortedLogos,
+		Signatories: closingSignatories{
+			AgricultureOfficeName: textnorm.BusinessUpper(settings.AgricultureOfficeName),
+			AgricultureOfficeNIP:  strings.TrimSpace(settings.AgricultureOfficeNIP),
+			InstallerName:         textnorm.BusinessUpper(settings.InstallerName),
+			SupervisorName:        textnorm.BusinessUpper(settings.SupervisorName),
+			PertaminaRepName:      textnorm.BusinessUpper(settings.PertaminaRepName),
+		},
 	}, nil
 }

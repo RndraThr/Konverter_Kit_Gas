@@ -34,7 +34,7 @@ func BuildSnapshot(source SourceData) (Snapshot, error) {
 		}
 		components[i].Checked = true
 	}
-	return Snapshot{ProgramType: source.ProgramType, DocumentNumber: source.DocumentNumber, LocalDate: source.LocalDate, Render: source.Render, Recipient: source.Recipient, Equipment: source.Equipment, Components: components, Signatures: SignatureSnapshot{ReceiverName: source.Recipient.FullName, ExecutorName: strings.TrimSpace(source.ExecutorName), SupervisorName: strings.TrimSpace(source.SupervisorName)}}, nil
+	return Snapshot{ProgramType: source.ProgramType, DocumentNumber: source.DocumentNumber, LocalDate: source.LocalDate, Render: source.Render, Recipient: source.Recipient, Equipment: source.Equipment, Components: components, Signatures: SignatureSnapshot{ReceiverName: source.Recipient.FullName, ReceiverSignatureKey: source.DistributionSlotID, ExecutorName: strings.TrimSpace(source.ExecutorName), SupervisorName: strings.TrimSpace(source.SupervisorName)}}, nil
 }
 
 func DecodeSnapshot(raw []byte) (Snapshot, error) {

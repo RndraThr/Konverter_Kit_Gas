@@ -29,6 +29,7 @@ type DP3Context struct {
 	RegencyName     string
 	RegencyCode     string
 	ProvinceName    string
+	ZoneID          string
 	ZoneName        string
 	ZonePlaceholder bool
 	FiscalYear      int

@@ -5,7 +5,7 @@ import { DataState } from '@/components/DataState';
 import { PageHeader } from '@/components/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList } from '@/components/ui/combobox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { apiRequest } from '@/lib/api';
 import type { DataResponse, ProgramType, Schedule } from '../programs/types';
@@ -15,7 +15,13 @@ import { ClosingKabupatenPanel } from './ClosingKabupatenPanel';
 import { ClosingTitikSerahPanel } from './ClosingTitikSerahPanel';
 import { DailyRecapPanel } from './DailyRecapPanel';
 import { DP3Panel } from './DP3Panel';
+import { PemeriksaanPanel } from './PemeriksaanPanel';
 import { RakordaPanel } from './RakordaPanel';
+import { ServisBerkalaPanel } from './ServisBerkalaPanel';
+import { SosialisasiPanel } from './SosialisasiPanel';
+import { TKDNPanel } from './TKDNPanel';
+import { Training10Panel } from './Training10Panel';
+import { Training100Panel } from './Training100Panel';
 
 const documentTypes = [
   { value: 'dp3', label: 'DP3' },
@@ -64,6 +70,8 @@ export function BeritaAcaraPage() {
   const scheduleID = searchParams.get('schedule_id') ?? '';
   const activeSchedules = schedules.data?.data.filter((schedule) => schedule.status === 'active') ?? [];
   const selectedSchedule = activeSchedules.find((schedule) => schedule.id === scheduleID);
+  const scheduleOptions = activeSchedules.map((schedule) => ({ value: schedule.id, label: `${schedule.regency?.name ?? ''} / ${schedule.name}` }));
+  const selectedOption = scheduleOptions.find((option) => option.value === scheduleID) ?? null;
   const programType = selectedSchedule?.program?.program_type;
 
   const updateParam = (name: 'schedule_id' | 'tab', value: string) => {
@@ -79,10 +87,24 @@ export function BeritaAcaraPage() {
     <section className="grid gap-4 py-5 lg:grid-cols-[minmax(0,28rem)_1fr] lg:items-end" aria-label="Konteks berita acara">
       <div className="grid gap-1.5">
         <Label id="bast-schedule-label">Jadwal program</Label>
-        <Select disabled={schedules.isPending || schedules.isError} value={scheduleID} onValueChange={(value) => updateParam('schedule_id', value ?? '')}>
-          <SelectTrigger className="w-full" aria-labelledby="bast-schedule-label"><SelectValue placeholder={schedules.isPending ? 'Memuat jadwal...' : schedules.isError ? 'Jadwal tidak tersedia' : 'Pilih kabupaten dan jadwal'} /></SelectTrigger>
-          <SelectContent>{activeSchedules.map((schedule) => <SelectItem key={schedule.id} value={schedule.id}>{schedule.regency?.name} / {schedule.name}</SelectItem>)}</SelectContent>
-        </Select>
+        <Combobox
+          items={scheduleOptions}
+          value={selectedOption}
+          onValueChange={(option) => updateParam('schedule_id', option?.value ?? '')}
+          itemToStringLabel={(option) => option.label}
+          isItemEqualToValue={(option, value) => option.value === value.value}
+        >
+          <ComboboxInput
+            className="w-full"
+            aria-labelledby="bast-schedule-label"
+            disabled={schedules.isPending || schedules.isError}
+            placeholder={schedules.isPending ? 'Memuat jadwal...' : schedules.isError ? 'Jadwal tidak tersedia' : 'Cari kabupaten atau jadwal'}
+          />
+          <ComboboxContent>
+            <ComboboxEmpty>Jadwal tidak ditemukan.</ComboboxEmpty>
+            <ComboboxList>{(option: { value: string; label: string }) => <ComboboxItem key={option.value} value={option}>{option.label}</ComboboxItem>}</ComboboxList>
+          </ComboboxContent>
+        </Combobox>
       </div>
       {selectedSchedule && programType && <div className="flex min-h-11 flex-wrap items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2">
         <Badge>{programTypeLabel(programType)}</Badge>
@@ -95,9 +117,10 @@ export function BeritaAcaraPage() {
     {schedules.isError && <DataState kind="error" title="Jadwal berita acara belum dapat dimuat" description="Periksa koneksi atau hak akses, lalu coba kembali." action={{ label: 'Coba lagi', onClick: () => schedules.refetch() }} />}
 
     <Tabs value={activeTab} onValueChange={(value) => updateParam('tab', value)}>
-      <div className="overflow-x-auto pb-2" role="presentation">
-        <TabsList activateOnFocus variant="line" className="h-auto min-w-max justify-start" aria-label="Jenis berita acara">
-          {documentTypes.map((document) => <TabsTrigger className="min-h-11 px-3" key={document.value} value={document.value}>{document.label}</TabsTrigger>)}
+      {/* Tab mengisi lebar penuh dan turun ke baris berikut di layar sempit (tanpa scroll). */}
+      <div className="pb-2" role="presentation">
+        <TabsList activateOnFocus variant="line" className="h-auto w-full flex-wrap justify-start gap-y-1" aria-label="Jenis berita acara">
+          {documentTypes.map((document) => <TabsTrigger className="min-h-11 flex-auto px-3" key={document.value} value={document.value}>{document.label}</TabsTrigger>)}
         </TabsList>
       </div>
       {documentTypes.map((document) => <TabsContent className="pt-3" key={document.value} value={document.value}>
@@ -113,7 +136,19 @@ export function BeritaAcaraPage() {
                   ? <section aria-label="Closing Kabupaten"><ClosingKabupatenPanel scheduleID={selectedSchedule.id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} defaultDate={selectedSchedule.start_date.slice(0, 10)} /></section>
                   : document.value === 'rakorda' && selectedSchedule && programType
                     ? <section aria-label="RAKORDA"><RakordaPanel scheduleID={selectedSchedule.id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} defaultDate={selectedSchedule.start_date.slice(0, 10)} /></section>
-                  : <DocumentWorkspace document={document} programType={programType} />}
+                    : document.value === 'sosialisasi' && selectedSchedule && programType
+                      ? <section aria-label="Sosialisasi"><SosialisasiPanel scheduleID={selectedSchedule.id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} defaultDate={selectedSchedule.start_date.slice(0, 10)} /></section>
+                      : document.value === 'training-10' && selectedSchedule && programType
+                        ? <section aria-label="Training 10%"><Training10Panel scheduleID={selectedSchedule.id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} defaultDate={selectedSchedule.start_date.slice(0, 10)} /></section>
+                        : document.value === 'training-100' && selectedSchedule && programType
+                          ? <section aria-label="Training 100%"><Training100Panel scheduleID={selectedSchedule.id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} defaultDate={selectedSchedule.start_date.slice(0, 10)} /></section>
+                          : document.value === 'servis-berkala' && selectedSchedule && programType
+                            ? <section aria-label="Servis Berkala"><ServisBerkalaPanel scheduleID={selectedSchedule.id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} defaultDate={selectedSchedule.start_date.slice(0, 10)} /></section>
+                            : document.value === 'tkdn' && selectedSchedule && programType
+                              ? <section aria-label="TKDN"><TKDNPanel scheduleID={selectedSchedule.id} programID={selectedSchedule.program_id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} defaultDate={selectedSchedule.start_date.slice(0, 10)} /></section>
+                              : document.value === 'ba-pemeriksaan' && selectedSchedule && programType
+                                ? <section aria-label="BA Pemeriksaan"><PemeriksaanPanel scheduleID={selectedSchedule.id} programID={selectedSchedule.program_id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} defaultDate={selectedSchedule.start_date.slice(0, 10)} /></section>
+                                : <DocumentWorkspace document={document} programType={programType} />}
       </TabsContent>)}
     </Tabs>
   </div>;

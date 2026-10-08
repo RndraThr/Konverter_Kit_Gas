@@ -129,9 +129,13 @@ type ComponentSnapshot struct {
 	Checked  bool   `json:"checked"`
 }
 type SignatureSnapshot struct {
-	ReceiverName   string `json:"receiver_name"`
-	ExecutorName   string `json:"executor_name"`
-	SupervisorName string `json:"supervisor_name"`
+	ReceiverName string `json:"receiver_name"`
+	// ReceiverSignatureKey = ID slot distribusi (satu penerimaan): tanda tangan
+	// yang sama dipakai BA perorangan dan daftar hadir Training penerimaan
+	// tersebut; penerimaan lain oleh orang yang sama bertanda tangan sendiri.
+	ReceiverSignatureKey string `json:"receiver_signature_key,omitempty"`
+	ExecutorName         string `json:"executor_name"`
+	SupervisorName       string `json:"supervisor_name"`
 }
 type Snapshot struct {
 	ProgramType    string              `json:"program_type"`
@@ -157,6 +161,7 @@ type SourceData struct {
 	ExecutorName             string
 	SupervisorName           string
 	PackageTemplateVersionID string
+	DistributionSlotID       string
 }
 
 type IndividualDocument struct {

@@ -116,15 +116,17 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
     setPending(null);
   };
 
+  // reset dari useMutation stabil, jadi efek ini tetap hanya berjalan saat jenis kegiatan berganti.
+  const resetUpload = upload.reset;
   useEffect(() => {
     pendingRef.current?.controller?.abort();
     if (pendingRef.current?.previewURL) URL.revokeObjectURL(pendingRef.current.previewURL);
-    upload.reset();
+    resetUpload();
     setPending(null);
     setFileError('');
     setPreviewIndex(null);
     setPendingDelete(null);
-  }, [activityType]);
+  }, [activityType, resetUpload]);
 
   const items = gallery.data?.data.items ?? [];
   const total = gallery.data?.data.total ?? 0;

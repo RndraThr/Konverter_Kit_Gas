@@ -146,7 +146,7 @@ test('uploads a photo dropped onto the upload zone', async () => {
     expect(body.get('source')).toBe('gallery');
     return { data: { id: 'media-2', display_name: 'WJO-RAKOR-20260916-160000', media_type: 'image', content_url: '/api/v1/activities/media/media-2/content' } as never };
   });
-  vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
+  vi.mocked(apiRequest).mockImplementation((path: string, _init?: RequestInit) => {
     const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
     if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
     return Promise.reject(new Error(`Unexpected request: ${path}`));
@@ -162,7 +162,7 @@ test('uploads a photo dropped onto the upload zone', async () => {
 
 test('uploads a photo via the gallery picker', async () => {
   vi.mocked(uploadRequest).mockResolvedValue({ data: { id: 'media-2', display_name: 'WJO-RAKOR-20260916-160000', media_type: 'image', content_url: '/api/v1/activities/media/media-2/content' } as never });
-  vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
+  vi.mocked(apiRequest).mockImplementation((path: string, _init?: RequestInit) => {
     const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
     if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
     return Promise.reject(new Error(`Unexpected request: ${path}`));
@@ -176,7 +176,7 @@ test('uploads a photo via the gallery picker', async () => {
 
 test('renders a video element while a video upload is pending', async () => {
   vi.mocked(uploadRequest).mockImplementation(() => new Promise(() => undefined));
-  vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
+  vi.mocked(apiRequest).mockImplementation((path: string, _init?: RequestInit) => {
     const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
     if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
     return Promise.reject(new Error(`Unexpected request: ${path}`));
@@ -246,7 +246,7 @@ test('offers retry and cancel actions after an upload fails', async () => {
     expect(body.get('regency_id')).toBe('regency-1');
     return { data: { id: 'media-2' } as never };
   });
-  vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
+  vi.mocked(apiRequest).mockImplementation((path: string, _init?: RequestInit) => {
     const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
     if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
     return Promise.reject(new Error(`Unexpected request: ${path}`));
@@ -329,7 +329,7 @@ test('uploads to the currently active tab, not the first option', async () => {
     sentActivityType = body.get('activity_type') as string;
     return new Promise(() => undefined);
   });
-  vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
+  vi.mocked(apiRequest).mockImplementation((path: string, _init?: RequestInit) => {
     const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
     if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
     return Promise.reject(new Error(`Unexpected request: ${path}`));
@@ -356,7 +356,7 @@ test('does not render tabs in single-activity-type mode', async () => {
 
 test('clears a failed upload when navigating to another activity type', async () => {
   vi.mocked(uploadRequest).mockRejectedValue(new Error('upload failed'));
-  vi.mocked(apiRequest).mockImplementation((path: string, init?: RequestInit) => {
+  vi.mocked(apiRequest).mockImplementation((path: string, _init?: RequestInit) => {
     const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
     if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
     return Promise.reject(new Error(`Unexpected request: ${path}`));

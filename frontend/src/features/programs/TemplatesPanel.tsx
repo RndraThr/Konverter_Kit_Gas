@@ -21,10 +21,10 @@ import { SetupToolbar } from './SetupToolbar';
 import { ConverterOption, DataResponse, DocumentationSlot, DocumentationTemplate, HoseOption, MachineOption, PackageComponent, PackageTemplate, ProgramType, programTypeLabel } from './types';
 
 const newSlot = (index = 0): DocumentationSlot => ({ slot_code: '', label: '', stage: 'mesin', is_required: true, min_files: 1, max_files: 1, input_source: 'both', media_kind: 'image', require_location: false, require_captured_at: false, sort_order: (index + 1) * 10 });
-const newMachineOption = (): MachineOption => ({ code: '', brand: '', type: '', power: '', fuel_type: '' });
-const newHoseOption = (): HoseOption => ({ code: '', suction_brand: '', suction_spec: '', discharge_brand: '', discharge_spec: '' });
-const newConverterOption = (): ConverterOption => ({ code: '', brand: '' });
-const newComponent = (): PackageComponent => ({ code: '', label: '', quantity: 1, unit: '' });
+const newMachineOption = (): MachineOption => ({ code: '', brand: '', type: '', power: '', fuel_type: '', tkdn_percent: 0 });
+const newHoseOption = (): HoseOption => ({ code: '', suction_brand: '', suction_spec: '', discharge_brand: '', discharge_spec: '', suction_tkdn_percent: 0, discharge_tkdn_percent: 0 });
+const newConverterOption = (): ConverterOption => ({ code: '', brand: '', tkdn_percent: 0 });
+const newComponent = (): PackageComponent => ({ code: '', label: '', quantity: 1, unit: '', brand: '', tkdn_percent: 0, handover_hidden: false });
 
 const emptyPackageValues = { template_code: '', name: '', program_type: 'farmer' as ProgramType, status: 'draft', machine_options: [] as MachineOption[], hose_options: [] as HoseOption[], converter_options: [] as ConverterOption[], components: [] as PackageComponent[] };
 const createEmptyDocumentValues = () => ({ template_code: '', name: '', program_type: 'farmer' as ProgramType, status: 'draft', slots: [newSlot()] });
@@ -39,7 +39,7 @@ function legacyPair(value = '') {
 }
 
 function normalizeMachineOption(option: Partial<MachineOption>): MachineOption {
-  return { code: option.code ?? '', brand: option.brand ?? '', type: option.type ?? '', power: option.power ?? '', fuel_type: option.fuel_type ?? '' };
+  return { code: option.code ?? '', brand: option.brand ?? '', type: option.type ?? '', power: option.power ?? '', fuel_type: option.fuel_type ?? '', tkdn_percent: option.tkdn_percent ?? 0 };
 }
 
 function normalizeHoseOption(option: Partial<HoseOption>): HoseOption {
@@ -51,6 +51,8 @@ function normalizeHoseOption(option: Partial<HoseOption>): HoseOption {
     suction_spec: option.suction_spec ?? specs[0],
     discharge_brand: option.discharge_brand ?? brands[1],
     discharge_spec: option.discharge_spec ?? specs[1],
+    suction_tkdn_percent: option.suction_tkdn_percent ?? 0,
+    discharge_tkdn_percent: option.discharge_tkdn_percent ?? 0,
   };
 }
 
@@ -141,6 +143,7 @@ export function TemplatesPanel() {
           <FormField label={`Tipe mesin ${index + 1}`} name={`machine_type_${index}`} required value={option.type} onChange={(e) => updateMachineOption(index, { type: uppercaseBusinessText(e.target.value) })} />
           <FormField label={`Daya mesin ${index + 1}`} name={`machine_power_${index}`} required value={option.power} onChange={(e) => updateMachineOption(index, { power: uppercaseBusinessText(e.target.value) })} />
           <FormField label={`Jenis BBM ${index + 1}`} name={`machine_fuel_type_${index}`} required value={option.fuel_type} onChange={(e) => updateMachineOption(index, { fuel_type: uppercaseBusinessText(e.target.value) })} />
+          <FormField label={`TKDN mesin ${index + 1} (%)`} name={`machine_tkdn_${index}`} type="number" min={0} max={100} step="0.01" value={option.tkdn_percent ?? 0} onChange={(e) => updateMachineOption(index, { tkdn_percent: Number(e.target.value) })} />
         </div>)}
       </div></SetupFormSection>
 
@@ -152,6 +155,8 @@ export function TemplatesPanel() {
           <FormField label={`Spesifikasi selang hisap ${index + 1}`} name={`hose_suction_spec_${index}`} required value={option.suction_spec} onChange={(e) => updateHoseOption(index, { suction_spec: uppercaseBusinessText(e.target.value) })} />
           <FormField label={`Merk selang buang ${index + 1}`} name={`hose_discharge_brand_${index}`} required value={option.discharge_brand} onChange={(e) => updateHoseOption(index, { discharge_brand: uppercaseBusinessText(e.target.value) })} />
           <FormField label={`Spesifikasi selang buang ${index + 1}`} name={`hose_discharge_spec_${index}`} required value={option.discharge_spec} onChange={(e) => updateHoseOption(index, { discharge_spec: uppercaseBusinessText(e.target.value) })} />
+          <FormField label={`TKDN selang hisap ${index + 1} (%)`} name={`hose_suction_tkdn_${index}`} type="number" min={0} max={100} step="0.01" value={option.suction_tkdn_percent ?? 0} onChange={(e) => updateHoseOption(index, { suction_tkdn_percent: Number(e.target.value) })} />
+          <FormField label={`TKDN selang buang ${index + 1} (%)`} name={`hose_discharge_tkdn_${index}`} type="number" min={0} max={100} step="0.01" value={option.discharge_tkdn_percent ?? 0} onChange={(e) => updateHoseOption(index, { discharge_tkdn_percent: Number(e.target.value) })} />
         </div>)}
       </div></SetupFormSection>
 
@@ -160,16 +165,20 @@ export function TemplatesPanel() {
           <div className="repeatableRowHeader"><strong>Opsi konkit {index + 1}</strong><Button type="button" variant="ghost" size="sm" className="dangerIcon" aria-label={`Hapus opsi konkit ${index + 1}`} onClick={() => setPackageValues({ ...packageValues, converter_options: packageValues.converter_options.filter((_, optionIndex) => optionIndex !== index) })}><Trash2 />Hapus</Button></div>
           <FormField label={`Kode konkit ${index + 1}`} name={`converter_code_${index}`} required value={option.code} onChange={(e) => updateConverterOption(index, { code: e.target.value.toLowerCase() })} />
           <FormField label={`Merk konkit ${index + 1}`} name={`converter_brand_${index}`} required value={option.brand} onChange={(e) => updateConverterOption(index, { brand: uppercaseBusinessText(e.target.value) })} />
+          <FormField label={`TKDN konkit ${index + 1} (%)`} name={`converter_tkdn_${index}`} type="number" min={0} max={100} step="0.01" value={option.tkdn_percent ?? 0} onChange={(e) => updateConverterOption(index, { tkdn_percent: Number(e.target.value) })} />
         </div>)}
       </div></SetupFormSection>
 
-      <SetupFormSection title="Komponen paket" description="Aksesoris dan kelengkapan lain beserta jumlah serta satuannya."><div className="slotEditor fullField"><RepeatableEditorHead title="Komponen, aksesoris, dan kelengkapan" count={packageValues.components.length} addLabel="Tambah komponen" onAdd={addComponent} />
+      <SetupFormSection title="Komponen paket" description="Aksesoris dan kelengkapan lain beserta jumlah, satuan, merk, dan % TKDN. Komponen khusus TKDN (mis. Isi LPG) bisa disembunyikan dari checklist serah terima."><div className="slotEditor fullField"><RepeatableEditorHead title="Komponen, aksesoris, dan kelengkapan" count={packageValues.components.length} addLabel="Tambah komponen" onAdd={addComponent} />
         {packageValues.components.map((component, index) => <div className="componentRow" role="group" aria-label={`Komponen ${index + 1}`} key={index}>
           <div className="repeatableRowHeader"><strong>Komponen {index + 1}</strong><Button type="button" variant="ghost" size="sm" className="dangerIcon" aria-label={`Hapus komponen ${index + 1}`} onClick={() => setPackageValues({ ...packageValues, components: packageValues.components.filter((_, componentIndex) => componentIndex !== index) })}><Trash2 />Hapus</Button></div>
           <FormField label={`Kode komponen ${index + 1}`} name={`component_code_${index}`} required value={component.code} onChange={(e) => updateComponent(index, { code: e.target.value.toLowerCase() })} />
           <FormField label={`Nama komponen ${index + 1}`} name={`component_label_${index}`} required value={component.label} onChange={(e) => updateComponent(index, { label: uppercaseBusinessText(e.target.value) })} />
           <FormField label={`Jumlah komponen ${index + 1}`} name={`component_quantity_${index}`} type="number" min={1} required value={component.quantity} onChange={(e) => updateComponent(index, { quantity: Number(e.target.value) })} />
           <FormField label={`Satuan komponen ${index + 1}`} name={`component_unit_${index}`} required value={component.unit} onChange={(e) => updateComponent(index, { unit: uppercaseBusinessText(e.target.value) })} />
+          <FormField label={`Merk komponen ${index + 1}`} name={`component_brand_${index}`} value={component.brand ?? ''} placeholder="Untuk Realisasi TKDN" onChange={(e) => updateComponent(index, { brand: e.target.value })} />
+          <FormField label={`TKDN komponen ${index + 1} (%)`} name={`component_tkdn_${index}`} type="number" min={0} max={100} step="0.01" value={component.tkdn_percent ?? 0} onChange={(e) => updateComponent(index, { tkdn_percent: Number(e.target.value) })} />
+          <label className="componentHiddenToggle"><Checkbox checked={component.handover_hidden ?? false} onCheckedChange={(checked) => updateComponent(index, { handover_hidden: checked === true })} /><span>Sembunyikan dari checklist BA serah terima</span></label>
         </div>)}
       </div></SetupFormSection>
       {packageMutation.isError && <Alert className="sm:col-span-2" variant="destructive"><AlertDescription>Template paket belum dapat disimpan.</AlertDescription></Alert>}

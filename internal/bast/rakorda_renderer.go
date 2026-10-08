@@ -8,6 +8,8 @@ import (
 	"github.com/go-pdf/fpdf"
 )
 
+const rakordaRowsPerPage = 25
+
 var rakordaColumnWidths = []float64{12, 55, 43, 35, 35}
 
 func RenderRakorda(snapshot RakordaSnapshot, logoBytes map[string][]byte) (RenderedAggregate, error) {
@@ -41,7 +43,9 @@ func RenderRakorda(snapshot RakordaSnapshot, logoBytes map[string][]byte) (Rende
 	return RenderedAggregate{PDF: output.Bytes(), PageCount: pdf.PageNo()}, nil
 }
 
-func renderRakordaHeader(pdf *fpdf.Fpdf, snapshot RakordaSnapshot, logos []registeredLogo, full bool) {
+// renderRakordaLogoStrip menggambar deretan logo tender terpusat di atas
+// halaman dan mengembalikan posisi Y tepat di bawahnya.
+func renderRakordaLogoStrip(pdf *fpdf.Fpdf, logos []registeredLogo) float64 {
 	contentWidth := pageWidthMM - 2*marginMM
 	gap, stripY, stripHeight := 5.5, topMarginMM, 16.0
 	widths := make([]float64, len(logos))
@@ -66,8 +70,14 @@ func renderRakordaHeader(pdf *fpdf.Fpdf, snapshot RakordaSnapshot, logos []regis
 		pdf.ImageOptions(logo.name, x, stripY+(stripHeight-heights[i])/2, widths[i], heights[i], false, logo.options, 0, "")
 		x += widths[i] + gap
 	}
+	return stripY + stripHeight
+}
 
-	pdf.SetXY(marginMM, stripY+stripHeight+1.5)
+func renderRakordaHeader(pdf *fpdf.Fpdf, snapshot RakordaSnapshot, logos []registeredLogo, full bool) {
+	contentWidth := pageWidthMM - 2*marginMM
+	stripBottom := renderRakordaLogoStrip(pdf, logos)
+
+	pdf.SetXY(marginMM, stripBottom+1.5)
 	pdf.SetFont("Helvetica", "BU", 12.5)
 	pdf.CellFormat(contentWidth, 6, "DAFTAR HADIR RAPAT KOORDINASI", "", 1, "C", false, 0, "")
 	if !full {

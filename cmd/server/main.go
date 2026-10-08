@@ -81,7 +81,14 @@ func run(ctx context.Context, cfg config.Config) error {
 	bastDailyRecapService := bast.NewDailyRecapService(bastRepository, mediaStorage, applicationLocation)
 	bastClosingService := bast.NewClosingTitikSerahService(bastRepository, mediaStorage, applicationLocation)
 	bastClosingKabupatenService := bast.NewClosingKabupatenService(bastRepository, mediaStorage, applicationLocation)
+	bastServisBerkalaService := bast.NewServisBerkalaService(bastRepository, mediaStorage, applicationLocation)
+	bastTKDNService := bast.NewTKDNService(bastRepository, mediaStorage)
+	bastPemeriksaanService := bast.NewPemeriksaanService(bastRepository, mediaStorage)
+	bastItemService := bast.NewItemService(bastRepository)
 	bastRakordaService := bast.NewRakordaService(bastRepository, mediaStorage)
+	bastSosialisasiService := bast.NewSosialisasiService(bastRepository, mediaStorage)
+	bastTraining10Service := bast.NewTraining10Service(bastRepository, mediaStorage)
+	bastTraining100Service := bast.NewTraining100Service(bastRepository, mediaStorage)
 	apiHandler := apihttp.NewHandler(apihttp.Dependencies{
 		Auth:              authService,
 		Profile:           profile.NewService(profile.NewRepository(pool)),
@@ -102,7 +109,14 @@ func run(ctx context.Context, cfg config.Config) error {
 		DailyRecap:        bastDailyRecapService,
 		ClosingTitikSerah: bastClosingService,
 		ClosingKabupaten:  bastClosingKabupatenService,
+		ServisBerkala:     bastServisBerkalaService,
+		TKDN:              bastTKDNService,
+		Pemeriksaan:       bastPemeriksaanService,
+		Items:             bastItemService,
 		Rakorda:           bastRakordaService,
+		Sosialisasi:       bastSosialisasiService,
+		Training10:        bastTraining10Service,
+		Training100:       bastTraining100Service,
 		SessionSecret:     cfg.SessionSecret,
 	})
 	handler := web.NewHandler(web.Dependencies{

@@ -258,6 +258,17 @@ func (h *Handler) handleProgramZones(w http.ResponseWriter, r *http.Request, rc 
 		writeData(w, http.StatusOK, result)
 		return
 	}
+	if r.Method == http.MethodDelete && zoneID != "" {
+		if !h.authorize(w, r, rc.principal, "programs.manage") {
+			return
+		}
+		if err := h.deps.Programs.DeleteZone(r.Context(), rc.principal, programID, zoneID, clientMeta(r)); err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if !programMutationMethod(w, r, zoneID) || !h.authorize(w, r, rc.principal, "programs.manage") {
 		return
 	}

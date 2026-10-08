@@ -73,6 +73,9 @@ type packageValues struct {
 		Code, Label string
 		Quantity    int
 		Unit        string
+		// HandoverHidden menandai komponen khusus TKDN (mis. Isi LPG) yang
+		// tidak dicetak di checklist BA serah terima.
+		HandoverHidden bool `json:"handover_hidden"`
 	} `json:"components"`
 }
 
@@ -84,7 +87,7 @@ func (r *Repository) LoadSourceData(ctx context.Context, recipient RecipientDocu
 		SELECT p.program_type,p.fiscal_year,
 			person.full_name,COALESCE(person.nik,''),COALESCE(identifier.display_value,''),COALESCE(person.address,''),COALESCE(person.village,''),COALESCE(person.district,''),r.name,COALESCE(person.phone_number,''),
 			COALESCE(ds.machine_option_code,''),COALESCE(ds.machine_serial_number,''),COALESCE(ds.hose_option_code,''),COALESCE(ds.hose_serial_number,''),COALESCE(ds.converter_option_code,''),COALESCE(ds.converter_serial_number,''),
-			pt.id::text,pt.values_json,ds.verification_snapshot_json,COALESCE(u.full_name,u.username,''),COALESCE(ps.supervisor_name,'')
+			pt.id::text,pt.values_json,ds.verification_snapshot_json,COALESCE(u.full_name,u.username,''),COALESCE(ps.supervisor_name,''),ds.id::text
 		FROM distribution_slots ds
 		JOIN program_schedules ps ON ps.id=ds.schedule_id
 		JOIN programs p ON p.id=ps.program_id JOIN regencies r ON r.id=ps.regency_id
@@ -93,7 +96,7 @@ func (r *Repository) LoadSourceData(ctx context.Context, recipient RecipientDocu
 		JOIN package_template_versions pt ON pt.id=ps.package_template_version_id
 		LEFT JOIN users u ON u.id=ds.distributed_by
 		WHERE ds.id=$1 AND ps.program_id=$2 AND ps.regency_id=$3 AND ds.status='completed' AND ($4 OR ps.regency_id::text=ANY($5))
-	`, recipient.DistributionSlotID, sourceContext.ProgramID, sourceContext.RegencyID, scope.Unrestricted, scope.RegencyIDs).Scan(&source.ProgramType, &source.Render.FiscalYear, &source.Recipient.FullName, &source.Recipient.NIK, &source.Recipient.SectorIdentifier, &source.Recipient.Address, &source.Recipient.Village, &source.Recipient.District, &source.Recipient.Regency, &source.Recipient.PhoneNumber, &machineCode, &source.Equipment.MachineSerial, &hoseCode, &source.Equipment.HoseSerial, &converterCode, &source.Equipment.ConverterSerial, &source.PackageTemplateVersionID, &packageJSON, &verificationJSON, &source.ExecutorName, &source.SupervisorName)
+	`, recipient.DistributionSlotID, sourceContext.ProgramID, sourceContext.RegencyID, scope.Unrestricted, scope.RegencyIDs).Scan(&source.ProgramType, &source.Render.FiscalYear, &source.Recipient.FullName, &source.Recipient.NIK, &source.Recipient.SectorIdentifier, &source.Recipient.Address, &source.Recipient.Village, &source.Recipient.District, &source.Recipient.Regency, &source.Recipient.PhoneNumber, &machineCode, &source.Equipment.MachineSerial, &hoseCode, &source.Equipment.HoseSerial, &converterCode, &source.Equipment.ConverterSerial, &source.PackageTemplateVersionID, &packageJSON, &verificationJSON, &source.ExecutorName, &source.SupervisorName, &source.DistributionSlotID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return SourceData{}, ErrNotFound
 	}
@@ -134,6 +137,9 @@ func (r *Repository) LoadSourceData(ctx context.Context, recipient RecipientDocu
 		}
 	}
 	for _, component := range values.Components {
+		if component.HandoverHidden {
+			continue
+		}
 		source.Components = append(source.Components, ComponentSnapshot{Code: component.Code, Label: component.Label, Quantity: component.Quantity, Unit: component.Unit, Checked: true})
 	}
 	rows, err := r.pool.Query(ctx, `SELECT id::text,storage_key,mime_type,sort_order,max_width_mm::float8,max_height_mm::float8 FROM program_ba_logo_assets WHERE program_id=$1 AND is_visible=true ORDER BY sort_order,id`, sourceContext.ProgramID)
