@@ -3,6 +3,7 @@ package bast
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-pdf/fpdf"
@@ -127,7 +128,7 @@ func rakordaNarrative(documentDate string, fiscalYear int, zoneName string) stri
 	months := [...]string{"", "JANUARI", "FEBRUARI", "MARET", "APRIL", "MEI", "JUNI", "JULI", "AGUSTUS", "SEPTEMBER", "OKTOBER", "NOVEMBER", "DESEMBER"}
 	return fmt.Sprintf(
 		"PADA HARI INI, %s, TANGGAL %d %s TAHUN %d, TELAH DILAKUKAN RAPAT KOORDINASI (RAKOR) PENGADAAN BARANG PENYEDIAAN DAN PENDISTRIBUSIAN PAKET PERDANA LIQUEFIED PETROLEUM GAS (LPG) UNTUK MESIN POMPA AIR BAGI PETANI SASARAN TAHUN ANGGARAN %d DI PT PERTAMINA PATRA NIAGA (TERMASUK PENDISTRIBUSIAN DAN PEMASANGAN) %s.",
-		days[date.Weekday()], date.Day(), months[date.Month()], date.Year(), fiscalYear, zoneName,
+		days[date.Weekday()], date.Day(), months[date.Month()], date.Year(), fiscalYear, strings.ToUpper(zoneWithWords(zoneName)),
 	)
 }
 

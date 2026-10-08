@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"konkit/internal/auth"
+	"konkit/internal/textnorm"
 
 	"github.com/go-pdf/fpdf"
 )
@@ -147,7 +148,7 @@ const (
 // lebar kolom dan menghitung tinggi baris.
 func layoutParticipantRow(pdf *fpdf.Fpdf, participant ActivityParticipant) ([][]string, float64) {
 	pdf.SetFont(activityFont, "", participantTextPt)
-	cells := []string{participant.Name, participant.Occupation, participant.Phone, participant.Address}
+	cells := []string{textnorm.DisplayTitle(participant.Name), participant.Occupation, participant.Phone, textnorm.DisplayTitle(participant.Address)}
 	lines := make([][]string, len(cells))
 	maxLines := 1
 	for i, text := range cells {

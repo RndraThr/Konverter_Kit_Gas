@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"konkit/internal/textnorm"
+
 	"github.com/go-pdf/fpdf"
 )
 
@@ -92,7 +94,7 @@ func RenderTKDN(snapshot TKDNSnapshot, logoBytes map[string][]byte) (RenderedAgg
 		return baseline
 	}
 	writeMeta("Nama Penyedia")
-	pdf.Text(valueLeft, textBaseline(y, tkdnMetaRowMM, activityTextPt), snapshot.ProviderName)
+	pdf.Text(valueLeft, textBaseline(y, tkdnMetaRowMM, activityTextPt), textnorm.DisplayTitle(snapshot.ProviderName))
 	y += tkdnMetaRowMM + 1
 	writeMeta("Nama Pengadaan")
 	pdf.SetXY(valueLeft, y+0.5)
@@ -103,10 +105,10 @@ func RenderTKDN(snapshot TKDNSnapshot, logoBytes map[string][]byte) (RenderedAgg
 	})
 	y = pdf.GetY() + 1
 	writeMeta("Kabupaten / Kota")
-	pdf.Text(valueLeft, textBaseline(y, tkdnMetaRowMM, activityTextPt), snapshot.RegencyName)
+	pdf.Text(valueLeft, textBaseline(y, tkdnMetaRowMM, activityTextPt), textnorm.DisplayTitle(snapshot.RegencyName))
 	y += tkdnMetaRowMM + 1
 	writeMeta("Provinsi")
-	pdf.Text(valueLeft, textBaseline(y, tkdnMetaRowMM, activityTextPt), snapshot.ProvinceName)
+	pdf.Text(valueLeft, textBaseline(y, tkdnMetaRowMM, activityTextPt), textnorm.DisplayTitle(snapshot.ProvinceName))
 	y += tkdnMetaRowMM + 4
 
 	pdf.SetY(y)

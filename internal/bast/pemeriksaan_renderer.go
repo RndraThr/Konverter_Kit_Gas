@@ -6,6 +6,8 @@ import (
 	"slices"
 	"strings"
 
+	"konkit/internal/textnorm"
+
 	"github.com/go-pdf/fpdf"
 )
 
@@ -97,9 +99,9 @@ func renderPemeriksaanForm(pdf *fpdf.Fpdf, snapshot PemeriksaanSnapshot, logos [
 	pdf.SetFont(activityFont, "", activityTextPt)
 	for _, item := range []struct{ label, value string }{
 		{"No. Purchase Order (PO)", snapshot.PONumber},
-		{"Kabupaten / Kota", snapshot.RegencyName},
-		{"Provinsi", snapshot.ProvinceName},
-		{"Pemasok", snapshot.SupplierName},
+		{"Kabupaten / Kota", textnorm.DisplayTitle(snapshot.RegencyName)},
+		{"Provinsi", textnorm.DisplayTitle(snapshot.ProvinceName)},
+		{"Pemasok", textnorm.DisplayTitle(snapshot.SupplierName)},
 		{"Fungsi Peminta Pengadaan", pemeriksaanRequester},
 	} {
 		baseline := textBaseline(y, pemeriksaanMetaRowMM, activityTextPt)

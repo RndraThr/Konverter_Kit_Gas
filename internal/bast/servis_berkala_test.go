@@ -57,7 +57,7 @@ func TestServisBerkalaNarrativeBoldsProcurementThroughZone(t *testing.T) {
 	if segments[0].text != "Sehubungan dengan " || segments[0].style != "" || segments[2].text != "Liquefied Petroleum Gas" || segments[2].style != "BI" {
 		t.Fatalf("segments=%+v", segments)
 	}
-	if segments[3].style != "B" || !strings.HasSuffix(segments[3].text, "(Termasuk Pendistribusian Dan Pemasangan) Zona 1.") {
+	if segments[3].style != "B" || !strings.HasSuffix(segments[3].text, "(Termasuk Pendistribusian Dan Pemasangan) Zona 1 (Satu).") {
 		t.Fatalf("bold closing=%q", segments[3].text)
 	}
 	if segments[4].style != "" || !strings.HasPrefix(segments[4].text, " Pelaksana Pekerjaan memberikan Servis Berkala sebanyak 2 (dua) kali") {
