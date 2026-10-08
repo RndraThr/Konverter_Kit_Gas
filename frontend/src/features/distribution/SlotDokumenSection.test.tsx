@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
 import { apiRequest } from '../../lib/api';
 import { PermissionsProvider } from '../../lib/permissions';
@@ -12,9 +13,9 @@ vi.mock('../../lib/api', async () => {
 });
 
 const openSlot: DistributionSlot = {
-	id: 'slot-1', schedule_id: 'schedule-1', slot_number: 7, distribution_date: '2026-10-20', status: 'open',
+	id: 'slot-1', schedule_id: 'schedule-1', slot_number: 7, distribution_date: null, status: 'open',
   machine_option_code: 'MSN-001', machine_serial_number: 'SN-MSN-1', hose_option_code: 'HSE-001', hose_serial_number: 'SN-HSE-1', converter_serial_number: 'SN-CNV-1',
-  documentation: [], created_at: '2026-09-20T00:00:00Z', updated_at: '2026-09-20T00:00:00Z',
+  documentation: [], needs_recompletion: false, created_at: '2026-09-20T00:00:00Z', updated_at: '2026-09-20T00:00:00Z',
 };
 
 const candidate = {
@@ -27,7 +28,7 @@ const candidate = {
 function renderSection(slot: DistributionSlot, permissions = ['distribution.pos_dokumen']) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const onChanged = vi.fn();
-  render(<QueryClientProvider client={client}><PermissionsProvider permissions={permissions}><SlotDokumenSection slot={slot} onChanged={onChanged} /></PermissionsProvider></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><PermissionsProvider permissions={permissions}><SlotDokumenSection slot={slot} machineOptions={[{ code: 'MSN-001', brand: 'SHARK', type: 'SPWP' }]} converterOptions={[{ code: 'CNV-001', brand: 'ERGAS' }]} hoseOptions={[{ code: 'HSE-001', brand: 'TRILIUN' }]} onChanged={onChanged} /></PermissionsProvider></QueryClientProvider>);
   return { onChanged };
 }
 
@@ -121,4 +122,88 @@ test('renders a read-only recipient summary once linked', () => {
   expect(screen.getByText('Terhubung')).toBeVisible();
   expect(screen.getByText('7306014101900001')).toBeVisible();
   expect(screen.queryByLabelText('NIK Penerima')).not.toBeInTheDocument();
+});
+
+test('saves the date before mounting a recipient and keeps both changes in the workflow', async () => {
+  vi.mocked(apiRequest).mockImplementation((path, init) => {
+    if (path.includes('/date') && init?.method === 'PATCH') return Promise.resolve({ data: { ...openSlot, distribution_date: '2026-10-21' } });
+    if (path.includes('candidate-suggestions')) return Promise.resolve({ data: [candidate] });
+    if (path.includes('/link') && init?.method === 'POST') return Promise.resolve({ data: { ...openSlot, distribution_date: '2026-10-21', status: 'linked', full_name: candidate.full_name, nik: candidate.nik } });
+    return Promise.reject(new Error(`Unexpected request: ${path}`));
+  });
+  renderSection(openSlot);
+
+  fireEvent.change(screen.getByLabelText('Tanggal distribusi'), { target: { value: '2026-10-21' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Simpan tanggal distribusi' }));
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/slots/7/date?schedule_id=schedule-1', { method: 'PATCH', body: JSON.stringify({ distribution_date: '2026-10-21' }) }));
+  fireEvent.change(screen.getByLabelText('NIK Penerima'), { target: { value: candidate.nik } });
+  fireEvent.click(await screen.findByRole('option', { name: `${candidate.nik} ${candidate.full_name}` }));
+  fireEvent.click(screen.getByRole('button', { name: 'Hubungkan ke Nomor Bagi Ini' }));
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/slots/7/link?schedule_id=schedule-1', expect.objectContaining({ method: 'POST' })));
+});
+
+test('can mount a recipient first and save the date afterward', async () => {
+  const linked = { ...openSlot, status: 'linked' as const, full_name: candidate.full_name, nik: candidate.nik };
+  vi.mocked(apiRequest).mockResolvedValue({ data: { ...linked, distribution_date: '2026-10-22' } });
+  renderSection(linked);
+
+  fireEvent.change(screen.getByLabelText('Tanggal distribusi'), { target: { value: '2026-10-22' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Simpan tanggal distribusi' }));
+
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/slots/7/date?schedule_id=schedule-1', { method: 'PATCH', body: JSON.stringify({ distribution_date: '2026-10-22' }) }));
+});
+
+test('edits recipient details without allowing NIK mutation and supports replacement search', async () => {
+  const linked = { ...openSlot, status: 'linked' as const, full_name: candidate.full_name, nik: candidate.nik, address: 'Alamat Lama', village: 'Tempe', district: 'Wajo', phone_number: '0812', sector_identifier: 'KP01' };
+  vi.mocked(apiRequest).mockImplementation((path) => path.includes('candidate-suggestions') ? Promise.resolve({ data: [candidate] }) : Promise.resolve({ data: linked }));
+  renderSection(linked);
+
+  expect(screen.getByLabelText('NIK terpasang')).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Alamat'), { target: { value: 'Alamat Baru' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Simpan data penerima' }));
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/slots/7/recipient?schedule_id=schedule-1', expect.objectContaining({ method: 'PATCH' })));
+
+  await userEvent.click(screen.getByRole('button', { name: 'Ganti penerima' }));
+  expect(screen.getByLabelText('NIK pengganti')).toBeVisible();
+});
+
+test('saves equipment and allows document media management', async () => {
+  const documentation = [{ id: 'doc-1', code: 'document', label: 'Foto Dokumen', stage: 'dokumen' as const, status: 'missing', required: true, min_files: 1, max_files: 2, media_kind: 'image' as const, input_source: 'both' as const, files: [] }];
+  const linked = { ...openSlot, status: 'linked' as const, full_name: candidate.full_name, nik: candidate.nik, documentation };
+  vi.mocked(apiRequest).mockResolvedValue({ data: linked });
+  renderSection(linked);
+
+  await userEvent.click(screen.getByRole('combobox', { name: 'Merk/Tipe Mesin' }));
+  await userEvent.click(screen.getByRole('option', { name: 'SHARK SPWP' }));
+  fireEvent.change(screen.getByLabelText('Serial Number Mesin'), { target: { value: 'sn-001' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Simpan data peralatan' }));
+
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/slots/7/equipment?schedule_id=schedule-1', expect.objectContaining({ method: 'PATCH' })));
+  expect(screen.getByLabelText('Buka kamera')).toBeVisible();
+});
+
+test('shows relocation state, failed retry, and keeps previews visible', () => {
+  const documentation = [{ id: 'doc-1', code: 'document', label: 'Foto Dokumen', stage: 'dokumen' as const, status: 'complete', required: true, min_files: 1, max_files: 2, media_kind: 'image' as const, files: [
+    { id: 'media-1', slot_id: 'doc-1', original_filename: 'pending.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'camera', status: 'accepted', content_url: '/media/1', storage_state: 'moving' as const },
+    { id: 'media-2', slot_id: 'doc-1', original_filename: 'failed.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'camera', status: 'accepted', content_url: '/media/2', storage_state: 'move_failed' as const },
+  ] }];
+  renderSection({ ...openSlot, status: 'linked', full_name: candidate.full_name, nik: candidate.nik, documentation });
+
+  expect(screen.getByRole('status')).toHaveTextContent('1 media sedang dipindahkan');
+  expect(screen.getByRole('alert')).toHaveTextContent('1 pemindahan media gagal');
+  expect(screen.getByRole('button', { name: 'Lihat pending.jpg' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Coba pindahkan lagi failed.jpg' })).toBeVisible();
+});
+
+test('locks completed document POS until revision succeeds and refreshes automatically', async () => {
+  const documentation = [{ id: 'doc-1', code: 'document', label: 'Foto Dokumen', stage: 'dokumen' as const, status: 'missing', required: true, min_files: 1, max_files: 2, media_kind: 'image' as const, files: [] }];
+  const completed = { ...openSlot, status: 'completed' as const, distribution_date: '2026-10-20', full_name: candidate.full_name, nik: candidate.nik, documentation };
+  vi.mocked(apiRequest).mockResolvedValue({ data: { ...completed, status: 'linked', needs_recompletion: true, reopened_stage: 'dokumen' } });
+  renderSection(completed);
+
+  expect(screen.queryByLabelText('Buka kamera')).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Buka revisi POS Dokumen' }));
+  await userEvent.type(screen.getByLabelText('Alasan revisi'), 'Perbaiki dokumen');
+  await userEvent.click(screen.getByRole('button', { name: 'Buka revisi' }));
+  expect(await screen.findByLabelText('Buka kamera')).toBeVisible();
 });

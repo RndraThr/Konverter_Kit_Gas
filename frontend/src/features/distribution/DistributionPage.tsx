@@ -77,7 +77,7 @@ export function DistributionPage() {
         {search.isError && <DataState kind="error" title="Nomor bagi tidak ditemukan" description={search.error instanceof ApiError ? search.error.message : 'Muat ulang halaman, lalu coba lagi.'} />}
         {slot && <div className={styles.slotSections}>
           <SlotMesinSection slot={slot} machineOptions={machineOptions} converterOptions={converterOptions} hoseOptions={hoseOptions} onChanged={onSlotChanged} />
-          <SlotDokumenSection slot={slot} onChanged={onSlotChanged} />
+          <SlotDokumenSection slot={slot} machineOptions={machineOptions} converterOptions={converterOptions} hoseOptions={hoseOptions} onChanged={onSlotChanged} />
           <SlotPenyerahanSection slot={slot} onChanged={onSlotChanged} />
         </div>}
         {!slot && creating !== null && <div className={styles.slotSections}>

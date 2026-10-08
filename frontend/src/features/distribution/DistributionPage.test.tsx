@@ -73,6 +73,15 @@ test('the inline create form loads equipment options from the schedule package t
   expect(await screen.findByRole('option', { name: /SHARK SPWP 80-30/ })).toBeVisible();
 });
 
+test('passes schedule equipment options to the existing slot document POS', async () => {
+  renderPage(['distribution.view', 'distribution.pos_mesin', 'distribution.pos_dokumen']);
+  await chooseSchedule(/Wajo Tahap 1/);
+  await userEvent.click(await screen.findByRole('button', { name: /Nomor 1 - Terbuka/ }));
+
+  await userEvent.click(await screen.findByRole('combobox', { name: 'Merk/Tipe Mesin' }));
+  expect(await screen.findByRole('option', { name: /SHARK SPWP 80-30/ })).toBeVisible();
+});
+
 test('without distribution.pos_mesin the create boxes are disabled', async () => {
   renderPage(['distribution.view']);
   await chooseSchedule(/Wajo Tahap 1/);
