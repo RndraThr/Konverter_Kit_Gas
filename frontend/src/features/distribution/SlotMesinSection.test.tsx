@@ -1,96 +1,69 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
 import { apiRequest } from '../../lib/api';
 import { PermissionsProvider } from '../../lib/permissions';
 import { SlotMesinSection } from './SlotMesinSection';
 import type { DistributionSlot, EquipmentOption } from './types';
 
-vi.mock('../../lib/api', () => ({ apiRequest: vi.fn() }));
+vi.mock('../../lib/api', async () => {
+  const actual = await vi.importActual<typeof import('../../lib/api')>('../../lib/api');
+  return { ...actual, apiRequest: vi.fn() };
+});
+vi.mock('../../lib/upload', () => ({ uploadRequest: vi.fn() }));
 
-const slot: DistributionSlot = {
-	id: 'slot-1', schedule_id: 'schedule-1', slot_number: 7, status: 'linked',
-	distribution_date: '2026-10-20',
-  machine_option_code: 'MSN-001', machine_serial_number: 'SN-MSN-1',
-  hose_option_code: 'HSE-001', hose_serial_number: 'SN-HSE-1', converter_option_code: 'CNV-001', converter_serial_number: 'SN-CNV-1',
-  documentation: [], created_at: '2026-09-20T00:00:00Z', updated_at: '2026-09-20T00:00:00Z',
+const machineDocumentation = {
+  id: 'doc-1', code: 'machine', label: 'Foto Mesin', stage: 'mesin' as const,
+  status: 'missing', required: true, min_files: 1, max_files: 2,
+  media_kind: 'image' as const, input_source: 'both' as const, files: [],
 };
-
+const slot: DistributionSlot = {
+  id: 'slot-1', schedule_id: 'schedule-1', slot_number: 7, status: 'linked',
+  distribution_date: null, documentation: [machineDocumentation], needs_recompletion: false,
+  created_at: '2026-09-20T00:00:00Z', updated_at: '2026-09-20T00:00:00Z',
+};
 const machineOptions: EquipmentOption[] = [{ code: 'MSN-001', brand: 'SHARK', type: 'SPWP 80-30' }];
-const converterOptions: EquipmentOption[] = [{ code: 'CNV-001', brand: 'ERGAS' }];
-const hoseOptions: EquipmentOption[] = [{ code: 'HSE-001', brand: 'TRILIUNHOSE', spec: '2 INCI' }];
 
-function renderSection(overrides: Partial<DistributionSlot> = {}, permissions = ['*']) {
+function renderSection(overrides: Partial<DistributionSlot> = {}, permissions = ['distribution.pos_mesin']) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  return render(<QueryClientProvider client={client}><PermissionsProvider permissions={permissions}><SlotMesinSection slot={{ ...slot, ...overrides }} machineOptions={machineOptions} converterOptions={converterOptions} hoseOptions={hoseOptions} onChanged={vi.fn()} /></PermissionsProvider></QueryClientProvider>);
+  const onChanged = vi.fn();
+  const view = render(<QueryClientProvider client={client}><PermissionsProvider permissions={permissions}><SlotMesinSection slot={{ ...slot, ...overrides }} machineOptions={machineOptions} converterOptions={[]} hoseOptions={[]} onChanged={onChanged} /></PermissionsProvider></QueryClientProvider>);
+  return { ...view, onChanged };
 }
 
-const mesinPhotoDocumentation = { id: 'doc-1', code: 'machine', label: 'Foto Mesin', stage: 'mesin' as const, status: 'complete', files: [{ id: 'media-1', slot_id: 'doc-1', original_filename: 'foto.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'camera', status: 'accepted', content_url: '/media/1' }] };
-
-test('pre-fills the equipment fields with the slot\'s current values', () => {
-  renderSection();
-  expect(screen.getByText('SHARK SPWP 80-30')).toBeVisible();
-  expect(screen.getByLabelText('Serial Number Mesin')).toHaveValue('SN-MSN-1');
-  expect(screen.getByText('ERGAS')).toBeVisible();
-  expect(screen.getByLabelText('Serial Number Konkit/Reducer')).toHaveValue('SN-CNV-1');
-  expect(screen.getByText('TRILIUNHOSE 2 INCI')).toBeVisible();
-});
-
-test('keeps an unknown historical option code selectable instead of blank', () => {
-  renderSection({ machine_option_code: 'MSN-LEGACY' });
-  expect(screen.getByText('MSN-LEGACY')).toBeVisible();
-});
-
-test('saves equipment changes for the correct slot number', async () => {
-  vi.mocked(apiRequest).mockResolvedValue({ data: { ...slot, machine_serial_number: 'SN-NEW' } });
+test('shows only machine documentation and keeps it manageable for POS Mesin officers', () => {
   renderSection();
 
-  fireEvent.change(screen.getByLabelText('Serial Number Mesin'), { target: { value: 'sn-new' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Simpan data mesin' }));
-
-  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith(
-    '/api/v1/distribution/slots/7/equipment?schedule_id=schedule-1',
-    expect.objectContaining({ method: 'PATCH' }),
-  ));
-  const [, init] = vi.mocked(apiRequest).mock.calls[0];
-  const body = JSON.parse(init!.body as string);
-  expect(body.machine_serial_number).toBe('SN-NEW');
+  expect(screen.getByText('Foto Mesin')).toBeVisible();
+  expect(screen.getByLabelText('Buka kamera')).toBeVisible();
+  expect(screen.queryByLabelText('Tanggal distribusi')).not.toBeInTheDocument();
+  expect(screen.queryByText('Merk/Tipe Mesin')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Serial Number Mesin')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/NIK/i)).not.toBeInTheDocument();
 });
 
-test('locks equipment fields once a POS Mesin photo has been uploaded', () => {
-  renderSection({ documentation: [mesinPhotoDocumentation] });
-  expect(screen.getByLabelText('Serial Number Mesin')).toBeDisabled();
-  expect(screen.getByLabelText('Serial Number Konkit/Reducer')).toBeDisabled();
-  expect(screen.queryByRole('button', { name: 'Simpan data mesin' })).not.toBeInTheDocument();
-  expect(screen.getByText('Data mesin dikunci setelah foto POS Mesin diunggah.')).toBeVisible();
-});
-
-test('leaves equipment editable when photos exist for other stages only', () => {
-  renderSection({ documentation: [{ id: 'doc-2', code: 'handover', label: 'Foto Penyerahan', stage: 'penyerahan', status: 'complete', files: [{ id: 'media-2', slot_id: 'doc-2', original_filename: 'foto.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'camera', status: 'accepted', content_url: '/media/2' }] }] });
-  expect(screen.getByLabelText('Serial Number Mesin')).toBeEnabled();
-  expect(screen.getByRole('button', { name: 'Simpan data mesin' })).toBeVisible();
-});
-
-test('hides edit controls without distribution.pos_mesin permission', () => {
+test('keeps machine documentation read-only without POS Mesin permission', () => {
   renderSection({}, ['distribution.view']);
-  expect(screen.getByLabelText('Serial Number Mesin')).toBeDisabled();
-  expect(screen.queryByRole('button', { name: 'Simpan data mesin' })).not.toBeInTheDocument();
+
+  expect(screen.getByRole('article', { name: 'Foto Mesin' })).toBeVisible();
+  expect(screen.queryByLabelText('Buka kamera')).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Pilih galeri')).not.toBeInTheDocument();
 });
 
-test('allows the distribution date to change before any photo is uploaded', () => {
-	renderSection();
-	expect(screen.getByLabelText('Tanggal distribusi')).toHaveValue('2026-10-20');
-	expect(screen.getByRole('button', { name: 'Simpan tanggal distribusi' })).toBeEnabled();
-});
+test('keeps completed slots read-only until a machine-stage revision succeeds', async () => {
+  const completed = { ...slot, status: 'completed' as const, needs_recompletion: false };
+  vi.mocked(apiRequest).mockResolvedValue({ data: { ...completed, status: 'linked', needs_recompletion: true, reopened_stage: 'mesin' } });
+  const { onChanged } = renderSection(completed);
 
-test('locks the distribution date after the first photo is uploaded', () => {
-	renderSection({ documentation: [mesinPhotoDocumentation] });
-	expect(screen.getByLabelText('Tanggal distribusi')).toBeDisabled();
-	expect(screen.getByText('Tanggal dikunci setelah foto pertama diunggah.')).toBeVisible();
-});
+  expect(screen.queryByLabelText('Buka kamera')).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Buka revisi POS Mesin' }));
+  await userEvent.type(screen.getByLabelText('Alasan revisi'), 'Foto mesin perlu diperbaiki');
+  await userEvent.click(screen.getByRole('button', { name: 'Buka revisi' }));
 
-test('offers barcode scanning for serial numbers while equipment is editable', () => {
-  renderSection();
-  expect(screen.getByRole('button', { name: 'Scan Serial Number Mesin' })).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Scan Serial Number Konkit/Reducer' })).toBeVisible();
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/slots/slot-1/reopen', {
+    method: 'POST', body: JSON.stringify({ stage: 'mesin', reason: 'Foto mesin perlu diperbaiki' }),
+  }));
+  expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ status: 'linked', reopened_stage: 'mesin' }));
+  expect(await screen.findByLabelText('Buka kamera')).toBeVisible();
 });
