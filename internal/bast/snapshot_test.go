@@ -6,7 +6,7 @@ import (
 )
 
 func TestBuildSnapshotNormalizesFarmerDocument(t *testing.T) {
-	source := SourceData{ProgramType: "farmer", DocumentNumber: "0001/50/KSM-KKT-WJO/XII/2024", LocalDate: "2024-12-10", Render: RenderIdentity{FiscalYear: 2024, Logos: []LogoSnapshot{{AssetID: "b", SortOrder: 2}, {AssetID: "a", SortOrder: 1}}}, Recipient: RecipientSnapshot{FullName: "Siti Aminah", NIK: "7306014101900001", SectorIdentifier: "KP-01", Address: "Alamat panjang", PhoneNumber: "08123456789"}, Equipment: EquipmentSnapshot{MachineBrand: "SHARK", MachineType: "SPWP 80-30 / 3 inch", MachineSerial: "M-001", HoseBrand: "TRILIUNHOSE", HoseSpec: "6m/10m", ConverterBrand: "ERGAS"}, Components: []ComponentSnapshot{{Code: "lpg", Label: "Tabung LPG 3 Kg", Quantity: 1, Unit: "Tabung"}}, ExecutorName: "Muhamad Wildan M", SupervisorName: "Andi Amrullah"}
+	source := SourceData{ProgramType: "farmer", DocumentNumber: "0001/50/KSM-KKT-WJO/XII/2024", LocalDate: "2024-12-10", Render: RenderIdentity{FiscalYear: 2024, Logos: []LogoSnapshot{{AssetID: "b", SortOrder: 2}, {AssetID: "a", SortOrder: 1}}}, Recipient: RecipientSnapshot{FullName: "Siti Aminah", NIK: "7306014101900001", SectorIdentifier: "KP-01", Address: "Alamat panjang", PhoneNumber: "08123456789"}, Equipment: EquipmentSnapshot{MachineBrand: "SHARK", MachineType: "SPWP 80-30 / 3 inch", MachineSerial: "M-001", HoseBrand: "TRILIUNHOSE", HoseSpec: "6m/10m", ConverterBrand: "ERGAS"}, Components: []ComponentSnapshot{{Code: "lpg", Label: "Tabung LPG 3 Kg", Quantity: 1, Unit: "Tabung"}}, ExecutorName: "Muhamad Wildan M", SupervisorName: "Andi Amrullah", DistributionSlotID: "slot-1"}
 	snapshot, err := BuildSnapshot(source)
 	if err != nil {
 		t.Fatal(err)
@@ -14,7 +14,7 @@ func TestBuildSnapshotNormalizesFarmerDocument(t *testing.T) {
 	if snapshot.Render.FiscalYear != 2024 || snapshot.Render.Logos[0].AssetID != "a" || !snapshot.Components[0].Checked {
 		t.Fatalf("snapshot=%+v", snapshot)
 	}
-	if snapshot.Signatures.ReceiverName != "Siti Aminah" || snapshot.Signatures.ExecutorName != "Muhamad Wildan M" || snapshot.Signatures.SupervisorName != "Andi Amrullah" {
+	if snapshot.Signatures.ReceiverName != "Siti Aminah" || snapshot.Signatures.ExecutorName != "Muhamad Wildan M" || snapshot.Signatures.SupervisorName != "Andi Amrullah" || snapshot.Signatures.ReceiverSignatureKey != "slot-1" {
 		t.Fatalf("signatures=%+v", snapshot.Signatures)
 	}
 	if snapshot.Equipment.HoseSerial != "-" {

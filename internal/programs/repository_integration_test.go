@@ -568,6 +568,29 @@ func TestIntegrationZoneLifecycleUsesIDForUpdates(t *testing.T) {
 		t.Fatalf("expected ErrZonePlaceholderImmutable, got %v", err)
 	}
 
+	// Placeholder tidak dapat dihapus; zona berisi kabupaten dapat dihapus dan
+	// kabupatennya kembali ke placeholder.
+	if err := service.DeleteZone(ctx, actor, program.ID, placeholderID, meta); !errors.Is(err, ErrZonePlaceholderImmutable) {
+		t.Fatalf("delete placeholder err=%v", err)
+	}
+	extraZone, err := service.SaveZone(ctx, actor, ZoneInput{ProgramID: program.ID, Code: "ZONE-DEL", Name: "Zona Hapus"}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.AssignRegency(ctx, actor, RegencyAssignmentInput{ProgramID: program.ID, RegencyID: regency.ID, ZoneID: extraZone.ID}, auth.RegencyScope{Unrestricted: true}, meta); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.DeleteZone(ctx, actor, program.ID, extraZone.ID, meta); err != nil {
+		t.Fatalf("delete non-empty zone err=%v", err)
+	}
+	var releasedTo string
+	if err := pool.QueryRow(ctx, `SELECT zone_id::text FROM program_regency_assignments WHERE program_id=$1 AND regency_id=$2`, program.ID, regency.ID).Scan(&releasedTo); err != nil || releasedTo != placeholderID {
+		t.Fatalf("regency released to %q (err=%v), want placeholder %q", releasedTo, err, placeholderID)
+	}
+	if _, err := service.AssignRegency(ctx, actor, RegencyAssignmentInput{ProgramID: program.ID, RegencyID: regency.ID, ZoneID: updated.ID}, auth.RegencyScope{Unrestricted: true}, meta); err != nil {
+		t.Fatal(err)
+	}
+
 	// ResolveStorageContext must surface ErrZoneNotConfigured while the regency sits on the placeholder.
 	regency2, err := service.SaveRegency(ctx, actor, RegencyInput{
 		ProvinceName: "Sulawesi Selatan", Name: "Kabupaten Zona Dua " + suffix,

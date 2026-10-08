@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { apiRequest, ApiError } from '../../lib/api';
+import { ApiError } from '../../lib/api';
 import { PermissionsProvider } from '../../lib/permissions';
 import { DocumentationSlot } from './DocumentationSlot';
 import styles from './Distribution.module.css';

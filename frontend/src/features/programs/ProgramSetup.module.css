@@ -36,6 +36,10 @@
 :global(.setupDialog) { width: min(880px, calc(100vw - 2rem)); max-width: none; container: setup-dialog / inline-size; }
 :global(.setupDialog[data-layout="wide"]) { width: min(1120px, calc(100vw - 2rem)); }
 :global(.setupDialog[data-layout="workspace"]) { width: min(1240px, calc(100vw - 2rem)); height: calc(100dvh - 2rem); }
+/* Dialog tinggi (wide/workspace) diposisikan tanpa translate -50% agar tidak jatuh di
+   sub-piksel (teks bergetar saat scroll); overlay tanpa blur agar scroll konten panjang ringan. */
+:global(.setupDialog[data-layout="workspace"]), :global(.setupDialog[data-layout="wide"]) { top: 1rem; right: 0; left: 0; margin-inline: auto; --tw-translate-x: 0; --tw-translate-y: 0; }
+:global(body:has(.setupDialog[data-layout="workspace"], .setupDialog[data-layout="wide"]) [data-slot="dialog-overlay"]) { backdrop-filter: none; background: rgb(0 0 0 / .28); }
 :global(.setupDialogBody) { display: grid; min-height: 0; gap: 16px; padding: 20px; overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: 96px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 :global(.setupDialogFooter) { min-height: 72px; flex-direction: row; box-shadow: 0 -8px 20px -22px rgb(23 61 43 / .6); }
 :global(.setupDialogFooter > button) { min-width: 120px; }
@@ -58,7 +62,9 @@
 :global(.templateGrid) { display: grid; gap: 24px; min-width: 0; }
 :global(.fullField) { grid-column: 1 / -1; }
 :global(.slotEditor) { display: grid; gap: 12px; }
-:global(.slotEditorHead) { position: sticky; z-index: 4; top: 0; display: grid; align-items: center; gap: 12px; margin: -4px -4px 0; padding: 10px 4px; border-bottom: 1px solid color-mix(in srgb, var(--dashboard-line) 84%, transparent); background: color-mix(in srgb, var(--card) 96%, var(--secondary)); box-shadow: 0 10px 18px -20px rgb(17 57 35 / .8); grid-template-columns: minmax(0, 1fr) auto; }
+/* Header melayang dibuat murah: latar solid tanpa bayangan dan layer sendiri (will-change)
+   sehingga browser cukup menggeser layer saat scroll, tanpa menggambar ulang. */
+:global(.slotEditorHead) { position: sticky; z-index: 4; top: -20px; background: var(--card); will-change: transform; display: grid; align-items: center; gap: 12px; margin: -4px -4px 0; padding: 10px 4px; border-bottom: 1px solid color-mix(in srgb, var(--dashboard-line) 84%, transparent); grid-template-columns: minmax(0, 1fr) auto; }
 :global(.slotEditorMeta) { display: flex; min-width: 0; align-items: center; gap: 8px; }
 :global(.slotEditorMeta span) { min-width: 0; overflow: hidden; color: var(--dashboard-ink); font-size: 12px; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
 :global(.slotEditorMeta small) { display: inline-grid; min-width: 44px; min-height: 24px; padding: 0 7px; place-items: center; border: 1px solid var(--dashboard-line); border-radius: 999px; background: var(--card); color: var(--dashboard-muted); font-size: 10px; font-weight: 750; white-space: nowrap; }
@@ -67,7 +73,8 @@
 :global(.slotRow), :global(.equipmentRow), :global(.componentRow) { display: grid; align-items: end; gap: 12px; padding: 14px; border: 1px solid color-mix(in srgb, var(--dashboard-line) 88%, var(--dashboard-green)); border-radius: 9px; background: color-mix(in srgb, var(--card) 97%, var(--secondary)); }
 :global(.slotRow) { grid-template-columns: 1.1fr 1.6fr 1.2fr 80px auto; }
 :global(.equipmentRow) { grid-template-columns: 1fr 1.4fr 1.4fr; }
-:global(.componentRow) { grid-template-columns: 1fr 1.6fr 90px 90px; }
+:global(.componentRow) { grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) 140px 140px; }
+:global(.componentHiddenToggle) { display: flex; min-height: 44px; align-items: center; gap: 10px; grid-column: span 2; font-size: 13px; line-height: 1.3; }
 :global(.repeatableRowHeader) { display: flex; min-height: 34px; align-items: center; justify-content: space-between; gap: 12px; grid-column: 1 / -1; padding-bottom: 8px; border-bottom: 1px solid var(--dashboard-line); }
 :global(.repeatableRowHeader strong) { color: var(--dashboard-ink); font-size: 12px; }
 :global(.repeatableRowHeader button) { min-height: 34px; }
@@ -83,9 +90,11 @@
 }
 @container setup-dialog (max-width: 560px) {
   :global(.slotRow), :global(.equipmentRow), :global(.componentRow) { grid-template-columns: minmax(0, 1fr); }
+  :global(.componentHiddenToggle) { grid-column: auto; }
   :global(.slotEditorHead) { align-items: stretch; margin-inline: 0; padding-inline: 0; grid-template-columns: minmax(0, 1fr); }
   :global(.slotEditorHead > button) { width: 100%; justify-self: stretch; }
   :global(.setupDialogBody) { gap: 12px; padding: 14px; }
+  :global(.slotEditorHead) { top: -14px; }
   :global(.setupFormSectionFields) { gap: 14px; padding: 14px; }
   :global(.setupDialogFooter > button) { min-width: 0; flex: 1; }
 }
@@ -109,9 +118,10 @@
   :global(.setupSearch), :global(.setupFilter) { width: 100%; }
   :global(.setupResult) { order: -1; }
   :global(.slotRow), :global(.equipmentRow), :global(.componentRow) { grid-template-columns: 1fr; }
+  :global(.componentHiddenToggle) { grid-column: auto; }
   :global(.fullField) { grid-column: auto; }
   :global(.setupDialog) { width: calc(100vw - 1rem); max-height: calc(100dvh - 1rem); }
-  :global(.setupDialog[data-layout="wide"]), :global(.setupDialog[data-layout="workspace"]) { width: calc(100vw - 1rem); height: calc(100dvh - 1rem); max-height: calc(100dvh - 1rem); }
+  :global(.setupDialog[data-layout="wide"]), :global(.setupDialog[data-layout="workspace"]) { top: .5rem; width: calc(100vw - 1rem); height: calc(100dvh - 1rem); max-height: calc(100dvh - 1rem); }
 }
 @media (max-width: 400px) {
   .tab { font-size: 10px; }

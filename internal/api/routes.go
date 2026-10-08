@@ -458,6 +458,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeFieldError(w, http.StatusConflict, "conflict", "Kode sudah digunakan", map[string]string{"code": err.Error()})
 	case errors.Is(err, programs.ErrZoneNotConfigured):
 		writeError(w, http.StatusConflict, "zone_not_configured", "Kabupaten belum dikonfigurasi ke zona")
+	case errors.Is(err, programs.ErrZoneNotEmpty):
+		writeError(w, http.StatusConflict, "zone_not_empty", "Pindahkan semua kabupaten dari zona ini sebelum menghapusnya")
 	case errors.Is(err, programs.ErrZonePlaceholderImmutable):
 		writeError(w, http.StatusConflict, "zone_placeholder_immutable", "Zona placeholder tidak dapat diubah")
 	case errors.Is(err, programs.ErrZoneProgramMismatch):
@@ -488,6 +490,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "no_recipients", "Belum ada penerima pada jadwal ini")
 	case errors.Is(err, bast.ErrHandoverLocationRequired):
 		writeError(w, http.StatusConflict, "handover_location_required", "Lokasi/titik serah belum dikonfigurasi")
+	case errors.Is(err, bast.ErrServisScheduleRequired):
+		writeError(w, http.StatusConflict, "servis_schedule_required", "Jadwal servis ke-1 dan ke-2 belum lengkap")
 	case errors.Is(err, bast.ErrSignatoryRequired):
 		writeError(w, http.StatusConflict, "signatory_required", "Penandatangan dokumen belum lengkap")
 	case errors.Is(err, bast.ErrRecipientIdentityIncomplete):

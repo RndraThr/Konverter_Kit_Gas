@@ -60,6 +60,21 @@ Jalankan server:
 go run ./cmd/server
 ```
 
+### Mode pengembangan dengan auto-reload
+
+Agar tidak perlu build dan restart manual, jalankan:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/dev.ps1
+```
+
+Script ini menjalankan dua watcher sekaligus:
+
+- `vite build --watch` membangun ulang `web/static/app` setiap ada perubahan di `frontend/src`; cukup refresh browser.
+- [air](https://github.com/air-verse/air) (konfigurasi di `.air.toml`) menjalankan `go run ./cmd/migrate up`, lalu build dan restart server setiap ada perubahan file `.go`, `.sql`, atau template di `cmd/`, `internal/`, dan `web/templates/`.
+
+`air` dipasang sekali dengan `go install github.com/air-verse/air@latest`. Hentikan kedua watcher dengan `Ctrl+C`.
+
 Alamat lokal:
 
 - Login: `http://localhost:8080/login`

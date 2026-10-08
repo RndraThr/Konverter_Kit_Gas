@@ -9,7 +9,7 @@ gdrive-oauth-token*.json
 /tmp/
 /output/
 .worktrees/
-.claude/worktrees/
+.claude/
 .kilo/worktrees/
 /storage/
 frontend/node_modules/

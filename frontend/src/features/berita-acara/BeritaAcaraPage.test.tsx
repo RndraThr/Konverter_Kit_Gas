@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { expect, test, vi } from 'vitest';
@@ -51,7 +51,7 @@ test('derives the Petani or Nelayan document variant from the selected schedule'
   renderPage('/berita-acara?schedule_id=schedule-fisherman&tab=ba-perorangan');
 
   expect(await screen.findByText('Nelayan')).toBeVisible();
-  expect(screen.getByRole('combobox', { name: 'Jadwal program' })).toHaveTextContent('Bone Nelayan 2026');
+  expect(screen.getByRole('combobox', { name: 'Jadwal program' })).toHaveValue('Bone / Bone Nelayan 2026');
   expect(screen.getByRole('tab', { name: 'BA Perorangan' })).toHaveAttribute('aria-selected', 'true');
   expect(screen.getByRole('region', { name: 'BA Perorangan Nelayan' })).toBeVisible();
   expect(screen.getByText('BA Perorangan Nelayan belum tersedia')).toBeVisible();
@@ -66,7 +66,20 @@ test('keeps the selected schedule and document tab in the URL', async () => {
 
   expect(screen.getByLabelText('URL aktif')).toHaveTextContent('schedule_id=schedule-farmer');
   expect(screen.getByLabelText('URL aktif')).toHaveTextContent('tab=tkdn');
-  expect(screen.getByRole('region', { name: 'TKDN Petani' })).toBeVisible();
+  expect(screen.getByRole('region', { name: 'TKDN' })).toBeVisible();
+});
+
+test('filters schedules by typed text and selects one into the URL', async () => {
+  renderPage();
+
+  const input = await screen.findByRole('combobox', { name: 'Jadwal program' });
+  await waitFor(() => expect(input).toBeEnabled());
+  await userEvent.type(input, 'bone');
+  expect(await screen.findByRole('option', { name: 'Bone / Bone Nelayan 2026' })).toBeVisible();
+  expect(screen.queryByRole('option', { name: 'Wajo / Wajo Petani 2026' })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('option', { name: 'Bone / Bone Nelayan 2026' }));
+
+  expect(screen.getByLabelText('URL aktif')).toHaveTextContent('schedule_id=schedule-fisherman');
 });
 
 test('shows a retryable error instead of presenting a failed schedule request as an empty list', async () => {

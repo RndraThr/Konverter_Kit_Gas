@@ -57,11 +57,90 @@ export type ScheduleSettings = {
   pertamina_rep_name: string;
   rakorda_location: string;
   rakorda_row_count: number;
+  sosialisasi_location: string;
+  sosialisasi_row_count: number;
+  training_10_location: string;
+  training_10_row_count: number;
+  training_100_location: string;
+  training_100_row_count: number;
+  servis_1_start: string;
+  servis_1_end: string;
+  servis_2_start: string;
+  servis_2_end: string;
+};
+
+/** Di profil, ref menunjuk barang template; description/notes boleh memuat {merk}, {tipe}, {spek}. */
+export type PemeriksaanRow = { ref: string; description: string; unit: string; quantity_per_package: number; notes: string };
+
+/** Barang Template Paket jadwal yang dapat dirujuk susunan TKDN dan form Pemeriksaan. */
+export type TemplateEntry = { ref: string; kind: string; label: string; unit: string; quantity_per_package: number; variants: { code: string; brand: string; type: string; spec: string; tkdn_percent: number }[] };
+
+export type PemeriksaanChecklist = {
+  packaging: string;
+  quantity: string;
+  specification: string;
+  condition: string;
+  documents: string[];
+  other_document: string;
+  function_test: string;
+  conclusion: string;
+};
+
+export type PemeriksaanForm = { code: string; title: string; rows: PemeriksaanRow[]; checklist: PemeriksaanChecklist; note: string };
+
+export type PemeriksaanProfile = { program_id: string; forms: PemeriksaanForm[]; is_default: boolean; updated_at?: string };
+
+export type PemeriksaanFormSummary = { code: string; title: string; po_number: string; rows: PemeriksaanRow[] };
+
+export type PemeriksaanSummary = { total_packages: number; profile: PemeriksaanProfile; forms: PemeriksaanFormSummary[]; entries: TemplateEntry[] };
+
+export type TKDNItem = {
+  group: string;
+  name: string;
+  brand: string;
+  quantity_per_package: number;
+  tkdn_percent: number;
+};
+
+export type TKDNRow = { name: string; group: string; ref: string };
+
+export type TKDNProfile = {
+  program_id: string;
+  rows: TKDNRow[];
+  total_tkdn: number;
+  is_default: boolean;
+  updated_at?: string;
+};
+
+export type TKDNSummary = { total_packages: number; profile: TKDNProfile; items: TKDNItem[]; entries: TemplateEntry[] };
+
+export type ScheduleItemChoice = {
+  ref: string;
+  name: string;
+  variants: { code: string; brand: string }[];
+  selected: string;
+  source: 'single' | 'manual' | 'machine' | 'default';
+  po_number: string;
+  inspected: boolean;
+};
+
+export type ZonePORow = { kind: string; code: string; name: string; brand: string; po_number: string };
+export type ZonePO = { zone_id: string; zone_name: string; rows: ZonePORow[] };
+
+export type ScheduleItems = { schedule_id: string; program_id: string; zone_name: string; machine_brand: string; items: ScheduleItemChoice[] };
+
+export type ServisPeriod = { start: string; end: string };
+
+export type ServisBerkalaSummary = {
+  total_packages: number;
+  services: ServisPeriod[];
+  schedule_ready: boolean;
 };
 
 export type RakordaUpload = {
   id: string;
   schedule_id: string;
+  document_kind: 'rakorda' | 'sosialisasi' | 'training_10' | 'training_100';
   event_date: string;
   original_name: string;
   mime_type: 'application/pdf' | 'image/jpeg' | 'image/png';
@@ -74,7 +153,9 @@ export type AggregateDocument = {
   schedule_id: string;
   program_id: string;
   regency_id: string;
-  document_type: 'dp3' | 'daily_recap';
+  // dp3, daily_recap, closing_titik_serah, closing_kabupaten, servis_berkala,
+  // tkdn, atau pemeriksaan:<kode form>.
+  document_type: string;
   document_date: string;
   filename: string;
   recipient_count: number;
@@ -139,3 +220,6 @@ export type DailyRecapDate = {
   validation_status: string;
   document?: AggregateDocument;
 };
+
+/** Tanggal distribusi untuk BA Training: jumlah penerima dan peserta (10% pertama untuk Training 10%). */
+export type TrainingDate = { local_date: string; recipient_count: number; participant_count: number };

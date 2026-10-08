@@ -450,6 +450,44 @@ func (r *Repository) SaveZone(ctx context.Context, actor auth.Principal, input Z
 	return r.zoneByID(ctx, id, auth.RegencyScope{Unrestricted: true})
 }
 
+func (r *Repository) DeleteZone(ctx context.Context, actor auth.Principal, programID, zoneID string, meta auth.ClientMeta) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin delete zone: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var isPlaceholder bool
+	err = tx.QueryRow(ctx, `SELECT is_placeholder FROM program_zones WHERE id=$1 AND program_id=$2 FOR UPDATE`, zoneID, programID).Scan(&isPlaceholder)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("lock zone: %w", err)
+	}
+	if isPlaceholder {
+		return ErrZonePlaceholderImmutable
+	}
+	// Kabupaten di zona yang dihapus kembali ke zona placeholder ("belum ada zona").
+	tag, err := tx.Exec(ctx, `
+		UPDATE program_regency_assignments a SET zone_id=p.id, updated_at=now()
+		FROM program_zones p
+		WHERE a.zone_id=$1 AND p.program_id=$2 AND p.is_placeholder
+	`, zoneID, programID)
+	if err != nil {
+		return fmt.Errorf("release zone assignments: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM program_zones WHERE id=$1`, zoneID); err != nil {
+		if isForeignKeyViolation(err) {
+			return ErrZoneNotEmpty
+		}
+		return fmt.Errorf("delete zone: %w", err)
+	}
+	if err := recordSetupAudit(ctx, tx, actor, meta, "zone.deleted", "program_zone", zoneID, map[string]any{"program_id": programID, "released_regencies": tag.RowsAffected()}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 func (r *Repository) zoneByID(ctx context.Context, id string, scope auth.RegencyScope) (ProgramZone, error) {
 	var item ProgramZone
 	err := r.pool.QueryRow(ctx, `SELECT id::text, program_id::text, code, name, sort_order, is_placeholder, created_at, updated_at FROM program_zones WHERE id = $1`, id).

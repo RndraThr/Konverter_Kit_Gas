@@ -17,7 +17,9 @@ type DataResponse<T> = { data: T };
 const emptySettings: ScheduleSettings = {
   schedule_id: '', handover_location: '', consultant_company_name: '', agriculture_office_name: '',
   agriculture_office_nip: '', installer_name: '', supervisor_name: '', pertamina_rep_name: '',
-  rakorda_location: '', rakorda_row_count: 45,
+  rakorda_location: '', rakorda_row_count: 45, sosialisasi_location: '', sosialisasi_row_count: 51,
+  training_10_location: '', training_10_row_count: 51, training_100_location: '', training_100_row_count: 51,
+  servis_1_start: '', servis_1_end: '', servis_2_start: '', servis_2_end: '',
 };
 
 export function ScheduleSettingsPanel({ scheduleID, requirePertaminaRep = false }: Props) {
@@ -50,6 +52,16 @@ export function ScheduleSettingsPanel({ scheduleID, requirePertaminaRep = false 
         pertamina_rep_name: input.pertamina_rep_name,
         rakorda_location: input.rakorda_location,
         rakorda_row_count: input.rakorda_row_count,
+        sosialisasi_location: input.sosialisasi_location,
+        sosialisasi_row_count: input.sosialisasi_row_count,
+        training_10_location: input.training_10_location,
+        training_10_row_count: input.training_10_row_count,
+        training_100_location: input.training_100_location,
+        training_100_row_count: input.training_100_row_count,
+        servis_1_start: input.servis_1_start,
+        servis_1_end: input.servis_1_end,
+        servis_2_start: input.servis_2_start,
+        servis_2_end: input.servis_2_end,
       };
       return apiRequest<DataResponse<ScheduleSettings>>(`/api/v1/bast/schedules/${encodeURIComponent(scheduleID)}/settings`, { method: 'PUT', body: JSON.stringify(payload) });
     },

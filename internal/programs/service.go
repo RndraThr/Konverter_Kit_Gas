@@ -30,6 +30,7 @@ type repository interface {
 	SaveDocumentationTemplate(context.Context, auth.Principal, DocumentationTemplateInput, auth.ClientMeta) (DocumentationTemplate, error)
 	ListZones(context.Context, string, auth.RegencyScope) ([]ProgramZone, error)
 	SaveZone(context.Context, auth.Principal, ZoneInput, auth.ClientMeta) (ProgramZone, error)
+	DeleteZone(context.Context, auth.Principal, string, string, auth.ClientMeta) error
 	AssignRegency(context.Context, auth.Principal, RegencyAssignmentInput, auth.RegencyScope, auth.ClientMeta) (ProgramZone, error)
 	ResolveStorageContext(context.Context, string, string, auth.RegencyScope) (StorageContext, error)
 }
@@ -126,10 +127,35 @@ func (s *Service) SavePackageTemplate(ctx context.Context, actor auth.Principal,
 	if input.Values == nil {
 		input.Values = map[string]any{}
 	}
+	if !validTKDNPercents(input.Values) {
+		return PackageTemplate{}, ErrInvalidInput
+	}
 	if input.Status == "published" && !hasEquipmentOptions(input.Values) {
 		return PackageTemplate{}, ErrPackageOptionsRequired
 	}
 	return s.repository.SavePackageTemplate(ctx, actor, input, meta)
+}
+
+// validTKDNPercents memastikan % TKDN opsi dan komponen (dipakai Realisasi
+// TKDN) berupa angka 0–100 bila diisi.
+func validTKDNPercents(values map[string]any) bool {
+	for _, key := range []string{"machine_options", "converter_options", "hose_options", "components"} {
+		list, _ := values[key].([]any)
+		for _, raw := range list {
+			entry, _ := raw.(map[string]any)
+			for _, field := range []string{"tkdn_percent", "suction_tkdn_percent", "discharge_tkdn_percent"} {
+				value, exists := entry[field]
+				if !exists || value == nil {
+					continue
+				}
+				number, ok := value.(float64)
+				if !ok || number < 0 || number > 100 {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
 
 func hasEquipmentOptions(values map[string]any) bool {
@@ -277,6 +303,16 @@ func (s *Service) SaveZone(ctx context.Context, actor auth.Principal, input Zone
 		return ProgramZone{}, ErrInvalidInput
 	}
 	return s.repository.SaveZone(ctx, actor, input, meta)
+}
+
+// DeleteZone menghapus zona; kabupaten di dalamnya kembali ke zona
+// placeholder. Zona placeholder tidak dapat dihapus.
+func (s *Service) DeleteZone(ctx context.Context, actor auth.Principal, programID, zoneID string, meta auth.ClientMeta) error {
+	programID, zoneID = strings.TrimSpace(programID), strings.TrimSpace(zoneID)
+	if programID == "" || zoneID == "" {
+		return ErrInvalidInput
+	}
+	return s.repository.DeleteZone(ctx, actor, programID, zoneID, meta)
 }
 
 func (s *Service) AssignRegency(ctx context.Context, actor auth.Principal, input RegencyAssignmentInput, scope auth.RegencyScope, meta auth.ClientMeta) (ProgramZone, error) {
