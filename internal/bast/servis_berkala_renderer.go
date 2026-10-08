@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"konkit/internal/textnorm"
+
 	"github.com/go-pdf/fpdf"
 )
 
@@ -63,8 +65,8 @@ func RenderServisBerkala(snapshot ServisBerkalaSnapshot, logoBytes map[string][]
 	y += servisDocumentNumberRow + servisSectionGapMM
 
 	for _, item := range []struct{ label, value string }{
-		{"Kabupaten / Kota", snapshot.RegencyName},
-		{"Provinsi", snapshot.ProvinceName},
+		{"Kabupaten / Kota", textnorm.DisplayTitle(snapshot.RegencyName)},
+		{"Provinsi", textnorm.DisplayTitle(snapshot.ProvinceName)},
 	} {
 		baseline := textBaseline(y, servisMetadataRowMM, activityTextPt)
 		pdf.Text(textLeft, baseline, item.label)
@@ -119,7 +121,7 @@ func renderServisSignatures(pdf *fpdf.Fpdf, snapshot ServisBerkalaSnapshot) {
 	// sama lebar) dilebarkan secukupnya bila nama perusahaan lebih panjang dari
 	// lebar standar, dibatasi lebar konten halaman.
 	pdf.SetFont(activityFont, "", activitySignaturePt)
-	company := strings.TrimSpace(snapshot.ConsultantCompanyName)
+	company := textnorm.DisplayTitle(snapshot.ConsultantCompanyName)
 	width := minFloat(maxFloat(servisSignatureTableMM/2, pdf.GetStringWidth(company)+2*activitySignaturePadXMM+0.5), (pageWidthMM-2*marginMM)/2)
 	usable := width - 2*activitySignaturePadXMM
 	headers := [][]string{
@@ -127,14 +129,14 @@ func renderServisSignatures(pdf *fpdf.Fpdf, snapshot ServisBerkalaSnapshot) {
 		splitCellLines(pdf, "DINAS YANG MEMBIDANGI\nPERTANIAN DAERAH", usable),
 	}
 	pdf.SetFont(activityFont, "", activitySignaturePt)
-	installer := wrapWords(pdf, strings.TrimSpace("Nama : "+snapshot.Signatories.InstallerName), usable)
+	installer := wrapWords(pdf, strings.TrimSpace("Nama : "+textnorm.DisplayTitle(snapshot.Signatories.InstallerName)), usable)
 	// Baris nama perusahaan pelaksana (di bawah nama) ditulis rata tengah seperti
 	// referensi; baris sebelum indeks ini rata kiri.
 	centerFrom := []int{len(installer), -1}
 	if company != "" {
 		installer = append(installer, company)
 	}
-	dinas := append(wrapWords(pdf, strings.TrimSpace("Nama : "+snapshot.Signatories.AgricultureOfficeName), usable), strings.TrimSpace("NIP : "+snapshot.Signatories.AgricultureOfficeNIP))
+	dinas := append(wrapWords(pdf, strings.TrimSpace("Nama : "+textnorm.DisplayTitle(snapshot.Signatories.AgricultureOfficeName)), usable), strings.TrimSpace("NIP : "+snapshot.Signatories.AgricultureOfficeNIP))
 	names := [][]string{installer, dinas}
 
 	headHeight, nameHeight := tightCellHeight(headers), tightCellHeight(names)

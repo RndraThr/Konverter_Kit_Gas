@@ -7,6 +7,8 @@ import (
 	"time"
 	"unicode"
 
+	"konkit/internal/textnorm"
+
 	"github.com/go-pdf/fpdf"
 )
 
@@ -145,9 +147,9 @@ func renderActivityHeader(pdf *fpdf.Fpdf, document activityDocument, snapshot Ra
 	const metadataRowMM, narrativeLineMM, labelWidthMM = 6.0, 5.4, 40.0
 
 	metadata := []struct{ label, value string }{
-		{"Lokasi", snapshot.Location},
-		{"Kabupaten / Kota", snapshot.RegencyName},
-		{"Provinsi", snapshot.ProvinceName},
+		{"Lokasi", textnorm.DisplayTitle(snapshot.Location)},
+		{"Kabupaten / Kota", textnorm.DisplayTitle(snapshot.RegencyName)},
+		{"Provinsi", textnorm.DisplayTitle(snapshot.ProvinceName)},
 	}
 	pdf.SetFont(activityFont, "", activityTextPt)
 	y := pdf.GetY()
@@ -330,7 +332,7 @@ func layoutActivitySignatures(pdf *fpdf.Fpdf, signatories closingSignatories, he
 	nip := strings.TrimSpace("NIP : " + strings.TrimSpace(signatories.AgricultureOfficeNIP))
 	layout := activitySignatureLayout{widths: []float64{column, column, column, column}, nipPt: fitFontSize(pdf, nip, usable, activitySignatureNamePt, 7)}
 
-	names := []string{signatories.AgricultureOfficeName, signatories.InstallerName, signatories.SupervisorName, signatories.PertaminaRepName}
+	names := []string{textnorm.DisplayTitle(signatories.AgricultureOfficeName), textnorm.DisplayTitle(signatories.InstallerName), textnorm.DisplayTitle(signatories.SupervisorName), textnorm.DisplayTitle(signatories.PertaminaRepName)}
 	for i, name := range names {
 		layout.headers = append(layout.headers, splitCellLines(pdf, headers[i], usable))
 		pdf.SetFont(activityFont, "", activitySignatureNamePt)
