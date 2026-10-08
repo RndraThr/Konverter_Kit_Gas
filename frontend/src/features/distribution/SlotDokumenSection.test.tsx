@@ -195,6 +195,21 @@ test('shows relocation state, failed retry, and keeps previews visible', () => {
   expect(screen.getByRole('button', { name: 'Coba pindahkan lagi failed.jpg' })).toBeVisible();
 });
 
+test('retries failed machine media from POS Dokumen', async () => {
+  const failed = { id: 'media-machine-failed', slot_id: 'machine-doc', original_filename: 'mesin-gagal.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'camera', status: 'accepted', content_url: '/media/machine-failed', storage_state: 'move_failed' as const };
+  const documentation = [
+    { id: 'machine-doc', code: 'machine', label: 'Foto Mesin', stage: 'mesin' as const, status: 'complete', required: true, min_files: 1, max_files: 2, media_kind: 'image' as const, files: [failed] },
+    { id: 'document-doc', code: 'document', label: 'Foto Dokumen', stage: 'dokumen' as const, status: 'missing', required: true, min_files: 1, max_files: 2, media_kind: 'image' as const, files: [] },
+  ];
+  vi.mocked(apiRequest).mockResolvedValue({ data: { ...failed, storage_state: 'moving', storage_last_error: '' } });
+  renderSection({ ...openSlot, status: 'linked', full_name: candidate.full_name, nik: candidate.nik, documentation });
+
+  await userEvent.click(screen.getByRole('button', { name: 'Coba pindahkan lagi mesin-gagal.jpg' }));
+
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/media/media-machine-failed/retry-move', { method: 'POST' }));
+  expect(screen.getByRole('status')).toHaveTextContent('1 media sedang dipindahkan');
+});
+
 test('locks completed document POS until revision succeeds and refreshes automatically', async () => {
   const documentation = [{ id: 'doc-1', code: 'document', label: 'Foto Dokumen', stage: 'dokumen' as const, status: 'missing', required: true, min_files: 1, max_files: 2, media_kind: 'image' as const, files: [] }];
   const completed = { ...openSlot, status: 'completed' as const, distribution_date: '2026-10-20', full_name: candidate.full_name, nik: candidate.nik, documentation };

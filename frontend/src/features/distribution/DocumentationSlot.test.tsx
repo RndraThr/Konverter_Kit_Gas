@@ -16,11 +16,11 @@ vi.mock('../../lib/upload', () => ({ uploadRequest: vi.fn() }));
 
 type TestMediaFile = Omit<MediaFile, 'storage_state'> & { storage_state?: MediaFile['storage_state'] };
 
-function renderSlot(files: TestMediaFile[] = [], required = true, mediaKind: 'image' | 'video' | 'image_video' = 'image', canManage = true) {
+function renderSlot(files: TestMediaFile[] = [], required = true, mediaKind: 'image' | 'video' | 'image_video' = 'image', canManage = true, canRetryMove = false) {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   return render(<QueryClientProvider client={client}><PermissionsProvider permissions={['documentation.manage']}><DocumentationSlot slot={{
     id: 'slot-1', code: 'signed_bast', label: 'BAST bertanda tangan', stage: 'penyerahan', status: 'missing', required, min_files: 1, max_files: 2, media_kind: mediaKind, files: files.map((file) => ({ ...file, storage_state: file.storage_state ?? 'final' })),
-  }} canManage={canManage} onChanged={vi.fn()} /></PermissionsProvider></QueryClientProvider>);
+  }} canManage={canManage} canRetryMove={canRetryMove} onChanged={vi.fn()} /></PermissionsProvider></QueryClientProvider>);
 }
 
 beforeEach(() => {
@@ -296,7 +296,7 @@ test('offers retry only for failed moves and publishes the returned media state'
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   const failed: MediaFile = { id: 'media-failed', slot_id: 'slot-1', original_filename: 'failed.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: '/media/failed.jpg', storage_state: 'move_failed', storage_last_error: 'Drive timeout' };
   vi.mocked(apiRequest).mockResolvedValue({ data: { ...failed, storage_state: 'moving', storage_last_error: '' } });
-  render(<QueryClientProvider client={client}><DocumentationSlot slot={{ id: 'slot-1', code: 'proof', label: 'Bukti', stage: 'mesin', status: 'complete', required: true, min_files: 1, max_files: 2, media_kind: 'image', files: [failed] }} canManage onChanged={onChanged} onRetryMove={onRetryMove} /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><DocumentationSlot slot={{ id: 'slot-1', code: 'proof', label: 'Bukti', stage: 'mesin', status: 'complete', required: true, min_files: 1, max_files: 2, media_kind: 'image', files: [failed] }} canManage canRetryMove onChanged={onChanged} onRetryMove={onRetryMove} /></QueryClientProvider>);
 
   fireEvent.click(screen.getByRole('button', { name: 'Coba pindahkan lagi failed.jpg' }));
 
@@ -307,14 +307,14 @@ test('offers retry only for failed moves and publishes the returned media state'
 });
 
 test('does not offer move retry for staging, moving, or final media', () => {
-  renderSlot((['staging', 'moving', 'final'] as const).map((storageState) => ({ id: `media-${storageState}`, slot_id: 'slot-1', original_filename: `${storageState}.jpg`, mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: `/media/${storageState}.jpg`, storage_state: storageState })));
+  renderSlot((['staging', 'moving', 'final'] as const).map((storageState) => ({ id: `media-${storageState}`, slot_id: 'slot-1', original_filename: `${storageState}.jpg`, mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: `/media/${storageState}.jpg`, storage_state: storageState })), true, 'image', true, true);
 
   expect(screen.queryByRole('button', { name: /Coba pindahkan lagi/ })).not.toBeInTheDocument();
 });
 
 test('shows the backend reason when retrying a failed move is rejected', async () => {
   vi.mocked(apiRequest).mockRejectedValue(new ApiError(409, 'media_move_not_retryable', 'Tanggal dan penerima belum lengkap'));
-  renderSlot([{ id: 'media-failed', slot_id: 'slot-1', original_filename: 'failed.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: '/media/failed.jpg', storage_state: 'move_failed' }]);
+  renderSlot([{ id: 'media-failed', slot_id: 'slot-1', original_filename: 'failed.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: '/media/failed.jpg', storage_state: 'move_failed' }], true, 'image', true, true);
 
   fireEvent.click(screen.getByRole('button', { name: 'Coba pindahkan lagi failed.jpg' }));
 

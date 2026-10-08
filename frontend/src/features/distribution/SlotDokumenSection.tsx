@@ -3,7 +3,7 @@ import { FileText, Pencil, UserCheck } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { apiRequest, ApiError } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
-import type { CandidateMatch, DataResponse, DistributionSlot, EquipmentOption, LinkSlotInput, ReplaceRecipientInput, UpdateEquipmentInput, UpdateRecipientInput } from './types';
+import type { CandidateMatch, DataResponse, DistributionSlot, EquipmentOption, LinkSlotInput, MediaFile, ReplaceRecipientInput, UpdateEquipmentInput, UpdateRecipientInput } from './types';
 import { DocumentationSlot } from './DocumentationSlot';
 import { PosSectionShell } from './PosSectionShell';
 import { RevisionDialog } from './RevisionDialog';
@@ -65,6 +65,10 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
   const mediaStates = useMemo(() => currentSlot.documentation.flatMap((item) => item.files ?? []).map((file) => file.storage_state), [currentSlot.documentation]);
   const movingCount = mediaStates.filter((state) => state === 'moving' || state === 'staging').length;
   const failedCount = mediaStates.filter((state) => state === 'move_failed').length;
+  const failedMediaOutsideDocument = useMemo(() => currentSlot.documentation
+    .filter((item) => item.stage !== 'dokumen')
+    .flatMap((item) => item.files ?? [])
+    .filter((file) => file.storage_state === 'move_failed'), [currentSlot.documentation]);
 
   useEffect(() => {
     if (!editable || nik.length < 4 || candidate?.nik === nik) {
@@ -86,6 +90,13 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
   const recipientUpdate = useMutation({ mutationFn: () => apiRequest<DataResponse<DistributionSlot>>(`/api/v1/distribution/slots/${currentSlot.slot_number}/recipient?schedule_id=${encodeURIComponent(currentSlot.schedule_id)}`, { method: 'PATCH', body: JSON.stringify(recipient) }), onSuccess: ({ data }) => publish(data) });
   const recipientReplace = useMutation({ mutationFn: () => apiRequest<DataResponse<DistributionSlot>>(`/api/v1/distribution/slots/${currentSlot.slot_number}/replace-recipient?schedule_id=${encodeURIComponent(currentSlot.schedule_id)}`, { method: 'POST', body: JSON.stringify(linkInput satisfies ReplaceRecipientInput) }), onSuccess: ({ data }) => { publish(data); setReplaceMode(false); setCandidate(null); setNik(''); } });
   const equipmentUpdate = useMutation({ mutationFn: () => apiRequest<DataResponse<DistributionSlot>>(`/api/v1/distribution/slots/${currentSlot.slot_number}/equipment?schedule_id=${encodeURIComponent(currentSlot.schedule_id)}`, { method: 'PATCH', body: JSON.stringify(equipment) }), onSuccess: ({ data }) => publish(data) });
+  const retryMove = useMutation({
+    mutationFn: (id: string) => apiRequest<DataResponse<MediaFile>>(`/api/v1/distribution/media/${id}/retry-move`, { method: 'POST' }),
+    onSuccess: ({ data }) => publish({
+      ...currentSlot,
+      documentation: currentSlot.documentation.map((item) => ({ ...item, files: (item.files ?? []).map((file) => file.id === data.id ? data : file) })),
+    }),
+  });
 
   const selectCandidate = (next: CandidateMatch) => {
     setNik(next.nik); setCandidate(next); setSuggestions([]); setActiveSuggestion(-1);
@@ -153,8 +164,8 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
       {editable && <Button className="sm:col-span-2" type="submit">Simpan data peralatan</Button>}
     </form></section>
 
-    {(movingCount > 0 || failedCount > 0) && <div className="space-y-2">{movingCount > 0 && <div role="status" className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">{movingCount} media sedang dipindahkan ke folder final.</div>}{failedCount > 0 && <Alert variant="destructive"><AlertDescription>{failedCount} pemindahan media gagal. Gunakan tombol coba lagi pada media terkait.</AlertDescription></Alert>}</div>}
-    {documentation.length > 0 && <section aria-label="Dokumentasi" className="grid gap-4 sm:grid-cols-2">{documentation.map((item) => <DocumentationSlot key={item.code} slot={item} canManage={editable} onChanged={updateDocumentation} />)}</section>}
+    {(movingCount > 0 || failedCount > 0) && <div className="space-y-2">{movingCount > 0 && <div role="status" className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">{movingCount} media sedang dipindahkan ke folder final.</div>}{failedCount > 0 && <Alert variant="destructive"><AlertDescription className="space-y-2"><p>{failedCount} pemindahan media gagal. Gunakan tombol coba lagi pada media terkait.</p>{editable && failedMediaOutsideDocument.map((file) => <Button key={file.id} type="button" size="sm" variant="outline" aria-label={`Coba pindahkan lagi ${file.original_filename}`} disabled={retryMove.isPending} onClick={() => retryMove.mutate(file.id)}>Coba lagi: {file.original_filename}</Button>)}{retryMove.isError && <p>{retryMove.error instanceof ApiError ? retryMove.error.message : 'Pemindahan media belum dapat dicoba kembali.'}</p>}</AlertDescription></Alert>}</div>}
+    {documentation.length > 0 && <section aria-label="Dokumentasi" className="grid gap-4 sm:grid-cols-2">{documentation.map((item) => <DocumentationSlot key={item.code} slot={item} canManage={editable} canRetryMove={editable} onChanged={updateDocumentation} />)}</section>}
     <RevisionDialog slot={currentSlot} stage="dokumen" open={revisionOpen} onOpenChange={setRevisionOpen} onReopened={publish} />
   </PosSectionShell>;
 }

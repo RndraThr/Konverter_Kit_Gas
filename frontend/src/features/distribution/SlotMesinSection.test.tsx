@@ -51,6 +51,13 @@ test('keeps machine documentation read-only without POS Mesin permission', () =>
   expect(screen.queryByLabelText('Pilih galeri')).not.toBeInTheDocument();
 });
 
+test('does not expose document-owned move retry from POS Mesin', () => {
+  renderSection({ documentation: [{ ...machineDocumentation, status: 'complete', files: [{ id: 'media-failed', slot_id: 'doc-1', original_filename: 'mesin-gagal.jpg', mime_type: 'image/jpeg', byte_size: 10, source: 'camera', status: 'accepted', content_url: '/media/failed', storage_state: 'move_failed' }] }] });
+
+  expect(screen.getByText('Pemindahan gagal — akan dicoba kembali')).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Coba pindahkan lagi mesin-gagal.jpg' })).not.toBeInTheDocument();
+});
+
 test('keeps completed slots read-only until a machine-stage revision succeeds', async () => {
   const completed = { ...slot, status: 'completed' as const, needs_recompletion: false };
   vi.mocked(apiRequest).mockResolvedValue({ data: { ...completed, status: 'linked', needs_recompletion: true, reopened_stage: 'mesin' } });

@@ -29,6 +29,7 @@ const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
 type Props = {
   slot: SlotSummary;
   canManage: boolean;
+  canRetryMove?: boolean;
   onChanged: (slot: SlotSummary) => void;
   onRetryMove?: (file: MediaFile) => void;
 };
@@ -40,7 +41,7 @@ const storageStateCopy: Record<MediaStorageState, { label: string; detail?: stri
   move_failed: { label: 'Pemindahan gagal — akan dicoba kembali' },
 };
 
-export function DocumentationSlot({ slot, canManage, onChanged, onRetryMove }: Props) {
+export function DocumentationSlot({ slot, canManage, canRetryMove = false, onChanged, onRetryMove }: Props) {
   const [files, setFiles] = useState<MediaFile[]>(slot.files ?? []);
   const [queue, setQueue] = useState<QueuedFile[]>([]);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
@@ -190,7 +191,7 @@ export function DocumentationSlot({ slot, canManage, onChanged, onRetryMove }: P
             <p className={cn('font-medium', file.storage_state === 'move_failed' ? 'text-destructive' : 'text-muted-foreground')}>{storageCopy.label}</p>
             {storageCopy.detail && <p className="text-muted-foreground">{storageCopy.detail}</p>}
             {file.storage_state === 'move_failed' && file.storage_last_error && <p className="text-destructive">{file.storage_last_error}</p>}
-            {canManage && file.storage_state === 'move_failed' && <button type="button" className="inline-flex min-h-11 items-center gap-1 text-xs font-medium text-primary underline-offset-4 hover:underline disabled:opacity-50" aria-label={`Coba pindahkan lagi ${file.original_filename}`} disabled={retryMove.isPending} onClick={() => { setMoveError(''); retryMove.mutate(file.id); }}><RefreshCw className="size-3.5" aria-hidden="true" />Coba lagi</button>}
+            {canRetryMove && file.storage_state === 'move_failed' && <button type="button" className="inline-flex min-h-11 items-center gap-1 text-xs font-medium text-primary underline-offset-4 hover:underline disabled:opacity-50" aria-label={`Coba pindahkan lagi ${file.original_filename}`} disabled={retryMove.isPending} onClick={() => { setMoveError(''); retryMove.mutate(file.id); }}><RefreshCw className="size-3.5" aria-hidden="true" />Coba lagi</button>}
           </div>
         </div>;
       })}
