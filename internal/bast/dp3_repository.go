@@ -12,12 +12,12 @@ import (
 
 func (r *Repository) GetDP3Context(ctx context.Context, scheduleID string, scope auth.RegencyScope) (DP3Context, error) {
 	var result DP3Context
-	var zoneName *string
+	var zoneID, zoneName *string
 	var placeholder *bool
 	err := r.pool.QueryRow(ctx, `
 		SELECT ps.id::text, ps.program_id::text, ps.regency_id::text, p.program_type, r.name,
 			r.document_code, r.province_name,
-			ps.start_date::text, p.fiscal_year, z.name, z.is_placeholder,
+			ps.start_date::text, p.fiscal_year, z.id::text, z.name, z.is_placeholder,
 			EXISTS(SELECT 1 FROM program_ba_logo_assets l WHERE l.program_id=p.id AND l.is_visible=true)
 		FROM program_schedules ps
 		JOIN programs p ON p.id=ps.program_id
@@ -28,13 +28,16 @@ func (r *Repository) GetDP3Context(ctx context.Context, scheduleID string, scope
 	`, scheduleID, scope.Unrestricted, scope.RegencyIDs).Scan(
 		&result.ScheduleID, &result.ProgramID, &result.RegencyID, &result.ProgramType, &result.RegencyName,
 		&result.RegencyCode, &result.ProvinceName,
-		&result.StartDate, &result.FiscalYear, &zoneName, &placeholder, &result.HasActiveLogo,
+		&result.StartDate, &result.FiscalYear, &zoneID, &zoneName, &placeholder, &result.HasActiveLogo,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return DP3Context{}, ErrNotFound
 	}
 	if err != nil {
 		return DP3Context{}, fmt.Errorf("get DP3 context: %w", err)
+	}
+	if zoneID != nil {
+		result.ZoneID = *zoneID
 	}
 	if zoneName != nil {
 		result.ZoneName = *zoneName
