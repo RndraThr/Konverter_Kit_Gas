@@ -81,6 +81,7 @@ type ProgramSetupService interface {
 	SaveDocumentationTemplate(context.Context, auth.Principal, programs.DocumentationTemplateInput, auth.ClientMeta) (programs.DocumentationTemplate, error)
 	ListZones(context.Context, string, auth.RegencyScope) ([]programs.ProgramZone, error)
 	SaveZone(context.Context, auth.Principal, programs.ZoneInput, auth.ClientMeta) (programs.ProgramZone, error)
+	DeleteZone(context.Context, auth.Principal, string, string, auth.ClientMeta) error
 	AssignRegency(context.Context, auth.Principal, programs.RegencyAssignmentInput, auth.RegencyScope, auth.ClientMeta) (programs.ProgramZone, error)
 }
 
@@ -184,8 +185,47 @@ type ClosingKabupatenService interface {
 	Open(context.Context, string, auth.RegencyScope) (bast.AggregateContent, error)
 }
 
+type PemeriksaanService interface {
+	Profile(context.Context, string) (bast.PemeriksaanProfile, error)
+	SaveProfile(context.Context, auth.Principal, bast.PemeriksaanProfile, auth.ClientMeta) (bast.PemeriksaanProfile, error)
+	Summary(context.Context, string, auth.RegencyScope) (bast.PemeriksaanSummary, error)
+	Preview(context.Context, string, string, []string, auth.RegencyScope) (bast.AggregatePreview, error)
+	Finalize(context.Context, auth.Principal, string, string, []string, auth.RegencyScope, auth.ClientMeta) ([]bast.AggregateDocument, error)
+	Documents(context.Context, string, string, auth.RegencyScope) ([]bast.AggregateDocument, error)
+	Open(context.Context, string, auth.RegencyScope) (bast.AggregateContent, error)
+}
+
+type TKDNService interface {
+	Profile(context.Context, string) (bast.TKDNProfile, error)
+	SaveProfile(context.Context, auth.Principal, bast.TKDNProfile, auth.ClientMeta) (bast.TKDNProfile, error)
+	Summary(context.Context, string, auth.RegencyScope) (bast.TKDNSummary, error)
+	Preview(context.Context, string, string, auth.RegencyScope) (bast.AggregatePreview, error)
+	Finalize(context.Context, auth.Principal, string, string, auth.RegencyScope, auth.ClientMeta) (bast.AggregateDocument, error)
+	Documents(context.Context, string, string, auth.RegencyScope) ([]bast.AggregateDocument, error)
+	Open(context.Context, string, auth.RegencyScope) (bast.AggregateContent, error)
+}
+
+type ItemService interface {
+	ProgramZonePO(context.Context, string) ([]bast.ZonePO, error)
+	SaveZonePO(context.Context, auth.Principal, string, string, []bast.ZonePOInput, auth.ClientMeta) ([]bast.ZonePO, error)
+	ScheduleItems(context.Context, string, auth.RegencyScope) (bast.ScheduleItems, error)
+	SaveScheduleSelection(context.Context, auth.Principal, string, map[string]string, auth.RegencyScope, auth.ClientMeta) (bast.ScheduleItems, error)
+}
+
+type ServisBerkalaService interface {
+	Summary(context.Context, string, auth.RegencyScope) (bast.ServisBerkalaSummary, error)
+	Preview(context.Context, string, string, auth.RegencyScope) (bast.AggregatePreview, error)
+	Finalize(context.Context, auth.Principal, string, string, auth.RegencyScope, auth.ClientMeta) (bast.AggregateDocument, error)
+	Documents(context.Context, string, string, auth.RegencyScope) ([]bast.AggregateDocument, error)
+	Open(context.Context, string, auth.RegencyScope) (bast.AggregateContent, error)
+}
+
+// RakordaService melayani satu jenis daftar hadir pola RAKORDA (RAKORDA,
+// Sosialisasi, Training 10%/100%):
+// preview lembar kosong dan arsip hasil terisi.
 type RakordaService interface {
 	Preview(context.Context, string, string, auth.RegencyScope) (bast.AggregatePreview, error)
+	Dates(context.Context, string, auth.RegencyScope) ([]bast.TrainingDate, error)
 	Upload(context.Context, auth.Principal, bast.RakordaUploadInput, auth.RegencyScope, auth.ClientMeta) (bast.RakordaUpload, error)
 	List(context.Context, string, string, auth.RegencyScope) ([]bast.RakordaUpload, error)
 	Open(context.Context, string, auth.RegencyScope) (bast.RakordaContent, error)
@@ -212,7 +252,14 @@ type Dependencies struct {
 	DailyRecap        DailyRecapService
 	ClosingTitikSerah ClosingTitikSerahService
 	ClosingKabupaten  ClosingKabupatenService
+	ServisBerkala     ServisBerkalaService
+	TKDN              TKDNService
+	Pemeriksaan       PemeriksaanService
+	Items             ItemService
 	Rakorda           RakordaService
+	Sosialisasi       RakordaService
+	Training10        RakordaService
+	Training100       RakordaService
 	SessionSecret     []byte
 }
 
@@ -350,8 +397,22 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleBASTClosingTitikSerah(w, r, rc, strings.TrimPrefix(path, "bast/closing-titik-serah/"))
 	case strings.HasPrefix(path, "bast/closing-kabupaten/"):
 		h.handleBASTClosingKabupaten(w, r, rc, strings.TrimPrefix(path, "bast/closing-kabupaten/"))
+	case strings.HasPrefix(path, "bast/pemeriksaan/"):
+		h.handleBASTPemeriksaan(w, r, rc, strings.TrimPrefix(path, "bast/pemeriksaan/"))
+	case strings.HasPrefix(path, "bast/items/"):
+		h.handleBASTItems(w, r, rc, strings.TrimPrefix(path, "bast/items/"))
+	case strings.HasPrefix(path, "bast/tkdn/"):
+		h.handleBASTTKDN(w, r, rc, strings.TrimPrefix(path, "bast/tkdn/"))
+	case strings.HasPrefix(path, "bast/servis-berkala/"):
+		h.handleBASTServisBerkala(w, r, rc, strings.TrimPrefix(path, "bast/servis-berkala/"))
 	case strings.HasPrefix(path, "bast/rakorda/"):
-		h.handleBASTRakorda(w, r, rc, strings.TrimPrefix(path, "bast/rakorda/"))
+		h.handleBASTRakorda(w, r, rc, h.deps.Rakorda, strings.TrimPrefix(path, "bast/rakorda/"))
+	case strings.HasPrefix(path, "bast/sosialisasi/"):
+		h.handleBASTRakorda(w, r, rc, h.deps.Sosialisasi, strings.TrimPrefix(path, "bast/sosialisasi/"))
+	case strings.HasPrefix(path, "bast/training-10/"):
+		h.handleBASTRakorda(w, r, rc, h.deps.Training10, strings.TrimPrefix(path, "bast/training-10/"))
+	case strings.HasPrefix(path, "bast/training-100/"):
+		h.handleBASTRakorda(w, r, rc, h.deps.Training100, strings.TrimPrefix(path, "bast/training-100/"))
 	case path == "bast/branding" || strings.HasPrefix(path, "bast/branding/"):
 		h.handleBASTBranding(w, r, rc, strings.TrimPrefix(strings.TrimPrefix(path, "bast/branding"), "/"))
 	default:

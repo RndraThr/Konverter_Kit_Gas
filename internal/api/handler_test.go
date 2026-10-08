@@ -1181,6 +1181,10 @@ func (f *fakeProgramSetupService) SaveZone(_ context.Context, _ auth.Principal, 
 	}
 	return programs.ProgramZone{ID: input.ID, ProgramID: input.ProgramID, Code: input.Code, Name: input.Name}, nil
 }
+func (f *fakeProgramSetupService) DeleteZone(context.Context, auth.Principal, string, string, auth.ClientMeta) error {
+	return nil
+}
+
 func (f *fakeProgramSetupService) AssignRegency(_ context.Context, _ auth.Principal, input programs.RegencyAssignmentInput, scope auth.RegencyScope, _ auth.ClientMeta) (programs.ProgramZone, error) {
 	f.assignmentInput, f.seenRegencyScope = input, scope
 	if f.assignErr != nil {
