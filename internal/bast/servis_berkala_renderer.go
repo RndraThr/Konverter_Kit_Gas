@@ -106,7 +106,7 @@ func servisBerkalaNarrative(fiscalYear int, zoneName string) []textSegment {
 		{text: "Sehubungan dengan ", style: ""},
 		{text: "Pengadaan Barang Penyediaan dan Pendistribusian Paket Perdana ", style: "B"},
 		{text: "Liquefied Petroleum Gas", style: "BI"},
-		{text: fmt.Sprintf(" (LPG) untuk Mesin Pompa Air Bagi Petani Sasaran Tahun Anggaran %d di PT Pertamina Patra Niaga (Termasuk Pendistribusian Dan Pemasangan) %s.", fiscalYear, titleCaseWords(zoneName)), style: "B"},
+		{text: fmt.Sprintf(" (LPG) untuk Mesin Pompa Air Bagi Petani Sasaran Tahun Anggaran %d di PT Pertamina Patra Niaga (Termasuk Pendistribusian Dan Pemasangan) %s.", fiscalYear, zoneWithWords(titleCaseWords(zoneName))), style: "B"},
 		{text: " Pelaksana Pekerjaan memberikan Servis Berkala sebanyak 2 (dua) kali dalam 1 (satu) tahun terhadap komponen mesin pompa air dan konverter kit sejak didistribusikan.", style: ""},
 	}
 }

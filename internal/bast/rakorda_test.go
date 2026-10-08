@@ -163,7 +163,7 @@ func TestActivityNarrativeFollowsReference(t *testing.T) {
 		if segments[1].style != "B" || segments[2].text != "Liquefied Petroleum Gas" || segments[2].style != "BI" || segments[3].style != "B" {
 			t.Fatalf("styles=%+v", segments)
 		}
-		if !strings.HasSuffix(segments[3].text, "(Termasuk Pendistribusian Dan Pemasangan) Zona 4") {
+		if !strings.HasSuffix(segments[3].text, "(Termasuk Pendistribusian Dan Pemasangan) Zona 4 (Empat)") {
 			t.Fatalf("closing=%q", segments[3].text)
 		}
 	}
@@ -236,5 +236,27 @@ func TestTrainingParticipantsFollowDistributionAndTakeFirstTenPercent(t *testing
 	// halaman kedua, lalu tanda tangan di halaman tersendiri.
 	if rendered.PageCount != 3 {
 		t.Fatalf("page_count=%d", rendered.PageCount)
+	}
+}
+
+func TestZoneWithWordsSpellsTheZoneNumber(t *testing.T) {
+	cases := map[string]string{
+		"Zona 1":         "Zona 1 (Satu)",
+		"Zona 11":        "Zona 11 (Sebelas)",
+		"Zona 15":        "Zona 15 (Lima Belas)",
+		"Zona 21":        "Zona 21 (Dua Puluh Satu)",
+		"Zona 100":       "Zona 100 (Seratus)",
+		"Zona Barat":     "Zona Barat",
+		"  Zona 3  ":     "Zona 3 (Tiga)",
+		"ZONA 2":         "ZONA 2 (Dua)",
+		"Zona 2 (Dua) x": "Zona 2 (Dua) x",
+	}
+	for input, want := range cases {
+		if got := zoneWithWords(input); got != want {
+			t.Fatalf("zoneWithWords(%q)=%q, want %q", input, got, want)
+		}
+	}
+	if got := rakordaNarrative("2026-10-03", 2026, "ZONA 4"); !strings.HasSuffix(got, "(TERMASUK PENDISTRIBUSIAN DAN PEMASANGAN) ZONA 4 (EMPAT).") {
+		t.Fatalf("rakorda narrative=%q", got)
 	}
 }
