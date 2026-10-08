@@ -68,6 +68,10 @@ func (r *repositoryStub) SaveZone(_ context.Context, actor auth.Principal, input
 	r.meta = meta
 	return ProgramZone{ProgramID: input.ProgramID, Code: input.Code, Name: input.Name, SortOrder: input.SortOrder}, nil
 }
+func (r *repositoryStub) DeleteZone(context.Context, auth.Principal, string, string, auth.ClientMeta) error {
+	return nil
+}
+
 func (r *repositoryStub) AssignRegency(_ context.Context, actor auth.Principal, input RegencyAssignmentInput, scope auth.RegencyScope, meta auth.ClientMeta) (ProgramZone, error) {
 	r.assignmentInput = input
 	r.seenScope = scope
