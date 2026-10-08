@@ -34,9 +34,10 @@ export function SlotCatalogGrid({ quota, entries, onSelect, onCreate, canCreate,
       const entry = byNumber.get(number);
       if (entry) {
         const isCompletedButIncomplete = entry.status === 'completed' && !entry.documentation_complete;
-        const cellClass = isCompletedButIncomplete ? styles.catalogCompletedWarning : statusClass[entry.status];
-        const label = isCompletedButIncomplete ? `${statusLabel[entry.status]} (dokumen berkurang)` : statusLabel[entry.status];
-        const StatusIcon = isCompletedButIncomplete ? TriangleAlert : entry.status === 'completed' ? Check : entry.status === 'linked' ? Clock3 : entry.status === 'cancelled' ? Ban : Circle;
+        const needsAttention = entry.needs_recompletion === true;
+        const cellClass = needsAttention || isCompletedButIncomplete ? styles.catalogCompletedWarning : statusClass[entry.status];
+        const label = needsAttention ? 'Perlu diselesaikan ulang' : isCompletedButIncomplete ? `${statusLabel[entry.status]} (dokumen berkurang)` : statusLabel[entry.status];
+        const StatusIcon = needsAttention || isCompletedButIncomplete ? TriangleAlert : entry.status === 'completed' ? Check : entry.status === 'linked' ? Clock3 : entry.status === 'cancelled' ? Ban : Circle;
         return <button key={number} type="button" className={`${styles.catalogCell} ${cellClass}`}
           aria-label={`Nomor ${number} - ${label}`} aria-pressed={selectedNumber === number} title={`Nomor ${number} · ${label}`}
           onClick={() => onSelect(number)}><span>{number}</span><StatusIcon aria-hidden="true" /></button>;

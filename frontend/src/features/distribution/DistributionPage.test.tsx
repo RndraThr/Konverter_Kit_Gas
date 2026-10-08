@@ -19,7 +19,7 @@ async function chooseSchedule(name: string | RegExp) {
 const slot = {
 	id: 'slot-1', schedule_id: 'schedule-1', slot_number: 1, distribution_date: '2026-10-20', status: 'open',
   machine_option_code: '', machine_serial_number: '', hose_option_code: '', hose_serial_number: '', converter_serial_number: '',
-  documentation: [], created_at: '2026-09-20T00:00:00Z', updated_at: '2026-09-20T00:00:00Z',
+  documentation: [], needs_recompletion: false, created_at: '2026-09-20T00:00:00Z', updated_at: '2026-09-20T00:00:00Z',
 };
 
 function renderPage(permissions = ['distribution.view', 'distribution.pos_mesin']) {
@@ -60,17 +60,17 @@ test('clicking an empty catalog number opens the inline create form, not a dialo
   await chooseSchedule(/Wajo Tahap 1/);
   await userEvent.click(await screen.findByRole('button', { name: /Buat Nomor 2/ }));
   expect(screen.getByLabelText('POS Mesin')).toBeVisible();
-  expect(screen.getByRole('button', { name: 'Simpan Nomor Bagi' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Mulai dokumentasi' })).toBeVisible();
   expect(screen.getByLabelText('POS Dokumen')).toBeVisible();
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 });
 
-test('the inline create form loads equipment options from the schedule package template', async () => {
+test('the inline create form remains documentation-only', async () => {
   renderPage();
   await chooseSchedule(/Wajo Tahap 1/);
   await userEvent.click(await screen.findByRole('button', { name: /Buat Nomor 2/ }));
-  await userEvent.click(screen.getByRole('combobox', { name: 'Merk/Tipe Mesin' }));
-  expect(await screen.findByRole('option', { name: /SHARK SPWP 80-30/ })).toBeVisible();
+  expect(screen.queryByRole('combobox', { name: 'Merk/Tipe Mesin' })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Tanggal distribusi')).not.toBeInTheDocument();
 });
 
 test('passes schedule equipment options to the existing slot document POS', async () => {

@@ -12,15 +12,16 @@ vi.mock('../../lib/api', async () => {
   return { ...actual, apiRequest: vi.fn() };
 });
 
-const penyerahanDoc = (status: string): SlotSummary => ({
+const penyerahanDoc = (status: string, storageState: 'staging' | 'moving' | 'final' | 'move_failed' = 'final'): SlotSummary => ({
   id: 'doc-1', code: 'handover_photo', label: 'Foto serah terima', stage: 'penyerahan', status, required: true, min_files: 1, max_files: 2,
+  media_kind: 'image', input_source: 'both', files: status === 'complete' ? [{ id: `media-${storageState}`, slot_id: 'doc-1', original_filename: `${storageState}.jpg`, mime_type: 'image/jpeg', byte_size: 10, source: 'camera', status: 'accepted', content_url: `/media/${storageState}.jpg`, storage_state: storageState }] : [],
 });
 
 const linkedSlot: DistributionSlot = {
 	id: 'slot-1', schedule_id: 'schedule-1', slot_number: 7, distribution_date: '2026-10-20', status: 'linked',
   full_name: 'Siti Aminah', nik: '7306014101900001',
   machine_option_code: 'MSN-001', machine_serial_number: 'SN-MSN-1', hose_option_code: 'HSE-001', hose_serial_number: 'SN-HSE-1', converter_serial_number: 'SN-CNV-1',
-  documentation: [penyerahanDoc('complete')], created_at: '2026-09-20T00:00:00Z', updated_at: '2026-09-20T00:00:00Z',
+  documentation: [penyerahanDoc('complete')], needs_recompletion: false, created_at: '2026-09-20T00:00:00Z', updated_at: '2026-09-20T00:00:00Z',
 };
 
 function renderSection(slot: DistributionSlot, permissions = ['distribution.pos_penyerahan']) {
@@ -69,4 +70,39 @@ test('confirms and completes the distribution through the dialog', async () => {
   await userEvent.click(within(dialog).getByRole('button', { name: 'Konfirmasi Penyerahan' }));
 
   await waitFor(() => expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed' })));
+});
+
+test.each([
+  ['moving', 'Media masih dipindahkan ke folder final. Tunggu hingga proses selesai.'],
+  ['move_failed', 'Pemindahan media gagal. Coba lagi dari POS Dokumen sebelum menyelesaikan distribusi.'],
+] as const)('blocks completion and explains %s media', (storageState, message) => {
+  renderSection({ ...linkedSlot, documentation: [penyerahanDoc('complete', storageState)] });
+
+  expect(screen.getByRole('button', { name: 'Selesaikan Distribusi' })).toBeDisabled();
+  expect(screen.getByText(message)).toBeVisible();
+  expect(screen.getByRole('button', { name: `Lihat ${storageState}.jpg` })).toBeVisible();
+});
+
+test('only grants media controls to handover documentation', () => {
+  const machineDoc: SlotSummary = { ...penyerahanDoc('missing'), id: 'machine-doc', code: 'machine', label: 'Foto Mesin', stage: 'mesin' };
+  renderSection({ ...linkedSlot, documentation: [machineDoc, penyerahanDoc('missing')] });
+
+  expect(screen.getByRole('article', { name: 'Foto serah terima' })).toHaveTextContent('Belum lengkap');
+  expect(screen.getByLabelText('Buka kamera')).toBeVisible();
+  expect(screen.queryByRole('article', { name: 'Foto Mesin' })).not.toBeInTheDocument();
+});
+
+test('shows recompletion attention and reopens a completed slot for handover edits', async () => {
+  const completed = { ...linkedSlot, status: 'completed' as const, needs_recompletion: true, distributed_at: '2026-09-21T08:00:00Z' };
+  vi.mocked(apiRequest).mockResolvedValue({ data: { ...completed, status: 'linked', reopened_stage: 'penyerahan' } });
+  const { onChanged } = renderSection(completed);
+
+  expect(screen.getByText('Perlu diselesaikan ulang')).toBeVisible();
+  expect(screen.queryByLabelText('Buka kamera')).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: 'Buka revisi POS Penyerahan' }));
+  await userEvent.type(screen.getByLabelText('Alasan revisi'), 'Perbaiki foto serah terima');
+  await userEvent.click(screen.getByRole('button', { name: 'Buka revisi' }));
+
+  await waitFor(() => expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ status: 'linked', reopened_stage: 'penyerahan' })));
+  expect(await screen.findByLabelText('Buka kamera')).toBeVisible();
 });

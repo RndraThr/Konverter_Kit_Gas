@@ -779,7 +779,8 @@ func (r *Repository) ListSlotCatalog(ctx context.Context, scheduleID string, sco
 				SELECT 1 FROM documentation_slots dcs
 				LEFT JOIN (SELECT documentation_slot_id, count(*) AS accepted FROM media_files WHERE status='accepted' GROUP BY documentation_slot_id) m ON m.documentation_slot_id = dcs.id
 				WHERE dcs.distribution_slot_id = ds.id AND dcs.is_required AND COALESCE(m.accepted,0) < dcs.min_files
-			) AS documentation_complete
+			) AS documentation_complete,
+			ds.needs_recompletion
 		FROM distribution_slots ds
 		JOIN program_schedules ps ON ps.id = ds.schedule_id
 		WHERE ds.schedule_id=$1 AND ($2 OR ps.regency_id::text = ANY($3))
@@ -792,7 +793,7 @@ func (r *Repository) ListSlotCatalog(ctx context.Context, scheduleID string, sco
 	entries := []SlotCatalogEntry{}
 	for rows.Next() {
 		var entry SlotCatalogEntry
-		if err := rows.Scan(&entry.SlotNumber, &entry.Status, &entry.DocumentationComplete); err != nil {
+		if err := rows.Scan(&entry.SlotNumber, &entry.Status, &entry.DocumentationComplete, &entry.NeedsRecompletion); err != nil {
 			return nil, fmt.Errorf("scan slot catalog entry: %w", err)
 		}
 		entries = append(entries, entry)

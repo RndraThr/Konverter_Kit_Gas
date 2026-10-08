@@ -28,6 +28,9 @@ type MediaMoveWorker struct {
 }
 
 func NewMediaMoveWorker(repository MediaMoveRepository, storage media.MovableStorage, options MediaMoveWorkerOptions) *MediaMoveWorker {
+	// Operational defaults are intentionally code-owned: poll every 5 seconds, lease work for
+	// 5 minutes, and cap exponential retry backoff at 15 minutes. They are not environment
+	// variables because the current deployment does not expose worker tuning as an operator contract.
 	if options.PollInterval <= 0 {
 		options.PollInterval = 5 * time.Second
 	}

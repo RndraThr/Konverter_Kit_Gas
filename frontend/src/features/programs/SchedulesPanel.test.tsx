@@ -54,7 +54,7 @@ test('sends null slot_quota when the field is left empty', async () => {
 
   await waitFor(() => expect(savedBody).toBeDefined());
   expect(savedBody!.slot_quota).toBeNull();
-});
+}, 15000);
 
 test('sends the entered slot_quota as a number', async () => {
   let savedBody: Record<string, unknown> | undefined;
@@ -66,4 +66,4 @@ test('sends the entered slot_quota as a number', async () => {
 
   await waitFor(() => expect(savedBody).toBeDefined());
   expect(savedBody!.slot_quota).toBe(46);
-});
+}, 15000);

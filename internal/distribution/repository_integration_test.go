@@ -288,6 +288,7 @@ func TestListSlotCatalogReportsStatusAndCompleteness(t *testing.T) {
 	must(t, err)
 	complete, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
 	must(t, err)
+	must(t, pool.QueryRow(ctx, `UPDATE distribution_slots SET needs_recompletion=true,reopened_at=now(),reopened_stage='dokumen',revision_reason='catalog attention test' WHERE schedule_id=$1 AND slot_number=$2 RETURNING id::text`, scheduleID, incomplete.SlotNumber).Scan(new(string)))
 
 	// Satisfy the "complete" slot's one required documentation_slots row with an accepted media file.
 	var completeDocSlotID string
@@ -304,8 +305,8 @@ func TestListSlotCatalogReportsStatusAndCompleteness(t *testing.T) {
 	for _, entry := range entries {
 		byNumber[entry.SlotNumber] = entry
 	}
-	if got := byNumber[incomplete.SlotNumber]; got.Status != "open" || got.DocumentationComplete {
-		t.Fatalf("incomplete slot entry = %+v, want status=open documentation_complete=false", got)
+	if got := byNumber[incomplete.SlotNumber]; got.Status != "open" || got.DocumentationComplete || !got.NeedsRecompletion {
+		t.Fatalf("incomplete slot entry = %+v, want status=open documentation_complete=false needs_recompletion=true", got)
 	}
 	if got := byNumber[complete.SlotNumber]; got.Status != "open" || !got.DocumentationComplete {
 		t.Fatalf("complete slot entry = %+v, want status=open documentation_complete=true", got)

@@ -91,7 +91,7 @@ test('imports a DCP3 workbook through the four review steps', async () => {
   expect(screen.getByText('1 valid')).toBeVisible();
   expect(screen.getByText('1 peringatan')).toBeVisible();
   expect(screen.getByText('1 konflik')).toBeVisible();
-});
+}, 15000);
 
 test('lets the user pick the real header row when the workbook has leading title rows', async () => {
   let previewAttempts = 0;

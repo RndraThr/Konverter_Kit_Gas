@@ -81,3 +81,10 @@ test('announces the selected catalog number without changing its action', async 
   await userEvent.click(screen.getByRole('button', { name: /Nomor 2/ }));
   expect(onSelect).toHaveBeenCalledWith(2);
 });
+
+test('prioritizes recompletion attention over linked status in its accessible label', () => {
+  const entries: SlotCatalogEntry[] = [{ slot_number: 4, status: 'linked', documentation_complete: true, needs_recompletion: true }];
+  render(<SlotCatalogGrid quota={4} entries={entries} onSelect={vi.fn()} onCreate={vi.fn()} canCreate />);
+
+  expect(screen.getByRole('button', { name: 'Nomor 4 - Perlu diselesaikan ulang' })).toBeVisible();
+});

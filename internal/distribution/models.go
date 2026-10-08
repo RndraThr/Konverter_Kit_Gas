@@ -95,6 +95,7 @@ type SlotCatalogEntry struct {
 	SlotNumber            int    `json:"slot_number"`
 	Status                string `json:"status"`
 	DocumentationComplete bool   `json:"documentation_complete"`
+	NeedsRecompletion     bool   `json:"needs_recompletion"`
 }
 
 type CreateSlotInput struct {

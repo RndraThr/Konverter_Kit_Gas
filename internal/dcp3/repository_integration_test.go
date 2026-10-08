@@ -23,16 +23,21 @@ import (
 func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testing.T) {
 	pool := dcp3IntegrationPool(t)
 	ctx := context.Background()
-	scheduleID, conflictingPersonID, _ := createDCP3ScheduleFixture(t, pool)
+	nikSeed := time.Now().UnixNano() % 100000000000000
+	validNIK := fmt.Sprintf("73%014d", nikSeed)
+	conflictingNIK := fmt.Sprintf("73%014d", (nikSeed+1)%100000000000000)
+	validCard := fmt.Sprintf("KP-%014d", nikSeed)
+	duplicateCard := fmt.Sprintf("KP-%014d", (nikSeed+2)%100000000000000)
+	scheduleID, conflictingPersonID, _ := createDCP3ScheduleFixture(t, pool, validNIK, conflictingNIK)
 	repository := NewRepository(pool)
 	service := NewImportService(repository, ParseLimits{MaxBytes: 10 << 20, MaxRows: 5000, MaxColumns: 100})
 	meta := auth.ClientMeta{IPAddress: "127.0.0.1", UserAgent: "dcp3-integration-test"}
 	workbook := workbookBytes(t, func(file *excelize.File) {
 		rows := [][]any{
 			{"No", "Nama", "NIK", "No Kartu Petani", "Alamat", "Desa", "Kecamatan", "No HP"},
-			{1, "Siti Aminah", "7312345678901234", "KP-01", "Jalan Sawah", "Tempe", "Sabbangparu", "08121"},
-			{1, "Siti Duplikat", "7312345678901234", "KP-02", "Jalan Dua", "Tempe", "Sabbangparu", "08122"},
-			{3, "Hasan Konflik", "7312345678901299", "KP-99", "Jalan Tiga", "Tempe", "Sabbangparu", "08123"},
+			{1, "Siti Aminah", validNIK, validCard, "Jalan Sawah", "Tempe", "Sabbangparu", "08121"},
+			{1, "Siti Duplikat", validNIK, duplicateCard, "Jalan Dua", "Tempe", "Sabbangparu", "08122"},
+			{3, "Hasan Konflik", conflictingNIK, "KP-99", "Jalan Tiga", "Tempe", "Sabbangparu", "08123"},
 		}
 		for index, row := range rows {
 			_ = file.SetSheetRow("Sheet1", fmt.Sprintf("A%d", index+1), &row)
@@ -144,7 +149,7 @@ func TestIntegrationScopeEnforcementRejectsOutOfRegencyAccess(t *testing.T) {
 	}
 }
 
-func createDCP3ScheduleFixture(t *testing.T, pool *pgxpool.Pool) (string, string, string) {
+func createDCP3ScheduleFixture(t *testing.T, pool *pgxpool.Pool, cleanupNIKs ...string) (string, string, string) {
 	t.Helper()
 	ctx := context.Background()
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
@@ -181,7 +186,8 @@ func createDCP3ScheduleFixture(t *testing.T, pool *pgxpool.Pool) (string, string
 		_, _ = pool.Exec(context.Background(), `DELETE FROM dcp3_import_batches WHERE schedule_id=$1`, scheduleID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM program_schedules WHERE id=$1`, scheduleID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM person_sector_identifiers WHERE person_id=$1`, personID)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE id=$1 OR nik IN ('7312345678901234','7312345678901299')`, personID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM person_sector_identifiers WHERE person_id IN (SELECT id FROM people WHERE nik = ANY($1))`, cleanupNIKs)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE id=$1 OR nik = ANY($2)`, personID, cleanupNIKs)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM programs WHERE id=$1`, programID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM regencies WHERE id=$1`, regencyID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM audit_logs WHERE user_agent='dcp3-integration-test'`)
