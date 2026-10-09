@@ -61,6 +61,9 @@ func TestCheckReturnsDegradedWhenMigrationVersionFails(t *testing.T) {
 	if report.Database.Message == "driver detail" {
 		t.Fatal("raw database error leaked")
 	}
+	if report.Operations.Status != StatusDegraded || report.Operations.Code != "migration_state_unavailable" {
+		t.Fatalf("operational status should not be reported ready: %+v", report.Operations)
+	}
 }
 
 func TestCheckReturnsUnhealthyWhenPingFails(t *testing.T) {
@@ -71,6 +74,9 @@ func TestCheckReturnsUnhealthyWhenPingFails(t *testing.T) {
 	}
 	if report.Database.Message == "postgres://user:password@host/database" {
 		t.Fatal("database credential leaked")
+	}
+	if report.Operations.Status != StatusUnhealthy || report.Operations.Code != "database_unavailable" {
+		t.Fatalf("operational status should not be reported ready: %+v", report.Operations)
 	}
 }
 

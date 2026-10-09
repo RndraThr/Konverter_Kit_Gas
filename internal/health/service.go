@@ -97,6 +97,11 @@ func (s *Service) Check(ctx context.Context) Report {
 			Message:   "PostgreSQL tidak dapat dijangkau",
 			LatencyMS: time.Since(started).Milliseconds(),
 		}
+		report.Operations = Component{
+			Status:  StatusUnhealthy,
+			Code:    "database_unavailable",
+			Message: "Statistik operasional tidak dapat diperiksa",
+		}
 		return report
 	}
 	report.Database.LatencyMS = time.Since(started).Milliseconds()
@@ -107,6 +112,11 @@ func (s *Service) Check(ctx context.Context) Report {
 		report.Database.Status = StatusDegraded
 		report.Database.Code = "migration_state_unavailable"
 		report.Database.Message = "PostgreSQL siap, versi migration tidak dapat dibaca"
+		report.Operations = Component{
+			Status:  StatusDegraded,
+			Code:    "migration_state_unavailable",
+			Message: "Statistik operasional belum dapat dipastikan",
+		}
 		return report
 	}
 	report.MigrationVersion = version
