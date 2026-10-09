@@ -70,7 +70,7 @@ func run(ctx context.Context, cfg config.Config) error {
 	programService := programs.NewService(programs.NewRepository(pool))
 	videoLimiter := media.NewVideoLimiter(cfg.MaxConcurrentVideoUploads)
 	distributionRepository := distribution.NewRepository(pool)
-	startMediaMoveWorker(ctx, distributionRepository, mediaStorage)
+	mediaMoveWorkerActive := startMediaMoveWorker(ctx, distributionRepository, mediaStorage)
 	applicationLocation, err := time.LoadLocation("Asia/Jakarta")
 	if err != nil {
 		return fmt.Errorf("load application timezone: %w", err)
@@ -96,7 +96,7 @@ func run(ctx context.Context, cfg config.Config) error {
 		Profile:           profile.NewService(profile.NewRepository(pool)),
 		Administration:    administration.NewService(administration.NewRepository(pool)),
 		Settings:          settings.NewService(settings.NewRepository(pool)),
-		Health:            health.NewService(health.NewPostgresProbe(pool), cfg.Env, "dev", time.Now()),
+		Health:            health.NewService(health.NewPostgresProbe(pool), cfg.Env, "dev", cfg.StorageBackend, mediaMoveWorkerActive, time.Now()),
 		Audit:             audit.NewRepository(pool),
 		Programs:          programService,
 		DCP3:              dcp3.NewImportService(dcp3.NewRepository(pool), dcp3.ParseLimits{MaxBytes: 10 << 20, MaxRows: 5000, MaxColumns: 100}),
