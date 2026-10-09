@@ -491,7 +491,9 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, bast.ErrHandoverLocationRequired):
 		writeError(w, http.StatusConflict, "handover_location_required", "Lokasi/titik serah belum dikonfigurasi")
 	case errors.Is(err, bast.ErrServisScheduleRequired):
-		writeError(w, http.StatusConflict, "servis_schedule_required", "Jadwal servis ke-1 dan ke-2 belum lengkap")
+		writeError(w, http.StatusConflict, "servis_schedule_required", "Lengkapi tanggal servis ke-1 dan ke-2 sebelum finalisasi")
+	case errors.Is(err, bast.ErrTKDNTotalRequired):
+		writeError(w, http.StatusConflict, "tkdn_total_required", "Isi TKDN gabungan sebelum finalisasi")
 	case errors.Is(err, bast.ErrSignatoryRequired):
 		writeError(w, http.StatusConflict, "signatory_required", "Penandatangan dokumen belum lengkap")
 	case errors.Is(err, bast.ErrRecipientIdentityIncomplete):

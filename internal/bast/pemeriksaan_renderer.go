@@ -98,7 +98,7 @@ func renderPemeriksaanForm(pdf *fpdf.Fpdf, snapshot PemeriksaanSnapshot, logos [
 	y := pdf.GetY() + 4
 	pdf.SetFont(activityFont, "", activityTextPt)
 	for _, item := range []struct{ label, value string }{
-		{"No. Purchase Order (PO)", snapshot.PONumber},
+		{"No. Purchase Order (PO)", orBlank(snapshot.PONumber)},
 		{"Kabupaten / Kota", textnorm.DisplayTitle(snapshot.RegencyName)},
 		{"Provinsi", textnorm.DisplayTitle(snapshot.ProvinceName)},
 		{"Pemasok", textnorm.DisplayTitle(snapshot.SupplierName)},

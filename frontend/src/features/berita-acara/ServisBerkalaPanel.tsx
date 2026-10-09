@@ -58,7 +58,7 @@ export function ServisBerkalaPanel({ scheduleID, regencyName, programType, defau
   const preview = useQuery({
     queryKey: ['bast', 'servis-berkala', 'preview', scheduleID, documentDate, summary.data?.data.services],
     queryFn: () => apiBlobRequest('/api/v1/bast/servis-berkala/preview', { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, document_date: documentDate }) }),
-    enabled: programType === 'farmer' && status === 'ready' && documentDate !== '',
+    enabled: programType === 'farmer' && status !== 'no_recipients' && documentDate !== '',
   });
   const saveDates = useMutation({
     mutationFn: async () => {
@@ -128,7 +128,8 @@ export function ServisBerkalaPanel({ scheduleID, regencyName, programType, defau
             </div>
           </div>
 
-          {status !== 'ready' && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">{status === 'no_recipients' ? 'Belum ada distribusi selesai pada jadwal ini.' : 'Simpan jadwal servis ke-1 dan ke-2 terlebih dahulu.'}</div>}
+          {status === 'no_recipients' && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">Belum ada distribusi selesai pada jadwal ini.</div>}
+          {status === 'servis_schedule_required' && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">Tanggal servis belum lengkap: dicetak titik-titik di preview. Lengkapi dan simpan jadwal servis sebelum finalisasi.</p>}
 
           {activeDoc && <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center">
             <div><div className="flex items-center gap-2"><FileCheck2 className="size-4 text-emerald-600" /><strong className="text-sm">{activeDoc.filename}</strong></div><p className="mt-1 text-xs text-muted-foreground">Versi {activeDoc.version} · {activeDoc.page_count} halaman · {activeDoc.recipient_count} paket</p></div>
@@ -140,7 +141,7 @@ export function ServisBerkalaPanel({ scheduleID, regencyName, programType, defau
             {versions.filter((doc) => doc.status === 'superseded').map((doc) => <div className="flex items-center justify-between gap-3 text-sm" key={doc.id}><span className="text-muted-foreground">Versi {doc.version} · {doc.document_date}</span><Button nativeButton={false} render={<a href={`/api/v1/bast/servis-berkala/documents/${doc.id}/content`} />} variant="ghost" size="sm"><Download />Unduh</Button></div>)}
           </div>}
 
-          {status === 'ready' && documentDate !== '' && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="BA Servis Berkala" />}
+          {status !== 'no_recipients' && documentDate !== '' && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="BA Servis Berkala" />}
         </CardContent>
       </Card>
     </div>

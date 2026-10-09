@@ -74,10 +74,17 @@ func TestRenderServisBerkalaProducesSinglePage(t *testing.T) {
 		t.Fatalf("page_count=%d", rendered.PageCount)
 	}
 
+	// Preview boleh tanpa tanggal: tanggal kosong dicetak titik-titik.
 	snapshot := sampleServisBerkalaSnapshot()
 	snapshot.Services[1].Start = ""
-	if _, err := RenderServisBerkala(snapshot, map[string][]byte{"logo-1": testPNG(t)}); !errors.Is(err, ErrServisScheduleRequired) {
-		t.Fatalf("incomplete schedule err=%v", err)
+	if _, err := RenderServisBerkala(snapshot, map[string][]byte{"logo-1": testPNG(t)}); err != nil {
+		t.Fatalf("blank schedule err=%v", err)
+	}
+	if got := formatServisRange(ServisPeriod{End: "2027-11-06"}); got != "…………… s/d 6 November 2027" {
+		t.Fatalf("range=%q", got)
+	}
+	if formatTKDNTotal(0) != "…… %" || formatTKDNTotal(68.53) != "68,53%" {
+		t.Fatal("TKDN total placeholder changed")
 	}
 }
 

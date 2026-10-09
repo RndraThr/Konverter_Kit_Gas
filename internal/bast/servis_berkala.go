@@ -113,7 +113,7 @@ func formatServisRange(period ServisPeriod) string {
 func formatTitleDate(value string) string {
 	date, err := time.Parse("2006-01-02", value)
 	if err != nil {
-		return "…"
+		return "……………"
 	}
 	months := [...]string{"", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"}
 	return fmt.Sprintf("%d %s %d", date.Day(), months[date.Month()], date.Year())
