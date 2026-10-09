@@ -111,6 +111,9 @@ func (s *TKDNService) Finalize(ctx context.Context, actor auth.Principal, schedu
 	if err != nil {
 		return AggregateDocument{}, err
 	}
+	if snapshot.TotalTKDN <= 0 {
+		return AggregateDocument{}, ErrTKDNTotalRequired
+	}
 	snapshotJSON, err := json.Marshal(snapshot)
 	if err != nil {
 		return AggregateDocument{}, err

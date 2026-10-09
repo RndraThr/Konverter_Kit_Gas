@@ -1,6 +1,7 @@
 package bast
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -141,6 +142,17 @@ func formatIndonesianNumber(value float64, decimals int) string {
 		return grouped.String()
 	}
 	return grouped.String() + "," + fraction
+}
+
+// ErrTKDNTotalRequired: TKDN gabungan belum diisi saat finalisasi.
+var ErrTKDNTotalRequired = errors.New("tkdn total is required")
+
+// formatTKDNTotal mencetak TKDN gabungan; nilai 0 dianggap belum diisi.
+func formatTKDNTotal(value float64) string {
+	if value <= 0 {
+		return "…… %"
+	}
+	return formatTKDNPercent(value)
 }
 
 func formatTKDNPercent(value float64) string {

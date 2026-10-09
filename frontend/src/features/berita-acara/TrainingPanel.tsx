@@ -49,7 +49,8 @@ export function TrainingPanel({ config, scheduleID, regencyName, programType }: 
   const dateItems = dates.data?.data ?? [];
   const selectedDate = dateItems.some((item) => item.local_date === chosenDate) ? chosenDate : dateItems[0]?.local_date ?? '';
   const selected = dateItems.find((item) => item.local_date === selectedDate);
-  const ready = savedLocation.trim() !== '' && selectedDate !== '';
+  // Lokasi boleh kosong: dicetak titik-titik untuk ditulis tangan.
+  const ready = selectedDate !== '';
   const preview = useQuery({
     queryKey: ['bast', config.apiPath, 'preview', scheduleID, selectedDate, savedLocation],
     queryFn: () => apiBlobRequest(`${apiBase}/preview`, { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, date: selectedDate }) }),
@@ -113,7 +114,7 @@ export function TrainingPanel({ config, scheduleID, regencyName, programType }: 
                 <Button variant="ghost" onClick={() => setShowSettings((value) => !value)}><Settings2 />{showSettings ? 'Tutup pengaturan' : 'Penandatangan'}</Button>
               </div>
             </div>
-            {!savedLocation.trim() && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">Isi dan simpan lokasi kegiatan untuk menampilkan dokumen.</div>}
+            {!savedLocation.trim() && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">Lokasi belum diisi: dicetak titik-titik untuk ditulis tangan.</p>}
             {ready && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label={config.documentTitle} />}
           </CardContent>
         </Card>

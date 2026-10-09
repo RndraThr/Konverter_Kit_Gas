@@ -10,6 +10,7 @@ const sosialisasiConfig: RakordaConfig = {
   defaultRowCount: 51,
   folder: '7. SOSIALISASI',
   filenamePrefix: 'BA-SOSIALISASI',
+  locationOptional: true,
   note: 'Nama penandatangan (Dinas Pertanian, Pelaksana, Konsultan Pengawas, Pertamina) diambil dari Konfigurasi Berita Acara jadwal. Bila belum diisi, kolom nama dicetak kosong untuk ditulis tangan.',
 };
 

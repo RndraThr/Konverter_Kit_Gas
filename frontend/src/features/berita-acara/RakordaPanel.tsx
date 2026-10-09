@@ -31,6 +31,8 @@ export type RakordaConfig = {
   folder: string;
   filenamePrefix: string;
   note?: string;
+  /** Lokasi boleh kosong; dicetak titik-titik untuk ditulis tangan (Sosialisasi). */
+  locationOptional?: boolean;
 };
 
 export const rakordaConfig: RakordaConfig = {
@@ -58,10 +60,11 @@ export function RakordaPanel({ config = rakordaConfig, scheduleID, regencyName, 
   const settings = useQuery({ queryKey: ['bast', 'schedule-settings', scheduleID], queryFn: () => apiRequest<DataResponse<ScheduleSettings>>(`/api/v1/bast/schedules/${encodeURIComponent(scheduleID)}/settings`), enabled: programType === 'farmer' });
   useEffect(() => { if (settings.data?.data) { setLocation(settings.data.data[config.locationKey] ?? ''); setRowCount(settings.data.data[config.rowCountKey] || config.defaultRowCount); } }, [settings.data, config]);
 
-  const validSettings = location.trim() !== '' && rowCount >= 5 && rowCount <= 200;
+  const locationOK = (value: string) => config.locationOptional || value.trim() !== '';
+  const validSettings = locationOK(location) && rowCount >= 5 && rowCount <= 200;
   const savedLocation = settings.data?.data[config.locationKey] ?? '';
   const savedRowCount = settings.data?.data[config.rowCountKey] ?? 0;
-  const settingsReady = savedLocation.trim() !== '' && savedRowCount >= 5 && savedRowCount <= 200;
+  const settingsReady = locationOK(savedLocation) && savedRowCount >= 5 && savedRowCount <= 200;
   const preview = useQuery({
     queryKey: ['bast', config.apiPath, 'preview', scheduleID, date, savedLocation, savedRowCount],
     queryFn: () => apiBlobRequest(`${apiBase}/preview`, { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, date }) }),
@@ -95,7 +98,7 @@ export function RakordaPanel({ config = rakordaConfig, scheduleID, regencyName, 
       <Card className="self-start">
         <CardHeader className="border-b"><CardTitle className="flex items-center gap-2 text-base"><Settings2 className="size-4 text-primary" aria-hidden="true" />Pengaturan daftar hadir</CardTitle></CardHeader>
         <CardContent className="grid gap-4 pt-5">
-          <FormField label={`Lokasi ${config.name}`} name={config.locationKey} required value={location} disabled={!canManage} onChange={(event) => setLocation(uppercaseBusinessText(event.target.value))} hint="Dicetak pada header daftar hadir." />
+          <FormField label={`Lokasi ${config.name}`} name={config.locationKey} required={!config.locationOptional} value={location} disabled={!canManage} onChange={(event) => setLocation(uppercaseBusinessText(event.target.value))} hint={config.locationOptional ? 'Dicetak pada header; boleh dikosongkan untuk ditulis tangan.' : 'Dicetak pada header daftar hadir.'} />
           <FormField label="Jumlah baris" name={config.rowCountKey} type="number" min={5} max={200} required value={rowCount} disabled={!canManage} onChange={(event) => setRowCount(Number(event.target.value))} hint="Minimal 5 dan maksimal 200 baris; halaman bertambah otomatis." />
           {config.note && <p className="text-xs leading-5 text-muted-foreground">{config.note}</p>}
           {canManage && <Button disabled={!validSettings || saveSettings.isPending} onClick={() => saveSettings.mutate()}><Save aria-hidden="true" />{saveSettings.isPending ? 'Menyimpan...' : 'Simpan pengaturan'}</Button>}
@@ -115,6 +118,7 @@ export function RakordaPanel({ config = rakordaConfig, scheduleID, regencyName, 
             <Button variant="outline" disabled={!preview.data} onClick={printPreview}><Printer aria-hidden="true" />Cetak</Button>
             <Button variant="outline" disabled={!preview.data} onClick={downloadPreview}><Download aria-hidden="true" />Unduh PDF kosong</Button>
           </div>}
+          {settingsReady && date && config.locationOptional && !savedLocation.trim() && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">Lokasi belum diisi: dicetak titik-titik untuk ditulis tangan.</p>}
           {settingsReady && date && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label={config.documentTitle} />}
         </CardContent>
       </Card>

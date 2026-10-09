@@ -75,6 +75,8 @@ export function TKDNPanel({ scheduleID, programID, regencyName, programType, def
   const versions = documents.data?.data ?? [];
   const activeDoc = versions.find((doc) => doc.status === 'active');
   const items = summary.data.data.items ?? [];
+  // TKDN gabungan 0 berarti belum diisi; finalisasi menunggu nilainya.
+  const totalSaved = (profile?.total_tkdn ?? 0) > 0;
   const entries = summary.data.data.entries ?? [];
   const updateRow = (index: number, patch: Partial<TKDNRow>) => setRows((current) => current.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   const editorValid = rowsValid(rows) && percentValid(totalTKDN);
@@ -97,12 +99,13 @@ export function TKDNPanel({ scheduleID, programID, regencyName, programType, def
         </div>
         <p className="-mt-2 text-xs text-muted-foreground">{items.length} baris TKDN; merk dan % TKDN per barang dari Template Paket jadwal. TKDN gabungan berlaku untuk semua kabupaten program.</p>
         <div className="flex flex-wrap gap-2 border-t pt-4">
-            {canManage && <Button disabled={finalize.isPending || !ready || documentDate === ''} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
+            {canManage && <Button disabled={finalize.isPending || !ready || documentDate === '' || !totalSaved} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
             <Button variant="outline" aria-expanded={showEditor} onClick={() => setShowEditor((value) => !value)}><ListChecks />{showEditor ? 'Tutup susunan TKDN' : 'Susunan TKDN'}</Button>
             <Button variant="ghost" onClick={() => setShowSettings((value) => !value)}><Settings2 />{showSettings ? 'Tutup pengaturan' : 'Pengaturan'}</Button>
         </div>
 
         {!ready && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">Belum ada distribusi selesai pada jadwal ini.</div>}
+        {ready && !totalSaved && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">TKDN gabungan belum diisi: dicetak titik-titik di preview. Isi dan simpan sebelum finalisasi.</p>}
 
         {activeDoc && <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center">
           <div><div className="flex items-center gap-2"><FileCheck2 className="size-4 text-emerald-600" /><strong className="text-sm">{activeDoc.filename}</strong></div><p className="mt-1 text-xs text-muted-foreground">Versi {activeDoc.version} · {activeDoc.page_count} halaman · {activeDoc.recipient_count} paket</p></div>

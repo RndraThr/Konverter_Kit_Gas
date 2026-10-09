@@ -178,7 +178,7 @@ func renderTKDNTable(pdf *fpdf.Fpdf, snapshot TKDNSnapshot, logos []registeredLo
 	y := pdf.GetY()
 	merged := tkdnColumnWidths[0] + tkdnColumnWidths[1] + tkdnColumnWidths[2] + tkdnColumnWidths[3]
 	drawTKDNCell(pdf, left, y, merged, tkdnRowMM, "JUMLAH", "B", "C", true)
-	drawTKDNCell(pdf, left+merged, y, tkdnColumnWidths[4], tkdnRowMM, formatTKDNPercent(snapshot.TotalTKDN), "B", "C", true)
+	drawTKDNCell(pdf, left+merged, y, tkdnColumnWidths[4], tkdnRowMM, formatTKDNTotal(snapshot.TotalTKDN), "B", "C", true)
 	pdf.SetY(y + tkdnRowMM)
 }
 

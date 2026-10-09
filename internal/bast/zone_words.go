@@ -6,6 +6,16 @@ import (
 	"strings"
 )
 
+// blankField dicetak untuk isian yang belum diisi agar dapat ditulis tangan.
+const blankField = "……………………"
+
+func orBlank(value string) string {
+	if value == "" {
+		return blankField
+	}
+	return value
+}
+
 var trailingNumberPattern = regexp.MustCompile(`(\d+)\s*$`)
 
 // zoneWithWords menambahkan bilangan terbilang di belakang nomor zona:

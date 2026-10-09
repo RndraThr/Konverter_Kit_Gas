@@ -70,6 +70,18 @@ test('saves the TKDN layout with the combined value; brands come from the packag
   expect(apiBlobRequest).not.toHaveBeenCalled()
 })
 
+test('previews with a blank combined TKDN but blocks finalizing until it is saved', async () => {
+  vi.mocked(apiRequest).mockImplementation(async (path) => {
+    if (path.includes('/tkdn/summary')) return { data: { total_packages: 12, profile: { ...profile, total_tkdn: 0 }, items, entries } }
+    if (path.includes('/tkdn/documents')) return { data: [] }
+    throw new Error(`unexpected ${path}`)
+  })
+  renderPanel()
+  expect(await screen.findByText(/TKDN gabungan belum diisi/)).toBeVisible()
+  await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledWith('/api/v1/bast/tkdn/preview', expect.objectContaining({ method: 'POST' })))
+  expect(screen.getByRole('button', { name: 'Finalisasi & sinkronkan' })).toBeDisabled()
+})
+
 test('edits a TKDN row name in the layout editor', async () => {
   mockApi(0)
   renderPanel()
