@@ -33,9 +33,6 @@ func RenderServisBerkala(snapshot ServisBerkalaSnapshot, logoBytes map[string][]
 	if snapshot.DocumentType != AggregateDocumentServisBerkala {
 		return RenderedAggregate{}, ErrInvalidInput
 	}
-	if err := validateServisPeriods(snapshot.Services); err != nil {
-		return RenderedAggregate{}, err
-	}
 	pdf := fpdf.New("P", "mm", "A4", "")
 	pdf.SetMargins(marginMM, topMarginMM, marginMM)
 	pdf.SetAutoPageBreak(false, bottomMarginMM)

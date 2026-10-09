@@ -47,9 +47,9 @@ test('lists distribution dates like the daily recap and previews the selected da
   expect(apiRequest).toHaveBeenCalledWith(expect.stringContaining('/api/v1/bast/training-100/uploads?schedule_id=schedule-1&date=2026-10-02'))
 })
 
-test('asks for the location before previewing', async () => {
+test('previews with a blank location so it can be filled by hand', async () => {
   mockApi({ training_100_location: '' })
   renderPanel()
-  expect(await screen.findByText('Isi dan simpan lokasi kegiatan untuk menampilkan dokumen.')).toBeVisible()
-  expect(apiBlobRequest).not.toHaveBeenCalled()
+  expect(await screen.findByText('Lokasi belum diisi: dicetak titik-titik untuk ditulis tangan.')).toBeVisible()
+  await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledWith('/api/v1/bast/training-100/preview', expect.objectContaining({ method: 'POST' })))
 })

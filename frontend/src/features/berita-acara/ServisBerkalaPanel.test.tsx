@@ -42,9 +42,10 @@ test('previews the servis berkala document once both service periods are saved',
   await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledWith('/api/v1/bast/servis-berkala/preview', expect.objectContaining({ method: 'POST' })))
 })
 
-test('asks for the service schedule before previewing', async () => {
+test('previews without service dates but blocks finalizing until they are saved', async () => {
   mockApi({ ...readySummary, schedule_ready: false })
   renderPanel()
-  expect(await screen.findByText('Simpan jadwal servis ke-1 dan ke-2 terlebih dahulu.')).toBeVisible()
-  expect(apiBlobRequest).not.toHaveBeenCalled()
+  expect(await screen.findByText(/Tanggal servis belum lengkap/)).toBeVisible()
+  await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledWith('/api/v1/bast/servis-berkala/preview', expect.objectContaining({ method: 'POST' })))
+  expect(screen.getByRole('button', { name: 'Finalisasi & sinkronkan' })).toBeDisabled()
 })

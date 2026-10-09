@@ -37,13 +37,13 @@ test('uses the sosialisasi settings and endpoints, not the RAKORDA ones', async 
   expect(apiRequest).toHaveBeenCalledWith(expect.stringContaining('/api/v1/bast/sosialisasi/uploads?schedule_id=schedule-1'))
 })
 
-test('skips the preview fetch when the sosialisasi location has not been saved yet', async () => {
+test('previews with a blank location so it can be filled by hand', async () => {
   vi.mocked(apiRequest).mockImplementation(async (path) => {
     if (path.includes('/settings')) return { data: { ...settings, sosialisasi_location: '' } }
     if (path.includes('/uploads')) return { data: [] }
     throw new Error(`unexpected ${path}`)
   })
   renderPanel()
-  await screen.findByText('Belum diatur')
-  expect(apiBlobRequest).not.toHaveBeenCalled()
+  expect(await screen.findByText('Lokasi belum diisi: dicetak titik-titik untuk ditulis tangan.')).toBeVisible()
+  await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledWith('/api/v1/bast/sosialisasi/preview', expect.objectContaining({ method: 'POST' })))
 })

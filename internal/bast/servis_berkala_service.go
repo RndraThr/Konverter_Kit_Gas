@@ -67,7 +67,7 @@ func (s *ServisBerkalaService) Summary(ctx context.Context, scheduleID string, s
 
 func (s *ServisBerkalaService) Preview(ctx context.Context, scheduleID, documentDate string, scope auth.RegencyScope) (AggregatePreview, error) {
 	scheduleID, documentDate = strings.TrimSpace(scheduleID), strings.TrimSpace(documentDate)
-	snapshot, ctxData, err := s.snapshot(ctx, scheduleID, documentDate, 1, scope)
+	snapshot, ctxData, err := s.snapshot(ctx, scheduleID, documentDate, 1, false, scope)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
@@ -89,7 +89,7 @@ func (s *ServisBerkalaService) Finalize(ctx context.Context, actor auth.Principa
 	if err != nil {
 		return AggregateDocument{}, err
 	}
-	snapshot, ctxData, err := s.snapshot(ctx, scheduleID, documentDate, version, scope)
+	snapshot, ctxData, err := s.snapshot(ctx, scheduleID, documentDate, version, true, scope)
 	if err != nil {
 		return AggregateDocument{}, err
 	}
@@ -172,7 +172,9 @@ func (s *ServisBerkalaService) Open(ctx context.Context, id string, scope auth.R
 	return AggregateContent{Reader: reader, Filename: doc.Filename}, nil
 }
 
-func (s *ServisBerkalaService) snapshot(ctx context.Context, scheduleID, documentDate string, version int, scope auth.RegencyScope) (ServisBerkalaSnapshot, DP3Context, error) {
+// snapshot menyusun data dokumen. requireSchedule=true (finalisasi) mewajibkan
+// keempat tanggal servis; preview mencetak tanggal yang kosong sebagai titik-titik.
+func (s *ServisBerkalaService) snapshot(ctx context.Context, scheduleID, documentDate string, version int, requireSchedule bool, scope auth.RegencyScope) (ServisBerkalaSnapshot, DP3Context, error) {
 	if scheduleID == "" || !validRequiredDate(documentDate) {
 		return ServisBerkalaSnapshot{}, DP3Context{}, ErrInvalidInput
 	}
@@ -187,8 +189,10 @@ func (s *ServisBerkalaService) snapshot(ctx context.Context, scheduleID, documen
 	if err != nil {
 		return ServisBerkalaSnapshot{}, DP3Context{}, err
 	}
-	if err := validateServisPeriods(servisPeriods(settings)); err != nil {
-		return ServisBerkalaSnapshot{}, DP3Context{}, err
+	if requireSchedule {
+		if err := validateServisPeriods(servisPeriods(settings)); err != nil {
+			return ServisBerkalaSnapshot{}, DP3Context{}, err
+		}
 	}
 	total, err := s.totalPackages(ctx, scheduleID, scope)
 	if err != nil {
