@@ -22,8 +22,17 @@ func NewRepository(pool *pgxpool.Pool) *Repository {
 
 func (r *Repository) List(ctx context.Context) ([]Setting, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT key, value, value_type, COALESCE(description, ''), COALESCE(updated_by::text, ''), updated_at
-		FROM system_settings ORDER BY key
+		SELECT
+			system_settings.key,
+			system_settings.value,
+			system_settings.value_type,
+			COALESCE(system_settings.description, ''),
+			COALESCE(system_settings.updated_by::text, ''),
+			COALESCE(NULLIF(users.full_name, ''), users.username, ''),
+			system_settings.updated_at
+		FROM system_settings
+		LEFT JOIN users ON users.id = system_settings.updated_by
+		ORDER BY system_settings.key
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("list system settings: %w", err)
@@ -33,7 +42,7 @@ func (r *Repository) List(ctx context.Context) ([]Setting, error) {
 	for rows.Next() {
 		var setting Setting
 		var value []byte
-		if err := rows.Scan(&setting.Key, &value, &setting.Type, &setting.Description, &setting.UpdatedBy, &setting.UpdatedAt); err != nil {
+		if err := rows.Scan(&setting.Key, &value, &setting.Type, &setting.Description, &setting.UpdatedBy, &setting.UpdatedByName, &setting.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan system setting: %w", err)
 		}
 		if err := json.Unmarshal(value, &setting.Value); err != nil {

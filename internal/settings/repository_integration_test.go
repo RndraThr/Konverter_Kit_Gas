@@ -38,6 +38,12 @@ func TestIntegrationSettingsUpdateIsAtomicAndAudited(t *testing.T) {
 	for _, setting := range result {
 		if setting.Key == "application_name" && setting.Value == "KONKIT INTEGRATION" {
 			found = true
+			if setting.UpdatedBy != actor.UserID {
+				t.Fatalf("updated_by=%q want %q", setting.UpdatedBy, actor.UserID)
+			}
+			if setting.UpdatedByName != actor.FullName {
+				t.Fatalf("updated_by_name=%q want %q", setting.UpdatedByName, actor.FullName)
+			}
 		}
 	}
 	if !found {
