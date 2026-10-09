@@ -36,7 +36,23 @@ export type CreateSlotInput = {
 export type RevisionStage = 'mesin' | 'dokumen' | 'penyerahan';
 export type ReopenSlotInput = { schedule_id: string; slot_number: number; stage: RevisionStage; reason: string };
 export type UpdateRecipientInput = { schedule_id: string; slot_number: number; address: string; village: string; district: string; phone_number: string; sector_identifier: string };
-export type ReplaceRecipientInput = UpdateRecipientInput & { nik: string };
+export type ReplaceRecipientInput = UpdateRecipientInput & { nik: string; full_name: string; reason: string };
+
+// Mirrors distribution.CandidateLookup. "not_registered" is the only state that invites creating
+// recipient data; every other state must be explained instead, otherwise the officer would try to
+// add a NIK that already exists and hit the unique-NIK rejection.
+export type CandidateLookupState = 'receivable' | 'needs_review' | 'not_available' | 'already_assigned' | 'previously_received' | 'not_registered';
+export type CandidateLookup = {
+  state: CandidateLookupState; full_name?: string; allocation_status?: string; distribution_number?: number;
+};
+
+export type RecipientReplacement = {
+  id: string; slot_number: number;
+  old_person_id: string; old_full_name: string;
+  new_person_id: string; new_full_name: string;
+  origin: 'existing_allocation' | 'new_allocation';
+  reason: string; replaced_by_name?: string; replaced_at: string;
+};
 
 export type UpdateEquipmentInput = {
   machine_option_code: string; machine_serial_number: string;

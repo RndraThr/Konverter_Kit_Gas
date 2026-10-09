@@ -17,11 +17,11 @@ const preview = {
   program_type: 'farmer',
   original_filename: 'dcp3-wajo.xlsx',
   sheet_name: 'Penerima',
-  headers: ['Urutan', 'Penerima', 'NIK'],
+  headers: ['Penerima', 'NIK'],
   rows: [
-    { source_row_number: 2, values: { Urutan: '1', Penerima: 'Siti Aminah', NIK: '7306014101900001' } },
-    { source_row_number: 3, values: { Urutan: '2', Penerima: 'Hasan', NIK: '' } },
-    { source_row_number: 4, values: { Urutan: '3', Penerima: '', NIK: '7306010101800002' } },
+    { source_row_number: 2, values: { Penerima: 'Siti Aminah', NIK: '7306014101900001' } },
+    { source_row_number: 3, values: { Penerima: 'Hasan', NIK: '' } },
+    { source_row_number: 4, values: { Penerima: '', NIK: '7306010101800002' } },
   ],
   status: 'draft',
   machine_options: [],
@@ -70,12 +70,9 @@ test('imports a DCP3 workbook through the four review steps', async () => {
   expect(within(stepper).getByText('Pemetaan').closest('li')).toHaveAttribute('aria-current', 'step');
   const continueButton = screen.getByRole('button', { name: 'Periksa data' });
   expect(continueButton).toBeDisabled();
-  await chooseOption(/Nomor urut DCP3/, 'Urutan');
+  expect(screen.queryByRole('combobox', { name: /Nomor urut DCP3/ })).not.toBeInTheDocument();
   await chooseOption(/Nama lengkap/, 'Penerima');
   expect(continueButton).toBeEnabled();
-  await chooseOption(/Nomor urut DCP3/, 'Tidak dipetakan');
-  expect(continueButton).toBeDisabled();
-  await chooseOption(/Nomor urut DCP3/, 'Urutan');
   await chooseOption('NIK', 'NIK');
   await userEvent.click(continueButton);
 

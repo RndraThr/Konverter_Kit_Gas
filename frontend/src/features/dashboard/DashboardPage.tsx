@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowUp, ArrowUpDown, Ban, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, LoaderCircle, Pencil, Plus, RotateCcw, Search, Undo2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Ban, ChevronDown, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, LoaderCircle, Pencil, Plus, RotateCcw, Search, SlidersHorizontal, Undo2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -15,7 +15,9 @@ import { PageHeader } from '../../components/PageHeader';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { apiRequest, type ApiError } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
+import type { ProgramZone } from '../programs/types';
 import { RecipientDialog, type ScheduleOption } from './RecipientDialog';
+import { RecipientMobileCard } from './RecipientMobileCard';
 import { buildPageItems, summarizeEvidence } from './recipientTable';
 import { allocationStatusLabel, distributionStatusLabel, type EvidenceSlot, type Recipient, type RecipientInput, type RecipientPage, type RecipientStats } from './types';
 
@@ -36,11 +38,15 @@ function distributionBadgeVariant(status: string | null) {
   return 'outline' as const;
 }
 
-const stickyNumber = 'sticky left-0 z-20 w-[72px] min-w-[72px] max-w-[72px] bg-card group-hover:bg-muted md:w-44 md:min-w-44 md:max-w-44';
-const stickyName = 'sticky left-[72px] z-20 w-[120px] min-w-[120px] max-w-[120px] bg-card group-hover:bg-muted md:left-44 md:w-56 md:min-w-56 md:max-w-56';
-const stickyNIK = 'sticky left-[192px] z-20 w-[140px] min-w-[140px] max-w-[140px] border-r bg-card text-xs shadow-[6px_0_10px_-10px_rgba(15,23,42,0.55)] group-hover:bg-muted md:left-[400px] md:w-48 md:min-w-48 md:max-w-48 md:text-sm';
+// The table cell only has room for the counterpart's name, so the reason and the exact time live in
+// the title attribute; the date is short enough to stay visible.
+function formatReplacementDate(value: string) {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? '-' : parsed.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 const stickyHeader = 'top-0 z-30 bg-muted';
-const filterKeys = ['regency_id', 'program_id', 'schedule_id', 'district', 'allocation_status', 'distribution_status', 'evidence_status'] as const;
+const filterKeys = ['regency_id', 'program_id', 'zone_id', 'schedule_id', 'district', 'allocation_status', 'distribution_status', 'evidence_status'] as const;
 
 function EvidenceCell({ slots }: { slots: EvidenceSlot[] }) {
   const summary = summarizeEvidence(slots);
@@ -86,6 +92,7 @@ export function DashboardPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Recipient>();
   const [pendingCancel, setPendingCancel] = useState<Recipient>();
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const statsParams = useMemo(() => {
     const next = new URLSearchParams(params);
@@ -96,6 +103,12 @@ export function DashboardPage() {
   const list = useQuery({ queryKey: ['recipients', params.toString()], queryFn: () => apiRequest<{ data: RecipientPage }>(`/api/v1/recipients?${params.toString()}`), placeholderData: keepPreviousData });
   const regencies = useQuery({ queryKey: ['program-setup', 'regencies'], queryFn: () => apiRequest<{ data: RegencyOption[] }>('/api/v1/program-setup/regencies') });
   const programs = useQuery({ queryKey: ['program-setup', 'programs'], queryFn: () => apiRequest<{ data: ProgramOption[] }>('/api/v1/program-setup/programs') });
+  const selectedProgramID = params.get('program_id') ?? '';
+  const zones = useQuery({
+    queryKey: ['program-setup', 'programs', selectedProgramID, 'zones'],
+    queryFn: () => apiRequest<{ data: ProgramZone[] }>(`/api/v1/program-setup/programs/${selectedProgramID}/zones`),
+    enabled: Boolean(selectedProgramID),
+  });
   const schedules = useQuery({ queryKey: ['program-setup', 'schedules'], queryFn: () => apiRequest<{ data: ScheduleListItem[] }>('/api/v1/program-setup/schedules') });
 
   const save = useMutation({
@@ -150,6 +163,13 @@ export function DashboardPage() {
   }, [district, params, setParams]);
 
   const setFilter = (key: string, value: string) => { const next = new URLSearchParams(params); value ? next.set(key, value) : next.delete(key); next.set('page', '1'); setParams(next); };
+  const setProgramFilter = (value: string) => {
+    const next = new URLSearchParams(params);
+    value ? next.set('program_id', value) : next.delete('program_id');
+    next.delete('zone_id');
+    next.set('page', '1');
+    setParams(next);
+  };
   const setPage = (page: number) => { const next = new URLSearchParams(params); next.set('page', String(page)); setParams(next); };
   const setPageSize = (value: string | null) => {
     if (!value || !['50', '100', 'all'].includes(value)) return;
@@ -163,6 +183,15 @@ export function DashboardPage() {
     const isCurrent = next.get('sort') === column;
     next.set('sort', column);
     next.set('direction', isCurrent && next.get('direction') === 'asc' ? 'desc' : 'asc');
+    next.set('page', '1');
+    setParams(next);
+  };
+  const setSortSelection = (value: string | null) => {
+    if (!value) return;
+    const [column, direction] = value.split(':');
+    const next = new URLSearchParams(params);
+    next.set('sort', column);
+    next.set('direction', direction);
     next.set('page', '1');
     setParams(next);
   };
@@ -193,6 +222,23 @@ export function DashboardPage() {
   const evidenceStats = stats.data?.data.by_evidence_status ?? {};
   const evidenceNeedsCompletion = (evidenceStats.partial ?? 0) + (evidenceStats.empty ?? 0) + (evidenceStats['not-configured'] ?? 0);
   const activeFilterCount = filterKeys.filter((key) => Boolean(params.get(key))).length + (params.get('search') ? 1 : 0);
+  const activeFilterChips = [
+    params.get('search') && { key: 'search', label: `Pencarian: ${params.get('search')}` },
+    params.get('program_id') && { key: 'program_id', label: `Program: ${programs.data?.data.find((item) => item.id === params.get('program_id'))?.name ?? 'Dipilih'}` },
+    params.get('zone_id') && { key: 'zone_id', label: `Zona: ${zones.data?.data.find((item) => item.id === params.get('zone_id'))?.name ?? 'Dipilih'}` },
+    params.get('regency_id') && { key: 'regency_id', label: `Kabupaten: ${regencies.data?.data.find((item) => item.id === params.get('regency_id'))?.name ?? 'Dipilih'}` },
+    params.get('schedule_id') && { key: 'schedule_id', label: `Jadwal: ${schedules.data?.data.find((item) => item.id === params.get('schedule_id'))?.name ?? 'Dipilih'}` },
+    params.get('district') && { key: 'district', label: `Kecamatan: ${params.get('district')}` },
+    params.get('allocation_status') && { key: 'allocation_status', label: allocationStatusLabel[params.get('allocation_status') ?? ''] ?? 'Status alokasi' },
+    params.get('distribution_status') && { key: 'distribution_status', label: distributionStatusLabel[params.get('distribution_status') ?? ''] ?? 'Status distribusi' },
+    params.get('evidence_status') && { key: 'evidence_status', label: `Dokumentasi: ${{ complete: 'Lengkap', partial: 'Sebagian', empty: 'Belum ada', 'not-configured': 'Belum diatur' }[params.get('evidence_status') ?? ''] ?? 'Dipilih'}` },
+  ].filter((item): item is { key: string; label: string } => Boolean(item));
+  const clearFilter = (key: string) => {
+    if (key === 'search') setSearch('');
+    if (key === 'district') setDistrict('');
+    if (key === 'program_id') return setProgramFilter('');
+    setFilter(key, '');
+  };
   const sortableHeader = (label: string, column: string, className = stickyHeader) => {
     const active = params.get('sort') === column;
     const direction = active ? (params.get('direction') === 'asc' ? 'asc' : 'desc') : undefined;
@@ -216,25 +262,39 @@ export function DashboardPage() {
       <Card><CardContent><strong className="text-2xl font-semibold tabular-nums">{evidenceNeedsCompletion}</strong><span className="block text-sm text-muted-foreground">Evidence perlu dilengkapi</span></CardContent></Card>
     </section>
 
-    <div className="space-y-3 rounded-xl border bg-card p-4">
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-end">
-      <div className="relative min-w-64 flex-1">{list.isFetching && search.trim() === (params.get('search') ?? '') ? <LoaderCircle aria-hidden="true" className="pointer-events-none absolute top-3 left-3 size-5 animate-spin text-primary" /> : <Search aria-hidden="true" className="pointer-events-none absolute top-3 left-3 size-5 text-muted-foreground" />}<Input aria-label="Cari penerima" className="pl-10 pr-24" placeholder="Cari nama, NIK, atau nomor kartu" value={search} onChange={(event) => setSearch(event.target.value)} /><span className="pointer-events-none absolute top-3 right-3 text-xs text-muted-foreground">Realtime</span></div>
-      <div className="grid min-w-0 gap-2"><Label id="filter-regency-label">Kabupaten</Label><Select value={params.get('regency_id') ?? ''} onValueChange={(value) => setFilter('regency_id', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="filter-regency-label"><SelectValue placeholder="Semua kabupaten" /></SelectTrigger><SelectContent><SelectItem value="">Semua kabupaten</SelectItem>{regencies.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.document_code} - {item.name}</SelectItem>)}</SelectContent></Select></div>
-      <div className="grid min-w-0 gap-2"><Label id="filter-program-label">Program</Label><Select value={params.get('program_id') ?? ''} onValueChange={(value) => setFilter('program_id', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="filter-program-label"><SelectValue placeholder="Semua program" /></SelectTrigger><SelectContent><SelectItem value="">Semua program</SelectItem>{programs.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div>
-      <div className="grid min-w-0 gap-2"><Label id="filter-schedule-label">Jadwal</Label><Select value={params.get('schedule_id') ?? ''} onValueChange={(value) => setFilter('schedule_id', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="filter-schedule-label"><SelectValue placeholder="Semua jadwal" /></SelectTrigger><SelectContent><SelectItem value="">Semua jadwal</SelectItem>{schedules.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div>
+    <section aria-label="Filter penerima" className="space-y-4 rounded-2xl border bg-card p-4 shadow-sm">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(18rem,1.4fr)_repeat(3,minmax(12rem,1fr))] xl:items-end">
+        <div className="relative min-w-0 md:col-span-2 xl:col-span-1">
+          <Label htmlFor="recipient-search" className="mb-2 block">Cari penerima</Label>
+          {list.isFetching && search.trim() === (params.get('search') ?? '') ? <LoaderCircle aria-hidden="true" className="pointer-events-none absolute bottom-3 left-3 size-5 animate-spin text-primary" /> : <Search aria-hidden="true" className="pointer-events-none absolute bottom-3 left-3 size-5 text-muted-foreground" />}
+          <Input id="recipient-search" aria-label="Cari penerima" className="pl-10" placeholder="Nama, NIK, atau nomor kartu" value={search} onChange={(event) => setSearch(event.target.value)} />
+        </div>
+        <div className="grid min-w-0 gap-2"><Label id="filter-program-label">Program</Label><Select value={selectedProgramID} onValueChange={(value) => setProgramFilter(value ?? '')}><SelectTrigger className="w-full" aria-labelledby="filter-program-label"><SelectValue placeholder="Semua program" /></SelectTrigger><SelectContent><SelectItem value="">Semua program</SelectItem>{programs.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div>
+        <div className="grid min-w-0 gap-2"><Label id="filter-zone-label">Zona</Label><Select disabled={!selectedProgramID || zones.isPending} value={params.get('zone_id') ?? ''} onValueChange={(value) => setFilter('zone_id', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="filter-zone-label"><SelectValue placeholder={!selectedProgramID ? 'Pilih program dahulu' : zones.isPending ? 'Memuat zona...' : 'Semua zona'} /></SelectTrigger><SelectContent><SelectItem value="">Semua zona</SelectItem>{zones.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.code} - {item.name}</SelectItem>)}</SelectContent></Select></div>
+        <div className="grid min-w-0 gap-2"><Label id="filter-regency-label">Kabupaten</Label><Select value={params.get('regency_id') ?? ''} onValueChange={(value) => setFilter('regency_id', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="filter-regency-label"><SelectValue placeholder="Semua kabupaten" /></SelectTrigger><SelectContent><SelectItem value="">Semua kabupaten</SelectItem>{regencies.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.document_code} - {item.name}</SelectItem>)}</SelectContent></Select></div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-[minmax(12rem,1fr)_repeat(3,minmax(11rem,auto))_auto] xl:items-end">
-      <div className="grid min-w-0 gap-2"><Label htmlFor="filter-district">Kecamatan</Label><Input id="filter-district" value={district} placeholder="Semua kecamatan" onChange={(event) => setDistrict(event.target.value)} /></div>
-      <div className="grid min-w-0 gap-2"><Label id="filter-allocation-label">Status alokasi</Label><Select value={params.get('allocation_status') ?? ''} onValueChange={(value) => setFilter('allocation_status', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="filter-allocation-label"><SelectValue placeholder="Aktif (bukan dibatalkan)" /></SelectTrigger><SelectContent><SelectItem value="">Aktif (bukan dibatalkan)</SelectItem>{Object.entries(allocationStatusLabel).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
-      <div className="grid min-w-0 gap-2"><Label id="filter-distribution-label">Status distribusi</Label><Select value={params.get('distribution_status') ?? ''} onValueChange={(value) => setFilter('distribution_status', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="filter-distribution-label"><SelectValue placeholder="Semua status" /></SelectTrigger><SelectContent><SelectItem value="">Semua status</SelectItem>{Object.entries(distributionStatusLabel).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
-      <div className="grid min-w-0 gap-2"><Label id="filter-evidence-label">Kelengkapan evidence</Label><Select value={params.get('evidence_status') ?? ''} onValueChange={(value) => setFilter('evidence_status', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="filter-evidence-label"><SelectValue placeholder="Semua kelengkapan" /></SelectTrigger><SelectContent><SelectItem value="">Semua kelengkapan</SelectItem><SelectItem value="complete">Lengkap</SelectItem><SelectItem value="partial">Sebagian</SelectItem><SelectItem value="empty">Belum ada</SelectItem><SelectItem value="not-configured">Belum diatur</SelectItem></SelectContent></Select></div>
-      <Button type="button" variant="outline" disabled={activeFilterCount === 0} onClick={resetFilters} aria-label="Reset filter"><RotateCcw />Reset{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}</Button>
+
+      <Button type="button" variant="outline" className="w-full justify-between md:hidden" aria-expanded={filtersOpen} onClick={() => setFiltersOpen((value) => !value)}><span className="flex items-center gap-2"><SlidersHorizontal />Filter lainnya</span><ChevronDown className={filtersOpen ? 'rotate-180' : ''} /></Button>
+      <div className={`${filtersOpen ? 'grid' : 'hidden'} gap-3 border-t pt-4 md:grid md:grid-cols-2 xl:grid-cols-[repeat(4,minmax(11rem,1fr))_auto] xl:items-end`}>
+        <div className="grid min-w-0 gap-2"><Label id="filter-schedule-label">Jadwal</Label><Select value={params.get('schedule_id') ?? ''} onValueChange={(value) => setFilter('schedule_id', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="filter-schedule-label"><SelectValue placeholder="Semua jadwal" /></SelectTrigger><SelectContent><SelectItem value="">Semua jadwal</SelectItem>{schedules.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div>
+        <div className="grid min-w-0 gap-2"><Label htmlFor="filter-district">Kecamatan</Label><Input id="filter-district" value={district} placeholder="Semua kecamatan" onChange={(event) => setDistrict(event.target.value)} /></div>
+        <div className="grid min-w-0 gap-2"><Label id="filter-allocation-label">Status alokasi</Label><Select value={params.get('allocation_status') ?? ''} onValueChange={(value) => setFilter('allocation_status', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="filter-allocation-label"><SelectValue placeholder="Aktif" /></SelectTrigger><SelectContent><SelectItem value="">Aktif (bukan dibatalkan)</SelectItem>{Object.entries(allocationStatusLabel).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
+        <div className="grid min-w-0 gap-2"><Label id="filter-evidence-label">Dokumentasi</Label><Select value={params.get('evidence_status') ?? ''} onValueChange={(value) => setFilter('evidence_status', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="filter-evidence-label"><SelectValue placeholder="Semua kelengkapan" /></SelectTrigger><SelectContent><SelectItem value="">Semua kelengkapan</SelectItem><SelectItem value="complete">Lengkap</SelectItem><SelectItem value="partial">Sebagian</SelectItem><SelectItem value="empty">Belum ada</SelectItem><SelectItem value="not-configured">Belum diatur</SelectItem></SelectContent></Select></div>
+        <Button type="button" variant="outline" disabled={activeFilterCount === 0} onClick={resetFilters} aria-label="Reset filter"><RotateCcw />Reset{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}</Button>
+        <div className="grid min-w-0 gap-2 md:col-span-2 xl:col-span-5"><Label id="filter-distribution-label">Status distribusi</Label><Select value={params.get('distribution_status') ?? ''} onValueChange={(value) => setFilter('distribution_status', value ?? '')}><SelectTrigger className="w-full xl:max-w-xs" aria-labelledby="filter-distribution-label"><SelectValue placeholder="Semua status" /></SelectTrigger><SelectContent><SelectItem value="">Semua status</SelectItem>{Object.entries(distributionStatusLabel).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
       </div>
-    </div>
+
+      {activeFilterChips.length > 0 && <div className="flex flex-wrap gap-2 border-t pt-3" aria-label="Filter aktif">{activeFilterChips.map((chip) => <Button key={chip.key} type="button" size="sm" variant="secondary" className="h-8 rounded-full px-3" aria-label={`Hapus filter ${chip.label}`} onClick={() => clearFilter(chip.key)}>{chip.label}<X aria-hidden="true" className="size-3.5" /></Button>)}</div>}
+    </section>
 
     <div className="flex flex-col gap-3 rounded-xl border bg-card px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
       <span className="font-medium tabular-nums text-foreground">{showAll ? `${total} penerima ditemukan` : `${rangeStart}–${rangeEnd} dari ${total} penerima`}</span>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Label id="mobile-sort-label" className="whitespace-nowrap text-muted-foreground lg:hidden">Urutkan</Label>
+        <Select value={`${params.get('sort') ?? 'created_at'}:${params.get('direction') ?? 'desc'}`} onValueChange={setSortSelection}>
+          <SelectTrigger aria-labelledby="mobile-sort-label" className="w-40 lg:hidden"><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="created_at:desc">Data terbaru</SelectItem><SelectItem value="distribution_number:asc">Nomor bagi</SelectItem><SelectItem value="full_name:asc">Nama A–Z</SelectItem><SelectItem value="zone:asc">Zona</SelectItem></SelectContent>
+        </Select>
         <Label id="page-size-label" className="whitespace-nowrap text-muted-foreground">Jumlah data per halaman</Label>
         <Select value={showAll ? 'all' : String(pageSize)} onValueChange={setPageSize}>
           <SelectTrigger aria-labelledby="page-size-label" className="w-36"><SelectValue /></SelectTrigger>
@@ -247,42 +307,46 @@ export function DashboardPage() {
       </div>
     </div>
 
-    {list.isError ? <DataState kind="error" title="Data penerima belum dapat dimuat" description="Periksa koneksi lalu coba lagi." action={{ label: 'Coba lagi', onClick: () => list.refetch() }} /> : list.isPending ? <DataState kind="loading" title="Memuat data penerima" description="Mengambil data dari seluruh kabupaten." /> : list.data?.data.items.length === 0 ? <DataState kind="empty" title="Belum ada penerima yang sesuai" description="Ubah filter atau tambahkan penerima baru." /> : <DataTable label="Daftar penerima" minimumWidth={2078} className="table-fixed">
-      <colgroup><col className="w-18 md:w-44" /><col className="w-30 md:w-56" /><col className="w-35 md:w-48" /><col className="w-60" /><col className="w-44" /><col className="w-52" /><col className="w-44" /><col className="w-56" /><col className="w-56" /><col className="w-40" /><col className="w-40" />{canManage && <col className="w-28" />}</colgroup>
-      <thead className="[&_th]:uppercase [&_th]:tracking-wide"><tr>
-        {sortableHeader('No. Pembagian', 'distribution_number', `${stickyNumber} ${stickyHeader}`)}
-        {sortableHeader('Nama', 'full_name', `${stickyName} ${stickyHeader}`)}
-        {sortableHeader('NIK', 'nik', `${stickyNIK} ${stickyHeader}`)}
-        {sortableHeader('Kelengkapan evidence', 'evidence')}
-        <th className={stickyHeader}>No. Kartu/KUSUKA</th>
-        {sortableHeader('Desa/Kecamatan', 'district')}
-        {sortableHeader('Kabupaten', 'regency')}
-        {sortableHeader('Program', 'program')}
-        {sortableHeader('Jadwal', 'schedule')}
-        {sortableHeader('Status alokasi', 'allocation_status')}
-        {sortableHeader('Status distribusi', 'distribution_status')}
-        {canManage && <th className={`${stickyHeader} border-l text-center shadow-[-6px_0_10px_-10px_rgba(15,23,42,0.55)] md:sticky md:right-0`}>Aksi</th>}
-      </tr></thead>
-      <tbody>{list.data?.data.items.map((item) => <tr key={item.allocation_id} className="group hover:bg-muted">
-        <td className={`${stickyNumber} font-semibold tabular-nums`}>{item.distribution_number ?? '-'}</td>
-        <td className={stickyName}><strong className="block truncate" title={item.full_name}>{item.full_name}</strong></td>
-        <td className={`${stickyNIK} tabular-nums`}>{item.nik || '-'}</td>
-        <td><EvidenceCell slots={item.evidence_slots ?? []} /></td>
-        <td>{item.sector_identifier || '-'}</td>
-        <td>{[item.village, item.district].filter(Boolean).join(', ') || '-'}</td>
-        <td><strong>{item.regency_document_code}</strong><span className="ml-1">{item.regency_name}</span></td>
-        <td>{item.program_name}</td>
-        <td>{item.schedule_name}</td>
-        <td><Badge variant={allocationBadgeVariant(item.allocation_status)}>{allocationStatusLabel[item.allocation_status] ?? item.allocation_status}</Badge></td>
-        <td><Badge variant={distributionBadgeVariant(item.distribution_status)}>{item.distribution_status ? distributionStatusLabel[item.distribution_status] ?? item.distribution_status : '-'}</Badge></td>
-        {canManage && <td className="z-20 border-l bg-card shadow-[-6px_0_10px_-10px_rgba(15,23,42,0.55)] group-hover:bg-muted md:sticky md:right-0"><div className="flex items-center justify-center gap-1">
-          <Button type="button" variant="ghost" size="icon-sm" aria-label="Edit" title="Edit penerima" onClick={() => openEdit(item)}><Pencil /></Button>
-          {item.allocation_status === 'cancelled'
-            ? <Button type="button" variant="ghost" size="icon-sm" aria-label="Pulihkan" title="Pulihkan penerima" onClick={() => restoreMutation.mutate(item.allocation_id)}><Undo2 /></Button>
-            : <Button type="button" variant="ghost" size="icon-sm" aria-label="Batalkan" title="Batalkan penerima" className="text-destructive" onClick={() => setPendingCancel(item)}><Ban /></Button>}
-        </div></td>}
-      </tr>)}</tbody>
-    </DataTable>}
+    {list.isError ? <DataState kind="error" title="Data penerima belum dapat dimuat" description="Periksa koneksi lalu coba lagi." action={{ label: 'Coba lagi', onClick: () => list.refetch() }} /> : list.isPending ? <DataState kind="loading" title="Memuat data penerima" description="Mengambil data dari seluruh kabupaten." /> : list.data?.data.items.length === 0 ? <DataState kind="empty" title="Belum ada penerima yang sesuai" description="Ubah filter atau tambahkan penerima baru." /> : <>
+      <ul aria-label="Daftar penerima mobile" className="space-y-3 lg:hidden">
+        {list.data?.data.items.map((item) => <RecipientMobileCard key={item.allocation_id} recipient={item} canManage={canManage} onEdit={openEdit} onCancel={setPendingCancel} onRestore={(recipient) => restoreMutation.mutate(recipient.allocation_id)} />)}
+      </ul>
+
+      <div className="hidden lg:block">
+        <DataTable label="Daftar penerima" minimumWidth={1280} className="table-fixed">
+          <colgroup><col className="w-28" /><col className="w-72" /><col className="w-64" /><col className="w-64" /><col className="w-60" /><col className="w-48" />{canManage && <col className="w-28" />}</colgroup>
+          <thead><tr>
+            {sortableHeader('No. bagi', 'distribution_number')}
+            {sortableHeader('Identitas penerima', 'full_name')}
+            {sortableHeader('Wilayah', 'zone')}
+            {sortableHeader('Program & jadwal', 'program')}
+            {sortableHeader('Dokumentasi', 'evidence')}
+            {sortableHeader('Status', 'allocation_status')}
+            {canManage && <th className={`${stickyHeader} border-l text-center`}>Aksi</th>}
+          </tr></thead>
+          <tbody>{list.data?.data.items.map((item) => <tr key={item.allocation_id} className="group align-top hover:bg-muted">
+            <td className="font-semibold tabular-nums"><span className="text-lg">{item.distribution_number ?? '—'}</span><span className="mt-1 block text-xs font-normal text-muted-foreground">{item.regency_document_code}</span></td>
+            <td>
+              <strong className="block truncate" title={item.full_name}>{item.full_name}</strong>
+              <span className="mt-1 block font-mono text-xs text-muted-foreground">{item.nik || 'NIK belum tersedia'}</span>
+              <span className="mt-1 block truncate text-xs text-muted-foreground">{item.sector_identifier || 'No. kartu/KUSUKA belum tersedia'}</span>
+              {item.replaced_by && <span className="mt-1 block truncate text-xs text-amber-700 dark:text-amber-300" title={`Digantikan oleh ${item.replaced_by.full_name} pada ${formatReplacementDate(item.replaced_by.replaced_at)}. Alasan: ${item.replaced_by.reason}`}>Digantikan oleh {item.replaced_by.full_name}</span>}
+              {item.replaces && <span className="mt-1 block truncate text-xs text-amber-700 dark:text-amber-300" title={`Menggantikan ${item.replaces.full_name} pada ${formatReplacementDate(item.replaces.replaced_at)}. Alasan: ${item.replaces.reason}`}>Menggantikan {item.replaces.full_name}</span>}
+            </td>
+            <td><strong className="block">{item.zone_name || 'Zona belum diatur'}</strong><span className="mt-1 block text-xs text-muted-foreground">{item.regency_name}</span><span className="mt-1 block text-xs">{[item.village, item.district].filter(Boolean).join(', ') || '-'}</span></td>
+            <td><strong className="block font-medium">{item.program_name}</strong><span className="mt-1 block text-xs text-muted-foreground">{item.schedule_name}</span></td>
+            <td><EvidenceCell slots={item.evidence_slots ?? []} /></td>
+            <td><div className="flex flex-col items-start gap-2"><Badge variant={allocationBadgeVariant(item.allocation_status)}>{allocationStatusLabel[item.allocation_status] ?? item.allocation_status}</Badge><Badge variant={distributionBadgeVariant(item.distribution_status)}>{item.distribution_status ? distributionStatusLabel[item.distribution_status] ?? item.distribution_status : 'Belum distribusi'}</Badge></div></td>
+            {canManage && <td className="border-l bg-card group-hover:bg-muted"><div className="flex items-center justify-center gap-1">
+              <Button type="button" variant="ghost" size="icon-sm" aria-label="Edit" title="Edit penerima" onClick={() => openEdit(item)}><Pencil /></Button>
+              {item.allocation_status === 'cancelled'
+                ? <Button type="button" variant="ghost" size="icon-sm" aria-label="Pulihkan" title="Pulihkan penerima" onClick={() => restoreMutation.mutate(item.allocation_id)}><Undo2 /></Button>
+                : <Button type="button" variant="ghost" size="icon-sm" aria-label="Batalkan" title="Batalkan penerima" className="text-destructive" onClick={() => setPendingCancel(item)}><Ban /></Button>}
+            </div></td>}
+          </tr>)}</tbody>
+        </DataTable>
+      </div>
+    </>}
 
     {!showAll && <nav className="flex justify-end border-t pt-4 text-sm text-muted-foreground" aria-label="Pagination penerima">
       <div className="flex flex-wrap items-center gap-1">

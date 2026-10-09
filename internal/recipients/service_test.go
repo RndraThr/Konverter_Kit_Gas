@@ -24,6 +24,10 @@ func (r *repositoryStub) Stats(_ context.Context, filter Filter, _ auth.RegencyS
 	r.statsFilter = filter
 	return Stats{}, nil
 }
+func (r *repositoryStub) MapRegions(_ context.Context, filter Filter, _ auth.RegencyScope) (MapData, error) {
+	r.statsFilter = filter
+	return MapData{}, nil
+}
 func (r *repositoryStub) Create(_ context.Context, actor auth.Principal, input CreateInput, _ auth.ClientMeta, _ auth.RegencyScope) (Recipient, error) {
 	r.actor, r.createInput = actor, input
 	return Recipient{FullName: input.FullName}, nil

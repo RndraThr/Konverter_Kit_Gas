@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"io"
 	"regexp"
-	"strconv"
 	"strings"
 	"unicode"
 
@@ -79,10 +78,10 @@ func ValidateMapping(programType programs.ProgramType, headers []string, mapping
 	for _, header := range headers {
 		available[header] = struct{}{}
 	}
-	if mapping.SourceSequence == "" || mapping.FullName == "" {
+	if mapping.FullName == "" {
 		return ErrMappingInvalid
 	}
-	for _, selected := range []string{mapping.SourceSequence, mapping.FullName, mapping.NIK, mapping.FarmerCardNumber, mapping.KUSUKANumber, mapping.Address, mapping.Village, mapping.District, mapping.PhoneNumber, mapping.MachineOption} {
+	for _, selected := range []string{mapping.FullName, mapping.NIK, mapping.FarmerCardNumber, mapping.KUSUKANumber, mapping.Address, mapping.Village, mapping.District, mapping.PhoneNumber, mapping.MachineOption} {
 		if selected == "" {
 			continue
 		}
@@ -104,12 +103,6 @@ func NormalizeRow(programType programs.ProgramType, row RawImportRow, mapping Ma
 		ValidationStatus:   RowValid,
 		ValidationMessages: []string{},
 		SourceValues:       row.Values,
-	}
-	sequence, err := strconv.Atoi(strings.TrimSpace(row.Values[mapping.SourceSequence]))
-	if err != nil || sequence <= 0 {
-		result.raise(RowNeedsReview, "Nomor urut sumber tidak valid")
-	} else {
-		result.SourceSequenceNumber = &sequence
 	}
 	if result.FullName == "" {
 		result.raise(RowInvalid, "Nama penerima wajib diisi")

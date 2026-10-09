@@ -12,7 +12,7 @@ func recipientFilterFromRequest(r *http.Request) recipients.Filter {
 	return recipients.Filter{
 		Page: intQuery(r, "page", 1), PageSize: intQuery(r, "page_size", 50), All: all,
 		Search: r.URL.Query().Get("search"), RegencyID: r.URL.Query().Get("regency_id"),
-		ProgramID: r.URL.Query().Get("program_id"), ProgramType: r.URL.Query().Get("program_type"),
+		ProgramID: r.URL.Query().Get("program_id"), ZoneID: r.URL.Query().Get("zone_id"), ProgramType: r.URL.Query().Get("program_type"),
 		AllocationStatus: r.URL.Query().Get("allocation_status"), DistributionStatus: r.URL.Query().Get("distribution_status"),
 		ScheduleID: r.URL.Query().Get("schedule_id"), District: r.URL.Query().Get("district"),
 		EvidenceStatus: r.URL.Query().Get("evidence_status"), SortBy: r.URL.Query().Get("sort"), SortDirection: r.URL.Query().Get("direction"),
@@ -84,6 +84,30 @@ func (h *Handler) handleRecipientStats(w http.ResponseWriter, r *http.Request, r
 		return
 	}
 	writeData(w, http.StatusOK, stats)
+}
+
+func (h *Handler) handleRecipientMap(w http.ResponseWriter, r *http.Request, rc requestContext) {
+	if h.deps.Recipients == nil {
+		writeUnavailable(w)
+		return
+	}
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if !h.authorizeAny(w, r, rc.principal, "recipients.view", "distribution.view") {
+		return
+	}
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := h.deps.Recipients.MapRegions(r.Context(), recipientFilterFromRequest(r), scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
 }
 
 func (h *Handler) handleRecipient(w http.ResponseWriter, r *http.Request, rc requestContext, path string) {

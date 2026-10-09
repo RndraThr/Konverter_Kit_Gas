@@ -91,6 +91,54 @@ func (h *Handler) handleDistributionCandidateSuggestions(w http.ResponseWriter, 
 	writeData(w, http.StatusOK, result)
 }
 
+func (h *Handler) handleDistributionCandidateLookup(w http.ResponseWriter, r *http.Request, rc requestContext) {
+	if h.deps.Distribution == nil {
+		writeUnavailable(w)
+		return
+	}
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if !h.authorize(w, r, rc.principal, "distribution.pos_dokumen") {
+		return
+	}
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := h.deps.Distribution.LookupCandidate(r.Context(), r.URL.Query().Get("schedule_id"), r.URL.Query().Get("nik"), scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
+}
+
+func (h *Handler) handleDistributionSlotReplacements(w http.ResponseWriter, r *http.Request, rc requestContext, slotNumber int) {
+	if h.deps.Distribution == nil {
+		writeUnavailable(w)
+		return
+	}
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if !h.authorize(w, r, rc.principal, "distribution.view") {
+		return
+	}
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := h.deps.Distribution.ListReplacements(r.Context(), r.URL.Query().Get("schedule_id"), slotNumber, scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
+}
+
 func (h *Handler) handleDistributionSlotLink(w http.ResponseWriter, r *http.Request, rc requestContext, slotNumber int) {
 	if !h.authorize(w, r, rc.principal, "distribution.pos_dokumen") {
 		return
@@ -213,11 +261,17 @@ func (h *Handler) handleDistributionSlot(w http.ResponseWriter, r *http.Request,
 		case parts[1] == "equipment" && r.Method == http.MethodPatch:
 			h.handleDistributionEquipmentUpdate(w, r, rc, slotNumber)
 			return
+		case parts[1] == "equipment-serials" && r.Method == http.MethodPatch:
+			h.handleDistributionEquipmentSerialsUpdate(w, r, rc, slotNumber)
+			return
 		case parts[1] == "recipient" && r.Method == http.MethodPatch:
 			h.handleDistributionRecipientUpdate(w, r, rc, slotNumber)
 			return
 		case parts[1] == "replace-recipient" && r.Method == http.MethodPost:
 			h.handleDistributionRecipientReplace(w, r, rc, slotNumber)
+			return
+		case parts[1] == "replacements" && r.Method == http.MethodGet:
+			h.handleDistributionSlotReplacements(w, r, rc, slotNumber)
 			return
 		case parts[1] == "reopen" && r.Method == http.MethodPost:
 			h.handleDistributionSlotReopen(w, r, rc, slotNumber)
@@ -264,6 +318,28 @@ func (h *Handler) handleDistributionEquipmentUpdate(w http.ResponseWriter, r *ht
 		return
 	}
 	result, err := h.deps.Distribution.UpdateEquipment(r.Context(), rc.principal, input, clientMeta(r), scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
+}
+
+func (h *Handler) handleDistributionEquipmentSerialsUpdate(w http.ResponseWriter, r *http.Request, rc requestContext, slotNumber int) {
+	if !h.authorize(w, r, rc.principal, "distribution.pos_mesin") {
+		return
+	}
+	var input distribution.UpdateEquipmentSerialsInput
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	input.ScheduleID = r.URL.Query().Get("schedule_id")
+	input.SlotNumber = slotNumber
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := h.deps.Distribution.UpdateEquipmentSerials(r.Context(), rc.principal, input, clientMeta(r), scope)
 	if err != nil {
 		writeServiceError(w, err)
 		return

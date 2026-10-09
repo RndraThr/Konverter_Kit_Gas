@@ -81,6 +81,14 @@ func (r *operationsRepositoryStub) SuggestCandidates(context.Context, string, st
 	return nil, nil
 }
 
+func (r *operationsRepositoryStub) LookupCandidate(context.Context, string, string, auth.RegencyScope) (CandidateLookup, error) {
+	return CandidateLookup{}, nil
+}
+
+func (r *operationsRepositoryStub) ListReplacements(context.Context, string, int, auth.RegencyScope) ([]RecipientReplacement, error) {
+	return nil, nil
+}
+
 func (r *operationsRepositoryStub) LinkSlot(_ context.Context, _ auth.Principal, input LinkSlotInput, _ auth.ClientMeta, _ auth.RegencyScope) (DistributionSlot, error) {
 	r.linkInput = input
 	return DistributionSlot{}, nil

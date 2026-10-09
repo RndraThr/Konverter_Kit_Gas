@@ -6,6 +6,14 @@ import (
 	"testing"
 )
 
+func TestRecipientFilterIncludesZone(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/recipients?zone_id=zone-1", nil)
+	filter := recipientFilterFromRequest(req)
+	if filter.ZoneID != "zone-1" {
+		t.Fatalf("expected zone_id forwarded to recipient filter, got %+v", filter)
+	}
+}
+
 func TestRecipientFilterAcceptsAllPageSize(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/recipients?page=7&page_size=all", nil)
 	filter := recipientFilterFromRequest(req)

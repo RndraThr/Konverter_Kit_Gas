@@ -49,7 +49,7 @@ func (w *MediaMoveWorker) ProcessOne(ctx context.Context) (bool, error) {
 	if err != nil || !ok {
 		return false, err
 	}
-	if err := w.storage.Move(ctx, job.StorageKey, job.TargetPath); err != nil {
+	if err := w.storage.Move(ctx, job.StorageKey, job.TargetPath, job.TargetFilename); err != nil {
 		nextAttempt := now.Add(mediaMoveBackoff(job.Attempts, w.options.MaxBackoff))
 		if failErr := w.repository.FailMediaMove(ctx, job.MediaFileID, job.TargetGeneration, err.Error(), nextAttempt); failErr != nil {
 			return true, failErr

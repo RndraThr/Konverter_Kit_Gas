@@ -1,9 +1,9 @@
-import { type FormEvent, type KeyboardEvent, useEffect, useMemo, useState } from 'react';
-import { FileText, Pencil, UserCheck } from 'lucide-react';
-import { useMutation } from '@tanstack/react-query';
+import { type FormEvent, type KeyboardEvent, lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { FileText, Pencil, ScanBarcode } from 'lucide-react';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiRequest, ApiError } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
-import type { CandidateMatch, DataResponse, DistributionSlot, EquipmentOption, LinkSlotInput, MediaFile, ReplaceRecipientInput, UpdateEquipmentInput, UpdateRecipientInput } from './types';
+import type { CandidateLookup, CandidateMatch, DataResponse, DistributionSlot, EquipmentOption, LinkSlotInput, MediaFile, RecipientReplacement, ReplaceRecipientInput, UpdateEquipmentInput, UpdateRecipientInput } from './types';
 import { DocumentationSlot } from './DocumentationSlot';
 import { PosSectionShell } from './PosSectionShell';
 import { RevisionDialog } from './RevisionDialog';
@@ -16,6 +16,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { uppercaseBusinessText } from '@/lib/text';
 
 const emptyLinkInput = (scheduleID: string, slotNumber: number): LinkSlotInput => ({ schedule_id: scheduleID, slot_number: slotNumber, nik: '', address: '', village: '', district: '', phone_number: '', sector_identifier: '' });
+
+// Camera barcode scanning is lazy-loaded so @zxing only downloads when an officer actually starts
+// a scan. POS Dokumen remains the fallback for the two serial numbers that can also be captured
+// earlier at POS Mesin.
+const BarcodeScanner = lazy(() => import('./BarcodeScanner'));
+
+type SerialField = 'machine_serial_number' | 'converter_serial_number';
 
 type Props = {
   slot: DistributionSlot;
@@ -47,13 +54,18 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
   const [suggestionError, setSuggestionError] = useState<Error | null>(null);
   const [linkInput, setLinkInput] = useState<LinkSlotInput>(() => emptyLinkInput(slot.schedule_id, slot.slot_number));
   const [recipient, setRecipient] = useState<UpdateRecipientInput>({ schedule_id: slot.schedule_id, slot_number: slot.slot_number, address: slot.address ?? '', village: slot.village ?? '', district: slot.district ?? '', phone_number: slot.phone_number ?? '', sector_identifier: slot.sector_identifier ?? '' });
-  const [equipment, setEquipment] = useState<UpdateEquipmentInput>({ machine_option_code: slot.machine_option_code ?? '', machine_serial_number: slot.machine_serial_number ?? '', hose_option_code: slot.hose_option_code ?? '', hose_serial_number: slot.hose_serial_number ?? '-', converter_option_code: slot.converter_option_code ?? '', converter_serial_number: slot.converter_serial_number ?? '' });
+  const [equipment, setEquipment] = useState<UpdateEquipmentInput>({ machine_option_code: slot.machine_option_code ?? '', machine_serial_number: slot.machine_serial_number ?? '', hose_option_code: slot.hose_option_code ?? '', hose_serial_number: '', converter_option_code: slot.converter_option_code ?? '', converter_serial_number: slot.converter_serial_number ?? '' });
+  const [scanning, setScanning] = useState<SerialField | null>(null);
+  const [replacementReason, setReplacementReason] = useState('');
+  const [replacementName, setReplacementName] = useState('');
+  const [lookup, setLookup] = useState<CandidateLookup | null>(null);
+  const [lookupNIK, setLookupNIK] = useState('');
 
   useEffect(() => {
     setCurrentSlot(slot);
     setDate(slot.distribution_date ?? '');
     setRecipient({ schedule_id: slot.schedule_id, slot_number: slot.slot_number, address: slot.address ?? '', village: slot.village ?? '', district: slot.district ?? '', phone_number: slot.phone_number ?? '', sector_identifier: slot.sector_identifier ?? '' });
-    setEquipment({ machine_option_code: slot.machine_option_code ?? '', machine_serial_number: slot.machine_serial_number ?? '', hose_option_code: slot.hose_option_code ?? '', hose_serial_number: slot.hose_serial_number ?? '-', converter_option_code: slot.converter_option_code ?? '', converter_serial_number: slot.converter_serial_number ?? '' });
+    setEquipment({ machine_option_code: slot.machine_option_code ?? '', machine_serial_number: slot.machine_serial_number ?? '', hose_option_code: slot.hose_option_code ?? '', hose_serial_number: '', converter_option_code: slot.converter_option_code ?? '', converter_serial_number: slot.converter_serial_number ?? '' });
   }, [slot]);
 
   const publish = (next: DistributionSlot) => {
@@ -85,10 +97,52 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
     return () => { cancelled = true; window.clearTimeout(timer); };
   }, [candidate?.nik, currentSlot.schedule_id, editable, nik]);
 
+  // A replacement may target someone who is not in DCP3 at all. The suggestion list is empty both
+  // for "not registered" and for "registered but not receivable", so ask the backend which one it
+  // is before offering to create recipient data.
+  const needsLookup = replaceMode && editable && nik.length === 16 && hasSearched && !isSearching && !suggestions.length && !candidate;
+  useEffect(() => {
+    if (!needsLookup || lookupNIK === nik) return;
+    let cancelled = false;
+    void apiRequest<DataResponse<CandidateLookup>>(`/api/v1/distribution/candidate-lookup?schedule_id=${encodeURIComponent(currentSlot.schedule_id)}&nik=${encodeURIComponent(nik)}`)
+      .then(({ data }) => { if (!cancelled) { setLookup(data); setLookupNIK(nik); } })
+      .catch(() => { if (!cancelled) { setLookup(null); setLookupNIK(nik); } });
+    return () => { cancelled = true; };
+  }, [currentSlot.schedule_id, lookupNIK, needsLookup, nik]);
+
+  const replacements = useQuery({
+    queryKey: ['distribution', 'replacements', currentSlot.schedule_id, currentSlot.slot_number],
+    queryFn: () => apiRequest<DataResponse<RecipientReplacement[]>>(`/api/v1/distribution/slots/${currentSlot.slot_number}/replacements?schedule_id=${encodeURIComponent(currentSlot.schedule_id)}`),
+    enabled: currentSlot.status !== 'open',
+  });
+  const replacementHistory = replacements.data?.data ?? [];
+
+  const closeReplacement = () => {
+    setReplaceMode(false); setCandidate(null); setNik('');
+    setReplacementName(''); setReplacementReason(''); setLookup(null); setLookupNIK('');
+  };
+  const unregisteredSubstitute = replaceMode && lookup?.state === 'not_registered';
+  // A replacement form is offered for a matched candidate, for a substitute who is not registered
+  // yet, and for a NIK the backend confirms is receivable but that the suggestion list missed.
+  const substituteFormVisible = candidate !== null || unregisteredSubstitute || (replaceMode && lookup?.state === 'receivable');
+  const replacementReady = replacementReason.trim() !== '' && (!unregisteredSubstitute || replacementName.trim() !== '');
+
   const dateUpdate = useMutation({ mutationFn: () => apiRequest<DataResponse<DistributionSlot>>(`/api/v1/distribution/slots/${currentSlot.slot_number}/date?schedule_id=${encodeURIComponent(currentSlot.schedule_id)}`, { method: 'PATCH', body: JSON.stringify({ distribution_date: date }) }), onSuccess: ({ data }) => publish(data) });
   const link = useMutation({ mutationFn: () => apiRequest<DataResponse<DistributionSlot>>(`/api/v1/distribution/slots/${currentSlot.slot_number}/link?schedule_id=${encodeURIComponent(currentSlot.schedule_id)}`, { method: 'POST', body: JSON.stringify(linkInput) }), onSuccess: ({ data }) => publish(data) });
   const recipientUpdate = useMutation({ mutationFn: () => apiRequest<DataResponse<DistributionSlot>>(`/api/v1/distribution/slots/${currentSlot.slot_number}/recipient?schedule_id=${encodeURIComponent(currentSlot.schedule_id)}`, { method: 'PATCH', body: JSON.stringify(recipient) }), onSuccess: ({ data }) => publish(data) });
-  const recipientReplace = useMutation({ mutationFn: () => apiRequest<DataResponse<DistributionSlot>>(`/api/v1/distribution/slots/${currentSlot.slot_number}/replace-recipient?schedule_id=${encodeURIComponent(currentSlot.schedule_id)}`, { method: 'POST', body: JSON.stringify(linkInput satisfies ReplaceRecipientInput) }), onSuccess: ({ data }) => { publish(data); setReplaceMode(false); setCandidate(null); setNik(''); } });
+  const recipientReplace = useMutation({
+    mutationFn: () => apiRequest<DataResponse<DistributionSlot>>(`/api/v1/distribution/slots/${currentSlot.slot_number}/replace-recipient?schedule_id=${encodeURIComponent(currentSlot.schedule_id)}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        ...linkInput,
+        slot_number: currentSlot.slot_number,
+        nik,
+        full_name: candidate?.full_name ?? replacementName,
+        reason: replacementReason.trim(),
+      } satisfies ReplaceRecipientInput),
+    }),
+    onSuccess: ({ data }) => { publish(data); closeReplacement(); void replacements.refetch(); },
+  });
   const equipmentUpdate = useMutation({ mutationFn: () => apiRequest<DataResponse<DistributionSlot>>(`/api/v1/distribution/slots/${currentSlot.slot_number}/equipment?schedule_id=${encodeURIComponent(currentSlot.schedule_id)}`, { method: 'PATCH', body: JSON.stringify(equipment) }), onSuccess: ({ data }) => publish(data) });
   const retryMove = useMutation({
     mutationFn: (id: string) => apiRequest<DataResponse<MediaFile>>(`/api/v1/distribution/media/${id}/retry-move`, { method: 'POST' }),
@@ -111,27 +165,70 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
   };
   const updateDocumentation = (next: DistributionSlot['documentation'][number]) => publish({ ...currentSlot, documentation: currentSlot.documentation.map((item) => item.code === next.code ? next : item) });
 
+  // Explains an empty suggestion list. Only "not_registered" invites creating recipient data;
+  // every other state must steer the officer to fix the existing record instead, because a NIK that
+  // already exists cannot be added a second time.
+  const lookupPanel = () => {
+    if (!replaceMode || !lookup || candidate) return null;
+    switch (lookup.state) {
+      case 'not_registered':
+        return <Alert><AlertDescription className="space-y-1"><p className="font-medium">Pengganti belum terdaftar</p><p>NIK ini belum terdaftar pada jadwal ini. Lengkapi nama dan alamat di bawah, lalu data penerima beserta alokasi baru dibuat saat penggantian disimpan.</p></AlertDescription></Alert>;
+      case 'receivable':
+        return <Alert><AlertDescription>Penerima ini siap dipasang sebagai pengganti.</AlertDescription></Alert>;
+      case 'needs_review':
+        return <Alert variant="destructive"><AlertDescription>NIK ini masih berstatus <strong>perlu ditinjau</strong> pada data DCP3 sehingga belum dapat menerima paket. Selesaikan peninjauannya terlebih dahulu.</AlertDescription></Alert>;
+      case 'not_available':
+        return <Alert variant="destructive"><AlertDescription>Alokasi NIK ini sudah tidak dapat menerima paket{lookup.allocation_status ? ` (status ${lookup.allocation_status})` : ''}. Pulihkan datanya di Data Penerima bila memang akan dipakai kembali.</AlertDescription></Alert>;
+      case 'already_assigned':
+        return <Alert variant="destructive"><AlertDescription>NIK ini sudah terpasang pada nomor bagi {lookup.distribution_number ?? '-'}, sehingga tidak dapat dipasang di nomor ini.</AlertDescription></Alert>;
+      case 'previously_received':
+        return <Alert variant="destructive"><AlertDescription>NIK ini sudah pernah menerima paket sebelumnya sehingga tidak dapat dipasang sebagai pengganti.</AlertDescription></Alert>;
+      default:
+        return null;
+    }
+  };
+
   const candidatePicker = (replacement: boolean) => <div className="space-y-3">
     <div className="relative">
-      <FormField label={replacement ? 'NIK pengganti' : 'NIK Penerima'} name={replacement ? 'replacement_nik' : 'nik'} maxLength={16} inputMode="numeric" autoComplete="off" role="combobox" aria-autocomplete="list" aria-expanded={suggestions.length > 0} aria-controls={`nik-suggestions-${currentSlot.id}`} aria-activedescendant={activeSuggestion >= 0 ? `nik-suggestion-${suggestions[activeSuggestion]?.allocation_id}` : undefined} value={nik} hint={nik.length < 4 ? 'Ketik minimal 4 digit NIK.' : isSearching ? 'Mencari penerima...' : undefined} onKeyDown={handleNIKKeyDown} onChange={(event) => { setNik(event.target.value.replace(/\D/g, '')); setCandidate(null); setLinkInput(emptyLinkInput(currentSlot.schedule_id, currentSlot.slot_number)); }} />
+      <FormField label={replacement ? 'NIK pengganti' : 'NIK Penerima'} name={replacement ? 'replacement_nik' : 'nik'} maxLength={16} inputMode="numeric" autoComplete="off" role="combobox" aria-autocomplete="list" aria-expanded={suggestions.length > 0} aria-controls={`nik-suggestions-${currentSlot.id}`} aria-activedescendant={activeSuggestion >= 0 ? `nik-suggestion-${suggestions[activeSuggestion]?.allocation_id}` : undefined} value={nik} hint={nik.length < 4 ? 'Ketik minimal 4 digit NIK.' : isSearching ? 'Mencari penerima...' : undefined} onKeyDown={handleNIKKeyDown} onChange={(event) => { setNik(event.target.value.replace(/\D/g, '')); setCandidate(null); setLookup(null); setLookupNIK(''); setLinkInput(emptyLinkInput(currentSlot.schedule_id, currentSlot.slot_number)); }} />
       {suggestions.length > 0 && <div id={`nik-suggestions-${currentSlot.id}`} role="listbox" aria-label="Pilihan penerima" className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-md">{suggestions.map((item, index) => <button id={`nik-suggestion-${item.allocation_id}`} key={item.allocation_id} type="button" role="option" aria-label={`${item.nik} ${item.full_name}`} aria-selected={index === activeSuggestion} className="flex min-h-11 w-full flex-col items-start rounded-md px-3 py-2 text-left hover:bg-muted focus:bg-muted focus:outline-none aria-selected:bg-muted" onMouseEnter={() => setActiveSuggestion(index)} onClick={() => selectCandidate(item)}><span className="text-sm font-medium">{item.nik}</span><span className="text-xs text-muted-foreground">{item.full_name}</span></button>)}</div>}
     </div>
-    {nik.length >= 4 && hasSearched && !isSearching && !suggestions.length && !candidate && !suggestionError && <p className="text-sm text-muted-foreground" role="status">Penerima dengan awalan NIK tersebut tidak ditemukan.</p>}
+    {nik.length >= 4 && hasSearched && !isSearching && !suggestions.length && !candidate && !suggestionError && !replaceMode && <p className="text-sm text-muted-foreground" role="status">Penerima dengan awalan NIK tersebut tidak ditemukan.</p>}
     {suggestionError && <Alert variant="destructive"><AlertDescription>{suggestionError instanceof ApiError ? suggestionError.message : 'Pencarian penerima belum dapat dilakukan.'}</AlertDescription></Alert>}
-    {candidate && <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event: FormEvent) => { event.preventDefault(); replacement ? recipientReplace.mutate() : link.mutate(); }}>
-      <FormField className="sm:col-span-2" label="Nama" name="candidate_full_name" value={candidate.full_name} disabled onChange={() => {}} />
-      <FormField label={candidate.program_type === 'farmer' ? 'Nomor kartu petani' : 'Nomor KUSUKA'} name="sector_identifier" value={linkInput.sector_identifier} onChange={(event) => setLinkInput({ ...linkInput, sector_identifier: uppercaseBusinessText(event.target.value) })} />
+    {replacement && lookupPanel()}
+    {substituteFormVisible && <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event: FormEvent) => { event.preventDefault(); if (replacement && !replacementReady) return; replacement ? recipientReplace.mutate() : link.mutate(); }}>
+      {candidate
+        ? <FormField className="sm:col-span-2" label="Nama" name="candidate_full_name" value={candidate.full_name} disabled onChange={() => {}} />
+        : <FormField className="sm:col-span-2" label="Nama lengkap pengganti" name="replacement_full_name" value={replacementName} onChange={(event) => setReplacementName(uppercaseBusinessText(event.target.value))} />}
+      <FormField label={candidate?.program_type === 'fisherman' ? 'Nomor KUSUKA' : 'Nomor kartu petani'} name="sector_identifier" value={linkInput.sector_identifier} onChange={(event) => setLinkInput({ ...linkInput, sector_identifier: uppercaseBusinessText(event.target.value) })} />
       <FormField label="Nomor telepon" name="phone_number" value={linkInput.phone_number} onChange={(event) => setLinkInput({ ...linkInput, phone_number: event.target.value })} />
       <FormField className="sm:col-span-2" label="Alamat" name="address" value={linkInput.address} onChange={(event) => setLinkInput({ ...linkInput, address: uppercaseBusinessText(event.target.value) })} />
       <FormField label="Desa/kelurahan" name="village" value={linkInput.village} onChange={(event) => setLinkInput({ ...linkInput, village: uppercaseBusinessText(event.target.value) })} />
       <FormField label="Kecamatan" name="district" value={linkInput.district} onChange={(event) => setLinkInput({ ...linkInput, district: uppercaseBusinessText(event.target.value) })} />
-      <Button className="sm:col-span-2" disabled={link.isPending || recipientReplace.isPending} type="submit">{replacement ? 'Pasang penerima pengganti' : 'Hubungkan ke Nomor Bagi Ini'}</Button>
+      {replacement && <div className="grid gap-2 sm:col-span-2">
+        <label className="text-sm font-medium" htmlFor={`replacement-reason-${currentSlot.id}`}>Alasan penggantian</label>
+        <textarea id={`replacement-reason-${currentSlot.id}`} className="min-h-20 rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" value={replacementReason} onChange={(event) => setReplacementReason(event.target.value)} />
+        <p className="text-xs text-muted-foreground">Alasan disimpan pada riwayat penggantian dan tidak dapat dikosongkan.</p>
+      </div>}
+      <Button className="sm:col-span-2" disabled={link.isPending || recipientReplace.isPending || (replacement && !replacementReady)} type="submit">{replacement ? 'Pasang penerima pengganti' : 'Hubungkan ke Nomor Bagi Ini'}</Button>
+      {recipientReplace.isError && <p role="alert" className="text-sm text-destructive sm:col-span-2">{recipientReplace.error instanceof ApiError ? recipientReplace.error.message : 'Penggantian penerima belum dapat disimpan.'}</p>}
     </form>}
   </div>;
 
   const machineItems = withLegacyOption(machineOptions, equipment.machine_option_code);
   const converterItems = withLegacyOption(converterOptions, equipment.converter_option_code);
   const hoseItems = withLegacyOption(hoseOptions, equipment.hose_option_code);
+
+  const serialField = (label: string, field: SerialField) => {
+    const fieldID = `${field}-${currentSlot.id}`;
+    return <div className="grid min-w-0 gap-2">
+      <Label htmlFor={fieldID}>{label}</Label>
+      <div className="flex gap-2">
+        <Input id={fieldID} name={field} className="flex-1" disabled={!editable} value={equipment[field]} onChange={(event) => setEquipment({ ...equipment, [field]: uppercaseBusinessText(event.target.value) })} />
+        {editable && <Button type="button" variant="outline" size="icon" aria-label={`Scan ${label}`} title="Scan barcode" onClick={() => setScanning(field)}><ScanBarcode aria-hidden="true" /></Button>}
+      </div>
+    </div>;
+  };
 
   return <PosSectionShell label="POS Dokumen" badge="POS Dokumen" icon={<FileText aria-hidden="true" />} title={currentSlot.status === 'open' ? 'Hubungkan penerima' : currentSlot.full_name || 'Lengkapi data distribusi'} state={currentSlot.status === 'completed' ? 'done' : 'active'} status={currentSlot.status === 'completed' ? 'Selesai' : currentSlot.status === 'linked' ? 'Terhubung' : undefined}>
     {canManage && currentSlot.status === 'completed' && <div className="flex justify-end"><Button type="button" variant="outline" onClick={() => setRevisionOpen(true)}><Pencil aria-hidden="true" />Buka revisi POS Dokumen</Button></div>}
@@ -148,24 +245,38 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
           <FormField className="sm:col-span-2" label="Alamat" name="mounted_address" value={recipient.address} disabled={!editable} onChange={(event) => setRecipient({ ...recipient, address: uppercaseBusinessText(event.target.value) })} />
           <FormField label="Desa/kelurahan" name="mounted_village" value={recipient.village} disabled={!editable} onChange={(event) => setRecipient({ ...recipient, village: uppercaseBusinessText(event.target.value) })} />
           <FormField label="Kecamatan" name="mounted_district" value={recipient.district} disabled={!editable} onChange={(event) => setRecipient({ ...recipient, district: uppercaseBusinessText(event.target.value) })} />
-          {editable && <div className="flex flex-wrap gap-2 sm:col-span-2"><Button type="submit">Simpan data penerima</Button><Button type="button" variant="outline" onClick={() => { setReplaceMode((value) => !value); setNik(''); setCandidate(null); }}>Ganti penerima</Button></div>}
+          {editable && <div className="flex flex-wrap gap-2 sm:col-span-2"><Button type="submit">Simpan data penerima</Button><Button type="button" variant="outline" onClick={() => { if (replaceMode) { closeReplacement(); return; } setReplaceMode(true); setNik(''); setCandidate(null); setLookup(null); setLookupNIK(''); setReplacementName(''); setReplacementReason(''); }}>Ganti penerima</Button></div>}
         </form>
         {replaceMode && editable && candidatePicker(true)}
       </>}
     </section>
 
+    {replacementHistory.length > 0 && <section aria-label="Riwayat penggantian penerima" className="space-y-3 rounded-lg border p-4">
+      <h4 className="font-medium">Riwayat penggantian penerima</h4>
+      <p className="text-sm text-muted-foreground">Nomor bagi ini sudah {replacementHistory.length} kali berganti penerima. Penerima sebelumnya tetap tercatat pada Data Penerima.</p>
+      <ol className="space-y-2">
+        {replacementHistory.map((entry) => <li key={entry.id} className="rounded-md border bg-muted/30 px-3 py-2 text-sm">
+          <p><strong>{entry.old_full_name}</strong> digantikan oleh <strong>{entry.new_full_name}</strong></p>
+          <p className="text-muted-foreground">Alasan: {entry.reason}</p>
+          <p className="text-xs text-muted-foreground">{new Date(entry.replaced_at).toLocaleString('id-ID')}{entry.replaced_by_name ? ` · dicatat oleh ${entry.replaced_by_name}` : ''}{entry.origin === 'new_allocation' ? ' · data penerima baru dibuat' : ''}</p>
+        </li>)}
+      </ol>
+    </section>}
+
     <section aria-labelledby={`equipment-heading-${currentSlot.id}`} className="space-y-3 rounded-lg border p-4"><h4 id={`equipment-heading-${currentSlot.id}`} className="font-medium">Data peralatan</h4><form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); equipmentUpdate.mutate(); }}>
       <div className="grid gap-2"><Label id={`machine-label-${currentSlot.id}`}>Merk/Tipe Mesin</Label><Select disabled={!editable} value={equipment.machine_option_code} onValueChange={(value) => setEquipment({ ...equipment, machine_option_code: value ?? '' })}><SelectTrigger aria-labelledby={`machine-label-${currentSlot.id}`}><SelectValue placeholder="Pilih mesin" /></SelectTrigger><SelectContent>{machineItems.map((option) => <SelectItem key={option.code} value={option.code}>{option.brand} {option.type}</SelectItem>)}</SelectContent></Select></div>
-      <FormField label="Serial Number Mesin" name="machine_serial_number" value={equipment.machine_serial_number} disabled={!editable} onChange={(event) => setEquipment({ ...equipment, machine_serial_number: uppercaseBusinessText(event.target.value) })} />
+      {serialField('Serial Number Mesin', 'machine_serial_number')}
       <div className="grid gap-2"><Label id={`converter-label-${currentSlot.id}`}>Merk Konkit/Reducer</Label><Select disabled={!editable} value={equipment.converter_option_code} onValueChange={(value) => setEquipment({ ...equipment, converter_option_code: value ?? '' })}><SelectTrigger aria-labelledby={`converter-label-${currentSlot.id}`}><SelectValue placeholder="Pilih konkit/reducer" /></SelectTrigger><SelectContent>{converterItems.map((option) => <SelectItem key={option.code} value={option.code}>{option.brand}</SelectItem>)}</SelectContent></Select></div>
-      <FormField label="Serial Number Konkit/Reducer" name="converter_serial_number" value={equipment.converter_serial_number} disabled={!editable} onChange={(event) => setEquipment({ ...equipment, converter_serial_number: uppercaseBusinessText(event.target.value) })} />
+      {serialField('Serial Number Konkit/Reducer', 'converter_serial_number')}
       <div className="grid gap-2"><Label id={`hose-label-${currentSlot.id}`}>Merk/Spesifikasi Selang</Label><Select disabled={!editable} value={equipment.hose_option_code} onValueChange={(value) => setEquipment({ ...equipment, hose_option_code: value ?? '' })}><SelectTrigger aria-labelledby={`hose-label-${currentSlot.id}`}><SelectValue placeholder="Pilih selang" /></SelectTrigger><SelectContent>{hoseItems.map((option) => <SelectItem key={option.code} value={option.code}>{option.brand} {option.spec}</SelectItem>)}</SelectContent></Select></div>
-      <FormField label="Serial Number Selang" name="hose_serial_number" value={equipment.hose_serial_number} disabled={!editable} onChange={(event) => setEquipment({ ...equipment, hose_serial_number: uppercaseBusinessText(event.target.value) })} />
       {editable && <Button className="sm:col-span-2" type="submit">Simpan data peralatan</Button>}
     </form></section>
 
     {(movingCount > 0 || failedCount > 0) && <div className="space-y-2">{movingCount > 0 && <div role="status" className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">{movingCount} media sedang dipindahkan ke folder final.</div>}{failedCount > 0 && <Alert variant="destructive"><AlertDescription className="space-y-2"><p>{failedCount} pemindahan media gagal. Gunakan tombol coba lagi pada media terkait.</p>{editable && failedMediaOutsideDocument.map((file) => <Button key={file.id} type="button" size="sm" variant="outline" aria-label={`Coba pindahkan lagi ${file.original_filename}`} disabled={retryMove.isPending} onClick={() => retryMove.mutate(file.id)}>Coba lagi: {file.original_filename}</Button>)}{retryMove.isError && <p>{retryMove.error instanceof ApiError ? retryMove.error.message : 'Pemindahan media belum dapat dicoba kembali.'}</p>}</AlertDescription></Alert>}</div>}
     {documentation.length > 0 && <section aria-label="Dokumentasi" className="grid gap-4 sm:grid-cols-2">{documentation.map((item) => <DocumentationSlot key={item.code} slot={item} canManage={editable} canRetryMove={editable} onChanged={updateDocumentation} />)}</section>}
+    {scanning && <Suspense fallback={null}>
+      <BarcodeScanner onResult={(text) => { setEquipment((prev) => ({ ...prev, [scanning]: uppercaseBusinessText(text) })); setScanning(null); }} onClose={() => setScanning(null)} />
+    </Suspense>}
     <RevisionDialog slot={currentSlot} stage="dokumen" open={revisionOpen} onOpenChange={setRevisionOpen} onReopened={publish} />
   </PosSectionShell>;
 }

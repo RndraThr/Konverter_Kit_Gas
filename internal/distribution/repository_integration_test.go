@@ -466,15 +466,20 @@ func TestIntegrationMediaMoveQueueDateFirstAndRecipientFirst(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			var state, jobStatus string
+			var state, jobStatus, targetFilename string
 			var generation, jobGeneration int64
 			var targetPath []string
 			must(t, pool.QueryRow(ctx, `
-				SELECT m.storage_state,m.storage_target_generation,j.status,j.target_generation,j.target_path
+				SELECT m.storage_state,m.storage_target_generation,j.status,j.target_generation,j.target_path,j.target_filename
 				FROM media_files m JOIN distribution_media_move_jobs j ON j.media_file_id=m.id WHERE m.id=$1
-			`, fixture.mediaID).Scan(&state, &generation, &jobStatus, &jobGeneration, &targetPath))
+			`, fixture.mediaID).Scan(&state, &generation, &jobStatus, &jobGeneration, &targetPath, &targetFilename))
 			if state != "moving" || jobStatus != "queued" || generation != 1 || jobGeneration != 1 || !strings.HasSuffix(strings.Join(targetPath, "/"), "DOKUMENTASI (FOTO)/PENDISTRIBUSIAN/20 Oktober 2026/1") {
 				t.Fatalf("state=%q job=%q generations=%d/%d target=%v", state, jobStatus, generation, jobGeneration, targetPath)
+			}
+			// The queued job must already carry the recipient-prefixed final filename, because only
+			// the queue step knows both the recipient and the media's position in the slot.
+			if targetFilename != "QUEUE CANDIDATE - FOTO ALAT - 01.jpg" {
+				t.Fatalf("target filename=%q, want the recipient-prefixed final name", targetFilename)
 			}
 
 			stored, err := repo.SaveMedia(ctx, auth.Principal{}, MediaFileInput{
@@ -497,12 +502,18 @@ func TestIntegrationMediaMoveQueueDateFirstAndRecipientFirst(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var racedState string
+			var racedState, racedFilename string
 			var racedJobs int
 			must(t, pool.QueryRow(ctx, `SELECT storage_state FROM media_files WHERE id=$1`, raced.ID).Scan(&racedState))
-			must(t, pool.QueryRow(ctx, `SELECT count(*) FROM distribution_media_move_jobs WHERE media_file_id=$1`, raced.ID).Scan(&racedJobs))
+			must(t, pool.QueryRow(ctx, `SELECT count(*),COALESCE(max(target_filename),'') FROM distribution_media_move_jobs WHERE media_file_id=$1`, raced.ID).Scan(&racedJobs, &racedFilename))
 			if racedState != "moving" || racedJobs != 1 {
 				t.Fatalf("raced upload state=%q jobs=%d", racedState, racedJobs)
+			}
+			// The upload raced the slot becoming ready, so the job queued by SaveMedia must name the
+			// file after the recipient too. Its position among the slot's accepted media is not fixed
+			// because both test rows share a timestamp, so only the prefix is asserted here.
+			if !strings.HasPrefix(racedFilename, "QUEUE CANDIDATE - FOTO ALAT - ") {
+				t.Fatalf("raced upload target filename=%q, want the recipient-prefixed final name", racedFilename)
 			}
 		})
 	}
@@ -638,6 +649,34 @@ func TestUpdateEquipmentIgnoresMediaFromOtherStages(t *testing.T) {
 	}
 	if updated.MachineOptionCode != "shark-spwp8030" || updated.MachineSerialNumber != "msn-1" || updated.ConverterOptionCode != "ergas" || updated.ConverterSerialNumber != "cnv-1" {
 		t.Fatalf("slot=%+v", updated)
+	}
+}
+
+func TestUpdateEquipmentSerialsPreservesEquipmentOptions(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	fixture := seedMediaFixture(t, pool)
+	ctx := context.Background()
+	must(t, func() error {
+		_, err := pool.Exec(ctx, `
+			UPDATE distribution_slots
+			SET machine_option_code='shark-spwp8030',converter_option_code='ergas',hose_option_code='hose-set'
+			WHERE id=$1
+		`, fixture.distributionSlotID)
+		return err
+	}())
+
+	updated, err := NewRepository(pool).UpdateEquipmentSerials(ctx, auth.Principal{}, UpdateEquipmentSerialsInput{
+		ScheduleID: fixture.scheduleID, SlotNumber: fixture.slotNumber,
+		MachineSerialNumber: "MESIN-01", ConverterSerialNumber: "KONKIT-02",
+	}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.MachineOptionCode != "shark-spwp8030" || updated.ConverterOptionCode != "ergas" || updated.HoseOptionCode != "hose-set" {
+		t.Fatalf("equipment options changed: %+v", updated)
+	}
+	if updated.MachineSerialNumber != "MESIN-01" || updated.ConverterSerialNumber != "KONKIT-02" {
+		t.Fatalf("serials not updated: %+v", updated)
 	}
 }
 
@@ -1001,7 +1040,7 @@ func TestLinkSlotReturnsRecipientIdentity(t *testing.T) {
 	must(t, pool.QueryRow(ctx, `INSERT INTO people(full_name,nik) VALUES('Replacement Candidate',$1) RETURNING id::text`, newNIK).Scan(&newPersonID))
 	must(t, pool.QueryRow(ctx, `INSERT INTO candidate_nominations(person_id,program_type,source_snapshot_json,status) VALUES($1,'farmer','{}','ready') RETURNING id::text`, newPersonID).Scan(&newNominationID))
 	must(t, pool.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,status,package_snapshot_json) VALUES($1,$2,$3,'candidate','{}') RETURNING id::text`, scheduleID, newNominationID, newPersonID).Scan(&newAllocationID))
-	replaced, err := repo.ReplaceRecipient(ctx, auth.Principal{}, ReplaceRecipientInput{ScheduleID: scheduleID, SlotNumber: created.SlotNumber, NIK: newNIK, Address: "JL. PENGGANTI", SectorIdentifier: replacementSectorID}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	replaced, err := repo.ReplaceRecipient(ctx, auth.Principal{}, ReplaceRecipientInput{ScheduleID: scheduleID, SlotNumber: created.SlotNumber, NIK: newNIK, Address: "JL. PENGGANTI", SectorIdentifier: replacementSectorID, Reason: "Penerima awal tidak dapat hadir"}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1011,8 +1050,15 @@ func TestLinkSlotReturnsRecipientIdentity(t *testing.T) {
 	var oldAllocationStatus string
 	var oldDistributionNumber *int
 	must(t, pool.QueryRow(ctx, `SELECT status,distribution_number FROM package_allocations WHERE nomination_id=$1`, nominationID).Scan(&oldAllocationStatus, &oldDistributionNumber))
-	if oldAllocationStatus != "candidate" || oldDistributionNumber != nil {
+	// The replaced allocation is released from the slot and marked replaced, so Data Penerima and
+	// reports keep showing it as history instead of silently returning it to the candidate pool.
+	if oldAllocationStatus != "replaced" || oldDistributionNumber != nil {
 		t.Fatalf("old allocation status=%q number=%v", oldAllocationStatus, oldDistributionNumber)
+	}
+	var recordedReason, recordedOrigin string
+	must(t, pool.QueryRow(ctx, `SELECT reason,origin FROM recipient_replacements WHERE distribution_slot_id=$1`, created.ID).Scan(&recordedReason, &recordedOrigin))
+	if recordedReason != "Penerima awal tidak dapat hadir" || recordedOrigin != "existing_allocation" {
+		t.Fatalf("replacement history reason=%q origin=%q", recordedReason, recordedOrigin)
 	}
 
 	conflictNIK := fmt.Sprintf("%016d", (time.Now().UnixNano()+2)%1e16)
@@ -1022,9 +1068,9 @@ func TestLinkSlotReturnsRecipientIdentity(t *testing.T) {
 	must(t, pool.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,actual_recipient_person_id,distribution_number,status,package_snapshot_json) VALUES($1,$2,$3,$3,99,'ready','{}') RETURNING id::text`, scheduleID, conflictNominationID, conflictPersonID).Scan(&conflictAllocationID))
 	must(t, pool.QueryRow(ctx, `INSERT INTO distribution_slots(schedule_id,slot_number,status,allocation_id,recipient_person_id) VALUES($1,99,'linked',$2,$3) RETURNING id::text`, scheduleID, conflictAllocationID, conflictPersonID).Scan(new(string)))
 	beforeAllocation := replaced.AllocationID
-	_, err = repo.ReplaceRecipient(ctx, auth.Principal{}, ReplaceRecipientInput{ScheduleID: scheduleID, SlotNumber: created.SlotNumber, NIK: conflictNIK}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
-	if !errors.Is(err, ErrCandidateNotFound) {
-		t.Fatalf("conflict err=%v", err)
+	_, err = repo.ReplaceRecipient(ctx, auth.Principal{}, ReplaceRecipientInput{ScheduleID: scheduleID, SlotNumber: created.SlotNumber, NIK: conflictNIK, Reason: "Coba pakai kandidat yang sudah terpasang"}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if !errors.Is(err, ErrCandidateAlreadyAssigned) {
+		t.Fatalf("conflict err=%v, want ErrCandidateAlreadyAssigned", err)
 	}
 	afterConflict, err := repo.SearchSlot(ctx, scheduleID, fmt.Sprint(created.SlotNumber), auth.RegencyScope{Unrestricted: true})
 	if err != nil || afterConflict.AllocationID == nil || beforeAllocation == nil || *afterConflict.AllocationID != *beforeAllocation || afterConflict.NIK != newNIK {
@@ -1038,7 +1084,7 @@ func TestLinkSlotReturnsRecipientIdentity(t *testing.T) {
 	if _, err := repo.UpdateRecipient(ctx, auth.Principal{}, UpdateRecipientInput{ScheduleID: scheduleID, SlotNumber: created.SlotNumber, Address: "DITOLAK"}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrAlreadyCompleted) {
 		t.Fatalf("completed update err=%v", err)
 	}
-	if _, err := repo.ReplaceRecipient(ctx, auth.Principal{}, ReplaceRecipientInput{ScheduleID: scheduleID, SlotNumber: created.SlotNumber, NIK: wantNIK}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrAlreadyCompleted) {
+	if _, err := repo.ReplaceRecipient(ctx, auth.Principal{}, ReplaceRecipientInput{ScheduleID: scheduleID, SlotNumber: created.SlotNumber, NIK: wantNIK, Reason: "Percobaan pada slot selesai"}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrAlreadyCompleted) {
 		t.Fatalf("completed replace err=%v", err)
 	}
 	if _, err := repo.SetDistributionDate(ctx, auth.Principal{}, SetDistributionDateInput{ScheduleID: scheduleID, SlotNumber: created.SlotNumber, DistributionDate: "2026-10-22"}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrAlreadyCompleted) {

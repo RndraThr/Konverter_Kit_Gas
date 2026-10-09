@@ -16,7 +16,7 @@ function MappingHarness() {
 }
 
 async function chooseSource(optionName: string) {
-  await userEvent.click(screen.getByRole('combobox', { name: /Nomor urut DCP3/ }));
+  await userEvent.click(screen.getByRole('combobox', { name: /Nama lengkap/ }));
   await userEvent.click(await screen.findByRole('option', { name: optionName }));
 }
 
@@ -24,8 +24,8 @@ test('keeps an unmap-like workbook header distinct from the explicit unmap optio
   render(<MappingHarness />);
 
   await chooseSource(collisionHeader);
-  expect(screen.getByLabelText('Mapping JSON')).toHaveTextContent(`"source_sequence":"${collisionHeader}"`);
+  expect(screen.getByLabelText('Mapping JSON')).toHaveTextContent(`"full_name":"${collisionHeader}"`);
 
   await chooseSource('Tidak dipetakan');
-  expect(screen.getByLabelText('Mapping JSON')).toHaveTextContent('"source_sequence":""');
+  expect(screen.getByLabelText('Mapping JSON')).toHaveTextContent('"full_name":""');
 });

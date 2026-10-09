@@ -96,11 +96,14 @@ type DistributionService interface {
 	CreateSlot(context.Context, auth.Principal, distribution.CreateSlotInput, auth.RegencyScope, auth.ClientMeta) (distribution.DistributionSlot, error)
 	SearchCandidate(context.Context, string, string, auth.RegencyScope) (distribution.CandidateMatch, error)
 	SuggestCandidates(context.Context, string, string, auth.RegencyScope) ([]distribution.CandidateMatch, error)
+	LookupCandidate(context.Context, string, string, auth.RegencyScope) (distribution.CandidateLookup, error)
+	ListReplacements(context.Context, string, int, auth.RegencyScope) ([]distribution.RecipientReplacement, error)
 	LinkSlot(context.Context, auth.Principal, distribution.LinkSlotInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
 	SearchSlot(context.Context, string, string, auth.RegencyScope) (distribution.DistributionSlot, error)
 	CompleteSlot(context.Context, auth.Principal, distribution.CompleteSlotInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
 	SetDistributionDate(context.Context, auth.Principal, distribution.SetDistributionDateInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
 	UpdateEquipment(context.Context, auth.Principal, distribution.UpdateEquipmentInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
+	UpdateEquipmentSerials(context.Context, auth.Principal, distribution.UpdateEquipmentSerialsInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
 	UpdateRecipient(context.Context, auth.Principal, distribution.UpdateRecipientInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
 	ReplaceRecipient(context.Context, auth.Principal, distribution.ReplaceRecipientInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
 	ReopenSlot(context.Context, auth.Principal, distribution.ReopenSlotInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
@@ -123,6 +126,7 @@ type ReportsService interface {
 type RecipientsService interface {
 	List(context.Context, recipients.Filter, auth.RegencyScope) (recipients.Page, error)
 	Stats(context.Context, recipients.Filter, auth.RegencyScope) (recipients.Stats, error)
+	MapRegions(context.Context, recipients.Filter, auth.RegencyScope) (recipients.MapData, error)
 	Create(context.Context, auth.Principal, recipients.CreateInput, auth.ClientMeta, auth.RegencyScope) (recipients.Recipient, error)
 	Update(context.Context, auth.Principal, string, recipients.UpdateInput, auth.ClientMeta, auth.RegencyScope) (recipients.Recipient, error)
 	Cancel(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) error
@@ -375,6 +379,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleDistributionCandidates(w, r, rc)
 	case path == "distribution/candidate-suggestions":
 		h.handleDistributionCandidateSuggestions(w, r, rc)
+	case path == "distribution/candidate-lookup":
+		h.handleDistributionCandidateLookup(w, r, rc)
 	case strings.HasPrefix(path, "distribution/slots/"):
 		h.handleDistributionSlot(w, r, rc, strings.TrimPrefix(path, "distribution/slots/"))
 	case strings.HasPrefix(path, "distribution/media/"):
@@ -385,6 +391,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleRecipients(w, r, rc)
 	case path == "recipients/stats":
 		h.handleRecipientStats(w, r, rc)
+	case path == "recipients/map":
+		h.handleRecipientMap(w, r, rc)
 	case strings.HasPrefix(path, "recipients/"):
 		h.handleRecipient(w, r, rc, strings.TrimPrefix(path, "recipients/"))
 	case path == "activities/media":

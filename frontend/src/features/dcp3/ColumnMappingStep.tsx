@@ -6,7 +6,6 @@ type MappingField = { key: keyof DCP3Mapping; label: string; required?: boolean 
 const unmappedValue = 'unmapped';
 
 const sharedFields: MappingField[] = [
-  { key: 'source_sequence', label: 'Nomor urut DCP3', required: true },
   { key: 'full_name', label: 'Nama lengkap', required: true },
   { key: 'nik', label: 'NIK' },
   { key: 'address', label: 'Alamat' },
@@ -25,7 +24,7 @@ export function ColumnMappingStep({ headers, mapping, programType, multipleMachi
   const sectorField: MappingField = programType === 'farmer'
     ? { key: 'farmer_card_number', label: 'Nomor kartu petani' }
     : { key: 'kusuka_number', label: 'Nomor kartu KUSUKA' };
-  const fields: MappingField[] = [...sharedFields.slice(0, 3), sectorField, ...sharedFields.slice(3)];
+  const fields: MappingField[] = [...sharedFields.slice(0, 2), sectorField, ...sharedFields.slice(2)];
   if (multipleMachineVariants) fields.push({ key: 'machine_option', label: 'Varian mesin', required: true });
   return <div className={styles.mappingGrid}>
     {fields.map((field) => {

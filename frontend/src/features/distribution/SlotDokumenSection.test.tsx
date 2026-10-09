@@ -12,6 +12,12 @@ vi.mock('../../lib/api', async () => {
   return { ...actual, apiRequest: vi.fn() };
 });
 
+// The camera scanner needs a real camera stream; the tests only care that opening it for a given
+// serial field routes the decoded text back into that same field.
+vi.mock('./BarcodeScanner', () => ({
+  default: ({ onResult }: { onResult: (text: string) => void }) => <button type="button" onClick={() => onResult('sn-scanned-123')}>kirim hasil scan</button>,
+}));
+
 const openSlot: DistributionSlot = {
 	id: 'slot-1', schedule_id: 'schedule-1', slot_number: 7, distribution_date: null, status: 'open',
   machine_option_code: 'MSN-001', machine_serial_number: 'SN-MSN-1', hose_option_code: 'HSE-001', hose_serial_number: 'SN-HSE-1', converter_serial_number: 'SN-CNV-1',
@@ -167,6 +173,84 @@ test('edits recipient details without allowing NIK mutation and supports replace
   expect(screen.getByLabelText('NIK pengganti')).toBeVisible();
 });
 
+test('keeps the replacement submit disabled until a reason is given', async () => {
+  const linked = { ...openSlot, status: 'linked' as const, full_name: candidate.full_name, nik: candidate.nik };
+  vi.mocked(apiRequest).mockImplementation((path) => path.includes('candidate-suggestions') ? Promise.resolve({ data: [candidate] }) : Promise.resolve({ data: linked }));
+  renderSection(linked);
+
+  await userEvent.click(screen.getByRole('button', { name: 'Ganti penerima' }));
+  fireEvent.change(screen.getByLabelText('NIK pengganti'), { target: { value: candidate.nik } });
+  await userEvent.click(await screen.findByRole('option', { name: `${candidate.nik} ${candidate.full_name}` }));
+
+  const submit = screen.getByRole('button', { name: 'Pasang penerima pengganti' });
+  expect(submit).toBeDisabled();
+
+  await userEvent.type(screen.getByLabelText('Alasan penggantian'), 'Penerima awal tidak dapat hadir');
+  expect(submit).toBeEnabled();
+});
+
+test('offers recipient creation for a substitute who is not registered in this schedule', async () => {
+  const linked = { ...openSlot, status: 'linked' as const, full_name: candidate.full_name, nik: candidate.nik };
+  vi.mocked(apiRequest).mockImplementation((path) => {
+    if (path.includes('candidate-suggestions')) return Promise.resolve({ data: [] });
+    if (path.includes('candidate-lookup')) return Promise.resolve({ data: { state: 'not_registered' } });
+    return Promise.resolve({ data: { ...linked, nik: '7306014101900099', full_name: 'PENGGANTI KELUARGA' } });
+  });
+  renderSection(linked);
+
+  await userEvent.click(screen.getByRole('button', { name: 'Ganti penerima' }));
+  fireEvent.change(screen.getByLabelText('NIK pengganti'), { target: { value: '7306014101900099' } });
+
+  expect(await screen.findByText('Pengganti belum terdaftar')).toBeVisible();
+  await userEvent.type(screen.getByLabelText('Nama lengkap pengganti'), 'Pengganti Keluarga');
+  await userEvent.type(screen.getByLabelText('Alasan penggantian'), 'Penerima awal sakit');
+  await userEvent.click(screen.getByRole('button', { name: 'Pasang penerima pengganti' }));
+
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith(
+    '/api/v1/distribution/slots/7/replace-recipient?schedule_id=schedule-1',
+    expect.objectContaining({ method: 'POST' }),
+  ));
+  const [, init] = vi.mocked(apiRequest).mock.calls.find(([path]) => path.includes('replace-recipient'))!;
+  const body = JSON.parse(init!.body as string);
+  expect(body).toMatchObject({ nik: '7306014101900099', full_name: 'PENGGANTI KELUARGA', reason: 'Penerima awal sakit' });
+});
+
+test('blocks a substitute who is registered but flagged for review instead of offering creation', async () => {
+  const linked = { ...openSlot, status: 'linked' as const, full_name: candidate.full_name, nik: candidate.nik };
+  vi.mocked(apiRequest).mockImplementation((path) => {
+    if (path.includes('candidate-suggestions')) return Promise.resolve({ data: [] });
+    if (path.includes('candidate-lookup')) return Promise.resolve({ data: { state: 'needs_review', allocation_status: 'needs_review' } });
+    return Promise.resolve({ data: linked });
+  });
+  renderSection(linked);
+
+  await userEvent.click(screen.getByRole('button', { name: 'Ganti penerima' }));
+  fireEvent.change(screen.getByLabelText('NIK pengganti'), { target: { value: '7306014101900088' } });
+
+  expect(await screen.findByText(/perlu ditinjau/)).toBeVisible();
+  expect(screen.queryByLabelText('Nama lengkap pengganti')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Pasang penerima pengganti' })).not.toBeInTheDocument();
+});
+
+test('shows the recorded replacement history for the slot', async () => {
+  const linked = { ...openSlot, status: 'linked' as const, full_name: candidate.full_name, nik: candidate.nik };
+  vi.mocked(apiRequest).mockImplementation((path) => {
+    if (path.includes('/replacements')) {
+      return Promise.resolve({ data: [{
+        id: 'replacement-1', slot_number: 7, old_person_id: 'person-old', old_full_name: 'PENERIMA AWAL',
+        new_person_id: 'person-new', new_full_name: 'PENGGANTI KELUARGA', origin: 'new_allocation',
+        reason: 'Penerima awal sakit', replaced_by_name: 'Petugas Lapangan', replaced_at: '2026-10-08T02:00:00Z',
+      }] });
+    }
+    return Promise.resolve({ data: linked });
+  });
+  renderSection(linked);
+
+  expect(await screen.findByText('Riwayat penggantian penerima')).toBeVisible();
+  expect(screen.getByText(/PENERIMA AWAL/)).toBeVisible();
+  expect(screen.getByText('Alasan: Penerima awal sakit')).toBeVisible();
+});
+
 test('saves equipment and allows document media management', async () => {
   const documentation = [{ id: 'doc-1', code: 'document', label: 'Foto Dokumen', stage: 'dokumen' as const, status: 'missing', required: true, min_files: 1, max_files: 2, media_kind: 'image' as const, input_source: 'both' as const, files: [] }];
   const linked = { ...openSlot, status: 'linked' as const, full_name: candidate.full_name, nik: candidate.nik, documentation };
@@ -180,6 +264,31 @@ test('saves equipment and allows document media management', async () => {
 
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/slots/7/equipment?schedule_id=schedule-1', expect.objectContaining({ method: 'PATCH' })));
   expect(screen.getByLabelText('Buka kamera')).toBeVisible();
+});
+
+test('offers barcode scanning for the supported serial numbers while equipment is editable', () => {
+  renderSection({ ...openSlot, status: 'linked', full_name: candidate.full_name, nik: candidate.nik });
+
+  expect(screen.getByRole('button', { name: 'Scan Serial Number Mesin' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Scan Serial Number Konkit/Reducer' })).toBeVisible();
+  expect(screen.queryByLabelText('Serial Number Selang')).not.toBeInTheDocument();
+});
+
+test('hides barcode scanning when the document POS is read-only', () => {
+  renderSection({ ...openSlot, status: 'completed', full_name: candidate.full_name, nik: candidate.nik }, ['distribution.view']);
+
+  expect(screen.queryByRole('button', { name: 'Scan Serial Number Mesin' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Scan Serial Number Selang' })).not.toBeInTheDocument();
+});
+
+test('fills the scanned barcode into the supported serial number field that opened the scanner', async () => {
+  renderSection({ ...openSlot, status: 'linked', full_name: candidate.full_name, nik: candidate.nik });
+
+  await userEvent.click(screen.getByRole('button', { name: 'Scan Serial Number Konkit/Reducer' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'kirim hasil scan' }));
+
+  expect(screen.getByLabelText('Serial Number Konkit/Reducer')).toHaveValue('SN-SCANNED-123');
+  expect(screen.getByLabelText('Serial Number Mesin')).toHaveValue('SN-MSN-1');
 });
 
 test('shows relocation state, failed retry, and keeps previews visible', () => {

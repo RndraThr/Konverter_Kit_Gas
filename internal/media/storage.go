@@ -38,7 +38,12 @@ type Storage interface {
 
 type MovableStorage interface {
 	Storage
-	Move(ctx context.Context, storageKey string, targetPath []string) error
+	// Move relocates an existing object to targetPath without re-uploading it, and renames it to
+	// targetFilename when that name differs from the stored one. An empty targetFilename keeps
+	// the current name. Move must be idempotent: relocating (or renaming) an object that already
+	// matches the target must succeed without duplicating it, because media move jobs are retried
+	// after crashes.
+	Move(ctx context.Context, storageKey string, targetPath []string, targetFilename string) error
 }
 
 type namedStorage interface {
@@ -50,14 +55,8 @@ type namedStorage interface {
 // separate filename. Backends without named-object support safely fall back
 // to Put and continue using the internal key.
 func PutNamed(ctx context.Context, storage Storage, key, filename string, folderPath []string, source io.Reader) (string, int64, string, error) {
-	filename = strings.TrimSpace(filename)
-	if filename == "" || strings.ContainsAny(filename, `/\`) {
-		return "", 0, "", ErrInvalidFilename
-	}
-	for _, r := range filename {
-		if r < 32 || r == 127 {
-			return "", 0, "", ErrInvalidFilename
-		}
+	if err := validateFilename(filename); err != nil {
+		return "", 0, "", err
 	}
 	if named, ok := storage.(namedStorage); ok {
 		return named.PutNamed(ctx, key, filename, folderPath, source)
@@ -165,12 +164,35 @@ func (s *LocalStorage) EnsureFolders(ctx context.Context, paths [][]string) erro
 	return nil
 }
 
-func (s *LocalStorage) Move(ctx context.Context, storageKey string, targetPath []string) error {
+// validateFilename rejects names that would be ambiguous or dangerous as a storage object name.
+// Backends with user-visible filenames apply it to uploads and to move-time renames alike.
+func validateFilename(filename string) error {
+	filename = strings.TrimSpace(filename)
+	if filename == "" || strings.ContainsAny(filename, `/\`) {
+		return ErrInvalidFilename
+	}
+	for _, r := range filename {
+		if r < 32 || r == 127 {
+			return ErrInvalidFilename
+		}
+	}
+	return nil
+}
+
+// Move validates the target location and name. LocalStorage stores files flat under their stable
+// key, so the key — not the display name — remains the file's identity and Open/Delete keep
+// working after a move; the target filename is validated but not applied on disk.
+func (s *LocalStorage) Move(ctx context.Context, storageKey string, targetPath []string, targetFilename string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if _, err := s.path(storageKey); err != nil {
 		return err
+	}
+	if strings.TrimSpace(targetFilename) != "" {
+		if err := validateFilename(targetFilename); err != nil {
+			return err
+		}
 	}
 	return validateFolderPath(targetPath)
 }

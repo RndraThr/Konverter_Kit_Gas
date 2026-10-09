@@ -51,7 +51,7 @@ func (h *Handler) handleProgramSetup(w http.ResponseWriter, r *http.Request, rc 
 
 func (h *Handler) handleRegencies(w http.ResponseWriter, r *http.Request, rc requestContext, id string) {
 	if r.Method == http.MethodGet && id == "" {
-		if !h.authorize(w, r, rc.principal, "programs.view") {
+		if !h.authorizeAny(w, r, rc.principal, "programs.view", "recipients.view", "distribution.view") {
 			return
 		}
 		scope, ok := h.regencyScope(w, r, rc.principal)
@@ -84,7 +84,7 @@ func (h *Handler) handleRegencies(w http.ResponseWriter, r *http.Request, rc req
 
 func (h *Handler) handlePrograms(w http.ResponseWriter, r *http.Request, rc requestContext, id string) {
 	if r.Method == http.MethodGet && id == "" {
-		if !h.authorize(w, r, rc.principal, "programs.view") {
+		if !h.authorizeAny(w, r, rc.principal, "programs.view", "recipients.view", "distribution.view") {
 			return
 		}
 		result, err := h.deps.Programs.ListPrograms(r.Context())
@@ -113,7 +113,7 @@ func (h *Handler) handlePrograms(w http.ResponseWriter, r *http.Request, rc requ
 
 func (h *Handler) handleSchedules(w http.ResponseWriter, r *http.Request, rc requestContext, id string) {
 	if r.Method == http.MethodGet && id == "" {
-		if !h.authorizeAny(w, r, rc.principal, "programs.view", "bast.view") {
+		if !h.authorizeAny(w, r, rc.principal, "programs.view", "bast.view", "recipients.view", "distribution.view") {
 			return
 		}
 		scope, ok := h.regencyScope(w, r, rc.principal)

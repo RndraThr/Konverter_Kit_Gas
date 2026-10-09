@@ -12,6 +12,8 @@ import (
 
 type recipientFixture struct {
 	scheduleID         string
+	programID          string
+	zoneID             string
 	farmerRegencyID    string
 	otherRegencyID     string
 	distributedAllocID string
@@ -26,12 +28,16 @@ func seedRecipientFixture(t *testing.T, pool *pgxpool.Pool) recipientFixture {
 
 	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan','Wajo Recipients Test','WRT',true) RETURNING id::text`).Scan(&fixture.farmerRegencyID))
 	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan','Bone Recipients Test','BRT',true) RETURNING id::text`).Scan(&fixture.otherRegencyID))
-	var programID string
-	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES('RCPT-TEST','Program Test Recipients','farmer',2026,'active') RETURNING id::text`).Scan(&programID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES('RCPT-TEST','Program Test Recipients','farmer',2026,'active') RETURNING id::text`).Scan(&fixture.programID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO program_zones(program_id,code,name,sort_order) VALUES($1,'ZONA-TEST','Zona Test Penerima',1) RETURNING id::text`, fixture.programID).Scan(&fixture.zoneID))
+	must(t, func() error {
+		_, err := pool.Exec(ctx, `INSERT INTO program_regency_assignments(program_id,regency_id,zone_id) VALUES($1,$2,$3)`, fixture.programID, fixture.farmerRegencyID, fixture.zoneID)
+		return err
+	}())
 	var packageTemplateID, docTemplateID string
 	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES('PKG-RCPT',1,'Paket Test','farmer','{}'::jsonb,'published') RETURNING id::text`).Scan(&packageTemplateID))
 	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES('DOC-RCPT',1,'Dok Test','farmer','published') RETURNING id::text`).Scan(&docTemplateID))
-	must(t, pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal Test Recipients','2026-01-01','2026-12-31','active','{}'::jsonb) RETURNING id::text`, programID, fixture.farmerRegencyID, packageTemplateID, docTemplateID).Scan(&fixture.scheduleID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal Test Recipients','2026-01-01','2026-12-31','active','{}'::jsonb) RETURNING id::text`, fixture.programID, fixture.farmerRegencyID, packageTemplateID, docTemplateID).Scan(&fixture.scheduleID))
 
 	var personIDs, nominationIDs []string
 	insertAllocation := func(name, status string, distNumber int) string {
@@ -61,7 +67,7 @@ func seedRecipientFixture(t *testing.T, pool *pgxpool.Pool) recipientFixture {
 		if _, err := pool.Exec(cleanupCtx, `DELETE FROM program_schedules WHERE id = $1`, fixture.scheduleID); err != nil {
 			t.Logf("cleanup: delete program_schedules failed: %v", err)
 		}
-		if _, err := pool.Exec(cleanupCtx, `DELETE FROM programs WHERE id = $1`, programID); err != nil {
+		if _, err := pool.Exec(cleanupCtx, `DELETE FROM programs WHERE id = $1`, fixture.programID); err != nil {
 			t.Logf("cleanup: delete programs failed: %v", err)
 		}
 		if _, err := pool.Exec(cleanupCtx, `DELETE FROM package_template_versions WHERE id = $1`, packageTemplateID); err != nil {
@@ -77,10 +83,144 @@ func seedRecipientFixture(t *testing.T, pool *pgxpool.Pool) recipientFixture {
 	return fixture
 }
 
+func TestListIncludesAndFiltersProgramZone(t *testing.T) {
+	pool := recipientsIntegrationPool(t)
+	fixture := seedRecipientFixture(t, pool)
+	repository := NewRepository(pool)
+
+	page, err := repository.List(context.Background(), Filter{Page: 1, PageSize: 20, ZoneID: fixture.zoneID}, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 2 || len(page.Items) != 2 {
+		t.Fatalf("expected active recipients in selected zone, got %+v", page)
+	}
+	for _, item := range page.Items {
+		if item.ZoneID != fixture.zoneID || item.ZoneCode != "ZONA-TEST" || item.ZoneName != "Zona Test Penerima" {
+			t.Fatalf("recipient lost program zone: %+v", item)
+		}
+	}
+}
+
 func must(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestMapRegionsAggregatesRecipientsEvidenceAndSlotProgress proves the map numbers are produced by
+// the same filter contract as the list (cancelled excluded by default), that evidence buckets line
+// up with the list's evidence status, and that slot progress plus quota is reported for regencies
+// that hold schedules and quota but no recipient yet.
+func TestMapRegionsAggregatesRecipientsEvidenceAndSlotProgress(t *testing.T) {
+	pool := recipientsIntegrationPool(t)
+	fixture := seedRecipientFixture(t, pool)
+	repository := NewRepository(pool)
+	ctx := context.Background()
+
+	must(t, func() error {
+		_, err := pool.Exec(ctx, `UPDATE program_schedules SET slot_quota=10 WHERE id=$1`, fixture.scheduleID)
+		return err
+	}())
+	must(t, func() error {
+		_, err := pool.Exec(ctx, `
+			INSERT INTO distribution_slots(schedule_id,slot_number,status,allocation_id,recipient_person_id)
+			SELECT $1,1,'completed',pa.id,pa.intended_person_id FROM package_allocations pa WHERE pa.id=$2
+		`, fixture.scheduleID, fixture.distributedAllocID)
+		return err
+	}())
+	must(t, func() error {
+		_, err := pool.Exec(ctx, `INSERT INTO distribution_slots(schedule_id,slot_number,status) VALUES($1,2,'open')`, fixture.scheduleID)
+		return err
+	}())
+	// Registered after the fixture's own cleanup, so it runs first (t.Cleanup is LIFO) and removes
+	// the slots that reference the fixture's allocations before those allocations are deleted.
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM distribution_slots WHERE schedule_id=$1`, fixture.scheduleID)
+	})
+	// A quota-only regency: it has a schedule but no allocation at all.
+	var quotaOnlyScheduleID string
+	var quotaOnlyPackage, quotaOnlyDoc string
+	must(t, pool.QueryRow(ctx, `SELECT package_template_version_id::text, documentation_template_version_id::text FROM program_schedules WHERE id=$1`, fixture.scheduleID).Scan(&quotaOnlyPackage, &quotaOnlyDoc))
+	must(t, pool.QueryRow(ctx, `
+		INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,slot_quota,receipt_policy_json)
+		VALUES($1,$2,$3,$4,'Jadwal Kuota Saja','2026-01-01','2026-12-31','active',7,'{}'::jsonb) RETURNING id::text
+	`, fixture.programID, fixture.otherRegencyID, quotaOnlyPackage, quotaOnlyDoc).Scan(&quotaOnlyScheduleID))
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM program_schedules WHERE id=$1`, quotaOnlyScheduleID) })
+
+	data, err := repository.MapRegions(ctx, Filter{}, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	byID := map[string]MapRegion{}
+	for _, region := range data.Regions {
+		byID[region.RegencyID] = region
+	}
+	farmer, ok := byID[fixture.farmerRegencyID]
+	if !ok {
+		t.Fatalf("farmer regency missing from map: %+v", data.Regions)
+	}
+	// Cancelled allocations are excluded by the default filter, exactly like the list.
+	if farmer.Recipients != 2 || farmer.Distributed != 1 || farmer.NeedsReview != 1 {
+		t.Fatalf("farmer recipient aggregate=%+v", farmer)
+	}
+	if farmer.EvidenceNotConfigured != 2 || farmer.EvidenceComplete != 0 {
+		t.Fatalf("farmer evidence aggregate=%+v", farmer)
+	}
+	if farmer.SlotQuota != 10 || farmer.SlotsOpen != 1 || farmer.SlotsCompleted != 1 {
+		t.Fatalf("farmer slot aggregate=%+v", farmer)
+	}
+	if farmer.DocumentCode != "WRT" || farmer.ProvinceName != "Sulawesi Selatan" {
+		t.Fatalf("farmer region identity=%+v", farmer)
+	}
+
+	quotaOnly, ok := byID[fixture.otherRegencyID]
+	if !ok {
+		t.Fatalf("quota-only regency missing from map: %+v", data.Regions)
+	}
+	if quotaOnly.Recipients != 0 || quotaOnly.SlotQuota != 7 || quotaOnly.DocumentCode != "BRT" {
+		t.Fatalf("quota-only aggregate=%+v", quotaOnly)
+	}
+
+	// Totals cover every regency in scope, so assert them through a regency-scoped call rather than
+	// against the shared konkit_test seed data.
+	scoped, err := repository.MapRegions(ctx, Filter{RegencyID: fixture.farmerRegencyID}, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scoped.Regions) != 1 {
+		t.Fatalf("regency-scoped map=%+v", scoped.Regions)
+	}
+	if scoped.Totals.Recipients != 2 || scoped.Totals.SlotQuota != 10 || scoped.Totals.SlotsCompleted != 1 || scoped.Totals.SlotsOpen != 1 {
+		t.Fatalf("scoped totals=%+v", scoped.Totals)
+	}
+
+	// The evidence filter narrows recipients exactly as it does in the list. Slot progress is not an
+	// evidence concept, so the regency still appears with its quota and slots but zero recipients.
+	filtered, err := repository.MapRegions(ctx, Filter{RegencyID: fixture.farmerRegencyID, EvidenceStatus: "complete"}, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if filtered.Totals.Recipients != 0 || filtered.Totals.EvidenceComplete != 0 {
+		t.Fatalf("evidence filter must drop every fixture allocation: %+v", filtered.Totals)
+	}
+	for _, region := range filtered.Regions {
+		if region.RegencyID == fixture.farmerRegencyID && (region.Recipients != 0 || region.SlotQuota != 10) {
+			t.Fatalf("filtered regency=%+v", region)
+		}
+	}
+
+	// Regency scope must be enforced: a caller limited to another regency sees nothing here.
+	outOfScope, err := repository.MapRegions(ctx, Filter{}, auth.RegencyScope{RegencyIDs: []string{fixture.otherRegencyID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, region := range outOfScope.Regions {
+		if region.RegencyID == fixture.farmerRegencyID {
+			t.Fatalf("out-of-scope regency leaked into the map: %+v", region)
+		}
 	}
 }
 

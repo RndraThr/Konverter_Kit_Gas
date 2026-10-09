@@ -1,7 +1,6 @@
 import type { MachineOption, ProgramType, Schedule } from '../programs/types';
 
 export type DCP3Mapping = {
-  source_sequence: string;
   full_name: string;
   nik: string;
   farmer_card_number: string;
@@ -30,6 +29,6 @@ export type ScheduleResponse = { data: Schedule[] };
 export type DataResponse<T> = { data: T };
 
 export const emptyMapping: DCP3Mapping = {
-  source_sequence: '', full_name: '', nik: '', farmer_card_number: '', kusuka_number: '',
+  full_name: '', nik: '', farmer_card_number: '', kusuka_number: '',
   address: '', village: '', district: '', phone_number: '', machine_option: '',
 };

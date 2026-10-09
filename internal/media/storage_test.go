@@ -115,7 +115,7 @@ func TestLocalStorageMoveValidatesTargetAndKeepsStableKey(t *testing.T) {
 	if _, _, _, err := storage.Put(context.Background(), key, nil, bytes.NewBufferString("staged photo")); err != nil {
 		t.Fatal(err)
 	}
-	if err := storage.Move(context.Background(), key, []string{"PETANI", "WAJO", "7 OKTOBER 2026"}); err != nil {
+	if err := storage.Move(context.Background(), key, []string{"PETANI", "WAJO", "7 OKTOBER 2026"}, "AHMAD - FOTO MESIN - 01.jpg"); err != nil {
 		t.Fatal(err)
 	}
 	reader, err := storage.Open(context.Background(), key)
@@ -128,8 +128,13 @@ func TestLocalStorageMoveValidatesTargetAndKeepsStableKey(t *testing.T) {
 		t.Fatalf("content=%q err=%v", content, err)
 	}
 	for _, target := range [][]string{nil, {}, {"PETANI", ""}, {"PETANI", "WAJO/SELATAN"}} {
-		if err := storage.Move(context.Background(), key, target); !errors.Is(err, ErrInvalidFolderPath) {
+		if err := storage.Move(context.Background(), key, target, ""); !errors.Is(err, ErrInvalidFolderPath) {
 			t.Fatalf("target=%v err=%v, want ErrInvalidFolderPath", target, err)
+		}
+	}
+	for _, name := range []string{"FOTO/MESIN.jpg", "FOTO\\MESIN.jpg"} {
+		if err := storage.Move(context.Background(), key, []string{"PETANI"}, name); !errors.Is(err, ErrInvalidFilename) {
+			t.Fatalf("filename=%q err=%v, want ErrInvalidFilename", name, err)
 		}
 	}
 }

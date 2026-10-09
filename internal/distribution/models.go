@@ -7,41 +7,59 @@ import (
 )
 
 var (
-	ErrScheduleRequired         = errors.New("distribution schedule is required")
-	ErrQueryRequired            = errors.New("recipient search query is required")
-	ErrNIKInvalid               = errors.New("NIK must contain 16 digits")
-	ErrIdentifierConflict       = errors.New("recipient identifier is already in use")
-	ErrMediaUnavailable         = errors.New("media storage is unavailable")
-	ErrMediaNotFound            = errors.New("documentation media not found")
-	ErrMediaTypeInvalid         = errors.New("documentation file must be JPEG, PNG, WebP, MP4, WebM, or MOV")
-	ErrMediaPolicyInvalid       = errors.New("documentation media type is not allowed for this slot")
-	ErrMediaTooLarge            = errors.New("documentation file exceeds the allowed size")
-	ErrVideoUploadBusy          = errors.New("video upload capacity is currently full")
-	ErrMediaSourceInvalid       = errors.New("documentation source is not allowed for this slot")
-	ErrMediaLocationRequired    = errors.New("documentation location is required")
-	ErrMediaCapturedAtRequired  = errors.New("documentation capture time is required")
-	ErrMediaLimitReached        = errors.New("documentation slot has reached its file limit")
-	ErrMediaMovePending         = errors.New("documentation media is still being moved")
-	ErrMediaMoveFailed          = errors.New("documentation media move failed")
-	ErrIdentityIncomplete       = errors.New("recipient identity is incomplete")
-	ErrDocumentationIncomplete  = errors.New("required documentation is incomplete")
-	ErrEquipmentOptionNotFound  = errors.New("selected equipment option is not available in the schedule package template")
-	ErrPreviouslyReceived       = errors.New("recipient has previously received a package")
-	ErrAlreadyCompleted         = errors.New("distribution is already completed")
-	ErrSlotNotFound             = errors.New("distribution slot not found")
-	ErrSlotNotOpen              = errors.New("distribution slot is not open")
-	ErrSlotNotLinked            = errors.New("distribution slot is not linked to a recipient")
-	ErrCandidateNotFound        = errors.New("no unlinked DCP3 candidate matches this NIK for this schedule")
-	ErrSlotNumberRequired       = errors.New("slot_number is required")
-	ErrSlotQuotaExceeded        = errors.New("distribution slot quota has been reached for this schedule")
-	ErrSlotNumberTaken          = errors.New("distribution slot number is already used for this schedule")
-	ErrDistributionDateRequired = errors.New("distribution date is required")
-	ErrDistributionDateLocked   = errors.New("distribution date is locked after documentation is uploaded")
-	ErrEquipmentLocked          = errors.New("equipment is locked after POS Mesin documentation is uploaded")
-	ErrRevisionReasonRequired   = errors.New("distribution revision reason is required")
-	ErrRevisionStageInvalid     = errors.New("distribution revision stage is invalid")
-	ErrRevisionNotCompleted     = errors.New("only completed distribution slots can be reopened")
-	ErrRecipientNotLinked       = errors.New("distribution slot is not linked to a recipient")
+	ErrScheduleRequired          = errors.New("distribution schedule is required")
+	ErrQueryRequired             = errors.New("recipient search query is required")
+	ErrNIKInvalid                = errors.New("NIK must contain 16 digits")
+	ErrIdentifierConflict        = errors.New("recipient identifier is already in use")
+	ErrMediaUnavailable          = errors.New("media storage is unavailable")
+	ErrMediaNotFound             = errors.New("documentation media not found")
+	ErrMediaTypeInvalid          = errors.New("documentation file must be JPEG, PNG, WebP, MP4, WebM, or MOV")
+	ErrMediaPolicyInvalid        = errors.New("documentation media type is not allowed for this slot")
+	ErrMediaTooLarge             = errors.New("documentation file exceeds the allowed size")
+	ErrVideoUploadBusy           = errors.New("video upload capacity is currently full")
+	ErrMediaSourceInvalid        = errors.New("documentation source is not allowed for this slot")
+	ErrMediaLocationRequired     = errors.New("documentation location is required")
+	ErrMediaCapturedAtRequired   = errors.New("documentation capture time is required")
+	ErrMediaLimitReached         = errors.New("documentation slot has reached its file limit")
+	ErrMediaMovePending          = errors.New("documentation media is still being moved")
+	ErrMediaMoveFailed           = errors.New("documentation media move failed")
+	ErrIdentityIncomplete        = errors.New("recipient identity is incomplete")
+	ErrDocumentationIncomplete   = errors.New("required documentation is incomplete")
+	ErrEquipmentOptionNotFound   = errors.New("selected equipment option is not available in the schedule package template")
+	ErrPreviouslyReceived        = errors.New("recipient has previously received a package")
+	ErrAlreadyCompleted          = errors.New("distribution is already completed")
+	ErrSlotNotFound              = errors.New("distribution slot not found")
+	ErrSlotNotOpen               = errors.New("distribution slot is not open")
+	ErrSlotNotLinked             = errors.New("distribution slot is not linked to a recipient")
+	ErrCandidateNotFound         = errors.New("no unlinked DCP3 candidate matches this NIK for this schedule")
+	ErrSlotNumberRequired        = errors.New("slot_number is required")
+	ErrSlotQuotaExceeded         = errors.New("distribution slot quota has been reached for this schedule")
+	ErrSlotNumberTaken           = errors.New("distribution slot number is already used for this schedule")
+	ErrDistributionDateRequired  = errors.New("distribution date is required")
+	ErrDistributionDateLocked    = errors.New("distribution date is locked after documentation is uploaded")
+	ErrEquipmentLocked           = errors.New("equipment is locked after POS Mesin documentation is uploaded")
+	ErrRevisionReasonRequired    = errors.New("distribution revision reason is required")
+	ErrRevisionStageInvalid      = errors.New("distribution revision stage is invalid")
+	ErrRevisionNotCompleted      = errors.New("only completed distribution slots can be reopened")
+	ErrRecipientNotLinked        = errors.New("distribution slot is not linked to a recipient")
+	ErrReplacementReasonRequired = errors.New("recipient replacement reason is required")
+	ErrReplacementNameRequired   = errors.New("replacement recipient full name is required")
+	ErrCandidateNeedsReview      = errors.New("candidate is still flagged for review")
+	ErrCandidateNotAvailable     = errors.New("candidate allocation can no longer receive a package")
+	ErrCandidateAlreadyAssigned  = errors.New("candidate is already assigned to another distribution number")
+	ErrReplacementSameRecipient  = errors.New("replacement recipient is the current recipient")
+)
+
+// Candidate lookup states returned by LookupCandidate. They exist so POS Dokumen can explain an
+// empty search instead of guessing: "not_registered" invites creating recipient data, every other
+// state must not.
+const (
+	CandidateStateReceivable         = "receivable"
+	CandidateStateNeedsReview        = "needs_review"
+	CandidateStateNotAvailable       = "not_available"
+	CandidateStateAlreadyAssigned    = "already_assigned"
+	CandidateStatePreviouslyReceived = "previously_received"
+	CandidateStateNotRegistered      = "not_registered"
 )
 
 type SlotSummary struct {
@@ -141,11 +159,37 @@ type ReplaceRecipientInput struct {
 	ScheduleID       string `json:"schedule_id"`
 	SlotNumber       int    `json:"slot_number"`
 	NIK              string `json:"nik"`
+	FullName         string `json:"full_name"`
 	Address          string `json:"address"`
 	Village          string `json:"village"`
 	District         string `json:"district"`
 	PhoneNumber      string `json:"phone_number"`
 	SectorIdentifier string `json:"sector_identifier"`
+	Reason           string `json:"reason"`
+}
+
+// CandidateLookup answers "why is this NIK not offered?" for a single NIK. It never carries the
+// full recipient payload: it only classifies the NIK so the interface can pick the right panel.
+type CandidateLookup struct {
+	State              string `json:"state"`
+	FullName           string `json:"full_name,omitempty"`
+	AllocationStatus   string `json:"allocation_status,omitempty"`
+	DistributionNumber *int   `json:"distribution_number,omitempty"`
+}
+
+// RecipientReplacement is one append-only entry of a slot's replacement history. A slot can carry
+// several entries when a replacement is itself replaced.
+type RecipientReplacement struct {
+	ID             string    `json:"id"`
+	SlotNumber     int       `json:"slot_number"`
+	OldPersonID    string    `json:"old_person_id"`
+	OldFullName    string    `json:"old_full_name"`
+	NewPersonID    string    `json:"new_person_id"`
+	NewFullName    string    `json:"new_full_name"`
+	Origin         string    `json:"origin"`
+	Reason         string    `json:"reason"`
+	ReplacedByName string    `json:"replaced_by_name,omitempty"`
+	ReplacedAt     time.Time `json:"replaced_at"`
 }
 
 type ReopenSlotInput struct {
@@ -174,6 +218,15 @@ type UpdateEquipmentInput struct {
 	HoseOptionCode        string `json:"hose_option_code"`
 	HoseSerialNumber      string `json:"hose_serial_number"`
 	ConverterOptionCode   string `json:"converter_option_code"`
+	ConverterSerialNumber string `json:"converter_serial_number"`
+}
+
+// UpdateEquipmentSerialsInput is intentionally narrower than UpdateEquipmentInput. POS Mesin may
+// record the barcodes found inside a box, but brand/type selection remains owned by POS Dokumen.
+type UpdateEquipmentSerialsInput struct {
+	ScheduleID            string `json:"schedule_id"`
+	SlotNumber            int    `json:"slot_number"`
+	MachineSerialNumber   string `json:"machine_serial_number"`
 	ConverterSerialNumber string `json:"converter_serial_number"`
 }
 
@@ -244,6 +297,7 @@ type MediaMoveJob struct {
 	MediaFileID      string
 	StorageKey       string
 	TargetPath       []string
+	TargetFilename   string
 	TargetGeneration int64
 	Attempts         int
 }

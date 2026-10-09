@@ -77,7 +77,7 @@ func (*serverStorageProbe) EnsureFolders(context.Context, [][]string) error { re
 
 type movableServerStorageProbe struct{ serverStorageProbe }
 
-func (*movableServerStorageProbe) Move(context.Context, string, []string) error { return nil }
+func (*movableServerStorageProbe) Move(context.Context, string, []string, string) error { return nil }
 
 func TestStartMediaMoveWorkerOnlyForMovableStorage(t *testing.T) {
 	repository := &workerRepositoryProbe{claimed: make(chan struct{}, 1)}

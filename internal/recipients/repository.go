@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"konkit/internal/audit"
@@ -34,9 +35,11 @@ SELECT
 	p.full_name, COALESCE(p.nik,''), COALESCE(psi.identifier_type,''), COALESCE(psi.normalized_value,''),
 	COALESCE(p.address,''), COALESCE(p.village,''), COALESCE(p.district,''), COALESCE(p.phone_number,''),
 	prog.id::text, prog.name, prog.program_type,
+	COALESCE(z.id::text,''), COALESCE(z.code,''), COALESCE(z.name,''),
 	r.id::text, r.name, r.document_code,
 	ps.id::text, ps.name,
 	COALESCE(evidence.evidence_slots, '[]'::jsonb),
+	replaced_by.payload, replaces.payload,
 	pa.created_at, pa.updated_at` + recipientFrom
 
 const recipientFrom = `
@@ -45,6 +48,8 @@ JOIN candidate_nominations cn ON cn.id = pa.nomination_id
 JOIN program_schedules ps ON ps.id = pa.schedule_id
 JOIN programs prog ON prog.id = ps.program_id
 JOIN regencies r ON r.id = ps.regency_id
+LEFT JOIN program_regency_assignments pra ON pra.program_id = prog.id AND pra.regency_id = r.id
+LEFT JOIN program_zones z ON z.id = pra.zone_id AND z.program_id = prog.id
 JOIN people p ON p.id = COALESCE(pa.actual_recipient_person_id, pa.intended_person_id, cn.person_id)
 LEFT JOIN distribution_slots dr ON dr.allocation_id = pa.id
 LEFT JOIN person_sector_identifiers psi ON psi.person_id = p.id
@@ -74,7 +79,33 @@ LEFT JOIN LATERAL (
 		WHERE s.distribution_slot_id = dr.id
 		GROUP BY s.id, s.slot_code, s.label_snapshot, s.is_required, s.min_files, s.sort_order
 	) slot
-) evidence ON true`
+) evidence ON true
+LEFT JOIN LATERAL (
+	SELECT jsonb_build_object(
+		'full_name', successor.full_name,
+		'nik', COALESCE(successor.nik, ''),
+		'reason', rr.reason,
+		'replaced_at', rr.replaced_at
+	) AS payload
+	FROM recipient_replacements rr
+	JOIN people successor ON successor.id = rr.new_person_id
+	WHERE rr.old_person_id = p.id
+	ORDER BY rr.replaced_at DESC, rr.id DESC
+	LIMIT 1
+) replaced_by ON true
+LEFT JOIN LATERAL (
+	SELECT jsonb_build_object(
+		'full_name', predecessor.full_name,
+		'nik', COALESCE(predecessor.nik, ''),
+		'reason', rr.reason,
+		'replaced_at', rr.replaced_at
+	) AS payload
+	FROM recipient_replacements rr
+	JOIN people predecessor ON predecessor.id = rr.old_person_id
+	WHERE rr.new_person_id = p.id
+	ORDER BY rr.replaced_at ASC, rr.id ASC
+	LIMIT 1
+) replaces ON true`
 
 const recipientWhere = `
 WHERE ($1 = '%%' OR p.full_name ILIKE $1 OR p.nik ILIKE $1 OR psi.normalized_value ILIKE $1)
@@ -86,7 +117,8 @@ WHERE ($1 = '%%' OR p.full_name ILIKE $1 OR p.nik ILIKE $1 OR psi.normalized_val
   AND ($7 = '' OR ps.id::text = $7)
   AND ($8 = '' OR p.district ILIKE $8)
   AND ($9 = '' OR (` + evidenceStatusSQL + `) = $9)
-  AND ($10 OR ps.regency_id::text = ANY($11))`
+  AND ($10 OR ps.regency_id::text = ANY($11))
+  AND ($12 = '' OR z.id::text = $12)`
 
 func recipientOrder(filter Filter) string {
 	columns := map[string]string{
@@ -97,6 +129,7 @@ func recipientOrder(filter Filter) string {
 		"district":            "p.district",
 		"regency":             "r.name",
 		"program":             "prog.name",
+		"zone":                "z.sort_order",
 		"schedule":            "ps.name",
 		"allocation_status":   "pa.status",
 		"distribution_status": "dr.status",
@@ -128,21 +161,24 @@ func recipientFilterArgs(filter Filter, scope auth.RegencyScope) []any {
 		filter.EvidenceStatus,
 		scope.Unrestricted,
 		scope.RegencyIDs,
+		filter.ZoneID,
 	}
 }
 
 func scanRecipient(row pgx.Row) (Recipient, error) {
 	var item Recipient
-	var evidenceJSON []byte
+	var evidenceJSON, replacedByJSON, replacesJSON []byte
 	if err := row.Scan(
 		&item.AllocationID, &item.DistributionNumber, &item.AllocationStatus,
 		&item.DistributionStatus,
 		&item.FullName, &item.NIK, &item.SectorIdentifierType, &item.SectorIdentifier,
 		&item.Address, &item.Village, &item.District, &item.PhoneNumber,
 		&item.ProgramID, &item.ProgramName, &item.ProgramType,
+		&item.ZoneID, &item.ZoneCode, &item.ZoneName,
 		&item.RegencyID, &item.RegencyName, &item.RegencyDocumentCode,
 		&item.ScheduleID, &item.ScheduleName,
 		&evidenceJSON,
+		&replacedByJSON, &replacesJSON,
 		&item.CreatedAt, &item.UpdatedAt,
 	); err != nil {
 		return Recipient{}, fmt.Errorf("scan recipient: %w", err)
@@ -152,6 +188,20 @@ func scanRecipient(row pgx.Row) (Recipient, error) {
 	}
 	if item.EvidenceSlots == nil {
 		item.EvidenceSlots = []EvidenceSlotSummary{}
+	}
+	if len(replacedByJSON) > 0 {
+		var summary ReplacementSummary
+		if err := json.Unmarshal(replacedByJSON, &summary); err != nil {
+			return Recipient{}, fmt.Errorf("decode replaced_by summary: %w", err)
+		}
+		item.ReplacedBy = &summary
+	}
+	if len(replacesJSON) > 0 {
+		var summary ReplacementSummary
+		if err := json.Unmarshal(replacesJSON, &summary); err != nil {
+			return Recipient{}, fmt.Errorf("decode replaces summary: %w", err)
+		}
+		item.Replaces = &summary
 	}
 	return item, nil
 }
@@ -167,7 +217,7 @@ func (r *Repository) List(ctx context.Context, filter Filter, scope auth.Regency
 	query := recipientSelect + recipientWhere + recipientOrder(filter)
 	queryArgs := args
 	if !filter.All {
-		query += " LIMIT $12 OFFSET $13"
+		query += " LIMIT $13 OFFSET $14"
 		queryArgs = append(args, filter.PageSize, (filter.Page-1)*filter.PageSize)
 	}
 	rows, err := r.pool.Query(ctx, query, queryArgs...)
@@ -212,6 +262,141 @@ func (r *Repository) Stats(ctx context.Context, filter Filter, scope auth.Regenc
 		stats.Total += count
 	}
 	return stats, rows.Err()
+}
+
+// MapRegions aggregates recipients, evidence completeness, and distribution progress per
+// kabupaten/kota. Recipients and evidence reuse recipientFrom/recipientWhere, so a filter means
+// exactly the same thing on the map as it does in the Data Penerima list. Slots are counted
+// separately because an open slot has no allocation yet and would otherwise be invisible.
+func (r *Repository) MapRegions(ctx context.Context, filter Filter, scope auth.RegencyScope) (MapData, error) {
+	regions := map[string]*MapRegion{}
+	order := []string{}
+
+	recipientRows, err := r.pool.Query(ctx, `
+		SELECT r.id::text, r.name, r.province_name, r.document_code,
+			count(*),
+			count(*) FILTER (WHERE pa.status = 'candidate'),
+			count(*) FILTER (WHERE pa.status = 'ready'),
+			count(*) FILTER (WHERE pa.status = 'distributed'),
+			count(*) FILTER (WHERE pa.status = 'needs_review'),
+			count(*) FILTER (WHERE pa.status = 'replaced'),
+			count(*) FILTER (WHERE (`+evidenceStatusSQL+`) = 'complete'),
+			count(*) FILTER (WHERE (`+evidenceStatusSQL+`) = 'partial'),
+			count(*) FILTER (WHERE (`+evidenceStatusSQL+`) = 'empty'),
+			count(*) FILTER (WHERE (`+evidenceStatusSQL+`) = 'not-configured')
+		`+recipientFrom+recipientWhere+`
+		GROUP BY r.id, r.name, r.province_name, r.document_code
+		ORDER BY r.name
+	`, recipientFilterArgs(filter, scope)...)
+	if err != nil {
+		return MapData{}, fmt.Errorf("aggregate map recipients: %w", err)
+	}
+	for recipientRows.Next() {
+		var item MapRegion
+		if err := recipientRows.Scan(
+			&item.RegencyID, &item.RegencyName, &item.ProvinceName, &item.DocumentCode,
+			&item.Recipients, &item.Candidate, &item.Ready, &item.Distributed, &item.NeedsReview, &item.Replaced,
+			&item.EvidenceComplete, &item.EvidencePartial, &item.EvidenceEmpty, &item.EvidenceNotConfigured,
+		); err != nil {
+			recipientRows.Close()
+			return MapData{}, fmt.Errorf("scan map recipient aggregate: %w", err)
+		}
+		copied := item
+		regions[item.RegencyID] = &copied
+		order = append(order, item.RegencyID)
+	}
+	if err := recipientRows.Err(); err != nil {
+		recipientRows.Close()
+		return MapData{}, fmt.Errorf("iterate map recipients: %w", err)
+	}
+	recipientRows.Close()
+
+	// Slot progress is scoped by the same programme/schedule/zone/regency filters. Quota is summed
+	// from the schedules themselves, before the join, so it is never multiplied by slot count.
+	slotRows, err := r.pool.Query(ctx, `
+		WITH scoped AS (
+			SELECT s.id, s.regency_id, s.slot_quota
+			FROM program_schedules s
+			JOIN programs prog ON prog.id = s.program_id
+			LEFT JOIN program_regency_assignments pra ON pra.program_id = prog.id AND pra.regency_id = s.regency_id
+			LEFT JOIN program_zones z ON z.id = pra.zone_id AND z.program_id = prog.id
+			WHERE s.status <> 'cancelled'
+			  AND ($1 = '' OR prog.program_type = $1)
+			  AND ($2 = '' OR s.id::text = $2)
+			  AND ($3 = '' OR s.program_id::text = $3)
+			  AND ($4 = '' OR z.id::text = $4)
+			  AND ($5 = '' OR s.regency_id::text = $5)
+			  AND ($6 OR s.regency_id::text = ANY($7))
+		)
+		SELECT scoped.regency_id::text, r.name, r.province_name, r.document_code,
+			COALESCE(sum(scoped.slot_quota), 0),
+			COALESCE(sum(counted.slots), 0),
+			COALESCE(sum(counted.open), 0),
+			COALESCE(sum(counted.linked), 0),
+			COALESCE(sum(counted.completed), 0),
+			COALESCE(sum(counted.cancelled), 0)
+		FROM scoped
+		JOIN regencies r ON r.id = scoped.regency_id
+		-- Counted per schedule in a LATERAL so each schedule contributes exactly one row. Counting
+		-- after the join would multiply each schedule's quota by its number of slots.
+		LEFT JOIN LATERAL (
+			SELECT
+				count(*) AS slots,
+				count(*) FILTER (WHERE ds.status = 'open') AS open,
+				count(*) FILTER (WHERE ds.status = 'linked') AS linked,
+				count(*) FILTER (WHERE ds.status = 'completed') AS completed,
+				count(*) FILTER (WHERE ds.status = 'cancelled') AS cancelled
+			FROM distribution_slots ds WHERE ds.schedule_id = scoped.id
+		) counted ON true
+		GROUP BY scoped.regency_id, r.name, r.province_name, r.document_code
+	`, filter.ProgramType, filter.ScheduleID, filter.ProgramID, filter.ZoneID, filter.RegencyID, scope.Unrestricted, scope.RegencyIDs)
+	if err != nil {
+		return MapData{}, fmt.Errorf("aggregate map slots: %w", err)
+	}
+	defer slotRows.Close()
+	for slotRows.Next() {
+		var regencyID, regencyName, provinceName, documentCode string
+		var slots, quota, open, linked, completed, cancelled int64
+		if err := slotRows.Scan(&regencyID, &regencyName, &provinceName, &documentCode, &quota, &slots, &open, &linked, &completed, &cancelled); err != nil {
+			return MapData{}, fmt.Errorf("scan map slot aggregate: %w", err)
+		}
+		region, ok := regions[regencyID]
+		if !ok {
+			// A regency can hold schedules and quota before any recipient row exists; it must still
+			// appear on the map so unfilled quota is visible rather than silently missing.
+			region = &MapRegion{RegencyID: regencyID, RegencyName: regencyName, ProvinceName: provinceName, DocumentCode: documentCode}
+			regions[regencyID] = region
+			order = append(order, regencyID)
+		}
+		region.SlotQuota, region.SlotsOpen, region.SlotsLinked, region.SlotsCompleted, region.SlotsCancelled = quota, open, linked, completed, cancelled
+	}
+	if err := slotRows.Err(); err != nil {
+		return MapData{}, fmt.Errorf("iterate map slots: %w", err)
+	}
+
+	result := MapData{Regions: make([]MapRegion, 0, len(order))}
+	for _, id := range order {
+		result.Regions = append(result.Regions, *regions[id])
+	}
+	sort.Slice(result.Regions, func(i, j int) bool { return result.Regions[i].RegencyName < result.Regions[j].RegencyName })
+	for _, region := range result.Regions {
+		result.Totals.Recipients += region.Recipients
+		result.Totals.Candidate += region.Candidate
+		result.Totals.Ready += region.Ready
+		result.Totals.Distributed += region.Distributed
+		result.Totals.NeedsReview += region.NeedsReview
+		result.Totals.Replaced += region.Replaced
+		result.Totals.EvidenceComplete += region.EvidenceComplete
+		result.Totals.EvidencePartial += region.EvidencePartial
+		result.Totals.EvidenceEmpty += region.EvidenceEmpty
+		result.Totals.EvidenceNotConfigured += region.EvidenceNotConfigured
+		result.Totals.SlotQuota += region.SlotQuota
+		result.Totals.SlotsOpen += region.SlotsOpen
+		result.Totals.SlotsLinked += region.SlotsLinked
+		result.Totals.SlotsCompleted += region.SlotsCompleted
+		result.Totals.SlotsCancelled += region.SlotsCancelled
+	}
+	return result, nil
 }
 
 func getRecipientByID(ctx context.Context, q interface {

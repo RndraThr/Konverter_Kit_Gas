@@ -53,7 +53,7 @@ func TestPreviewGetPreviewAndCommitForwardRegencyScope(t *testing.T) {
 	}
 
 	repository.seenScope = auth.RegencyScope{}
-	if _, err := service.Commit(context.Background(), auth.Principal{}, "batch-1", Mapping{SourceSequence: "No", FullName: "Nama"}, auth.ClientMeta{}, scope); err != nil {
+	if _, err := service.Commit(context.Background(), auth.Principal{}, "batch-1", Mapping{FullName: "Nama"}, auth.ClientMeta{}, scope); err != nil {
 		t.Fatal(err)
 	}
 	if len(repository.seenScope.RegencyIDs) != 1 || repository.seenScope.RegencyIDs[0] != "regency-1" {
@@ -69,25 +69,24 @@ func TestGetPreviewReturnsRepositoryErrorForOutOfScopeBatch(t *testing.T) {
 	}
 }
 
-func TestValidateMappingRequiresSequenceAndName(t *testing.T) {
+func TestValidateMappingRequiresOnlyName(t *testing.T) {
 	headers := []string{"No", "Nama", "NIK"}
 	for _, mapping := range []Mapping{
-		{FullName: "Nama"},
-		{SourceSequence: "No"},
-		{SourceSequence: "Tidak Ada", FullName: "Nama"},
+		{},
+		{FullName: "Tidak Ada"},
 	} {
 		if err := ValidateMapping(programs.ProgramFarmer, headers, mapping); !errors.Is(err, ErrMappingInvalid) {
 			t.Fatalf("mapping=%+v err=%v", mapping, err)
 		}
 	}
-	if err := ValidateMapping(programs.ProgramFarmer, headers, Mapping{SourceSequence: "No", FullName: "Nama", NIK: "NIK"}); err != nil {
+	if err := ValidateMapping(programs.ProgramFarmer, headers, Mapping{FullName: "Nama", NIK: "NIK"}); err != nil {
 		t.Fatal(err)
 	}
 	// machine_option opsional, tetapi bila diisi wajib menunjuk header yang ada.
-	if err := ValidateMapping(programs.ProgramFarmer, headers, Mapping{SourceSequence: "No", FullName: "Nama", MachineOption: "NIK"}); err != nil {
+	if err := ValidateMapping(programs.ProgramFarmer, headers, Mapping{FullName: "Nama", MachineOption: "NIK"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidateMapping(programs.ProgramFarmer, headers, Mapping{SourceSequence: "No", FullName: "Nama", MachineOption: "Tidak Ada"}); !errors.Is(err, ErrMappingInvalid) {
+	if err := ValidateMapping(programs.ProgramFarmer, headers, Mapping{FullName: "Nama", MachineOption: "Tidak Ada"}); !errors.Is(err, ErrMappingInvalid) {
 		t.Fatalf("machine_option invalid err=%v", err)
 	}
 }
@@ -98,11 +97,11 @@ func TestNormalizeRowNormalizesFarmerIdentity(t *testing.T) {
 		"No Kartu Petani": " kp 01-22 ", "Alamat": " jl. tani ", "Desa": " desa baru ", "Kecamatan": " wajo ", "No HP": "+62 812-3456",
 	}}
 	normalized := NormalizeRow(programs.ProgramFarmer, row, Mapping{
-		SourceSequence: "No", FullName: "Nama", NIK: "NIK", FarmerCardNumber: "No Kartu Petani",
+		FullName: "Nama", NIK: "NIK", FarmerCardNumber: "No Kartu Petani",
 		Address: "Alamat", Village: "Desa", District: "Kecamatan", PhoneNumber: "No HP",
 	})
-	if normalized.SourceSequenceNumber == nil || *normalized.SourceSequenceNumber != 12 {
-		t.Fatalf("sequence=%v", normalized.SourceSequenceNumber)
+	if normalized.ValidationStatus != RowValid {
+		t.Fatalf("status=%s messages=%v", normalized.ValidationStatus, normalized.ValidationMessages)
 	}
 	if normalized.FullName != "SITI AMINAH" || normalized.NIK != "7312345678901234" || normalized.SectorIdentifier != "KP0122" || normalized.SectorIdentifierDisplay != "KP 01-22" || normalized.Address != "JL. TANI" || normalized.Village != "DESA BARU" || normalized.District != "WAJO" || normalized.PhoneNumber != "628123456" {
 		t.Fatalf("normalized=%+v", normalized)
@@ -114,7 +113,7 @@ func TestNormalizeRowNormalizesFarmerIdentity(t *testing.T) {
 
 func TestNormalizeRowUsesKUSUKAForFisherman(t *testing.T) {
 	row := RawImportRow{SourceRowNumber: 2, Values: map[string]string{"No": "1", "Nama": "Hasan", "KUSUKA": " 31-kusuka/9 "}}
-	normalized := NormalizeRow(programs.ProgramFisherman, row, Mapping{SourceSequence: "No", FullName: "Nama", KUSUKANumber: "KUSUKA"})
+	normalized := NormalizeRow(programs.ProgramFisherman, row, Mapping{FullName: "Nama", KUSUKANumber: "KUSUKA"})
 	if normalized.IdentifierType != IdentifierKUSUKA || normalized.SectorIdentifier != "31KUSUKA9" {
 		t.Fatalf("normalized=%+v", normalized)
 	}
@@ -122,7 +121,7 @@ func TestNormalizeRowUsesKUSUKAForFisherman(t *testing.T) {
 
 func TestNormalizeRowFlagsMalformedProvidedNIK(t *testing.T) {
 	row := RawImportRow{SourceRowNumber: 2, Values: map[string]string{"No": "1", "Nama": "Hasan", "NIK": "123"}}
-	normalized := NormalizeRow(programs.ProgramFarmer, row, Mapping{SourceSequence: "No", FullName: "Nama", NIK: "NIK"})
+	normalized := NormalizeRow(programs.ProgramFarmer, row, Mapping{FullName: "Nama", NIK: "NIK"})
 	if normalized.ValidationStatus != RowNeedsReview {
 		t.Fatalf("status=%s messages=%v", normalized.ValidationStatus, normalized.ValidationMessages)
 	}

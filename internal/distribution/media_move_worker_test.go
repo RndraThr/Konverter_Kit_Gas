@@ -69,6 +69,7 @@ type movableStorageFake struct {
 	moveErr    error
 	movedKey   string
 	movedPath  []string
+	movedName  string
 	deleteCall int
 	putCalls   int
 }
@@ -83,14 +84,14 @@ func (s *movableStorageFake) Open(context.Context, string) (io.ReadCloser, error
 }
 func (s *movableStorageFake) Delete(context.Context, string) error            { s.deleteCall++; return nil }
 func (s *movableStorageFake) EnsureFolders(context.Context, [][]string) error { return nil }
-func (s *movableStorageFake) Move(_ context.Context, key string, path []string) error {
+func (s *movableStorageFake) Move(_ context.Context, key string, path []string, filename string) error {
 	s.moveCalls++
-	s.movedKey, s.movedPath = key, append([]string(nil), path...)
+	s.movedKey, s.movedPath, s.movedName = key, append([]string(nil), path...), filename
 	return s.moveErr
 }
 
 func testMoveJob(generation int64) MediaMoveJob {
-	return MediaMoveJob{MediaFileID: "media-1", StorageKey: "drive-file-1", TargetPath: []string{"PETANI", "WAJO", "20 Oktober 2026", "1"}, TargetGeneration: generation, Attempts: 1}
+	return MediaMoveJob{MediaFileID: "media-1", StorageKey: "drive-file-1", TargetPath: []string{"PETANI", "WAJO", "20 Oktober 2026", "1"}, TargetFilename: "AHMAD - FOTO MESIN - 01.jpg", TargetGeneration: generation, Attempts: 1}
 }
 
 func TestMediaMoveWorkerMarksNewestGenerationFinal(t *testing.T) {
@@ -103,6 +104,9 @@ func TestMediaMoveWorkerMarksNewestGenerationFinal(t *testing.T) {
 	}
 	if storage.moveCalls != 1 || repository.completedID != "media-1" || repository.completedGen != 2 {
 		t.Fatalf("moves=%d completed=%s/%d", storage.moveCalls, repository.completedID, repository.completedGen)
+	}
+	if storage.movedName != "AHMAD - FOTO MESIN - 01.jpg" {
+		t.Fatalf("movedName=%q, want the job's final filename", storage.movedName)
 	}
 }
 

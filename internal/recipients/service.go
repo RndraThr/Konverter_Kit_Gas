@@ -14,6 +14,7 @@ var nikPattern = regexp.MustCompile(`^[0-9]{16}$`)
 type repository interface {
 	List(context.Context, Filter, auth.RegencyScope) (Page, error)
 	Stats(context.Context, Filter, auth.RegencyScope) (Stats, error)
+	MapRegions(context.Context, Filter, auth.RegencyScope) (MapData, error)
 	Create(context.Context, auth.Principal, CreateInput, auth.ClientMeta, auth.RegencyScope) (Recipient, error)
 	Update(context.Context, auth.Principal, string, UpdateInput, auth.ClientMeta, auth.RegencyScope) (Recipient, error)
 	Cancel(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) error
@@ -57,6 +58,11 @@ func (s *Service) List(ctx context.Context, filter Filter, scope auth.RegencySco
 
 func (s *Service) Stats(ctx context.Context, filter Filter, scope auth.RegencyScope) (Stats, error) {
 	return s.repository.Stats(ctx, normalizeFilter(filter), scope)
+}
+
+// MapRegions shares the recipient filter contract so map numbers and list numbers agree.
+func (s *Service) MapRegions(ctx context.Context, filter Filter, scope auth.RegencyScope) (MapData, error) {
+	return s.repository.MapRegions(ctx, normalizeFilter(filter), scope)
 }
 
 func validateIdentity(fullName, nik string) error {

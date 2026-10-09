@@ -217,6 +217,28 @@ func TestProgramSetupRoutesUseDocumentedPrefixes(t *testing.T) {
 	}
 }
 
+func TestDistributionViewerCanReadMapFilterOptions(t *testing.T) {
+	authService := &fakeAuthService{
+		principal:          auth.Principal{UserID: "user-1"},
+		allowedPermissions: map[string]bool{"distribution.view": true},
+	}
+	programService := &fakeProgramSetupService{}
+	for _, path := range []string{
+		"/api/v1/program-setup/regencies",
+		"/api/v1/program-setup/programs",
+		"/api/v1/program-setup/schedules",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+		rec := httptest.NewRecorder()
+
+		NewHandler(Dependencies{Auth: authService, Programs: programService}).ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("distribution viewer cannot read %s: status=%d body=%s", path, rec.Code, rec.Body.String())
+		}
+	}
+}
+
 func TestProgramSetupMutationRequiresManagePermission(t *testing.T) {
 	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"programs.view": true}}
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/program-setup/regencies", strings.NewReader(`{"province_name":"Sulawesi Selatan","name":"Wajo","document_code":"WJO","is_active":true}`))
@@ -516,7 +538,7 @@ func TestDCP3PreviewRejectsNonWorkbook(t *testing.T) {
 func TestDCP3ImportPassesMapping(t *testing.T) {
 	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"dcp3.import": true}}
 	dcp3Service := &fakeDCP3Service{result: dcp3.ImportResult{BatchID: "batch-1", TotalRows: 2}}
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/dcp3/imports", strings.NewReader(`{"batch_id":"batch-1","mapping":{"source_sequence":"No","full_name":"Nama"}}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/dcp3/imports", strings.NewReader(`{"batch_id":"batch-1","mapping":{"full_name":"Nama"}}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
 	req.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
@@ -945,6 +967,20 @@ func TestDistributionEquipmentUpdateRejectsPosMesinOnly(t *testing.T) {
 	}
 }
 
+func TestDistributionEquipmentSerialsUpdateAllowsPosMesinAndUsesPathSlot(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_mesin": true}}
+	service := &fakeDistributionService{serialsSlot: distribution.DistributionSlot{ID: "slot-1", SlotNumber: 3, MachineSerialNumber: "MESIN-9"}}
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/distribution/slots/3/equipment-serials?schedule_id=schedule-1", strings.NewReader(`{"machine_serial_number":"mesin-9","converter_serial_number":"konkit-8"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken([]byte("01234567890123456789012345678901"), validSessionToken))
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: authService, Distribution: service, SessionSecret: []byte("01234567890123456789012345678901")}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || service.serialsInput.ScheduleID != "schedule-1" || service.serialsInput.SlotNumber != 3 || service.serialsInput.MachineSerialNumber != "mesin-9" || service.serialsInput.ConverterSerialNumber != "konkit-8" {
+		t.Fatalf("status=%d input=%+v body=%s", rec.Code, service.serialsInput, rec.Body.String())
+	}
+}
+
 func TestDistributionRecipientAndReopenRoutes(t *testing.T) {
 	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_dokumen": true}}
 	service := &fakeDistributionService{recipientSlot: distribution.DistributionSlot{ID: "slot-1", Status: "linked"}, reopenedSlot: distribution.DistributionSlot{ID: "slot-1", Status: "linked", NeedsRecompletion: true}}
@@ -1205,6 +1241,8 @@ type fakeDistributionService struct {
 	equipmentInput       distribution.UpdateEquipmentInput
 	equippedSlot         distribution.DistributionSlot
 	equipmentErr         error
+	serialsInput         distribution.UpdateEquipmentSerialsInput
+	serialsSlot          distribution.DistributionSlot
 	recipientInput       distribution.UpdateRecipientInput
 	replaceInput         distribution.ReplaceRecipientInput
 	reopenInput          distribution.ReopenSlotInput
@@ -1260,6 +1298,10 @@ func (f *fakeDistributionService) RetryMediaMove(_ context.Context, _ auth.Princ
 func (f *fakeDistributionService) UpdateEquipment(_ context.Context, _ auth.Principal, input distribution.UpdateEquipmentInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.DistributionSlot, error) {
 	f.equipmentInput, f.seenRegencyScope = input, scope
 	return f.equippedSlot, f.equipmentErr
+}
+func (f *fakeDistributionService) UpdateEquipmentSerials(_ context.Context, _ auth.Principal, input distribution.UpdateEquipmentSerialsInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.DistributionSlot, error) {
+	f.serialsInput, f.seenRegencyScope = input, scope
+	return f.serialsSlot, nil
 }
 func (f *fakeDistributionService) UpdateRecipient(_ context.Context, _ auth.Principal, input distribution.UpdateRecipientInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.DistributionSlot, error) {
 	f.recipientInput, f.seenRegencyScope = input, scope
@@ -1453,6 +1495,10 @@ func (f *fakeRecipientsService) Stats(_ context.Context, filter recipients.Filte
 	f.seenFilter, f.seenRegencyScope = filter, scope
 	return f.stats, nil
 }
+func (f *fakeRecipientsService) MapRegions(_ context.Context, filter recipients.Filter, scope auth.RegencyScope) (recipients.MapData, error) {
+	f.seenFilter, f.seenRegencyScope = filter, scope
+	return recipients.MapData{Regions: []recipients.MapRegion{}}, nil
+}
 func (f *fakeRecipientsService) Create(_ context.Context, _ auth.Principal, input recipients.CreateInput, _ auth.ClientMeta, scope auth.RegencyScope) (recipients.Recipient, error) {
 	f.createInput, f.seenRegencyScope = input, scope
 	return f.created, nil
@@ -1473,14 +1519,14 @@ func (f *fakeRecipientsService) Restore(_ context.Context, _ auth.Principal, all
 func TestRecipientsListRequiresViewPermissionAndForwardsFilters(t *testing.T) {
 	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"recipients.view": true}}
 	service := &fakeRecipientsService{page: recipients.Page{Page: 1, PageSize: 20, Total: 1, Items: []recipients.Recipient{{AllocationID: "allocation-1", FullName: "Siti Aminah"}}}}
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/recipients?search=Siti&page=2&page_size=50&regency_id=regency-1&program_id=program-1&schedule_id=schedule-1&district=Sabbangparu&allocation_status=ready&distribution_status=draft&evidence_status=partial&sort=full_name&direction=asc", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/recipients?search=Siti&page=2&page_size=50&regency_id=regency-1&program_id=program-1&zone_id=zone-1&schedule_id=schedule-1&district=Sabbangparu&allocation_status=ready&distribution_status=draft&evidence_status=partial&sort=full_name&direction=asc", nil)
 	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
 	rec := httptest.NewRecorder()
 	NewHandler(Dependencies{Auth: viewer, Recipients: service}).ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Siti Aminah") {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if service.seenFilter.Page != 2 || service.seenFilter.PageSize != 50 || service.seenFilter.ScheduleID != "schedule-1" || service.seenFilter.District != "Sabbangparu" || service.seenFilter.EvidenceStatus != "partial" || service.seenFilter.SortBy != "full_name" || service.seenFilter.SortDirection != "asc" {
+	if service.seenFilter.Page != 2 || service.seenFilter.PageSize != 50 || service.seenFilter.ZoneID != "zone-1" || service.seenFilter.ScheduleID != "schedule-1" || service.seenFilter.District != "Sabbangparu" || service.seenFilter.EvidenceStatus != "partial" || service.seenFilter.SortBy != "full_name" || service.seenFilter.SortDirection != "asc" {
 		t.Fatalf("combined filters were not forwarded: %+v", service.seenFilter)
 	}
 
@@ -1494,16 +1540,48 @@ func TestRecipientsListRequiresViewPermissionAndForwardsFilters(t *testing.T) {
 	}
 }
 
-func TestRecipientStatsForwardsTheSameCombinedFiltersAsTheList(t *testing.T) {
-	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"recipients.view": true}}
-	service := &fakeRecipientsService{stats: recipients.Stats{Total: 3}}
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/recipients/stats?search=Siti&regency_id=regency-1&program_id=program-1&schedule_id=schedule-1&district=Sabbangparu&allocation_status=ready&distribution_status=draft&evidence_status=partial", nil)
+func TestRecipientMapAllowsDistributionViewerAndForwardsFilters(t *testing.T) {
+	viewer := &fakeAuthService{
+		principal:          auth.Principal{UserID: "user-1"},
+		allowedPermissions: map[string]bool{"distribution.view": true},
+		regencyScope:       auth.RegencyScope{RegencyIDs: []string{"regency-1"}},
+	}
+	service := &fakeRecipientsService{}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/recipients/map?regency_id=regency-1&program_id=program-1&schedule_id=schedule-1", nil)
 	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
 	rec := httptest.NewRecorder()
 
 	NewHandler(Dependencies{Auth: viewer, Recipients: service}).ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK || service.seenFilter.Search != "Siti" || service.seenFilter.ScheduleID != "schedule-1" || service.seenFilter.District != "Sabbangparu" || service.seenFilter.EvidenceStatus != "partial" {
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if service.seenFilter.RegencyID != "regency-1" || service.seenFilter.ProgramID != "program-1" || service.seenFilter.ScheduleID != "schedule-1" {
+		t.Fatalf("map filters were not forwarded: %+v", service.seenFilter)
+	}
+	if len(service.seenRegencyScope.RegencyIDs) != 1 || service.seenRegencyScope.RegencyIDs[0] != "regency-1" {
+		t.Fatalf("map scope was not forwarded: %+v", service.seenRegencyScope)
+	}
+
+	deniedRequest := httptest.NewRequest(http.MethodGet, "/api/v1/recipients/map", nil)
+	deniedRequest.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	deniedRecorder := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: &fakeAuthService{principal: auth.Principal{UserID: "user-2"}}, Recipients: service}).ServeHTTP(deniedRecorder, deniedRequest)
+	if deniedRecorder.Code != http.StatusForbidden {
+		t.Fatalf("expected map to remain forbidden without a view permission, got %d", deniedRecorder.Code)
+	}
+}
+
+func TestRecipientStatsForwardsTheSameCombinedFiltersAsTheList(t *testing.T) {
+	viewer := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"recipients.view": true}}
+	service := &fakeRecipientsService{stats: recipients.Stats{Total: 3}}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/recipients/stats?search=Siti&regency_id=regency-1&program_id=program-1&zone_id=zone-1&schedule_id=schedule-1&district=Sabbangparu&allocation_status=ready&distribution_status=draft&evidence_status=partial", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+
+	NewHandler(Dependencies{Auth: viewer, Recipients: service}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || service.seenFilter.Search != "Siti" || service.seenFilter.ZoneID != "zone-1" || service.seenFilter.ScheduleID != "schedule-1" || service.seenFilter.District != "Sabbangparu" || service.seenFilter.EvidenceStatus != "partial" {
 		t.Fatalf("status=%d filter=%+v body=%s", rec.Code, service.seenFilter, rec.Body.String())
 	}
 }

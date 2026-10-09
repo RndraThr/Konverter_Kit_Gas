@@ -573,6 +573,14 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "revision_not_completed", "Hanya distribusi selesai yang dapat dibuka untuk revisi")
 	case errors.Is(err, distribution.ErrRecipientNotLinked):
 		writeError(w, http.StatusConflict, "recipient_not_linked", "Nomor bagi belum terhubung ke penerima")
+	case errors.Is(err, distribution.ErrCandidateNeedsReview):
+		writeError(w, http.StatusConflict, "candidate_needs_review", "Calon penerima ini masih berstatus perlu ditinjau sehingga belum dapat menerima paket")
+	case errors.Is(err, distribution.ErrCandidateNotAvailable):
+		writeError(w, http.StatusConflict, "candidate_not_available", "Alokasi calon penerima ini sudah tidak dapat menerima paket")
+	case errors.Is(err, distribution.ErrCandidateAlreadyAssigned):
+		writeError(w, http.StatusConflict, "candidate_already_assigned", "Calon penerima ini sudah terpasang pada nomor bagi lain")
+	case errors.Is(err, distribution.ErrReplacementSameRecipient):
+		writeError(w, http.StatusConflict, "replacement_same_recipient", "Penerima pengganti sama dengan penerima saat ini")
 	case errors.Is(err, distribution.ErrSlotQuotaExceeded):
 		writeError(w, http.StatusConflict, "slot_quota_exceeded", "Kuota slot untuk jadwal ini sudah tercapai")
 	case errors.Is(err, distribution.ErrSlotNumberTaken):
@@ -609,6 +617,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), validationFields(err))
 	case errors.Is(err, distribution.ErrRevisionReasonRequired), errors.Is(err, distribution.ErrRevisionStageInvalid):
 		writeFieldError(w, http.StatusUnprocessableEntity, "validation_failed", err.Error(), map[string]string{"revision": err.Error()})
+	case errors.Is(err, distribution.ErrReplacementReasonRequired), errors.Is(err, distribution.ErrReplacementNameRequired):
+		writeFieldError(w, http.StatusUnprocessableEntity, "validation_failed", err.Error(), map[string]string{"replacement": err.Error()})
 	case errors.Is(err, reports.ErrScheduleRequired), errors.Is(err, reports.ErrFilterInvalid):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), map[string]string{"request": err.Error()})
 	case errors.Is(err, recipients.ErrFullNameRequired), errors.Is(err, recipients.ErrNIKInvalid):

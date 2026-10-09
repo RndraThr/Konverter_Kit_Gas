@@ -247,19 +247,20 @@ func (r *Repository) queueMediaMove(ctx context.Context, tx pgx.Tx, distribution
 	var distributionDate *time.Time
 	var slotNumber int
 	var hasRecipient bool
-	var programType, regencyName string
+	var programType, regencyName, recipientName string
 	var zoneName *string
 	var zonePlaceholder *bool
 	if err := tx.QueryRow(ctx, `
-		SELECT ds.distribution_date,ds.slot_number,(ds.recipient_person_id IS NOT NULL),p.program_type,z.name,r.name,z.is_placeholder
+		SELECT ds.distribution_date,ds.slot_number,(ds.recipient_person_id IS NOT NULL),p.program_type,z.name,r.name,z.is_placeholder,COALESCE(rp.full_name,'')
 		FROM distribution_slots ds
 		JOIN program_schedules ps ON ps.id=ds.schedule_id
 		JOIN programs p ON p.id=ps.program_id
 		JOIN regencies r ON r.id=ps.regency_id
+		LEFT JOIN people rp ON rp.id=ds.recipient_person_id
 		LEFT JOIN program_regency_assignments pra ON pra.program_id=ps.program_id AND pra.regency_id=ps.regency_id
 		LEFT JOIN program_zones z ON z.id=pra.zone_id
 		WHERE ds.id=$1
-	`, distributionSlotID).Scan(&distributionDate, &slotNumber, &hasRecipient, &programType, &zoneName, &regencyName, &zonePlaceholder); err != nil {
+	`, distributionSlotID).Scan(&distributionDate, &slotNumber, &hasRecipient, &programType, &zoneName, &regencyName, &zonePlaceholder, &recipientName); err != nil {
 		return fmt.Errorf("resolve media move target: %w", err)
 	}
 	if distributionDate == nil || !hasRecipient {
@@ -290,7 +291,10 @@ func (r *Repository) queueMediaMove(ctx context.Context, tx pgx.Tx, distribution
 		WHERE m.documentation_slot_id=ds.id
 		  AND ds.distribution_slot_id=$1 AND m.status='accepted'
 		  AND (NULLIF($2,'') IS NULL OR m.id=NULLIF($2,'')::uuid)
-		RETURNING m.id::text,m.storage_target_generation
+		RETURNING m.id::text,m.storage_target_generation,m.mime_type,ds.label_snapshot,ds.max_files,
+			(SELECT count(*) FROM media_files m2
+			 WHERE m2.documentation_slot_id=m.documentation_slot_id AND m2.status='accepted'
+			   AND (m2.uploaded_at,m2.id)<=(m.uploaded_at,m.id))
 	`, distributionSlotID, mediaID)
 	if err != nil {
 		return fmt.Errorf("prepare media moves: %w", err)
@@ -298,14 +302,18 @@ func (r *Repository) queueMediaMove(ctx context.Context, tx pgx.Tx, distribution
 	type generatedMove struct {
 		mediaID    string
 		generation int64
+		filename   string
 	}
 	moves := make([]generatedMove, 0)
 	for rows.Next() {
 		var move generatedMove
-		if err := rows.Scan(&move.mediaID, &move.generation); err != nil {
+		var mimeType, label string
+		var maxFiles, sequence int
+		if err := rows.Scan(&move.mediaID, &move.generation, &mimeType, &label, &maxFiles, &sequence); err != nil {
 			rows.Close()
 			return fmt.Errorf("scan prepared media move: %w", err)
 		}
+		move.filename = formatDistributionFinalMediaFilename(recipientName, label, mimeType, sequence, maxFiles)
 		moves = append(moves, move)
 	}
 	if err := rows.Err(); err != nil {
@@ -316,12 +324,12 @@ func (r *Repository) queueMediaMove(ctx context.Context, tx pgx.Tx, distribution
 
 	for _, move := range moves {
 		if _, err := tx.Exec(ctx, `
-			INSERT INTO distribution_media_move_jobs(media_file_id,target_path,target_generation,status,attempts,next_attempt_at,locked_at,last_error)
-			VALUES($1,$2,$3,'queued',0,now(),NULL,'')
+			INSERT INTO distribution_media_move_jobs(media_file_id,target_path,target_filename,target_generation,status,attempts,next_attempt_at,locked_at,last_error)
+			VALUES($1,$2,$3,$4,'queued',0,now(),NULL,'')
 			ON CONFLICT(media_file_id) DO UPDATE SET
-				target_path=EXCLUDED.target_path,target_generation=EXCLUDED.target_generation,
+				target_path=EXCLUDED.target_path,target_filename=EXCLUDED.target_filename,target_generation=EXCLUDED.target_generation,
 				status='queued',attempts=0,next_attempt_at=now(),locked_at=NULL,last_error='',updated_at=now()
-		`, move.mediaID, targetPath, move.generation); err != nil {
+		`, move.mediaID, targetPath, move.filename, move.generation); err != nil {
 			return fmt.Errorf("queue media move: %w", err)
 		}
 	}
@@ -386,8 +394,8 @@ func (r *Repository) ClaimMediaMove(ctx context.Context, now time.Time, leaseDur
 		SET status='processing',attempts=j.attempts+1,locked_at=$1,updated_at=$1
 		FROM candidate c,media_files m
 		WHERE j.media_file_id=c.media_file_id AND m.id=j.media_file_id
-		RETURNING j.media_file_id::text,m.storage_key::text,j.target_path,j.target_generation,j.attempts
-	`, now, now.Add(-leaseDuration)).Scan(&job.MediaFileID, &job.StorageKey, &job.TargetPath, &job.TargetGeneration, &job.Attempts)
+		RETURNING j.media_file_id::text,m.storage_key::text,j.target_path,j.target_filename,j.target_generation,j.attempts
+	`, now, now.Add(-leaseDuration)).Scan(&job.MediaFileID, &job.StorageKey, &job.TargetPath, &job.TargetFilename, &job.TargetGeneration, &job.Attempts)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return MediaMoveJob{}, false, nil
 	}
@@ -407,13 +415,14 @@ func (r *Repository) CompleteMediaMove(ctx context.Context, mediaID string, gene
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var mediaGeneration, jobGeneration int64
+	var targetFilename string
 	err = tx.QueryRow(ctx, `
-		SELECT m.storage_target_generation,j.target_generation
+		SELECT m.storage_target_generation,j.target_generation,j.target_filename
 		FROM media_files m
 		JOIN distribution_media_move_jobs j ON j.media_file_id=m.id
 		WHERE m.id=$1 AND m.status='accepted'
 		FOR UPDATE OF m,j
-	`, mediaID).Scan(&mediaGeneration, &jobGeneration)
+	`, mediaID).Scan(&mediaGeneration, &jobGeneration, &targetFilename)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -421,7 +430,9 @@ func (r *Repository) CompleteMediaMove(ctx context.Context, mediaID string, gene
 		return fmt.Errorf("lock media move completion: %w", err)
 	}
 	if mediaGeneration == generation && jobGeneration == generation {
-		if _, err := tx.Exec(ctx, `UPDATE media_files SET storage_state='final',storage_last_error='',updated_at=now() WHERE id=$1`, mediaID); err != nil {
+		// Persist the applied Drive name so the application keeps showing the same filename the
+		// worker just gave the file. An empty target_filename means "keep the upload-time name".
+		if _, err := tx.Exec(ctx, `UPDATE media_files SET storage_state='final',storage_last_error='',original_filename=CASE WHEN NULLIF($2,'') IS NULL THEN original_filename ELSE $2 END,updated_at=now() WHERE id=$1`, mediaID, targetFilename); err != nil {
 			return fmt.Errorf("finalize media move: %w", err)
 		}
 		if _, err := tx.Exec(ctx, `DELETE FROM distribution_media_move_jobs WHERE media_file_id=$1 AND target_generation=$2`, mediaID, generation); err != nil {
@@ -706,6 +717,46 @@ func (r *Repository) UpdateEquipment(ctx context.Context, actor auth.Principal, 
 	return r.getSlotByID(ctx, slotID)
 }
 
+func (r *Repository) UpdateEquipmentSerials(ctx context.Context, actor auth.Principal, input UpdateEquipmentSerialsInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return DistributionSlot{}, fmt.Errorf("begin equipment serial update: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var slotID, status string
+	err = tx.QueryRow(ctx, `
+		SELECT ds.id::text,ds.status
+		FROM distribution_slots ds
+		JOIN program_schedules ps ON ps.id=ds.schedule_id
+		WHERE ds.schedule_id=$1 AND ds.slot_number=$2 AND ($3 OR ps.regency_id::text=ANY($4))
+		FOR UPDATE OF ds
+	`, input.ScheduleID, input.SlotNumber, scope.Unrestricted, scope.RegencyIDs).Scan(&slotID, &status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return DistributionSlot{}, ErrSlotNotFound
+	}
+	if err != nil {
+		return DistributionSlot{}, fmt.Errorf("lock equipment serials: %w", err)
+	}
+	if status == "completed" {
+		return DistributionSlot{}, ErrAlreadyCompleted
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE distribution_slots
+		SET machine_serial_number=NULLIF($2,''),converter_serial_number=NULLIF($3,''),updated_at=now()
+		WHERE id=$1
+	`, slotID, input.MachineSerialNumber, input.ConverterSerialNumber); err != nil {
+		return DistributionSlot{}, fmt.Errorf("update equipment serials: %w", err)
+	}
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "distribution.equipment_serials_updated", ResourceType: "distribution_slot", ResourceID: slotID, Metadata: map[string]any{"slot_number": input.SlotNumber}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+		return DistributionSlot{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return DistributionSlot{}, fmt.Errorf("commit equipment serial update: %w", err)
+	}
+	return r.getSlotByID(ctx, slotID)
+}
+
 func (r *Repository) ReopenSlot(ctx context.Context, actor auth.Principal, input ReopenSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -871,6 +922,18 @@ func (r *Repository) SearchCandidate(ctx context.Context, scheduleID, nik string
 	return match, nil
 }
 
+// receivableAllocationPredicate is the single definition of "this allocation may still receive a
+// package". It is shared by the candidate search and by every mutation that mounts a recipient,
+// because the suggestion list is convenience only — the backend is the security boundary. Status
+// needs_review, cancelled, replaced, and distributed never receive.
+const receivableAllocationPredicate = `pa.distribution_number IS NULL AND pa.status IN ('candidate','ready')`
+
+// notPreviouslyReceivedPredicate excludes people who already completed a distribution elsewhere.
+const notPreviouslyReceivedPredicate = `NOT EXISTS (
+	SELECT 1 FROM distribution_slots done
+	WHERE done.recipient_person_id = p.id AND done.status='completed'
+)`
+
 func (r *Repository) SuggestCandidates(ctx context.Context, scheduleID, nikPrefix string, limit int, scope auth.RegencyScope) ([]CandidateMatch, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT pa.id::text, p.full_name, COALESCE(p.nik,''), COALESCE(psi.identifier_type,''), COALESCE(psi.normalized_value,''),
@@ -880,7 +943,9 @@ func (r *Repository) SuggestCandidates(ctx context.Context, scheduleID, nikPrefi
 		JOIN program_schedules ps ON ps.id = pa.schedule_id
 		JOIN people p ON p.id = cn.person_id
 		LEFT JOIN LATERAL (SELECT identifier_type, normalized_value FROM person_sector_identifiers WHERE person_id = p.id LIMIT 1) psi ON true
-		WHERE pa.schedule_id = $1 AND p.nik LIKE $2 || '%' AND pa.distribution_number IS NULL
+		WHERE pa.schedule_id = $1 AND p.nik LIKE $2 || '%'
+			AND `+receivableAllocationPredicate+`
+			AND `+notPreviouslyReceivedPredicate+`
 			AND ($3 OR ps.regency_id::text = ANY($4))
 		ORDER BY p.nik, p.full_name
 		LIMIT $5
@@ -901,6 +966,116 @@ func (r *Repository) SuggestCandidates(ctx context.Context, scheduleID, nikPrefi
 		return nil, fmt.Errorf("suggest candidates: %w", err)
 	}
 	return items, nil
+}
+
+// LookupCandidate classifies a single NIK so the interface can explain an empty suggestion list
+// instead of guessing. It deliberately returns no recipient payload: only the state and the
+// allocation facts needed for the message and for the "create new recipient" decision.
+func (r *Repository) LookupCandidate(ctx context.Context, scheduleID, nik string, scope auth.RegencyScope) (CandidateLookup, error) {
+	var status, fullName string
+	var distributionNumber *int
+	var previouslyReceived bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT pa.status, COALESCE(p.full_name,''), pa.distribution_number,
+			EXISTS(SELECT 1 FROM distribution_slots done WHERE done.recipient_person_id = p.id AND done.status='completed')
+		FROM package_allocations pa
+		JOIN candidate_nominations cn ON cn.id = pa.nomination_id
+		JOIN program_schedules ps ON ps.id = pa.schedule_id
+		JOIN people p ON p.id = cn.person_id
+		WHERE pa.schedule_id = $1 AND p.nik = $2 AND ($3 OR ps.regency_id::text = ANY($4))
+		ORDER BY pa.created_at, pa.id
+		LIMIT 1
+	`, scheduleID, nik, scope.Unrestricted, scope.RegencyIDs).Scan(&status, &fullName, &distributionNumber, &previouslyReceived)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return CandidateLookup{State: CandidateStateNotRegistered}, nil
+	}
+	if err != nil {
+		return CandidateLookup{}, fmt.Errorf("lookup candidate: %w", err)
+	}
+	result := CandidateLookup{FullName: fullName, AllocationStatus: status, DistributionNumber: distributionNumber}
+	switch {
+	case status == "needs_review":
+		result.State = CandidateStateNeedsReview
+	case status != "candidate" && status != "ready":
+		// cancelled, replaced, and distributed are all terminal for this allocation; the officer
+		// must repair the data in Data Penerima rather than mount it here.
+		result.State = CandidateStateNotAvailable
+	case previouslyReceived:
+		result.State = CandidateStatePreviouslyReceived
+	case distributionNumber != nil:
+		result.State = CandidateStateAlreadyAssigned
+	default:
+		result.State = CandidateStateReceivable
+	}
+	return result, nil
+}
+
+// lockedCandidate is a package_allocations row locked for a recipient mutation, together with the
+// facts that decide whether it may still receive.
+type lockedCandidate struct {
+	AllocationID       string
+	PersonID           string
+	ProgramType        string
+	Status             string
+	DistributionNumber *int
+}
+
+// lockCandidateByNIK locks the oldest allocation for a NIK in a schedule regardless of its status.
+// Locking first and classifying afterwards is what lets callers answer with a precise reason
+// instead of a blanket "not found", and it stops the status changing between check and write.
+func lockCandidateByNIK(ctx context.Context, tx pgx.Tx, scheduleID, nik string) (lockedCandidate, error) {
+	var candidate lockedCandidate
+	err := tx.QueryRow(ctx, `
+		SELECT pa.id::text, p.id::text, cn.program_type, pa.status, pa.distribution_number
+		FROM package_allocations pa
+		JOIN candidate_nominations cn ON cn.id = pa.nomination_id
+		JOIN people p ON p.id = cn.person_id
+		WHERE pa.schedule_id=$1 AND p.nik=$2
+		ORDER BY (pa.distribution_number IS NULL AND pa.status IN ('candidate','ready')) DESC, pa.created_at, pa.id
+		LIMIT 1
+		FOR UPDATE OF pa
+	`, scheduleID, nik).Scan(&candidate.AllocationID, &candidate.PersonID, &candidate.ProgramType, &candidate.Status, &candidate.DistributionNumber)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return lockedCandidate{}, ErrCandidateNotFound
+	}
+	if err != nil {
+		return lockedCandidate{}, fmt.Errorf("lock candidate: %w", err)
+	}
+	return candidate, nil
+}
+
+// receivableCandidateError explains why a locked candidate may not receive, or returns nil when it
+// may. Allocation status is reported before the distribution number: an allocation cancelled in
+// Data Penerima that still carries a stale number is better described as unavailable than as
+// already assigned to another number.
+func receivableCandidateError(candidate lockedCandidate) error {
+	switch {
+	case candidate.Status == "needs_review":
+		return ErrCandidateNeedsReview
+	case candidate.Status != "candidate" && candidate.Status != "ready":
+		return ErrCandidateNotAvailable
+	case candidate.DistributionNumber != nil:
+		return ErrCandidateAlreadyAssigned
+	}
+	return nil
+}
+
+// previousReceiptError guards the person-level rule that a recipient may only receive once.
+func previousReceiptError(ctx context.Context, tx pgx.Tx, personID, excludeSlotID string) error {
+	var previouslyReceived bool
+	err := tx.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM distribution_slots
+			WHERE recipient_person_id=$1 AND status='completed' AND ($2 = '' OR id <> NULLIF($2,'')::uuid)
+		)
+	`, personID, excludeSlotID).Scan(&previouslyReceived)
+	if err != nil {
+		return fmt.Errorf("check previously received: %w", err)
+	}
+	if previouslyReceived {
+		return ErrPreviouslyReceived
+	}
+	return nil
 }
 
 func (r *Repository) LinkSlot(ctx context.Context, actor auth.Principal, input LinkSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
@@ -926,28 +1101,17 @@ func (r *Repository) LinkSlot(ctx context.Context, actor auth.Principal, input L
 		return DistributionSlot{}, ErrSlotNotOpen
 	}
 
-	var allocationID, personID, programType string
-	if err := tx.QueryRow(ctx, `
-		SELECT pa.id::text, p.id::text, cn.program_type
-		FROM package_allocations pa
-		JOIN candidate_nominations cn ON cn.id = pa.nomination_id
-		JOIN people p ON p.id = cn.person_id
-		WHERE pa.schedule_id=$1 AND p.nik=$2 AND pa.distribution_number IS NULL
-		FOR UPDATE OF pa
-	`, input.ScheduleID, input.NIK).Scan(&allocationID, &personID, &programType); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return DistributionSlot{}, ErrCandidateNotFound
-		}
-		return DistributionSlot{}, fmt.Errorf("lock candidate: %w", err)
+	candidate, err := lockCandidateByNIK(ctx, tx, input.ScheduleID, input.NIK)
+	if err != nil {
+		return DistributionSlot{}, err
 	}
-
-	var previouslyReceived bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM distribution_slots WHERE recipient_person_id=$1 AND status='completed')`, personID).Scan(&previouslyReceived); err != nil {
-		return DistributionSlot{}, fmt.Errorf("check previously received: %w", err)
+	if err := receivableCandidateError(candidate); err != nil {
+		return DistributionSlot{}, err
 	}
-	if previouslyReceived {
-		return DistributionSlot{}, ErrPreviouslyReceived
+	if err := previousReceiptError(ctx, tx, candidate.PersonID, ""); err != nil {
+		return DistributionSlot{}, err
 	}
+	allocationID, personID, programType := candidate.AllocationID, candidate.PersonID, candidate.ProgramType
 
 	if _, err := tx.Exec(ctx, `UPDATE people SET address=COALESCE(NULLIF($2,''),address), village=COALESCE(NULLIF($3,''),village), district=COALESCE(NULLIF($4,''),district), phone_number=COALESCE(NULLIF($5,''),phone_number), updated_at=now() WHERE id=$1`, personID, input.Address, input.Village, input.District, input.PhoneNumber); err != nil {
 		return DistributionSlot{}, fmt.Errorf("update person: %w", err)
@@ -1063,32 +1227,25 @@ func (r *Repository) ReplaceRecipient(ctx context.Context, actor auth.Principal,
 		return DistributionSlot{}, ErrRecipientNotLinked
 	}
 
-	var newAllocationID, newPersonID, programType string
-	err = tx.QueryRow(ctx, `
-		SELECT pa.id::text,p.id::text,cn.program_type
-		FROM package_allocations pa
-		JOIN candidate_nominations cn ON cn.id=pa.nomination_id
-		JOIN people p ON p.id=cn.person_id
-		WHERE pa.schedule_id=$1 AND p.nik=$2 AND pa.distribution_number IS NULL
-		FOR UPDATE OF pa
-	`, input.ScheduleID, input.NIK).Scan(&newAllocationID, &newPersonID, &programType)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return DistributionSlot{}, ErrCandidateNotFound
+	reason := strings.TrimSpace(input.Reason)
+	if reason == "" {
+		return DistributionSlot{}, ErrReplacementReasonRequired
 	}
+
+	newAllocationID, newPersonID, programType, origin, err := r.resolveReplacementAllocation(ctx, tx, input, *oldAllocationID)
 	if err != nil {
-		return DistributionSlot{}, fmt.Errorf("lock replacement candidate: %w", err)
+		return DistributionSlot{}, err
 	}
-	var previouslyReceived bool
-	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM distribution_slots WHERE recipient_person_id=$1 AND status='completed' AND id<>$2)`, newPersonID, slotID).Scan(&previouslyReceived); err != nil {
-		return DistributionSlot{}, fmt.Errorf("check replacement history: %w", err)
-	}
-	if previouslyReceived {
-		return DistributionSlot{}, ErrPreviouslyReceived
+	if err := previousReceiptError(ctx, tx, newPersonID, slotID); err != nil {
+		return DistributionSlot{}, err
 	}
 	if err := updateRecipientDetails(ctx, tx, newPersonID, programType, input.Address, input.Village, input.District, input.PhoneNumber, input.SectorIdentifier); err != nil {
 		return DistributionSlot{}, err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE package_allocations SET distribution_number=NULL,status='candidate',actual_recipient_person_id=NULL,updated_at=now() WHERE id=$1`, *oldAllocationID); err != nil {
+	// The original allocation is released from the slot and marked replaced, so it stops appearing
+	// as the recipient of this number while remaining visible in Data Penerima and reports as a
+	// replaced allocation rather than disappearing entirely.
+	if _, err := tx.Exec(ctx, `UPDATE package_allocations SET distribution_number=NULL,status='replaced',actual_recipient_person_id=NULL,updated_at=now() WHERE id=$1`, *oldAllocationID); err != nil {
 		return DistributionSlot{}, fmt.Errorf("release previous allocation: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `UPDATE package_allocations SET distribution_number=$2,status='ready',actual_recipient_person_id=$3,updated_at=now() WHERE id=$1`, newAllocationID, input.SlotNumber, newPersonID); err != nil {
@@ -1097,16 +1254,141 @@ func (r *Repository) ReplaceRecipient(ctx context.Context, actor auth.Principal,
 	if _, err := tx.Exec(ctx, `UPDATE distribution_slots SET allocation_id=$2,recipient_person_id=$3,updated_at=now() WHERE id=$1`, slotID, newAllocationID, newPersonID); err != nil {
 		return DistributionSlot{}, fmt.Errorf("replace slot recipient: %w", err)
 	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO recipient_replacements(distribution_slot_id,old_allocation_id,old_person_id,new_allocation_id,new_person_id,origin,reason,replaced_by)
+		VALUES($1,$2,$3,$4,$5,$6,$7,NULLIF($8,'')::uuid)
+	`, slotID, *oldAllocationID, *oldPersonID, newAllocationID, newPersonID, origin, reason, actor.UserID); err != nil {
+		return DistributionSlot{}, fmt.Errorf("record recipient replacement: %w", err)
+	}
 	if err := r.queueMediaMovesForSlot(ctx, tx, slotID); err != nil {
 		return DistributionSlot{}, err
 	}
-	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "distribution.recipient_replaced", ResourceType: "distribution_slot", ResourceID: slotID, Metadata: map[string]any{"old_allocation_id": *oldAllocationID, "new_allocation_id": newAllocationID, "old_person_id": *oldPersonID, "new_person_id": newPersonID}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "distribution.recipient_replaced", ResourceType: "distribution_slot", ResourceID: slotID, Metadata: map[string]any{"old_allocation_id": *oldAllocationID, "new_allocation_id": newAllocationID, "old_person_id": *oldPersonID, "new_person_id": newPersonID, "origin": origin, "reason": reason}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
 		return DistributionSlot{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return DistributionSlot{}, fmt.Errorf("commit recipient replacement: %w", err)
 	}
 	return r.getSlotByID(ctx, slotID)
+}
+
+// resolveReplacementAllocation decides which allocation the replacement recipient will hold.
+//
+// A substitute who already has a receivable allocation in this schedule keeps it (existing
+// allocation). Anyone else — a NIK that is registered only in another schedule, or not registered
+// at all — receives a fresh nomination and allocation carrying this slot's distribution number.
+// The person row is always reused when the NIK already exists, because people_nik_uq only permits
+// one row per NIK and a second insert would be rejected anyway.
+func (r *Repository) resolveReplacementAllocation(ctx context.Context, tx pgx.Tx, input ReplaceRecipientInput, oldAllocationID string) (allocationID, personID, programType, origin string, err error) {
+	candidate, err := lockCandidateByNIK(ctx, tx, input.ScheduleID, input.NIK)
+	if err == nil {
+		// Checked before the eligibility rules: the current recipient's own allocation carries this
+		// slot's number, so it would otherwise be reported as "already assigned elsewhere".
+		if candidate.AllocationID == oldAllocationID {
+			return "", "", "", "", ErrReplacementSameRecipient
+		}
+		if receivableErr := receivableCandidateError(candidate); receivableErr != nil {
+			return "", "", "", "", receivableErr
+		}
+		return candidate.AllocationID, candidate.PersonID, candidate.ProgramType, "existing_allocation", nil
+	}
+	if !errors.Is(err, ErrCandidateNotFound) {
+		return "", "", "", "", err
+	}
+
+	personID, err = resolveReplacementPerson(ctx, tx, input)
+	if err != nil {
+		return "", "", "", "", err
+	}
+	var scheduledProgramType string
+	if err := tx.QueryRow(ctx, `
+		SELECT prog.program_type FROM program_schedules ps
+		JOIN programs prog ON prog.id=ps.program_id
+		WHERE ps.id=$1
+	`, input.ScheduleID).Scan(&scheduledProgramType); err != nil {
+		return "", "", "", "", fmt.Errorf("resolve replacement schedule program: %w", err)
+	}
+	var nominationID string
+	if err := tx.QueryRow(ctx, `INSERT INTO candidate_nominations(person_id,program_type,source_snapshot_json,status) VALUES($1,$2,'{}'::jsonb,'ready') RETURNING id::text`,
+		personID, scheduledProgramType).Scan(&nominationID); err != nil {
+		return "", "", "", "", fmt.Errorf("insert replacement nomination: %w", err)
+	}
+	allocationSnapshot := "{}"
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(package_snapshot_json,'{}'::jsonb)::text FROM package_allocations WHERE id=(SELECT allocation_id FROM distribution_slots WHERE schedule_id=$1 AND slot_number=$2)`,
+		input.ScheduleID, input.SlotNumber).Scan(&allocationSnapshot); err != nil {
+		return "", "", "", "", fmt.Errorf("resolve replacement package snapshot: %w", err)
+	}
+	if err := tx.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,status,package_snapshot_json) VALUES($1,$2,$3,'ready',$4::jsonb) RETURNING id::text`,
+		input.ScheduleID, nominationID, personID, allocationSnapshot).Scan(&allocationID); err != nil {
+		return "", "", "", "", fmt.Errorf("insert replacement allocation: %w", err)
+	}
+	return allocationID, personID, scheduledProgramType, "new_allocation", nil
+}
+
+const peopleNIKUniqueIndex = "people_nik_uq"
+
+// resolveReplacementPerson reuses the person row for a NIK, creating one only when the NIK is
+// genuinely unknown. Creating identity data is the operation that most needs guarding, so the full
+// name is required and a lost race against a concurrent registration reuses the winner's row
+// instead of failing.
+func resolveReplacementPerson(ctx context.Context, tx pgx.Tx, input ReplaceRecipientInput) (string, error) {
+	var personID string
+	err := tx.QueryRow(ctx, `SELECT id::text FROM people WHERE nik=$1`, input.NIK).Scan(&personID)
+	if err == nil {
+		return personID, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return "", fmt.Errorf("find replacement person: %w", err)
+	}
+	fullName := strings.TrimSpace(input.FullName)
+	if fullName == "" {
+		return "", ErrReplacementNameRequired
+	}
+	err = tx.QueryRow(ctx, `
+		INSERT INTO people(full_name,nik,address,village,district,phone_number) VALUES($1,$2,$3,$4,$5,$6) RETURNING id::text
+	`, fullName, input.NIK, input.Address, input.Village, input.District, input.PhoneNumber).Scan(&personID)
+	if err == nil {
+		return personID, nil
+	}
+	if constraint, ok := uniqueViolationConstraint(err); ok && constraint == peopleNIKUniqueIndex {
+		if lookupErr := tx.QueryRow(ctx, `SELECT id::text FROM people WHERE nik=$1`, input.NIK).Scan(&personID); lookupErr != nil {
+			return "", fmt.Errorf("resolve raced replacement person: %w", lookupErr)
+		}
+		return personID, nil
+	}
+	return "", fmt.Errorf("insert replacement person: %w", err)
+}
+
+// ListReplacements returns a slot's replacement history, oldest first, so POS Dokumen can show that
+// a recipient was replaced and Data Penerima can explain how the number changed hands.
+func (r *Repository) ListReplacements(ctx context.Context, scheduleID string, slotNumber int, scope auth.RegencyScope) ([]RecipientReplacement, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT rr.id::text, ds.slot_number,
+			rr.old_person_id::text, COALESCE(old_person.full_name,''),
+			rr.new_person_id::text, COALESCE(new_person.full_name,''),
+			rr.origin, rr.reason, COALESCE(u.full_name,''), rr.replaced_at
+		FROM recipient_replacements rr
+		JOIN distribution_slots ds ON ds.id=rr.distribution_slot_id
+		JOIN program_schedules ps ON ps.id=ds.schedule_id
+		JOIN people old_person ON old_person.id=rr.old_person_id
+		JOIN people new_person ON new_person.id=rr.new_person_id
+		LEFT JOIN users u ON u.id=rr.replaced_by
+		WHERE ds.schedule_id=$1 AND ds.slot_number=$2 AND ($3 OR ps.regency_id::text=ANY($4))
+		ORDER BY rr.replaced_at, rr.id
+	`, scheduleID, slotNumber, scope.Unrestricted, scope.RegencyIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list recipient replacements: %w", err)
+	}
+	defer rows.Close()
+	items := []RecipientReplacement{}
+	for rows.Next() {
+		var item RecipientReplacement
+		if err := rows.Scan(&item.ID, &item.SlotNumber, &item.OldPersonID, &item.OldFullName, &item.NewPersonID, &item.NewFullName, &item.Origin, &item.Reason, &item.ReplacedByName, &item.ReplacedAt); err != nil {
+			return nil, fmt.Errorf("scan recipient replacement: %w", err)
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 
 func updateRecipientDetails(ctx context.Context, tx pgx.Tx, personID, programType, address, village, district, phoneNumber, sectorIdentifier string) error {

@@ -36,9 +36,30 @@ type posMesinRepository interface {
 	CreateSlot(ctx context.Context, actor auth.Principal, input CreateSlotInput, scope auth.RegencyScope, meta auth.ClientMeta) (DistributionSlot, error)
 }
 
+type posMesinSerialRepository interface {
+	UpdateEquipmentSerials(ctx context.Context, actor auth.Principal, input UpdateEquipmentSerialsInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
+}
+
+func (s *Service) UpdateEquipmentSerials(ctx context.Context, actor auth.Principal, input UpdateEquipmentSerialsInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
+	input.ScheduleID = strings.TrimSpace(input.ScheduleID)
+	if input.ScheduleID == "" {
+		return DistributionSlot{}, ErrScheduleRequired
+	}
+	if input.SlotNumber < 1 {
+		return DistributionSlot{}, ErrSlotNumberRequired
+	}
+	input.MachineSerialNumber = textnorm.BusinessUpper(input.MachineSerialNumber)
+	input.ConverterSerialNumber = textnorm.BusinessUpper(input.ConverterSerialNumber)
+	if s.posMesinSerials == nil {
+		return DistributionSlot{}, errors.New("distribution POS Mesin is unavailable")
+	}
+	return s.posMesinSerials.UpdateEquipmentSerials(ctx, actor, input, meta, scope)
+}
+
 type posDokumenRepository interface {
 	SearchCandidate(ctx context.Context, scheduleID, nik string, scope auth.RegencyScope) (CandidateMatch, error)
 	SuggestCandidates(ctx context.Context, scheduleID, nikPrefix string, limit int, scope auth.RegencyScope) ([]CandidateMatch, error)
+	LookupCandidate(ctx context.Context, scheduleID, nik string, scope auth.RegencyScope) (CandidateLookup, error)
 	LinkSlot(ctx context.Context, actor auth.Principal, input LinkSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
 }
 
@@ -49,6 +70,7 @@ type posDokumenEquipmentRepository interface {
 type posDokumenRecipientRepository interface {
 	UpdateRecipient(ctx context.Context, actor auth.Principal, input UpdateRecipientInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
 	ReplaceRecipient(ctx context.Context, actor auth.Principal, input ReplaceRecipientInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
+	ListReplacements(ctx context.Context, scheduleID string, slotNumber int, scope auth.RegencyScope) ([]RecipientReplacement, error)
 }
 
 type revisionRepository interface {
@@ -74,6 +96,7 @@ type Service struct {
 	mediaRepository            mediaRepository
 	mediaMoveRepository        mediaMoveRepository
 	posMesinRepository         posMesinRepository
+	posMesinSerials            posMesinSerialRepository
 	posDokumenRepository       posDokumenRepository
 	posDokumenEquipment        posDokumenEquipmentRepository
 	posDokumenRecipient        posDokumenRecipientRepository
@@ -90,6 +113,7 @@ func NewService(repository any, dependencies ...any) *Service {
 	service.mediaRepository, _ = repository.(mediaRepository)
 	service.mediaMoveRepository, _ = repository.(mediaMoveRepository)
 	service.posMesinRepository, _ = repository.(posMesinRepository)
+	service.posMesinSerials, _ = repository.(posMesinSerialRepository)
 	service.posDokumenRepository, _ = repository.(posDokumenRepository)
 	service.posDokumenEquipment, _ = repository.(posDokumenEquipmentRepository)
 	service.posDokumenRecipient, _ = repository.(posDokumenRecipientRepository)
@@ -187,6 +211,37 @@ func (s *Service) SuggestCandidates(ctx context.Context, scheduleID, nikPrefix s
 	return s.posDokumenRepository.SuggestCandidates(ctx, scheduleID, nikPrefix, 8, scope)
 }
 
+// LookupCandidate classifies one exact NIK so POS Dokumen can distinguish "not registered" from
+// "registered but not receivable" instead of guessing from an empty suggestion list.
+func (s *Service) LookupCandidate(ctx context.Context, scheduleID, nik string, scope auth.RegencyScope) (CandidateLookup, error) {
+	scheduleID, nik = strings.TrimSpace(scheduleID), stripNonDigits.ReplaceAllString(nik, "")
+	if scheduleID == "" {
+		return CandidateLookup{}, ErrScheduleRequired
+	}
+	if len(nik) != 16 {
+		return CandidateLookup{}, ErrNIKInvalid
+	}
+	if s.posDokumenRepository == nil {
+		return CandidateLookup{}, errors.New("distribution POS Dokumen is unavailable")
+	}
+	return s.posDokumenRepository.LookupCandidate(ctx, scheduleID, nik, scope)
+}
+
+// ListReplacements returns a slot's replacement history for POS Dokumen.
+func (s *Service) ListReplacements(ctx context.Context, scheduleID string, slotNumber int, scope auth.RegencyScope) ([]RecipientReplacement, error) {
+	scheduleID = strings.TrimSpace(scheduleID)
+	if scheduleID == "" {
+		return nil, ErrScheduleRequired
+	}
+	if slotNumber < 1 {
+		return nil, ErrSlotNumberRequired
+	}
+	if s.posDokumenRecipient == nil {
+		return nil, errors.New("distribution POS Dokumen is unavailable")
+	}
+	return s.posDokumenRecipient.ListReplacements(ctx, scheduleID, slotNumber, scope)
+}
+
 func (s *Service) LinkSlot(ctx context.Context, actor auth.Principal, input LinkSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
 	input.ScheduleID = strings.TrimSpace(input.ScheduleID)
 	if input.ScheduleID == "" {
@@ -232,6 +287,11 @@ func (s *Service) ReplaceRecipient(ctx context.Context, actor auth.Principal, in
 	input.NIK = stripNonDigits.ReplaceAllString(input.NIK, "")
 	if len(input.NIK) != 16 {
 		return DistributionSlot{}, ErrNIKInvalid
+	}
+	input.FullName = textnorm.BusinessUpper(input.FullName)
+	input.Reason = strings.TrimSpace(input.Reason)
+	if input.Reason == "" {
+		return DistributionSlot{}, ErrReplacementReasonRequired
 	}
 	input.Address, input.Village, input.District, input.PhoneNumber, input.SectorIdentifier = normalizeRecipientFields(input.Address, input.Village, input.District, input.PhoneNumber, input.SectorIdentifier)
 	if s.posDokumenRecipient == nil {
@@ -440,6 +500,20 @@ func formatDistributionMediaFilename(label, mimeType string, sequence, maxFiles 
 		return fmt.Sprintf("%s - %02d%s", label, sequence, extension)
 	}
 	return label + extension
+}
+
+// formatDistributionFinalMediaFilename builds the Drive name a media file receives once it lands
+// in its final date/slot folder. Media is uploaded while the slot may still be unlinked, so the
+// recipient is only known at move time — this is what makes the final folder searchable by
+// recipient. NIK is deliberately never part of a filename or Drive path. An empty recipient name
+// falls back to the upload-time name so the worker never blocks on missing identity data.
+func formatDistributionFinalMediaFilename(recipientName, label, mimeType string, sequence, maxFiles int) string {
+	base := formatDistributionMediaFilename(label, mimeType, sequence, maxFiles)
+	recipientName = textnorm.BusinessUpper(strings.NewReplacer("/", "-", "\\", "-").Replace(strings.TrimSpace(recipientName)))
+	if recipientName == "" {
+		return base
+	}
+	return recipientName + " - " + base
 }
 
 func (s *Service) DeleteMedia(ctx context.Context, actor auth.Principal, mediaID string, meta auth.ClientMeta, scope auth.RegencyScope) error {

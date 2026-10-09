@@ -193,7 +193,7 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 		}
 		normalizedJSON, _ := json.Marshal(normalized)
 		messagesJSON, _ := json.Marshal(normalized.ValidationMessages)
-		_, err = tx.Exec(ctx, `UPDATE dcp3_import_rows SET source_sequence_number=$2,normalized_data_json=$3,validation_status=$4,validation_messages_json=$5,updated_at=now() WHERE id=$1`, raw.ID, normalized.SourceSequenceNumber, normalizedJSON, normalized.ValidationStatus, messagesJSON)
+		_, err = tx.Exec(ctx, `UPDATE dcp3_import_rows SET source_sequence_number=NULL,normalized_data_json=$2,validation_status=$3,validation_messages_json=$4,updated_at=now() WHERE id=$1`, raw.ID, normalizedJSON, normalized.ValidationStatus, messagesJSON)
 		if err != nil {
 			return ImportResult{}, fmt.Errorf("update DCP3 row: %w", err)
 		}

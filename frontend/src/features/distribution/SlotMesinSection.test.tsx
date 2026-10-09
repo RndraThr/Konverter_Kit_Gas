@@ -12,6 +12,9 @@ vi.mock('../../lib/api', async () => {
   return { ...actual, apiRequest: vi.fn() };
 });
 vi.mock('../../lib/upload', () => ({ uploadRequest: vi.fn() }));
+vi.mock('./BarcodeScanner', () => ({
+  default: ({ onResult }: { onResult: (text: string) => void }) => <button type="button" onClick={() => onResult('serial-scan-99')}>kirim hasil scan</button>,
+}));
 
 const machineDocumentation = {
   id: 'doc-1', code: 'machine', label: 'Foto Mesin', stage: 'mesin' as const,
@@ -39,8 +42,25 @@ test('shows only machine documentation and keeps it manageable for POS Mesin off
   expect(screen.getByLabelText('Buka kamera')).toBeVisible();
   expect(screen.queryByLabelText('Tanggal distribusi')).not.toBeInTheDocument();
   expect(screen.queryByText('Merk/Tipe Mesin')).not.toBeInTheDocument();
-  expect(screen.queryByLabelText('Serial Number Mesin')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Serial Number Mesin')).toBeVisible();
+  expect(screen.getByLabelText('Serial Number Konkit/Reducer')).toBeVisible();
+  expect(screen.queryByLabelText('Serial Number Selang')).not.toBeInTheDocument();
   expect(screen.queryByLabelText(/NIK/i)).not.toBeInTheDocument();
+});
+
+test('scans and saves shared serial numbers without sending brand fields', async () => {
+  vi.mocked(apiRequest).mockResolvedValue({ data: { ...slot, machine_serial_number: 'SERIAL-SCAN-99', converter_serial_number: 'KONKIT-02' } });
+  renderSection({ machine_option_code: 'MSN-001', converter_option_code: 'CNV-001' });
+
+  await userEvent.click(screen.getByRole('button', { name: 'Scan Serial Number Mesin' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'kirim hasil scan' }));
+  await userEvent.type(screen.getByLabelText('Serial Number Konkit/Reducer'), 'konkit-02');
+  await userEvent.click(screen.getByRole('button', { name: 'Simpan nomor seri' }));
+
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith(
+    '/api/v1/distribution/slots/7/equipment-serials?schedule_id=schedule-1',
+    { method: 'PATCH', body: JSON.stringify({ machine_serial_number: 'SERIAL-SCAN-99', converter_serial_number: 'KONKIT-02' }) },
+  ));
 });
 
 test('keeps machine documentation read-only without POS Mesin permission', () => {
@@ -49,6 +69,8 @@ test('keeps machine documentation read-only without POS Mesin permission', () =>
   expect(screen.getByRole('article', { name: 'Foto Mesin' })).toBeVisible();
   expect(screen.queryByLabelText('Buka kamera')).not.toBeInTheDocument();
   expect(screen.queryByLabelText('Pilih galeri')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Serial Number Mesin')).toBeDisabled();
+  expect(screen.queryByRole('button', { name: 'Scan Serial Number Mesin' })).not.toBeInTheDocument();
 });
 
 test('does not expose document-owned move retry from POS Mesin', () => {

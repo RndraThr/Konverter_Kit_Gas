@@ -58,7 +58,7 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 	}
 
 	result, err := service.Commit(ctx, auth.Principal{}, preview.ID, Mapping{
-		SourceSequence: "No", FullName: "Nama", NIK: "NIK", FarmerCardNumber: "No Kartu Petani",
+		FullName: "Nama", NIK: "NIK", FarmerCardNumber: "No Kartu Petani",
 		Address: "Alamat", Village: "Desa", District: "Kecamatan", PhoneNumber: "No HP",
 	}, meta, unrestricted)
 	if err != nil {
@@ -144,7 +144,7 @@ func TestIntegrationScopeEnforcementRejectsOutOfRegencyAccess(t *testing.T) {
 	if _, err := service.GetPreview(ctx, preview.ID, inScope); err != nil {
 		t.Fatalf("in-scope read should succeed: %v", err)
 	}
-	if _, err := service.Commit(ctx, auth.Principal{}, preview.ID, Mapping{SourceSequence: "No", FullName: "Nama"}, meta, outOfScope); !errors.Is(err, ErrPreviewNotFound) {
+	if _, err := service.Commit(ctx, auth.Principal{}, preview.ID, Mapping{FullName: "Nama"}, meta, outOfScope); !errors.Is(err, ErrPreviewNotFound) {
 		t.Fatalf("expected ErrPreviewNotFound committing out of scope, got %v", err)
 	}
 }

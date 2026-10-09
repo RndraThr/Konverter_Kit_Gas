@@ -21,6 +21,18 @@ type dokumenRepositoryStub struct {
 	seenUpdate    UpdateRecipientInput
 	seenReplace   ReplaceRecipientInput
 	seenEquipment UpdateEquipmentInput
+	lookup        CandidateLookup
+	seenLookupNIK string
+	seenReplaceID int
+}
+
+func (r *dokumenRepositoryStub) LookupCandidate(_ context.Context, _ string, nik string, _ auth.RegencyScope) (CandidateLookup, error) {
+	r.seenLookupNIK = nik
+	return r.lookup, nil
+}
+func (r *dokumenRepositoryStub) ListReplacements(_ context.Context, _ string, slotNumber int, _ auth.RegencyScope) ([]RecipientReplacement, error) {
+	r.seenReplaceID = slotNumber
+	return nil, nil
 }
 
 func (r *dokumenRepositoryStub) SearchCandidate(_ context.Context, _, _ string, _ auth.RegencyScope) (CandidateMatch, error) {
@@ -117,12 +129,46 @@ func TestReplaceRecipientNormalizesNIKAndEditableFields(t *testing.T) {
 	_, err := service.ReplaceRecipient(context.Background(), auth.Principal{}, ReplaceRecipientInput{
 		ScheduleID: " schedule-1 ", SlotNumber: 3, NIK: "9171-0317-0701-0004", Address: " jl. tani ",
 		Village: " desa baru ", District: " wajo ", PhoneNumber: "0812-3456", SectorIdentifier: " kp-01 ",
+		FullName: " pengganti baru ", Reason: "  penerima awal tidak dapat hadir  ",
 	}, auth.ClientMeta{}, auth.RegencyScope{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if repo.seenReplace.NIK != "9171031707010004" || repo.seenReplace.Address != "JL. TANI" || repo.seenReplace.PhoneNumber != "08123456" || repo.seenReplace.SectorIdentifier != "KP01" {
 		t.Fatalf("input not normalized: %+v", repo.seenReplace)
+	}
+	if repo.seenReplace.FullName != "PENGGANTI BARU" || repo.seenReplace.Reason != "penerima awal tidak dapat hadir" {
+		t.Fatalf("replacement metadata not normalized: %+v", repo.seenReplace)
+	}
+}
+
+func TestReplaceRecipientRequiresReason(t *testing.T) {
+	repo := &dokumenRepositoryStub{}
+	service := NewService(repo)
+	_, err := service.ReplaceRecipient(context.Background(), auth.Principal{}, ReplaceRecipientInput{
+		ScheduleID: "schedule-1", SlotNumber: 3, NIK: "9171031707010004", Reason: "   ",
+	}, auth.ClientMeta{}, auth.RegencyScope{})
+	if !errors.Is(err, ErrReplacementReasonRequired) {
+		t.Fatalf("err=%v, want ErrReplacementReasonRequired", err)
+	}
+	if repo.seenReplace.ScheduleID != "" {
+		t.Fatalf("repository was called despite missing reason: %+v", repo.seenReplace)
+	}
+}
+
+func TestLookupCandidateRequiresExactNIKAndForwardsScope(t *testing.T) {
+	repo := &dokumenRepositoryStub{lookup: CandidateLookup{State: CandidateStateNeedsReview}}
+	service := NewService(repo)
+
+	if _, err := service.LookupCandidate(context.Background(), "schedule-1", "7306", auth.RegencyScope{}); !errors.Is(err, ErrNIKInvalid) {
+		t.Fatalf("short NIK err=%v, want ErrNIKInvalid", err)
+	}
+	result, err := service.LookupCandidate(context.Background(), " schedule-1 ", "7306-0141-0190-0001", auth.RegencyScope{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != CandidateStateNeedsReview || repo.seenLookupNIK != "7306014101900001" {
+		t.Fatalf("lookup=%+v seenNIK=%q", result, repo.seenLookupNIK)
 	}
 }
 

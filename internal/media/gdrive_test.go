@@ -25,7 +25,8 @@ type fakeDriveFilesAPI struct {
 	deleteErr              error
 	deletedIDs             []string
 	parentsByFileID        map[string][]string
-	moveCalls              int
+	namesByFileID          map[string]string
+	updateCalls            int
 }
 
 func newFakeDriveFilesAPI() *fakeDriveFilesAPI {
@@ -33,6 +34,7 @@ func newFakeDriveFilesAPI() *fakeDriveFilesAPI {
 		foldersByParentAndName: map[string]string{},
 		uploaded:               map[string][]byte{},
 		parentsByFileID:        map[string][]string{},
+		namesByFileID:          map[string]string{},
 	}
 }
 
@@ -163,13 +165,32 @@ func (f *fakeDriveFilesAPI) deleteFile(_ context.Context, id string) error {
 	return nil
 }
 
-func (f *fakeDriveFilesAPI) getFileParents(_ context.Context, id string) ([]string, error) {
-	return append([]string(nil), f.parentsByFileID[id]...), nil
+func (f *fakeDriveFilesAPI) getFileMeta(_ context.Context, id string) (driveFileMeta, error) {
+	return driveFileMeta{Name: f.namesByFileID[id], Parents: append([]string(nil), f.parentsByFileID[id]...)}, nil
 }
 
-func (f *fakeDriveFilesAPI) moveFile(_ context.Context, id, targetParentID string) error {
-	f.moveCalls++
-	f.parentsByFileID[id] = []string{targetParentID}
+func (f *fakeDriveFilesAPI) updateFile(_ context.Context, id, name, addParentID string, removeParentIDs []string) error {
+	f.updateCalls++
+	if name != "" {
+		f.namesByFileID[id] = name
+	}
+	if addParentID == "" {
+		return nil
+	}
+	kept := make([]string, 0, len(f.parentsByFileID[id]))
+	for _, parentID := range f.parentsByFileID[id] {
+		removed := false
+		for _, candidate := range removeParentIDs {
+			if candidate == parentID {
+				removed = true
+				break
+			}
+		}
+		if !removed {
+			kept = append(kept, parentID)
+		}
+	}
+	f.parentsByFileID[id] = append(kept, addParentID)
 	return nil
 }
 
@@ -316,21 +337,25 @@ func TestGoogleDriveStorageEnsureFoldersRejectsEmptyPath(t *testing.T) {
 	}
 }
 
-func TestGoogleDriveMoveResolvesTargetAndChangesParent(t *testing.T) {
+func TestGoogleDriveMoveResolvesTargetRenamesAndChangesParent(t *testing.T) {
 	api := newFakeDriveFilesAPI()
 	api.foldersByParentAndName["root-1/PETANI"] = "folder-petani"
 	api.foldersByParentAndName["folder-petani/WAJO"] = "folder-wajo"
 	api.parentsByFileID["drive-file-1"] = []string{"staging-folder"}
+	api.namesByFileID["drive-file-1"] = "FOTO MESIN - 01.jpg"
 	storage := &GoogleDriveStorage{api: api, cache: newFakeFolderCache(), rootFolderID: "root-1"}
 
-	if err := storage.Move(context.Background(), "drive-file-1", []string{"PETANI", "WAJO"}); err != nil {
+	if err := storage.Move(context.Background(), "drive-file-1", []string{"PETANI", "WAJO"}, "AHMAD - FOTO MESIN - 01.jpg"); err != nil {
 		t.Fatal(err)
 	}
-	if api.moveCalls != 1 {
-		t.Fatalf("move calls=%d, want 1", api.moveCalls)
+	if api.updateCalls != 1 {
+		t.Fatalf("update calls=%d, want 1", api.updateCalls)
 	}
 	if parents := api.parentsByFileID["drive-file-1"]; len(parents) != 1 || parents[0] != "folder-wajo" {
 		t.Fatalf("parents=%v, want [folder-wajo]", parents)
+	}
+	if name := api.namesByFileID["drive-file-1"]; name != "AHMAD - FOTO MESIN - 01.jpg" {
+		t.Fatalf("name=%q, want the final filename", name)
 	}
 }
 
@@ -340,10 +365,63 @@ func TestGoogleDriveMoveIsIdempotentWhenAlreadyInTarget(t *testing.T) {
 	api.parentsByFileID["drive-file-2"] = []string{"folder-petani"}
 	storage := &GoogleDriveStorage{api: api, cache: newFakeFolderCache(), rootFolderID: "root-1"}
 
-	if err := storage.Move(context.Background(), "drive-file-2", []string{"PETANI"}); err != nil {
+	if err := storage.Move(context.Background(), "drive-file-2", []string{"PETANI"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	if api.moveCalls != 0 {
-		t.Fatalf("idempotent move made %d update calls, want 0", api.moveCalls)
+	if api.updateCalls != 0 {
+		t.Fatalf("idempotent move made %d update calls, want 0", api.updateCalls)
+	}
+}
+
+// A crash between the Drive move and the database completion leaves the file in the right folder
+// with the right name; the retried job must recognise that and issue no further Drive update.
+func TestGoogleDriveMoveIsIdempotentWhenParentAndNameAlreadyMatch(t *testing.T) {
+	api := newFakeDriveFilesAPI()
+	api.foldersByParentAndName["root-1/PETANI"] = "folder-petani"
+	api.parentsByFileID["drive-file-3"] = []string{"folder-petani"}
+	api.namesByFileID["drive-file-3"] = "AHMAD - FOTO MESIN - 01.jpg"
+	storage := &GoogleDriveStorage{api: api, cache: newFakeFolderCache(), rootFolderID: "root-1"}
+
+	if err := storage.Move(context.Background(), "drive-file-3", []string{"PETANI"}, "AHMAD - FOTO MESIN - 01.jpg"); err != nil {
+		t.Fatal(err)
+	}
+	if api.updateCalls != 0 {
+		t.Fatalf("repeated move made %d update calls, want 0", api.updateCalls)
+	}
+}
+
+// Renaming inside the folder the file already occupies must not touch its parents.
+func TestGoogleDriveMoveRenamesWithoutReparentingWhenAlreadyInTarget(t *testing.T) {
+	api := newFakeDriveFilesAPI()
+	api.foldersByParentAndName["root-1/PETANI"] = "folder-petani"
+	api.parentsByFileID["drive-file-4"] = []string{"folder-petani"}
+	api.namesByFileID["drive-file-4"] = "FOTO MESIN - 01.jpg"
+	storage := &GoogleDriveStorage{api: api, cache: newFakeFolderCache(), rootFolderID: "root-1"}
+
+	if err := storage.Move(context.Background(), "drive-file-4", []string{"PETANI"}, "AHMAD - FOTO MESIN - 01.jpg"); err != nil {
+		t.Fatal(err)
+	}
+	if api.updateCalls != 1 {
+		t.Fatalf("rename-only move made %d update calls, want 1", api.updateCalls)
+	}
+	if parents := api.parentsByFileID["drive-file-4"]; len(parents) != 1 || parents[0] != "folder-petani" {
+		t.Fatalf("parents=%v, want the unchanged [folder-petani]", parents)
+	}
+	if name := api.namesByFileID["drive-file-4"]; name != "AHMAD - FOTO MESIN - 01.jpg" {
+		t.Fatalf("name=%q, want the final filename", name)
+	}
+}
+
+func TestGoogleDriveMoveRejectsUnsafeTargetFilename(t *testing.T) {
+	api := newFakeDriveFilesAPI()
+	api.foldersByParentAndName["root-1/PETANI"] = "folder-petani"
+	api.parentsByFileID["drive-file-5"] = []string{"staging-folder"}
+	storage := &GoogleDriveStorage{api: api, cache: newFakeFolderCache(), rootFolderID: "root-1"}
+
+	if err := storage.Move(context.Background(), "drive-file-5", []string{"PETANI"}, "AHMAD/FOTO.jpg"); !errors.Is(err, ErrInvalidFilename) {
+		t.Fatalf("err=%v, want ErrInvalidFilename", err)
+	}
+	if api.updateCalls != 0 {
+		t.Fatalf("invalid rename made %d update calls, want 0", api.updateCalls)
 	}
 }

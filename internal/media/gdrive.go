@@ -26,8 +26,15 @@ type driveFilesAPI interface {
 	uploadFile(ctx context.Context, name, parentID string, r io.Reader) (id string, size int64, err error)
 	downloadFile(ctx context.Context, id string) (io.ReadCloser, error)
 	deleteFile(ctx context.Context, id string) error
-	getFileParents(ctx context.Context, id string) ([]string, error)
-	moveFile(ctx context.Context, fileID, targetParentID string) error
+	getFileMeta(ctx context.Context, id string) (driveFileMeta, error)
+	updateFile(ctx context.Context, fileID, name, addParentID string, removeParentIDs []string) error
+}
+
+// driveFileMeta is the part of a Drive file the move flow needs: its display name and current
+// parents. Reading both in one call keeps a move to a single metadata read.
+type driveFileMeta struct {
+	Name    string
+	Parents []string
 }
 
 type realDriveFilesAPI struct {
@@ -83,30 +90,31 @@ func (a *realDriveFilesAPI) deleteFile(ctx context.Context, id string) error {
 	return nil
 }
 
-func (a *realDriveFilesAPI) getFileParents(ctx context.Context, id string) ([]string, error) {
-	file, err := a.service.Files.Get(id).Fields("parents").Context(ctx).Do()
+func (a *realDriveFilesAPI) getFileMeta(ctx context.Context, id string) (driveFileMeta, error) {
+	file, err := a.service.Files.Get(id).Fields("name,parents").Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("get drive file %q parents: %w", id, err)
+		return driveFileMeta{}, fmt.Errorf("get drive file %q metadata: %w", id, err)
 	}
-	return file.Parents, nil
+	return driveFileMeta{Name: file.Name, Parents: file.Parents}, nil
 }
 
-func (a *realDriveFilesAPI) moveFile(ctx context.Context, fileID, targetParentID string) error {
-	parents, err := a.getFileParents(ctx, fileID)
-	if err != nil {
-		return err
+// updateFile applies a rename and a parent change in a single Drive update call. An empty name or
+// addParentID leaves that attribute untouched, so a rename-only or move-only update issues no
+// redundant field change.
+func (a *realDriveFilesAPI) updateFile(ctx context.Context, fileID, name, addParentID string, removeParentIDs []string) error {
+	update := &drive.File{}
+	if name != "" {
+		update.Name = name
 	}
-	for _, parentID := range parents {
-		if parentID == targetParentID {
-			return nil
-		}
+	call := a.service.Files.Update(fileID, update)
+	if addParentID != "" {
+		call = call.AddParents(addParentID)
 	}
-	call := a.service.Files.Update(fileID, &drive.File{}).AddParents(targetParentID)
-	if len(parents) > 0 {
-		call = call.RemoveParents(strings.Join(parents, ","))
+	if len(removeParentIDs) > 0 {
+		call = call.RemoveParents(strings.Join(removeParentIDs, ","))
 	}
 	if _, err := call.Context(ctx).Do(); err != nil {
-		return fmt.Errorf("move drive file %q: %w", fileID, err)
+		return fmt.Errorf("update drive file %q: %w", fileID, err)
 	}
 	return nil
 }
@@ -235,24 +243,45 @@ func (s *GoogleDriveStorage) Delete(ctx context.Context, storageKey string) erro
 	return s.api.deleteFile(ctx, storageKey)
 }
 
-func (s *GoogleDriveStorage) Move(ctx context.Context, storageKey string, targetPath []string) error {
+func (s *GoogleDriveStorage) Move(ctx context.Context, storageKey string, targetPath []string, targetFilename string) error {
 	if err := validateFolderPath(targetPath); err != nil {
 		return err
+	}
+	targetFilename = strings.TrimSpace(targetFilename)
+	if targetFilename != "" {
+		if err := validateFilename(targetFilename); err != nil {
+			return err
+		}
 	}
 	targetParentID, err := s.resolveFolder(ctx, targetPath)
 	if err != nil {
 		return fmt.Errorf("resolve drive move target: %w", err)
 	}
-	parents, err := s.api.getFileParents(ctx, storageKey)
+	meta, err := s.api.getFileMeta(ctx, storageKey)
 	if err != nil {
 		return err
 	}
-	for _, parentID := range parents {
+	inTarget := false
+	for _, parentID := range meta.Parents {
 		if parentID == targetParentID {
-			return nil
+			inTarget = true
+			break
 		}
 	}
-	return s.api.moveFile(ctx, storageKey, targetParentID)
+	rename := targetFilename != "" && targetFilename != meta.Name
+	// A file that already sits in the target folder under the target name needs no Drive call.
+	// This is what makes repeating a move after a crash safe instead of duplicating the file.
+	if inTarget && !rename {
+		return nil
+	}
+	name := ""
+	if rename {
+		name = targetFilename
+	}
+	if inTarget {
+		return s.api.updateFile(ctx, storageKey, name, "", nil)
+	}
+	return s.api.updateFile(ctx, storageKey, name, targetParentID, meta.Parents)
 }
 
 // hashingReader wraps an io.Reader and computes a SHA-256 checksum of

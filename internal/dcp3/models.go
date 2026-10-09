@@ -52,7 +52,6 @@ type WorkbookPreview struct {
 }
 
 type Mapping struct {
-	SourceSequence   string `json:"source_sequence"`
 	FullName         string `json:"full_name"`
 	NIK              string `json:"nik"`
 	FarmerCardNumber string `json:"farmer_card_number"`
@@ -72,7 +71,6 @@ type RawImportRow struct {
 
 type NormalizedRow struct {
 	SourceRowNumber         int               `json:"source_row_number"`
-	SourceSequenceNumber    *int              `json:"source_sequence_number,omitempty"`
 	FullName                string            `json:"full_name"`
 	NIK                     string            `json:"nik,omitempty"`
 	IdentifierType          string            `json:"identifier_type,omitempty"`
