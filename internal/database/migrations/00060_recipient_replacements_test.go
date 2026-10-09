@@ -47,7 +47,7 @@ func TestRecipientReplacementsSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	migration, err := FS.ReadFile("00046_recipient_replacements.sql")
+	migration, err := FS.ReadFile("00060_recipient_replacements.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

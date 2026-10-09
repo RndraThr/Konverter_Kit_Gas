@@ -10,7 +10,7 @@ import (
 )
 
 func TestDistributionRevisionSchema(t *testing.T) {
-	migration, err := FS.ReadFile("00043_distribution_slot_revisions.sql")
+	migration, err := FS.ReadFile("00057_distribution_slot_revisions.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -43,7 +43,7 @@ func TestDistributionMediaFinalFilenameSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	migration, err := FS.ReadFile("00045_distribution_media_final_filename.sql")
+	migration, err := FS.ReadFile("00059_distribution_media_final_filename.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

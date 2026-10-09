@@ -47,7 +47,7 @@ func TestStagedDistributionMediaSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	migration, err := FS.ReadFile("00044_staged_distribution_media.sql")
+	migration, err := FS.ReadFile("00058_staged_distribution_media.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
