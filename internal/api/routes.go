@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"konkit/internal/activities"
 	"konkit/internal/administration"
@@ -422,15 +423,53 @@ func (h *Handler) handleAudit(w http.ResponseWriter, r *http.Request, rc request
 	if !h.authorize(w, r, rc.principal, "audit.view") {
 		return
 	}
-	result, err := h.deps.Audit.List(r.Context(), audit.Filter{
-		Page: intQuery(r, "page", 1), PageSize: intQuery(r, "page_size", 20), Action: r.URL.Query().Get("action"),
-		ResourceType: r.URL.Query().Get("resource_type"), ActorUserID: r.URL.Query().Get("actor_user_id"),
-	})
+	filter, fields := auditFilterFromRequest(r)
+	if len(fields) > 0 {
+		writeFieldError(w, http.StatusBadRequest, "validation_failed", "Filter riwayat aktivitas tidak valid", fields)
+		return
+	}
+	result, err := h.deps.Audit.List(r.Context(), filter)
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
 	writeData(w, http.StatusOK, result)
+}
+
+func auditFilterFromRequest(r *http.Request) (audit.Filter, map[string]string) {
+	query := r.URL.Query()
+	filter := audit.Filter{
+		Page:         intQuery(r, "page", 1),
+		PageSize:     intQuery(r, "page_size", 20),
+		Query:        strings.TrimSpace(query.Get("query")),
+		Action:       strings.TrimSpace(query.Get("action")),
+		ResourceType: strings.TrimSpace(query.Get("resource_type")),
+		ActorUserID:  strings.TrimSpace(query.Get("actor_user_id")),
+		Actor:        strings.TrimSpace(query.Get("actor")),
+		DateFrom:     strings.TrimSpace(query.Get("date_from")),
+		DateTo:       strings.TrimSpace(query.Get("date_to")),
+	}
+	fields := map[string]string{}
+	var from, to time.Time
+	var err error
+	if filter.DateFrom != "" {
+		from, err = time.Parse("2006-01-02", filter.DateFrom)
+		if err != nil {
+			fields["date_from"] = "Gunakan tanggal YYYY-MM-DD"
+		}
+	}
+	if filter.DateTo != "" {
+		to, err = time.Parse("2006-01-02", filter.DateTo)
+		if err != nil {
+			fields["date_to"] = "Gunakan tanggal YYYY-MM-DD"
+		}
+	}
+	if _, invalidFrom := fields["date_from"]; !invalidFrom {
+		if _, invalidTo := fields["date_to"]; !invalidTo && !from.IsZero() && !to.IsZero() && from.After(to) {
+			fields["date_to"] = "Tanggal akhir tidak boleh sebelum tanggal awal"
+		}
+	}
+	return filter, fields
 }
 
 func csrfToken(h *Handler, rawToken string) string {

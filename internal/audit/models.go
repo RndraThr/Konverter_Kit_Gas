@@ -33,9 +33,18 @@ type Entry struct {
 type Filter struct {
 	Page         int
 	PageSize     int
+	Query        string
 	Action       string
 	ResourceType string
 	ActorUserID  string
+	Actor        string
+	DateFrom     string
+	DateTo       string
+}
+
+type Summary struct {
+	Today  int64 `json:"today"`
+	System int64 `json:"system"`
 }
 
 type Page struct {
@@ -43,4 +52,5 @@ type Page struct {
 	Page     int     `json:"page"`
 	PageSize int     `json:"page_size"`
 	Total    int64   `json:"total"`
+	Summary  Summary `json:"summary"`
 }

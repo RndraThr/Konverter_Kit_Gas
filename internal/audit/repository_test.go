@@ -22,3 +22,14 @@ func TestNormalizeFilterAppliesSafePagination(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeFilterTrimsSearchFields(t *testing.T) {
+	got := normalizeFilter(Filter{
+		Query: "  login  ", Action: " user.updated ", ResourceType: " users ",
+		ActorUserID: " actor-id ", Actor: " rendra ", DateFrom: " 2026-10-01 ", DateTo: " 2026-10-09 ",
+	})
+	if got.Query != "login" || got.Action != "user.updated" || got.ResourceType != "users" ||
+		got.ActorUserID != "actor-id" || got.Actor != "rendra" || got.DateFrom != "2026-10-01" || got.DateTo != "2026-10-09" {
+		t.Fatalf("search fields were not normalized: %+v", got)
+	}
+}

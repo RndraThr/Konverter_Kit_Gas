@@ -150,6 +150,52 @@ func TestAdministrationRoutesUseDocumentedPrefixes(t *testing.T) {
 	}
 }
 
+func TestAuditRouteForwardsSearchAndDateFilters(t *testing.T) {
+	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowed: true}
+	audits := &fakeAuditService{page: audit.Page{}}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/audit-logs?query=login&actor=rendra&action=user.updated&resource_type=users&actor_user_id=00000000-0000-0000-0000-000000000001&date_from=2026-10-01&date_to=2026-10-09&page_size=50", nil)
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	rec := httptest.NewRecorder()
+
+	NewHandler(Dependencies{Auth: authService, Audit: audits}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	got := audits.filter
+	if got.Query != "login" || got.Actor != "rendra" || got.Action != "user.updated" || got.ResourceType != "users" ||
+		got.ActorUserID != "00000000-0000-0000-0000-000000000001" || got.DateFrom != "2026-10-01" || got.DateTo != "2026-10-09" || got.PageSize != 50 {
+		t.Fatalf("filter not forwarded: %+v", got)
+	}
+}
+
+func TestAuditRouteRejectsInvalidDateFilters(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		field string
+	}{
+		{name: "invalid from", query: "date_from=09-10-2026", field: "date_from"},
+		{name: "invalid to", query: "date_to=tomorrow", field: "date_to"},
+		{name: "reversed", query: "date_from=2026-10-09&date_to=2026-10-01", field: "date_to"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowed: true}
+			audits := &fakeAuditService{}
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/system/audit-logs?"+test.query, nil)
+			req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+			rec := httptest.NewRecorder()
+
+			NewHandler(Dependencies{Auth: authService, Audit: audits}).ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"code":"validation_failed"`) || !strings.Contains(rec.Body.String(), `"`+test.field+`"`) {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestProgramSetupRoutesUseDocumentedPrefixes(t *testing.T) {
 	authService := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowed: true}
 	programService := &fakeProgramSetupService{}
@@ -1090,7 +1136,8 @@ type fakeAdministrationService struct {
 }
 type fakeAuditService struct {
 	AuditService
-	page audit.Page
+	page   audit.Page
+	filter audit.Filter
 }
 
 type fakeProgramSetupService struct {
@@ -1341,7 +1388,8 @@ func (f *fakeProgramSetupService) AssignRegency(_ context.Context, _ auth.Princi
 	return f.assignmentResult, nil
 }
 
-func (f *fakeAuditService) List(context.Context, audit.Filter) (audit.Page, error) {
+func (f *fakeAuditService) List(_ context.Context, filter audit.Filter) (audit.Page, error) {
+	f.filter = filter
 	return f.page, nil
 }
 

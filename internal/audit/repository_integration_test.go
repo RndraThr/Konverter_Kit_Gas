@@ -3,6 +3,7 @@ package audit
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"testing"
 	"time"
@@ -48,6 +49,73 @@ func TestIntegrationRepositoryListsNewestFilteredEvents(t *testing.T) {
 	}
 	if page.Items[0].Metadata["position"] != "new" {
 		t.Fatalf("unexpected metadata: %+v", page.Items[0].Metadata)
+	}
+}
+
+func TestIntegrationRepositorySearchesActorsDatesAndSummarizesFilteredEvents(t *testing.T) {
+	pool := auditIntegrationPool(t)
+	ctx := context.Background()
+	suffix := fmt.Sprint(time.Now().UnixNano())
+	action := "audit.integration.search." + suffix
+	actor := "audit.actor." + suffix
+	email := actor + "@konkit.test"
+	var actorID string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO users(full_name,username,email,password_hash)
+		VALUES('Rendra Audit',$1,$2,'integration-hash') RETURNING id::text
+	`, actor, email).Scan(&actorID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM audit_logs WHERE action = $1", action)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM users WHERE id = $1", actorID)
+	})
+
+	events := []Event{
+		{ActorUserID: actorID, Action: action, ResourceType: "users", ResourceID: "actor-resource", Metadata: map[string]any{}},
+		{Action: action, ResourceType: "settings", ResourceID: "system-resource", Metadata: map[string]any{}},
+		{Action: action, ResourceType: "media", ResourceID: "today-resource", Metadata: map[string]any{}},
+	}
+	for _, event := range events {
+		if err := Record(ctx, pool, event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pool.Exec(ctx, `UPDATE audit_logs SET created_at='2026-10-05T05:00:00Z' WHERE action=$1 AND resource_id IN ('actor-resource','system-resource')`, action); err != nil {
+		t.Fatal(err)
+	}
+
+	repository := NewRepository(pool)
+	byActor, err := repository.List(ctx, Filter{Action: action, Actor: email, Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if byActor.Total != 1 || len(byActor.Items) != 1 || byActor.Items[0].ActorUserID != actorID {
+		t.Fatalf("actor search mismatch: %+v", byActor)
+	}
+
+	byQuery, err := repository.List(ctx, Filter{Action: action, Query: "system-resource", DateFrom: "2026-10-05", DateTo: "2026-10-05", Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if byQuery.Total != 1 || byQuery.Summary.System != 1 || byQuery.Items[0].ResourceID != "system-resource" {
+		t.Fatalf("query/date search mismatch: %+v", byQuery)
+	}
+
+	all, err := repository.List(ctx, Filter{Action: action, Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if all.Total != 3 || all.Summary.Today != 1 || all.Summary.System != 2 {
+		t.Fatalf("filtered summary mismatch: %+v", all)
+	}
+
+	legacy, err := repository.List(ctx, Filter{Action: action, ActorUserID: actorID, Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy.Total != 1 || legacy.Items[0].ActorUserID != actorID {
+		t.Fatalf("legacy actor filter mismatch: %+v", legacy)
 	}
 }
 
