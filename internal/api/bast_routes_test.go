@@ -121,7 +121,7 @@ func (f *fakeBrandingService) PatchLogo(_ context.Context, _ auth.Principal, inp
 	return bast.LogoAsset{ID: input.ID, ProgramID: input.ProgramID, SortOrder: input.SortOrder, IsVisible: input.IsVisible}, nil
 }
 func (f *fakeBrandingService) OpenLogo(_ context.Context, _, _ string) (bast.LogoContent, error) {
-	return bast.LogoContent{}, nil
+	return bast.LogoContent{Reader: io.NopCloser(strings.NewReader("png")), MimeType: "image/png", Filename: "logo.png"}, nil
 }
 
 func TestBASTBrandingListRequiresViewAndForwardsProgram(t *testing.T) {
@@ -195,4 +195,24 @@ func authenticatedRequest(method, target, body string, secret []byte) *http.Requ
 		req.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
 	}
 	return req
+}
+
+// Field officers read tender logos (mobile camera watermark) but cannot change them.
+func TestBASTBrandingReadableByFieldRoles(t *testing.T) {
+	field := &fakeAuthService{principal: auth.Principal{UserID: "field"}, allowedPermissions: map[string]bool{"distribution.view": true}}
+	service := &fakeBrandingService{logos: []bast.LogoAsset{{ID: "logo-1"}}}
+	for _, path := range []string{"/api/v1/bast/branding?program_id=prog", "/api/v1/bast/branding/logos/logo-1/content?program_id=prog"} {
+		rec := httptest.NewRecorder()
+		NewHandler(Dependencies{Auth: field, BASTBranding: service}).ServeHTTP(rec, authenticatedRequest(http.MethodGet, path, "", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status=%d body=%s", path, rec.Code, rec.Body.String())
+		}
+	}
+	secret := []byte("01234567890123456789012345678901")
+	rec := httptest.NewRecorder()
+	req := authenticatedRequest(http.MethodPatch, "/api/v1/bast/branding/logos/logo-1", `{"program_id":"prog","sort_order":1,"is_visible":true}`, secret)
+	NewHandler(Dependencies{Auth: field, BASTBranding: service, SessionSecret: secret}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("patch: status=%d", rec.Code)
+	}
 }

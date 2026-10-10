@@ -258,6 +258,14 @@ func (r *Repository) PrincipalForSession(ctx context.Context, tokenHash []byte, 
 	if err != nil {
 		return Principal{}, fmt.Errorf("find session principal: %w", err)
 	}
+	// "Terakhir aktif" in Akun → Session. At most one write per minute per
+	// session, so busy pages and sync do not write on every request.
+	if _, err := r.pool.Exec(ctx, `
+		UPDATE sessions SET last_seen_at = $2::timestamptz
+		WHERE token_hash = $1 AND last_seen_at < $2::timestamptz - interval '1 minute'
+	`, tokenHash, now); err != nil {
+		return Principal{}, fmt.Errorf("touch session: %w", err)
+	}
 	return r.PrincipalForUser(ctx, userID)
 }
 

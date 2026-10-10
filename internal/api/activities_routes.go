@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"io"
 	"mime"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"konkit/internal/activities"
+	"konkit/internal/auth"
 	"konkit/internal/media"
 )
 
@@ -137,4 +139,36 @@ func (h *Handler) handleActivityMediaItem(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
+}
+
+// ActivitySyncService is implemented by the activities service: delta sync of
+// a program+regency's activity documentation for the mobile app.
+type ActivitySyncService interface {
+	Sync(ctx context.Context, programID, regencyID, since string, scope auth.RegencyScope) (activities.SyncResult, error)
+}
+
+func (h *Handler) handleActivitiesSync(w http.ResponseWriter, r *http.Request, rc requestContext) {
+	service, ok := h.deps.Activities.(ActivitySyncService)
+	if !ok {
+		writeUnavailable(w)
+		return
+	}
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if !h.authorize(w, r, rc.principal, "activities.view") {
+		return
+	}
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	q := r.URL.Query()
+	result, err := service.Sync(r.Context(), q.Get("program_id"), q.Get("regency_id"), q.Get("since"), scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
 }

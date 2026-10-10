@@ -113,7 +113,10 @@ func (h *Handler) handlePrograms(w http.ResponseWriter, r *http.Request, rc requ
 
 func (h *Handler) handleSchedules(w http.ResponseWriter, r *http.Request, rc requestContext, id string) {
 	if r.Method == http.MethodGet && id == "" {
-		if !h.authorizeAny(w, r, rc.principal, "programs.view", "bast.view", "recipients.view", "distribution.view") {
+		// Field roles read schedules too (mobile app), without the Persiapan
+		// Program menu: distribution or activity access is enough. The list stays
+		// limited to the account's regencies.
+		if !h.authorizeAny(w, r, rc.principal, fieldReadPermissions...) {
 			return
 		}
 		scope, ok := h.regencyScope(w, r, rc.principal)
@@ -148,9 +151,15 @@ func (h *Handler) handleSchedules(w http.ResponseWriter, r *http.Request, rc req
 	writeData(w, mutationStatus(r), result)
 }
 
+// fieldReadPermissions may read schedules and package templates: Persiapan
+// Program viewers, BAST and recipient users, and field roles (POS and activity
+// documentation).
+var fieldReadPermissions = []string{"programs.view", "bast.view", "recipients.view", "distribution.view", "activities.view"}
+
 func (h *Handler) handlePackageTemplates(w http.ResponseWriter, r *http.Request, rc requestContext, id string) {
 	if r.Method == http.MethodGet && id == "" {
-		if !h.authorize(w, r, rc.principal, "programs.view") {
+		// POS Mesin needs the machine/konkit/hose options of the package template.
+		if !h.authorizeAny(w, r, rc.principal, fieldReadPermissions...) {
 			return
 		}
 		result, err := h.deps.Programs.ListPackageTemplates(r.Context())

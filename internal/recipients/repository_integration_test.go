@@ -147,7 +147,9 @@ func TestMapRegionsAggregatesRecipientsEvidenceAndSlotProgress(t *testing.T) {
 		INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,slot_quota,receipt_policy_json)
 		VALUES($1,$2,$3,$4,'Jadwal Kuota Saja','2026-01-01','2026-12-31','active',7,'{}'::jsonb) RETURNING id::text
 	`, fixture.programID, fixture.otherRegencyID, quotaOnlyPackage, quotaOnlyDoc).Scan(&quotaOnlyScheduleID))
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM program_schedules WHERE id=$1`, quotaOnlyScheduleID) })
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM program_schedules WHERE id=$1`, quotaOnlyScheduleID)
+	})
 
 	data, err := repository.MapRegions(ctx, Filter{}, auth.RegencyScope{Unrestricted: true})
 	if err != nil {

@@ -45,7 +45,7 @@ test('DCP3 to completed package distribution', async ({ page }, testInfo) => {
   await page.getByRole('button', { name: 'Unggah dan baca file' }).click();
   await expect(page.getByRole('heading', { name: 'Cocokkan kolom Excel' })).toBeVisible();
   for (const [field, column] of [
-    ['Nomor urut DCP3', 'No'], ['Nama lengkap', 'Nama'], ['NIK', 'NIK'],
+    ['Nama lengkap', 'Nama'], ['NIK', 'NIK'],
     ['Nomor kartu petani', 'No Kartu Petani'], ['Alamat', 'Alamat'],
     ['Desa / kelurahan', 'Desa'], ['Kecamatan', 'Kecamatan'], ['Nomor telepon', 'No HP'],
 	]) await chooseOption(page.getByRole('combobox', { name: new RegExp(`^${field}`) }), column);
@@ -57,21 +57,22 @@ test('DCP3 to completed package distribution', async ({ page }, testInfo) => {
   await navigateDashboard(page, 'Pendistribusian', mobile);
   await chooseOption(page.getByRole('combobox', { name: 'Jadwal distribusi' }), `Wajo E2E / ${schedule}`);
   await page.getByRole('button', { name: 'Buat Nomor 1' }).click();
-  await chooseOption(page.getByLabel('Merk/Tipe Mesin'), /SHARK/);
-  await page.getByRole('textbox', { name: 'Serial Number Mesin', exact: true }).fill(`MESIN-${project}`);
-  await chooseOption(page.getByLabel('Merk Konkit/Reducer'), /ERGAS/);
-  await page.getByRole('textbox', { name: 'Serial Number Konkit/Reducer', exact: true }).fill(`KONKIT-${project}`);
-  await chooseOption(page.getByLabel('Merk/Spesifikasi Selang'), /TRILIUNHOSE/);
-  await expect(page.getByRole('textbox', { name: 'Serial Number Selang', exact: true })).toBeDisabled();
-  await page.getByRole('button', { name: 'Simpan Nomor Bagi' }).click();
-  await expect(page.getByLabel('POS Mesin')).toBeVisible();
+  await page.getByRole('button', { name: 'Mulai dokumentasi' }).click();
+  const mesin = page.getByRole('region', { name: 'POS Mesin' });
+  await expect(mesin.getByRole('heading', { name: 'Nomor bagi #1' })).toBeVisible();
+  await mesin.getByRole('textbox', { name: 'Serial Number Mesin', exact: true }).fill(`MESIN-${project}`);
+  await mesin.getByRole('textbox', { name: 'Serial Number Konkit/Reducer', exact: true }).fill(`KONKIT-${project}`);
+  await mesin.getByRole('button', { name: 'Simpan nomor seri' }).click();
+  await expect(mesin.getByText('Nomor seri tersimpan.')).toBeVisible();
+
+  const dokumen = page.getByRole('region', { name: 'POS Dokumen' });
+  await dokumen.getByLabel('Tanggal distribusi').fill(new Date().toISOString().slice(0, 10));
+  await dokumen.getByRole('button', { name: 'Simpan tanggal distribusi' }).click();
 
   const recipientNIK = page.getByLabel('NIK Penerima');
   await recipientNIK.fill('9100000000000099');
-  await page.getByRole('option', { name: '9100000000000099 Penerima Riwayat E2E' }).click();
-  await expect(page.getByLabel('Nama')).toHaveValue('Penerima Riwayat E2E');
-  await page.getByRole('button', { name: 'Hubungkan ke Nomor Bagi Ini' }).click();
-  await expect(page.getByText('Penerima sudah pernah menerima paket sebelumnya')).toBeVisible();
+  // People who already received a package are not offered as candidates.
+  await expect(page.getByText('Penerima dengan awalan NIK tersebut tidak ditemukan.')).toBeVisible();
 
   await recipientNIK.fill(cleanNIK);
   await page.getByRole('option', { name: `${cleanNIK} ${storedCleanName}` }).click();
@@ -81,6 +82,12 @@ test('DCP3 to completed package distribution', async ({ page }, testInfo) => {
   const recipientHeading = page.getByRole('heading', { name: storedCleanName });
   await expect(recipientHeading).toBeVisible();
   await expect.poll(() => recipientHeading.evaluate((element) => element.clientHeight >= element.scrollHeight)).toBe(true);
+
+  await chooseOption(dokumen.getByLabel('Merk/Tipe Mesin'), /SHARK/);
+  await expect(dokumen.getByRole('textbox', { name: 'Serial Number Mesin', exact: true })).toHaveValue(`MESIN-${project.toUpperCase()}`);
+  await chooseOption(dokumen.getByLabel('Merk Konkit/Reducer'), /ERGAS/);
+  await chooseOption(dokumen.getByLabel('Merk/Spesifikasi Selang'), /TRILIUNHOSE/);
+  await dokumen.getByRole('button', { name: 'Simpan data peralatan' }).click();
 
   const imagePath = resolve(process.cwd(), '..', 'web', 'static', 'images', 'konkit-aceh-recipient.jpg');
 	const requiredPhotoLabels = [
@@ -114,7 +121,7 @@ test('DCP3 to completed package distribution', async ({ page }, testInfo) => {
   await expect(page.getByRole('button', { name: 'Selesaikan Distribusi' })).toBeEnabled();
   await page.getByRole('button', { name: 'Selesaikan Distribusi' }).click();
   await expect(page.getByRole('alertdialog', { name: 'Konfirmasi distribusi' })).toContainText('Aksi ini tidak dapat dibatalkan');
-  await page.getByRole('button', { name: 'Konfirmasi penyerahan' }).click();
+  await page.getByRole('button', { name: 'Konfirmasi Penyerahan' }).click();
 	await expect(page.getByText('Distribusi selesai', { exact: true })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 	await page.evaluate(() => window.scrollTo(0, 0));
