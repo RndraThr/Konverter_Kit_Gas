@@ -269,7 +269,8 @@ func (h *Handler) handleBASTBrandingList(w http.ResponseWriter, r *http.Request,
 		methodNotAllowed(w, http.MethodGet)
 		return
 	}
-	if !h.authorize(w, r, rc.principal, "programs.view") {
+	// Field officers read the tender logos for the mobile camera watermark.
+	if !h.authorizeAny(w, r, rc.principal, fieldReadPermissions...) {
 		return
 	}
 	programID := strings.TrimSpace(r.URL.Query().Get("program_id"))
@@ -362,7 +363,8 @@ func (h *Handler) handleBASTBrandingContent(w http.ResponseWriter, r *http.Reque
 		methodNotAllowed(w, http.MethodGet)
 		return
 	}
-	if !h.authorize(w, r, rc.principal, "programs.view") {
+	// Field officers read the tender logos for the mobile camera watermark.
+	if !h.authorizeAny(w, r, rc.principal, fieldReadPermissions...) {
 		return
 	}
 	programID := strings.TrimSpace(r.URL.Query().Get("program_id"))
