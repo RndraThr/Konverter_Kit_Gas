@@ -16,15 +16,15 @@ import (
 // replacementFixture is a minimal schedule with no zone, no date, and no media: enough to exercise
 // recipient eligibility and replacement without dragging in the media move pipeline.
 type replacementFixture struct {
-	scheduleID     string
-	slotNumber     int
-	slotID         string
-	allocationID   string
-	personID       string
-	nik            string
-	regencyID      string
-	programID      string
-	packageID      string
+	scheduleID      string
+	slotNumber      int
+	slotID          string
+	allocationID    string
+	personID        string
+	nik             string
+	regencyID       string
+	programID       string
+	packageID       string
 	documentationID string
 }
 
@@ -363,12 +363,12 @@ func TestLookupCandidateClassifiesEveryState(t *testing.T) {
 		nik  string
 		want string
 	}{
-		"receivable":         {receivableNIK, CandidateStateReceivable},
-		"needs review":       {needsReviewNIK, CandidateStateNeedsReview},
-		"cancelled":          {cancelledNIK, CandidateStateNotAvailable},
-		"already assigned":   {assignedNIK, CandidateStateAlreadyAssigned},
+		"receivable":          {receivableNIK, CandidateStateReceivable},
+		"needs review":        {needsReviewNIK, CandidateStateNeedsReview},
+		"cancelled":           {cancelledNIK, CandidateStateNotAvailable},
+		"already assigned":    {assignedNIK, CandidateStateAlreadyAssigned},
 		"previously received": {receivedNIK, CandidateStatePreviouslyReceived},
-		"not registered":     {prefix + "999999", CandidateStateNotRegistered},
+		"not registered":      {prefix + "999999", CandidateStateNotRegistered},
 	} {
 		t.Run(name, func(t *testing.T) {
 			result, err := repo.LookupCandidate(ctx, scheduleID, tc.nik, scope)
