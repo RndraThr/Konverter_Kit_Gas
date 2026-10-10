@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -86,6 +87,42 @@ func (h *Handler) handleMyPassword(w http.ResponseWriter, r *http.Request, rc re
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// SessionService is implemented by the profile service: the signed-in
+// user's devices (mobile Akun → Session).
+type SessionService interface {
+	Sessions(context.Context, auth.Principal, string) ([]profile.Session, error)
+	RevokeSession(context.Context, auth.Principal, string, string, auth.ClientMeta) error
+}
+
+// handleMySessions lists the user's active sessions (GET me/sessions) and
+// signs out another device (DELETE me/sessions/{id}).
+func (h *Handler) handleMySessions(w http.ResponseWriter, r *http.Request, rc requestContext, id string) {
+	sessions, ok := h.deps.Profile.(SessionService)
+	if !ok {
+		writeUnavailable(w)
+		return
+	}
+	switch {
+	case id == "" && r.Method == http.MethodGet:
+		result, err := sessions.Sessions(r.Context(), rc.principal, rc.token)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeData(w, http.StatusOK, result)
+	case id != "" && r.Method == http.MethodDelete:
+		if err := sessions.RevokeSession(r.Context(), rc.principal, rc.token, id, clientMeta(r)); err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	case id == "":
+		methodNotAllowed(w, http.MethodGet)
+	default:
+		methodNotAllowed(w, http.MethodDelete)
+	}
 }
 
 func (h *Handler) handleUsers(w http.ResponseWriter, r *http.Request, rc requestContext) {
@@ -613,7 +650,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		errors.Is(err, programs.ErrScheduleDatesInvalid), errors.Is(err, programs.ErrTemplateSlotInvalid):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), validationFields(err))
 	case errors.Is(err, distribution.ErrScheduleRequired), errors.Is(err, distribution.ErrQueryRequired),
-		errors.Is(err, distribution.ErrNIKInvalid), errors.Is(err, distribution.ErrSlotNumberRequired), errors.Is(err, distribution.ErrDistributionDateRequired):
+		errors.Is(err, distribution.ErrNIKInvalid), errors.Is(err, distribution.ErrSlotNumberRequired), errors.Is(err, distribution.ErrDistributionDateRequired),
+		errors.Is(err, distribution.ErrSerialInvalid), errors.Is(err, distribution.ErrSyncCursorInvalid), errors.Is(err, activities.ErrSyncCursorInvalid):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), validationFields(err))
 	case errors.Is(err, distribution.ErrRevisionReasonRequired), errors.Is(err, distribution.ErrRevisionStageInvalid):
 		writeFieldError(w, http.StatusUnprocessableEntity, "validation_failed", err.Error(), map[string]string{"revision": err.Error()})

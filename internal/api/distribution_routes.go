@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"io"
 	"mime"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"konkit/internal/auth"
 	"konkit/internal/distribution"
 	"konkit/internal/media"
 )
@@ -232,6 +234,10 @@ func (h *Handler) handleDistributionSlot(w http.ResponseWriter, r *http.Request,
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) == 1 && parts[0] == "search" && r.Method == http.MethodGet {
 		h.handleDistributionSlotSearch(w, r, rc)
+		return
+	}
+	if len(parts) == 1 && parts[0] == "serial-check" && r.Method == http.MethodGet {
+		h.handleDistributionSerialCheck(w, r, rc)
 		return
 	}
 	if len(parts) == 1 && parts[0] == "catalog" && r.Method == http.MethodGet {
@@ -583,4 +589,87 @@ func optionalFloat(raw string) (*float64, error) {
 		return nil, err
 	}
 	return &value, nil
+}
+
+// handleDistributionSerialCheck: GET /distribution/slots/serial-check?serial=&schedule_id=&slot_number=
+// schedule_id + slot_number (optional) exclude the slot being edited.
+func (h *Handler) handleDistributionSerialCheck(w http.ResponseWriter, r *http.Request, rc requestContext) {
+	if !h.authorize(w, r, rc.principal, "distribution.view") {
+		return
+	}
+	query := r.URL.Query()
+	excludeSlot, _ := strconv.Atoi(query.Get("slot_number"))
+	result, err := h.deps.Distribution.CheckSerial(r.Context(), query.Get("serial"), query.Get("schedule_id"), excludeSlot)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
+}
+
+// handleDistributionSync serves the mobile delta sync:
+// GET /distribution/sync/{slots|candidates}?schedule_id=&since=<RFC3339>
+// Response: {data: {items: [...], server_time}}; server_time is the next cursor.
+func (h *Handler) handleDistributionSync(w http.ResponseWriter, r *http.Request, rc requestContext, kind string) {
+	if h.deps.Distribution == nil {
+		writeUnavailable(w)
+		return
+	}
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if !h.authorize(w, r, rc.principal, "distribution.view") {
+		return
+	}
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	scheduleID, since := r.URL.Query().Get("schedule_id"), r.URL.Query().Get("since")
+	var (
+		result any
+		err    error
+	)
+	if kind == "candidates" {
+		result, err = h.deps.Distribution.SyncCandidates(r.Context(), scheduleID, since, scope)
+	} else {
+		result, err = h.deps.Distribution.SyncSlots(r.Context(), scheduleID, since, scope)
+	}
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
+}
+
+// MyActivityService is implemented by the distribution service: the slots
+// the signed-in user worked on ("Lanjutkan pekerjaan" per account).
+type MyActivityService interface {
+	MyActivity(context.Context, auth.Principal, string, auth.RegencyScope) ([]distribution.MyActivity, error)
+}
+
+func (h *Handler) handleDistributionMyActivity(w http.ResponseWriter, r *http.Request, rc requestContext) {
+	service, ok := h.deps.Distribution.(MyActivityService)
+	if !ok {
+		writeUnavailable(w)
+		return
+	}
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if !h.authorize(w, r, rc.principal, "distribution.view") {
+		return
+	}
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := service.MyActivity(r.Context(), rc.principal, r.URL.Query().Get("schedule_id"), scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
 }

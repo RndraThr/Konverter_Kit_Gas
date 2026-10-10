@@ -831,7 +831,14 @@ func (r *Repository) ListSlotCatalog(ctx context.Context, scheduleID string, sco
 				LEFT JOIN (SELECT documentation_slot_id, count(*) AS accepted FROM media_files WHERE status='accepted' GROUP BY documentation_slot_id) m ON m.documentation_slot_id = dcs.id
 				WHERE dcs.distribution_slot_id = ds.id AND dcs.is_required AND COALESCE(m.accepted,0) < dcs.min_files
 			) AS documentation_complete,
-			ds.needs_recompletion
+			ds.needs_recompletion,
+			GREATEST(
+				ds.updated_at,
+				(SELECT max(dcs.updated_at) FROM documentation_slots dcs WHERE dcs.distribution_slot_id = ds.id),
+				(SELECT max(mf.updated_at) FROM media_files mf
+					JOIN documentation_slots dcs ON dcs.id = mf.documentation_slot_id
+					WHERE dcs.distribution_slot_id = ds.id)
+			) AS last_activity_at
 		FROM distribution_slots ds
 		JOIN program_schedules ps ON ps.id = ds.schedule_id
 		WHERE ds.schedule_id=$1 AND ($2 OR ps.regency_id::text = ANY($3))
@@ -844,7 +851,7 @@ func (r *Repository) ListSlotCatalog(ctx context.Context, scheduleID string, sco
 	entries := []SlotCatalogEntry{}
 	for rows.Next() {
 		var entry SlotCatalogEntry
-		if err := rows.Scan(&entry.SlotNumber, &entry.Status, &entry.DocumentationComplete, &entry.NeedsRecompletion); err != nil {
+		if err := rows.Scan(&entry.SlotNumber, &entry.Status, &entry.DocumentationComplete, &entry.NeedsRecompletion, &entry.LastActivityAt); err != nil {
 			return nil, fmt.Errorf("scan slot catalog entry: %w", err)
 		}
 		entries = append(entries, entry)
@@ -1565,4 +1572,37 @@ func (r *Repository) CompleteSlot(ctx context.Context, actor auth.Principal, inp
 		return DistributionSlot{}, fmt.Errorf("commit complete slot: %w", err)
 	}
 	return r.getSlotByID(ctx, slotID)
+}
+
+// FindSerialMatches returns up to 5 non-cancelled slots across all schedules
+// whose machine or converter serial equals serial (already uppercased).
+// Regency scope is intentionally not applied: a unit recorded in another
+// regency is still a duplicate. Only the slot number and regency are exposed.
+func (r *Repository) FindSerialMatches(ctx context.Context, serial, excludeScheduleID string, excludeSlotNumber int) ([]SerialMatch, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT ps.id::text, ps.name, rg.name, ds.slot_number,
+			CASE WHEN upper(ds.machine_serial_number) = $1 THEN 'machine' ELSE 'converter' END,
+			ds.status
+		FROM distribution_slots ds
+		JOIN program_schedules ps ON ps.id = ds.schedule_id
+		JOIN regencies rg ON rg.id = ps.regency_id
+		WHERE ds.status <> 'cancelled'
+			AND (upper(ds.machine_serial_number) = $1 OR upper(ds.converter_serial_number) = $1)
+			AND NOT (ds.schedule_id::text = $2 AND ds.slot_number = $3)
+		ORDER BY ds.updated_at DESC
+		LIMIT 5
+	`, serial, excludeScheduleID, excludeSlotNumber)
+	if err != nil {
+		return nil, fmt.Errorf("find serial matches: %w", err)
+	}
+	defer rows.Close()
+	matches := []SerialMatch{}
+	for rows.Next() {
+		var match SerialMatch
+		if err := rows.Scan(&match.ScheduleID, &match.ScheduleName, &match.RegencyName, &match.SlotNumber, &match.Field, &match.Status); err != nil {
+			return nil, fmt.Errorf("scan serial match: %w", err)
+		}
+		matches = append(matches, match)
+	}
+	return matches, rows.Err()
 }

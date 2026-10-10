@@ -311,6 +311,10 @@ func TestListSlotCatalogReportsStatusAndCompleteness(t *testing.T) {
 	if got := byNumber[complete.SlotNumber]; got.Status != "open" || !got.DocumentationComplete {
 		t.Fatalf("complete slot entry = %+v, want status=open documentation_complete=true", got)
 	}
+	// The media upload is newer than the slot rows, so it drives last_activity_at.
+	if byNumber[complete.SlotNumber].LastActivityAt.Before(byNumber[incomplete.SlotNumber].LastActivityAt) {
+		t.Fatalf("last_activity_at: complete=%v should not be before incomplete=%v", byNumber[complete.SlotNumber].LastActivityAt, byNumber[incomplete.SlotNumber].LastActivityAt)
+	}
 }
 
 // mediaFixture seeds a distribution_slot with a documentation_slot and one accepted media_files row,
@@ -1089,5 +1093,156 @@ func TestLinkSlotReturnsRecipientIdentity(t *testing.T) {
 	}
 	if _, err := repo.SetDistributionDate(ctx, auth.Principal{}, SetDistributionDateInput{ScheduleID: scheduleID, SlotNumber: created.SlotNumber, DistributionDate: "2026-10-22"}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrAlreadyCompleted) {
 		t.Fatalf("completed date update err=%v", err)
+	}
+}
+
+// TestFindSerialMatches proves duplicates are found case-insensitively across
+// schedules, the edited slot is excluded, and cancelled slots are ignored.
+func TestFindSerialMatches(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+
+	var regencyID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan','Serial Test','SRL',true) ON CONFLICT (document_code) DO UPDATE SET is_active=true RETURNING id::text`).Scan(&regencyID))
+	var programID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES($1,'Program Test Serial','farmer',2026,'active') RETURNING id::text`, "SRL-TEST-"+suffix).Scan(&programID))
+	var packageTemplateID, docTemplateID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES($1,1,'Paket Test Serial','farmer','{}'::jsonb,'published') RETURNING id::text`, "PKG-SRL-"+suffix).Scan(&packageTemplateID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES($1,1,'Dok Test Serial','farmer','published') RETURNING id::text`, "DOC-SRL-"+suffix).Scan(&docTemplateID))
+	var scheduleID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal Test Serial','2026-01-01','2026-12-31','active','{}'::jsonb) RETURNING id::text`, programID, regencyID, packageTemplateID, docTemplateID).Scan(&scheduleID))
+
+	repo := NewRepository(pool)
+	first, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
+	must(t, err)
+	cancelled, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
+	must(t, err)
+	machine := "MS-DUP-" + suffix
+	converter := "CV-DUP-" + suffix
+	_, err = pool.Exec(ctx, `UPDATE distribution_slots SET machine_serial_number=$1, converter_serial_number=$2 WHERE schedule_id=$3 AND slot_number=$4`, machine, converter, scheduleID, first.SlotNumber)
+	must(t, err)
+	_, err = pool.Exec(ctx, `UPDATE distribution_slots SET machine_serial_number=$1, status='cancelled' WHERE schedule_id=$2 AND slot_number=$3`, machine, scheduleID, cancelled.SlotNumber)
+	must(t, err)
+
+	matches, err := repo.FindSerialMatches(ctx, strings.ToUpper(machine), "", 0)
+	must(t, err)
+	if len(matches) != 1 || matches[0].SlotNumber != first.SlotNumber || matches[0].Field != "machine" || matches[0].RegencyName != "Serial Test" {
+		t.Fatalf("machine matches = %+v, want only slot %d as machine", matches, first.SlotNumber)
+	}
+	matches, err = repo.FindSerialMatches(ctx, strings.ToUpper(converter), "", 0)
+	must(t, err)
+	if len(matches) != 1 || matches[0].Field != "converter" {
+		t.Fatalf("converter matches = %+v, want one converter match", matches)
+	}
+	matches, err = repo.FindSerialMatches(ctx, strings.ToUpper(machine), scheduleID, first.SlotNumber)
+	must(t, err)
+	if len(matches) != 0 {
+		t.Fatalf("excluded slot still matched: %+v", matches)
+	}
+}
+
+// TestMobileSyncDelta proves the sync endpoints return everything on a full
+// sync, nothing for a cursor in the future, and changed rows after an update.
+func TestMobileSyncDelta(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+
+	var regencyID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan','Sync Test','SYN',true) ON CONFLICT (document_code) DO UPDATE SET is_active=true RETURNING id::text`).Scan(&regencyID))
+	var programID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES($1,'Program Test Sync','farmer',2026,'active') RETURNING id::text`, "SYN-TEST-"+suffix).Scan(&programID))
+	var packageTemplateID, docTemplateID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES($1,1,'Paket Test Sync','farmer','{}'::jsonb,'published') RETURNING id::text`, "PKG-SYN-"+suffix).Scan(&packageTemplateID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES($1,1,'Dok Test Sync','farmer','published') RETURNING id::text`, "DOC-SYN-"+suffix).Scan(&docTemplateID))
+	var scheduleID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal Test Sync','2026-01-01','2026-12-31','active','{}'::jsonb) RETURNING id::text`, programID, regencyID, packageTemplateID, docTemplateID).Scan(&scheduleID))
+
+	nik := fmt.Sprintf("%016d", (time.Now().UnixNano()+7)%1e16)
+	var personID, nominationID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO people(full_name,nik) VALUES('Sync Candidate',$1) RETURNING id::text`, nik).Scan(&personID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO candidate_nominations(person_id,program_type,source_snapshot_json,status) VALUES($1,'farmer','{}'::jsonb,'ready') RETURNING id::text`, personID).Scan(&nominationID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,status,package_snapshot_json) VALUES($1,$2,$3,'candidate','{}'::jsonb) RETURNING id::text`, scheduleID, nominationID, personID).Scan(new(string)))
+
+	repo := NewRepository(pool)
+	scope := auth.RegencyScope{Unrestricted: true}
+	slot, err := repo.CreateSlot(ctx, auth.Principal{}, CreateSlotInput{ScheduleID: scheduleID}, scope, auth.ClientMeta{})
+	must(t, err)
+
+	full, err := repo.SyncSlots(ctx, scheduleID, nil, scope)
+	must(t, err)
+	if len(full.Items) != 1 || full.Items[0].SlotNumber != slot.SlotNumber || full.ServerTime.IsZero() {
+		t.Fatalf("full slot sync = %+v", full)
+	}
+	candidates, err := repo.SyncCandidates(ctx, scheduleID, nil, scope)
+	must(t, err)
+	if len(candidates.Items) != 1 || candidates.Items[0].NIK != nik || candidates.Items[0].Linked {
+		t.Fatalf("full candidate sync = %+v", candidates.Items)
+	}
+
+	cursor := full.ServerTime.Add(time.Second)
+	empty, err := repo.SyncSlots(ctx, scheduleID, &cursor, scope)
+	must(t, err)
+	if len(empty.Items) != 0 {
+		t.Fatalf("delta before change = %d items, want 0", len(empty.Items))
+	}
+	// A later change on the slot shows up in the next delta.
+	_, err = pool.Exec(ctx, `UPDATE distribution_slots SET updated_at = $1 WHERE schedule_id=$2 AND slot_number=$3`, cursor.Add(time.Minute), scheduleID, slot.SlotNumber)
+	must(t, err)
+	delta, err := repo.SyncSlots(ctx, scheduleID, &cursor, scope)
+	must(t, err)
+	if len(delta.Items) != 1 {
+		t.Fatalf("delta after change = %d items, want 1", len(delta.Items))
+	}
+}
+
+func TestMyActivityIsPerUser(t *testing.T) {
+	pool := distributionIntegrationPool(t)
+	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+
+	var regencyID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan','Activity Test','ACT',true) ON CONFLICT (document_code) DO UPDATE SET is_active=true RETURNING id::text`).Scan(&regencyID))
+	var programID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES($1,'Program Test Activity','farmer',2026,'active') RETURNING id::text`, "ACT-TEST-"+suffix).Scan(&programID))
+	var packageTemplateID, docTemplateID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES($1,1,'Paket Test Activity','farmer','{}'::jsonb,'published') RETURNING id::text`, "PKG-ACT-"+suffix).Scan(&packageTemplateID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES($1,1,'Dok Test Activity','farmer','published') RETURNING id::text`, "DOC-ACT-"+suffix).Scan(&docTemplateID))
+	var scheduleID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal Test Activity','2026-01-01','2026-12-31','active','{}'::jsonb) RETURNING id::text`, programID, regencyID, packageTemplateID, docTemplateID).Scan(&scheduleID))
+
+	newUser := func(name string) string {
+		var id string
+		must(t, pool.QueryRow(ctx, `INSERT INTO users(username,email,password_hash,full_name) VALUES($1,$1||'@konkit.test','x',$1) RETURNING id::text`, name+"-"+suffix).Scan(&id))
+		t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, id) })
+		return id
+	}
+	alice, bob := newUser("activity.alice"), newUser("activity.bob")
+
+	repo := NewRepository(pool)
+	scope := auth.RegencyScope{Unrestricted: true}
+	first, err := repo.CreateSlot(ctx, auth.Principal{UserID: alice}, CreateSlotInput{ScheduleID: scheduleID}, scope, auth.ClientMeta{})
+	must(t, err)
+	second, err := repo.CreateSlot(ctx, auth.Principal{UserID: bob}, CreateSlotInput{ScheduleID: scheduleID}, scope, auth.ClientMeta{})
+	must(t, err)
+	third, err := repo.CreateSlot(ctx, auth.Principal{UserID: alice}, CreateSlotInput{ScheduleID: scheduleID}, scope, auth.ClientMeta{})
+	must(t, err)
+
+	mine, err := repo.MyActivity(ctx, alice, scheduleID, scope)
+	must(t, err)
+	if len(mine) != 2 || mine[0].SlotNumber != third.SlotNumber || mine[1].SlotNumber != first.SlotNumber {
+		t.Fatalf("alice activity = %+v, want slots %d then %d", mine, third.SlotNumber, first.SlotNumber)
+	}
+	theirs, err := repo.MyActivity(ctx, bob, scheduleID, scope)
+	must(t, err)
+	if len(theirs) != 1 || theirs[0].SlotNumber != second.SlotNumber {
+		t.Fatalf("bob activity = %+v, want slot %d", theirs, second.SlotNumber)
+	}
+	// Outside the caller's regencies nothing is returned.
+	none, err := repo.MyActivity(ctx, alice, scheduleID, auth.RegencyScope{RegencyIDs: []string{"00000000-0000-0000-0000-000000000000"}})
+	must(t, err)
+	if len(none) != 0 {
+		t.Fatalf("out-of-scope activity = %+v", none)
 	}
 }

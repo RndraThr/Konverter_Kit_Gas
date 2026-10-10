@@ -25,6 +25,7 @@ import (
 	"konkit/internal/media"
 	"konkit/internal/profile"
 	"konkit/internal/programs"
+	"konkit/internal/realtime"
 	"konkit/internal/recipients"
 	"konkit/internal/reports"
 	"konkit/internal/settings"
@@ -91,6 +92,10 @@ func run(ctx context.Context, cfg config.Config) error {
 	bastSosialisasiService := bast.NewSosialisasiService(bastRepository, mediaStorage)
 	bastTraining10Service := bast.NewTraining10Service(bastRepository, mediaStorage)
 	bastTraining100Service := bast.NewTraining100Service(bastRepository, mediaStorage)
+	// Change signals for the mobile app: Postgres NOTIFY -> WebSocket clients.
+	realtimeHub := realtime.NewHub()
+	go realtime.Listen(ctx, cfg.DatabaseURL, realtimeHub)
+
 	apiHandler := apihttp.NewHandler(apihttp.Dependencies{
 		Auth:              authService,
 		Profile:           profile.NewService(profile.NewRepository(pool)),
@@ -120,6 +125,7 @@ func run(ctx context.Context, cfg config.Config) error {
 		Training10:        bastTraining10Service,
 		Training100:       bastTraining100Service,
 		SessionSecret:     cfg.SessionSecret,
+		Realtime:          realtimeHub,
 	})
 	handler := web.NewHandler(web.Dependencies{
 		Auth:                authService,

@@ -168,6 +168,21 @@ func TestIntegrationRepositoryPersistsExpiresAndDeletesSession(t *testing.T) {
 	if err != nil || principal.UserID != user.ID {
 		t.Fatalf("unexpected principal: %+v err=%v", principal, err)
 	}
+	// Using the session moves its last-seen time (at most once a minute).
+	later := now.Add(5 * time.Minute)
+	if _, err := pool.Exec(ctx, "UPDATE sessions SET last_seen_at = $2 WHERE token_hash = $1", tokenHash, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.PrincipalForSession(ctx, tokenHash, later); err != nil {
+		t.Fatal(err)
+	}
+	var lastSeen time.Time
+	if err := pool.QueryRow(ctx, "SELECT last_seen_at FROM sessions WHERE token_hash = $1", tokenHash).Scan(&lastSeen); err != nil {
+		t.Fatal(err)
+	}
+	if !lastSeen.Equal(later.Truncate(time.Microsecond)) {
+		t.Fatalf("last_seen_at = %v, want %v", lastSeen, later)
+	}
 	if _, err := repository.PrincipalForSession(ctx, tokenHash, now.Add(2*time.Hour)); !errors.Is(err, ErrSessionNotFound) {
 		t.Fatalf("expected expired session rejection, got %v", err)
 	}

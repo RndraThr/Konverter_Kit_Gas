@@ -20,6 +20,7 @@ import (
 	apphealth "konkit/internal/health"
 	"konkit/internal/profile"
 	"konkit/internal/programs"
+	"konkit/internal/realtime"
 	"konkit/internal/recipients"
 	"konkit/internal/reports"
 	"konkit/internal/settings"
@@ -114,6 +115,9 @@ type DistributionService interface {
 	RetryMediaMove(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) (distribution.MediaFile, error)
 	OpenMedia(context.Context, string, auth.RegencyScope) (distribution.MediaContent, error)
 	ListSlotCatalog(context.Context, string, auth.RegencyScope) ([]distribution.SlotCatalogEntry, error)
+	CheckSerial(ctx context.Context, serial, excludeScheduleID string, excludeSlotNumber int) ([]distribution.SerialMatch, error)
+	SyncCandidates(ctx context.Context, scheduleID, since string, scope auth.RegencyScope) (distribution.SyncResult[distribution.SyncCandidate], error)
+	SyncSlots(ctx context.Context, scheduleID, since string, scope auth.RegencyScope) (distribution.SyncResult[distribution.DistributionSlot], error)
 }
 
 type ReportsService interface {
@@ -271,6 +275,8 @@ type Dependencies struct {
 	Training10        RakordaService
 	Training100       RakordaService
 	SessionSecret     []byte
+	// Realtime pushes change signals over WebSocket (nil: endpoint unavailable).
+	Realtime *realtime.Hub
 }
 
 type Handler struct {
@@ -339,10 +345,16 @@ func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request) (requestC
 func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requestContext) {
 	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/"), "/")
 	switch {
+	case path == "realtime":
+		h.handleRealtime(w, r, rc)
 	case path == "me":
 		h.handleMe(w, r, rc)
 	case path == "me/password":
 		h.handleMyPassword(w, r, rc)
+	case path == "me/sessions":
+		h.handleMySessions(w, r, rc, "")
+	case strings.HasPrefix(path, "me/sessions/"):
+		h.handleMySessions(w, r, rc, strings.TrimPrefix(path, "me/sessions/"))
 	case path == "dashboard/summary":
 		h.handleDashboardSummary(w, r, rc)
 	case path == "admin/users":
@@ -377,6 +389,10 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleDistributionSlots(w, r, rc)
 	case path == "distribution/candidates":
 		h.handleDistributionCandidates(w, r, rc)
+	case path == "distribution/my-activity":
+		h.handleDistributionMyActivity(w, r, rc)
+	case path == "distribution/sync/slots" || path == "distribution/sync/candidates":
+		h.handleDistributionSync(w, r, rc, strings.TrimPrefix(path, "distribution/sync/"))
 	case path == "distribution/candidate-suggestions":
 		h.handleDistributionCandidateSuggestions(w, r, rc)
 	case path == "distribution/candidate-lookup":
@@ -395,6 +411,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleRecipientMap(w, r, rc)
 	case strings.HasPrefix(path, "recipients/"):
 		h.handleRecipient(w, r, rc, strings.TrimPrefix(path, "recipients/"))
+	case path == "activities/sync":
+		h.handleActivitiesSync(w, r, rc)
 	case path == "activities/media":
 		h.handleActivitiesMedia(w, r, rc)
 	case strings.HasPrefix(path, "activities/media/"):

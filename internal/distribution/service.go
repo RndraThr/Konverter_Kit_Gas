@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"konkit/internal/auth"
 	"konkit/internal/media"
@@ -88,6 +89,11 @@ type posPenyerahanRepository interface {
 	ListSlotCatalog(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]SlotCatalogEntry, error)
 }
 
+// serialRepository finds other slots that already recorded a serial number.
+type serialRepository interface {
+	FindSerialMatches(ctx context.Context, serial, excludeScheduleID string, excludeSlotNumber int) ([]SerialMatch, error)
+}
+
 type distributionDateRepository interface {
 	SetDistributionDate(ctx context.Context, actor auth.Principal, input SetDistributionDateInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
 }
@@ -104,6 +110,9 @@ type Service struct {
 	distributionDateRepository distributionDateRepository
 	revisionRepository         revisionRepository
 	mediaStageRepository       mediaStageRepository
+	serialRepository           serialRepository
+	syncRepository             syncRepository
+	myActivityRepository       myActivityRepository
 	storage                    media.Storage
 	videoLimiter               *media.VideoLimiter
 }
@@ -121,6 +130,9 @@ func NewService(repository any, dependencies ...any) *Service {
 	service.distributionDateRepository, _ = repository.(distributionDateRepository)
 	service.revisionRepository, _ = repository.(revisionRepository)
 	service.mediaStageRepository, _ = repository.(mediaStageRepository)
+	service.serialRepository, _ = repository.(serialRepository)
+	service.syncRepository, _ = repository.(syncRepository)
+	service.myActivityRepository, _ = repository.(myActivityRepository)
 	for _, dependency := range dependencies {
 		switch value := dependency.(type) {
 		case media.Storage:
@@ -565,4 +577,19 @@ func newStorageKey() (string, error) {
 	value[6] = (value[6] & 0x0f) | 0x40
 	value[8] = (value[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", value[0:4], value[4:6], value[6:8], value[8:10], value[10:16]), nil
+}
+
+// CheckSerial reports slots (any schedule, any regency) that already use the
+// serial as machine or converter serial, so the field app can warn before a
+// unit is recorded twice. The slot being edited can be excluded. Matching is
+// case-insensitive, like the uppercase normalization applied when saving.
+func (s *Service) CheckSerial(ctx context.Context, serial, excludeScheduleID string, excludeSlotNumber int) ([]SerialMatch, error) {
+	serial = strings.ToUpper(strings.TrimSpace(serial))
+	if serial == "" || utf8.RuneCountInString(serial) > 100 {
+		return nil, ErrSerialInvalid
+	}
+	if s.serialRepository == nil {
+		return nil, errors.New("distribution serial check is unavailable")
+	}
+	return s.serialRepository.FindSerialMatches(ctx, serial, strings.TrimSpace(excludeScheduleID), excludeSlotNumber)
 }

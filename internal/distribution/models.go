@@ -10,6 +10,8 @@ var (
 	ErrScheduleRequired          = errors.New("distribution schedule is required")
 	ErrQueryRequired             = errors.New("recipient search query is required")
 	ErrNIKInvalid                = errors.New("NIK must contain 16 digits")
+	ErrSerialInvalid             = errors.New("serial number must contain 1 to 100 characters")
+	ErrSyncCursorInvalid         = errors.New("sync cursor must be an RFC3339 timestamp")
 	ErrIdentifierConflict        = errors.New("recipient identifier is already in use")
 	ErrMediaUnavailable          = errors.New("media storage is unavailable")
 	ErrMediaNotFound             = errors.New("documentation media not found")
@@ -114,6 +116,9 @@ type SlotCatalogEntry struct {
 	Status                string `json:"status"`
 	DocumentationComplete bool   `json:"documentation_complete"`
 	NeedsRecompletion     bool   `json:"needs_recompletion"`
+	// LastActivityAt is the latest change to the slot, its documentation slots
+	// or their media (upload or delete). The mobile app orders "continue work" by it.
+	LastActivityAt time.Time `json:"last_activity_at"`
 }
 
 type CreateSlotInput struct {
@@ -300,4 +305,15 @@ type MediaMoveJob struct {
 	TargetFilename   string
 	TargetGeneration int64
 	Attempts         int
+}
+
+// SerialMatch is a slot that already recorded a serial number.
+type SerialMatch struct {
+	ScheduleID   string `json:"schedule_id"`
+	ScheduleName string `json:"schedule_name"`
+	RegencyName  string `json:"regency_name"`
+	SlotNumber   int    `json:"slot_number"`
+	// Field is "machine" or "converter".
+	Field  string `json:"field"`
+	Status string `json:"status"`
 }
