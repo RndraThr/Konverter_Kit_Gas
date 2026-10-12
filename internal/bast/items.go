@@ -222,25 +222,25 @@ func inspectionDescription(entry TemplateEntry, v TemplateVariant) string {
 	var text string
 	switch entry.Kind {
 	case ItemKindMachine:
-		text = "MESIN " + v.Brand + " TYPE " + v.Type
+		text = "Mesin " + v.Brand + " tipe " + v.Type
 	case ItemKindConverter:
-		text = "KONVERTER KIT " + v.Brand
+		text = "Konverter Kit " + v.Brand
 	case ItemKindHoseSuction, ItemKindHoseDischarge:
-		label := "SELANG HISAP"
+		label := "Selang Hisap"
 		if entry.Kind == ItemKindHoseDischarge {
-			label = "SELANG BUANG"
+			label = "Selang Buang"
 		}
 		if strings.TrimSpace(v.Spec) != "" {
 			label += " (" + strings.TrimSpace(v.Spec) + ")"
 		}
-		text = label + " MERK " + v.Brand
+		text = label + " merek " + v.Brand
 	default:
 		text = entry.Label
 		if brand := strings.TrimSpace(v.Brand); brand != "" && brand != "-" && !strings.EqualFold(brand, "N.A") {
-			text += " MERK " + brand
+			text += " merek " + brand
 		}
 	}
-	return strings.ToUpper(strings.Join(strings.Fields(text), " "))
+	return strings.Join(strings.Fields(text), " ")
 }
 
 var inspectionDocumentLabels = map[string]string{"sertifikat": "Sertifikat", "manual_book": "Manual Book", "garansi": "Garansi"}
@@ -335,7 +335,7 @@ func pemeriksaanRowsFor(form PemeriksaanForm, entries []TemplateEntry, resolved 
 		if !wanted[entry.Ref] || !ok {
 			continue
 		}
-		rows = append(rows, PemeriksaanRow{Ref: entry.Ref, Description: inspectionDescription(entry, r.Variant), Unit: strings.ToUpper(firstNonEmpty(entry.Unit, "PCS")), QuantityPerPackage: entry.QuantityPerPackage, Notes: notes})
+		rows = append(rows, PemeriksaanRow{Ref: entry.Ref, Description: inspectionDescription(entry, r.Variant), Unit: firstNonEmpty(strings.TrimSpace(entry.Unit), "Buah"), QuantityPerPackage: entry.QuantityPerPackage, Notes: notes})
 		if r.PONumber != "" && !slices.Contains(numbers, r.PONumber) {
 			numbers = append(numbers, r.PONumber)
 		}

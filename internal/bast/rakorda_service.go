@@ -124,10 +124,16 @@ func (s *RakordaService) Preview(ctx context.Context, scheduleID, documentDate s
 	if err != nil {
 		return AggregatePreview{}, err
 	}
+	marks, markImages, err := loadSignatoryMarks(ctx, s.repository, ctxData.ScheduleID, rakordaSignatureDocument(s.spec.kind))
+	if err != nil {
+		return AggregatePreview{}, err
+	}
+	snapshot.SignatureMarks = marks
 	logoBytes, err := loadLogoBytes(ctx, s.storage, logos)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
+	mergeImages(logoBytes, markImages)
 	slotIDs := make([]string, 0, len(snapshot.Participants))
 	for _, participant := range snapshot.Participants {
 		slotIDs = append(slotIDs, participant.SignatureKey)
@@ -252,4 +258,18 @@ func safeFilenamePart(value string) string {
 	value = strings.ToUpper(strings.TrimSpace(value))
 	value = strings.NewReplacer("/", "-", "\\", "-", " ", "-").Replace(value)
 	return value
+}
+
+// rakordaSignatureDocument memetakan jenis daftar hadir ke kunci aturan tanda
+// tangan; RAKORDA tidak memiliki tabel tanda tangan.
+func rakordaSignatureDocument(kind RakordaKind) string {
+	switch kind {
+	case RakordaKindSosialisasi:
+		return "sosialisasi"
+	case RakordaKindTraining10:
+		return "training-10"
+	case RakordaKindTraining100:
+		return "training-100"
+	}
+	return ""
 }

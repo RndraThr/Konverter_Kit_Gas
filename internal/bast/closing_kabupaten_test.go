@@ -77,8 +77,8 @@ func TestRenderClosingKabupatenIncludesProcurementHeadingUnderlinedTitleAndTotal
 	}
 	content := decodedPDFStreams(t, rendered.PDF)
 	for _, want := range []string{
-		"PENGADAAN BARANG", "LIQUEFIED", "PETROLEUM GAS", "TAHUN ANGGARAN 2026", "PT PERTAMINA PATRA NIAGA",
-		closingKabupatenTitle, "FORM REKAPITULASI CLOSING KABUPATEN / KOTA", "01/25/WJO/KKT/CK/X/2026", "Jumlah/Total", "PADA HARI INI",
+		"Pengadaan Barang Penyediaan dan Pendistribusian Paket Perdana", "Liquefied Petroleum Gas", "Sasaran Tahun Anggaran 2026 di PT Pertamina Patra Niaga",
+		closingKabupatenTitle, "FORM REKAPITULASI CLOSING KABUPATEN / KOTA", "01/25/WJO/KKT/CK/X/2026", "Jumlah/Total", "Pada", "Liquefied",
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("rendered closing kabupaten is missing %q", want)
@@ -127,7 +127,7 @@ func TestRenderClosingKabupatenSignatureNamesWrapInsteadOfOverlapping(t *testing
 	}
 }
 
-func TestRenderClosingKabupatenUppercasesLegacyBusinessValues(t *testing.T) {
+func TestRenderClosingKabupatenPrintsTitleCaseNamesAndMachinesAsTyped(t *testing.T) {
 	snapshot := sampleClosingKabupatenSnapshot()
 	snapshot.RegencyName = "Kabupaten Wajo"
 	snapshot.ProvinceName = "Sulawesi Selatan"
@@ -139,13 +139,13 @@ func TestRenderClosingKabupatenUppercasesLegacyBusinessValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := decodedPDFStreams(t, rendered.PDF)
-	for _, want := range []string{"KABUPATEN WAJO", "SULAWESI SELATAN", "LAPANGAN DESA", "POMPA TANI", "BUDI SANTOSO", "ANDI SAPUTRA"} {
+	for _, want := range []string{"Kabupaten Wajo", "Sulawesi Selatan", "Lapangan Desa", "Pompa Tani", "Budi Santoso", "Andi Saputra"} {
 		if !strings.Contains(content, want) {
-			t.Fatalf("rendered closing kabupaten is missing uppercase legacy value %q", want)
+			t.Fatalf("rendered closing kabupaten is missing %q", want)
 		}
 	}
-	if strings.Contains(content, "Pompa Tani") || strings.Contains(content, "Budi Santoso") {
-		t.Fatal("rendered closing kabupaten still contains mixed-case legacy business values")
+	if strings.Contains(content, "POMPA TANI") || strings.Contains(content, "BUDI SANTOSO") {
+		t.Fatal("rendered closing kabupaten should title-case names and print machine values as typed")
 	}
 }
 

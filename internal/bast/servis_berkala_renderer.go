@@ -34,6 +34,7 @@ func RenderServisBerkala(snapshot ServisBerkalaSnapshot, logoBytes map[string][]
 		return RenderedAggregate{}, ErrInvalidInput
 	}
 	pdf := fpdf.New("P", "mm", "A4", "")
+	fixPDFDates(pdf, snapshot.DocumentDate)
 	pdf.SetMargins(marginMM, topMarginMM, marginMM)
 	pdf.SetAutoPageBreak(false, bottomMarginMM)
 	pdf.SetTitle(servisBerkalaTitle, false)
@@ -44,51 +45,59 @@ func RenderServisBerkala(snapshot ServisBerkalaSnapshot, logoBytes map[string][]
 	if err != nil {
 		return RenderedAggregate{}, err
 	}
-	pdf.AddPage()
-	contentWidth := pageWidthMM - 2*marginMM
-	textLeft := marginMM + activityColumnWidths[0]
-	textWidth := contentWidth - 2*activityColumnWidths[0]
+	registerSignatoryImages(pdf, logoBytes)
+	registerWetScan(pdf, logoBytes)
+	// Servis Berkala satu halaman: halaman tanda tangan adalah seluruh dokumen.
+	if snapshot.Wet.Scanned {
+		drawWetScanPage(pdf, "P")
+	} else {
+		pdf.AddPage()
+		contentWidth := pageWidthMM - 2*marginMM
+		textLeft := marginMM + activityColumnWidths[0]
+		textWidth := contentWidth - 2*activityColumnWidths[0]
 
-	pdf.SetXY(marginMM, renderRakordaLogoStrip(pdf, logos)+3)
-	pdf.SetFont(activityFont, "BU", activityTitlePt)
-	pdf.CellFormat(contentWidth, 7, servisBerkalaTitle, "", 1, "C", false, 0, "")
-	pdf.Ln(4)
-	renderActivityProcurementHeading(pdf, contentWidth, snapshot.FiscalYear, activitySubtitlePt)
+		pdf.SetXY(marginMM, renderRakordaLogoStrip(pdf, logos)+3)
+		pdf.SetFont(activityFont, "BU", activityTitlePt)
+		pdf.CellFormat(contentWidth, 7, servisBerkalaTitle, "", 1, "C", false, 0, "")
+		pdf.Ln(4)
+		renderActivityProcurementHeading(pdf, contentWidth, snapshot.FiscalYear, activitySubtitlePt)
 
-	pdf.SetFont(activityFont, "", activityTextPt)
-	y := pdf.GetY()
-	number := "No. " + snapshot.DocumentNumber
-	pdf.Text(marginMM+(contentWidth-pdf.GetStringWidth(number))/2, textBaseline(y, servisDocumentNumberRow, activityTextPt), number)
-	y += servisDocumentNumberRow + servisSectionGapMM
+		pdf.SetFont(activityFont, "", activityTextPt)
+		y := pdf.GetY()
+		number := "No. " + snapshot.DocumentNumber
+		pdf.Text(marginMM+(contentWidth-pdf.GetStringWidth(number))/2, textBaseline(y, servisDocumentNumberRow, activityTextPt), number)
+		y += servisDocumentNumberRow + servisSectionGapMM
 
-	for _, item := range []struct{ label, value string }{
-		{"Kabupaten / Kota", textnorm.DisplayTitle(snapshot.RegencyName)},
-		{"Provinsi", textnorm.DisplayTitle(snapshot.ProvinceName)},
-	} {
-		baseline := textBaseline(y, servisMetadataRowMM, activityTextPt)
-		pdf.Text(textLeft, baseline, item.label)
-		pdf.Text(textLeft+servisMetadataLabelMM, baseline, ":")
-		pdf.Text(textLeft+servisMetadataLabelMM+3.5, baseline, item.value)
-		y += servisMetadataRowMM
-	}
-	pdf.SetXY(textLeft, y+servisSectionGapMM)
+		for _, item := range []struct{ label, value string }{
+			{"Kabupaten / Kota", textnorm.DisplayTitle(snapshot.RegencyName)},
+			{"Provinsi", textnorm.DisplayTitle(snapshot.ProvinceName)},
+		} {
+			baseline := textBaseline(y, servisMetadataRowMM, activityTextPt)
+			pdf.Text(textLeft, baseline, item.label)
+			pdf.Text(textLeft+servisMetadataLabelMM, baseline, ":")
+			pdf.Text(textLeft+servisMetadataLabelMM+3.5, baseline, item.value)
+			y += servisMetadataRowMM
+		}
+		pdf.SetXY(textLeft, y+servisSectionGapMM)
 
-	renderJustifiedSegments(pdf, textLeft, textWidth, servisTextLineMM, activityTextPt, servisBerkalaNarrative(snapshot.FiscalYear, snapshot.ZoneName))
-	pdf.SetFont(activityFont, "", activityTextPt)
-	y = pdf.GetY()
-	pdf.Text(textLeft, textBaseline(y, servisTextLineMM, activityTextPt), "Adapun Jadwal Servis Berkala akan dilaksanakan:")
-	y += servisTextLineMM + servisParagraphGapMM
-
-	for i, period := range snapshot.Services {
-		pdf.Text(textLeft+servisListNumberIndent, textBaseline(y, servisTextLineMM, activityTextPt), fmt.Sprintf("%d.", i+1))
-		pdf.Text(textLeft+servisListTextIndent, textBaseline(y, servisTextLineMM, activityTextPt), fmt.Sprintf("Servis ke-%d", i+1))
-		y += servisTextLineMM
-		pdf.Text(textLeft+servisListTextIndent, textBaseline(y, servisTextLineMM, activityTextPt), formatServisRange(period))
+		renderJustifiedSegments(pdf, textLeft, textWidth, servisTextLineMM, activityTextPt, servisBerkalaNarrative(snapshot.FiscalYear, snapshot.ZoneName))
+		pdf.SetFont(activityFont, "", activityTextPt)
+		y = pdf.GetY()
+		pdf.Text(textLeft, textBaseline(y, servisTextLineMM, activityTextPt), "Adapun Jadwal Servis Berkala akan dilaksanakan:")
 		y += servisTextLineMM + servisParagraphGapMM
-	}
 
-	pdf.SetY(y + servisSignatureGapMM)
-	renderServisSignatures(pdf, snapshot)
+		for i, period := range snapshot.Services {
+			pdf.Text(textLeft+servisListNumberIndent, textBaseline(y, servisTextLineMM, activityTextPt), fmt.Sprintf("%d.", i+1))
+			pdf.Text(textLeft+servisListTextIndent, textBaseline(y, servisTextLineMM, activityTextPt), fmt.Sprintf("Servis ke-%d", i+1))
+			y += servisTextLineMM
+			pdf.Text(textLeft+servisListTextIndent, textBaseline(y, servisTextLineMM, activityTextPt), formatServisRange(period))
+			y += servisTextLineMM + servisParagraphGapMM
+		}
+
+		pdf.SetY(y + servisSignatureGapMM)
+		renderServisSignatures(pdf, snapshot)
+		drawWetFooter(pdf, snapshot.Wet, "Servis Berkala", snapshot.DocumentDate)
+	}
 
 	var output bytes.Buffer
 	if err := pdf.Output(&output); err != nil {
@@ -148,6 +157,7 @@ func renderServisSignatures(pdf *fpdf.Fpdf, snapshot ServisBerkalaSnapshot) {
 			pdf.Text(x+(width-pdf.GetStringWidth(text))/2, textBaseline(headTop+float64(j)*lineHeight, lineHeight, activitySignaturePt), text)
 		}
 		pdf.Rect(x, y+headHeight, width, servisSignatureSpaceMM, "")
+		drawSignatoryMark(pdf, signatureDocuments["servis-berkala"][i], snapshot.SignatureMarks[signatureDocuments["servis-berkala"][i]], x, y+headHeight, width, servisSignatureSpaceMM)
 		nameTop := y + headHeight + servisSignatureSpaceMM
 		pdf.Rect(x, nameTop, width, nameHeight, "")
 		for j, text := range names[i] {

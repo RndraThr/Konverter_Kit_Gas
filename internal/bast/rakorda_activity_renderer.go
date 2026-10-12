@@ -81,6 +81,7 @@ func renderActivityAttendance(document activityDocument, snapshot RakordaSnapsho
 		return RenderedAggregate{}, ErrInvalidInput
 	}
 	pdf := fpdf.New("P", "mm", "A4", "")
+	fixPDFDates(pdf, snapshot.DocumentDate)
 	pdf.SetMargins(marginMM, topMarginMM, marginMM)
 	pdf.SetAutoPageBreak(false, bottomMarginMM)
 	pdf.SetTitle(document.title, false)
@@ -92,6 +93,7 @@ func renderActivityAttendance(document activityDocument, snapshot RakordaSnapsho
 		return RenderedAggregate{}, err
 	}
 	registerSignatures(pdf, logoBytes)
+	registerSignatoryImages(pdf, logoBytes)
 
 	pdf.AddPage()
 	renderActivityHeader(pdf, document, snapshot, logos)
@@ -118,7 +120,7 @@ func renderActivityAttendance(document activityDocument, snapshot RakordaSnapsho
 	}
 
 	// Tanda tangan selalu di halaman terakhir tersendiri, terpisah dari tabel hadir.
-	signature := layoutActivitySignatures(pdf, snapshot.Signatories, activitySignatureHeaders)
+	signature := layoutActivitySignatures(pdf, snapshot.Signatories, activitySignatureHeaders).withMarks(fourSignatories, snapshot.SignatureMarks)
 	pdf.AddPage()
 	pdf.SetXY(marginMM, renderRakordaLogoStrip(pdf, logos)+activitySignatureGap)
 	renderActivitySignatures(pdf, signature)
@@ -178,7 +180,7 @@ func renderActivityHeader(pdf *fpdf.Fpdf, document activityDocument, snapshot Ra
 func renderActivityProcurementHeading(pdf *fpdf.Fpdf, contentWidth float64, fiscalYear int, fontSize float64) {
 	lines := [][]textSegment{
 		{{text: "Pengadaan Barang Penyediaan dan Pendistribusian Paket Perdana", style: "B"}},
-		{{text: "Liquefied Petroleum Gas", style: "BI"}, {text: " (LPG) untuk Mesin Pompa Air Bagi Petani", style: "B"}},
+		{{text: "Liquefied Petroleum Gas", style: "BI"}, {text: " (LPG) untuk Mesin Pompa Air bagi Petani", style: "B"}},
 		{{text: fmt.Sprintf("Sasaran Tahun Anggaran %d di PT Pertamina Patra Niaga", fiscalYear), style: "B"}},
 	}
 	lineHeight := fontSize * 0.3528 * 1.37
@@ -321,6 +323,16 @@ type activitySignatureLayout struct {
 	// nipPt adalah ukuran huruf baris NIP (baris terakhir kolom Dinas); sama
 	// dengan nama kecuali NIP luar biasa panjang sehingga perlu diperkecil.
 	nipPt float64
+	// roles dan marks: pihak per kolom dan tanda tangan digital/stempel yang
+	// dicetak di ruang tanda tangannya.
+	roles []string
+	marks SignatureMarks
+}
+
+// withMarks menambahkan tanda tangan digital/stempel pada kolom sesuai urutan pihak.
+func (layout activitySignatureLayout) withMarks(roles []string, marks SignatureMarks) activitySignatureLayout {
+	layout.roles, layout.marks = roles, marks
+	return layout
 }
 
 // layoutActivitySignatures menyusun empat kolom tanda tangan sama lebar,
@@ -328,16 +340,24 @@ type activitySignatureLayout struct {
 // dibungkus per kata dan baris lanjutannya dimulai dari tepi kiri kolom. NIP
 // selalu satu baris: bila tetap tidak muat, hanya baris NIP yang diperkecil.
 func layoutActivitySignatures(pdf *fpdf.Fpdf, signatories closingSignatories, headers []string) activitySignatureLayout {
-	column := activitySignatureTableMM / 4
-	usable := column - 2*activitySignaturePadXMM
-	nip := strings.TrimSpace("NIP : " + strings.TrimSpace(signatories.AgricultureOfficeNIP))
-	layout := activitySignatureLayout{widths: []float64{column, column, column, column}, nipPt: fitFontSize(pdf, nip, usable, activitySignatureNamePt, 7)}
-
 	names := []string{textnorm.DisplayTitle(signatories.AgricultureOfficeName), textnorm.DisplayTitle(signatories.InstallerName), textnorm.DisplayTitle(signatories.SupervisorName), textnorm.DisplayTitle(signatories.PertaminaRepName)}
-	for i, name := range names {
+	return layoutSignatures(pdf, activitySignatureTableMM, headers, names, signatories.AgricultureOfficeNIP)
+}
+
+// layoutSignatures menyusun kolom tanda tangan sama lebar sepanjang
+// tableWidth: satu kolom per header, Nama (dan NIP pada kolom pertama) dalam
+// satu sel tanpa garis pemisah. Dipakai Sosialisasi, Training, TKDN,
+// Pemeriksaan, DP3, Rekap Harian, dan Closing agar tampilannya seragam.
+func layoutSignatures(pdf *fpdf.Fpdf, tableWidth float64, headers, names []string, agricultureNIP string) activitySignatureLayout {
+	column := tableWidth / float64(len(headers))
+	usable := column - 2*activitySignaturePadXMM
+	nip := strings.TrimSpace("NIP : " + strings.TrimSpace(agricultureNIP))
+	layout := activitySignatureLayout{nipPt: fitFontSize(pdf, nip, usable, activitySignatureNamePt, 7)}
+	for i := range headers {
+		layout.widths = append(layout.widths, column)
 		layout.headers = append(layout.headers, splitCellLines(pdf, headers[i], usable))
 		pdf.SetFont(activityFont, "", activitySignatureNamePt)
-		lines := wrapWords(pdf, strings.TrimSpace("Nama : "+strings.TrimSpace(name)), usable)
+		lines := wrapWords(pdf, strings.TrimSpace("Nama : "+strings.TrimSpace(names[i])), usable)
 		if i == 0 {
 			lines = append(lines, nip)
 		}
@@ -411,16 +431,22 @@ func (layout activitySignatureLayout) height() float64 {
 }
 
 func renderActivitySignatures(pdf *fpdf.Fpdf, layout activitySignatureLayout) {
-	nameLine := signatureLineHeight(activitySignatureNamePt)
-	headHeight, nameHeight := tightCellHeight(layout.headers), tightCellHeightAt(layout.names, nameLine)
-	lineHeight := activitySignatureLineHeight()
-
 	tableWidth := 0.0
 	for _, width := range layout.widths {
 		tableWidth += width
 	}
+	renderSignaturesAt(pdf, layout, (pageWidthMM-tableWidth)/2)
+}
+
+// renderSignaturesAt menggambar tabel tanda tangan mulai dari tepi kiri left
+// pada posisi Y saat ini.
+func renderSignaturesAt(pdf *fpdf.Fpdf, layout activitySignatureLayout, left float64) {
+	nameLine := signatureLineHeight(activitySignatureNamePt)
+	headHeight, nameHeight := tightCellHeight(layout.headers), tightCellHeightAt(layout.names, nameLine)
+	lineHeight := activitySignatureLineHeight()
+
 	y := pdf.GetY()
-	x := (pageWidthMM - tableWidth) / 2
+	x := left
 	pdf.SetFont(activityFont, "", activitySignaturePt)
 	for i, width := range layout.widths {
 		pdf.Rect(x, y, width, headHeight, "")
@@ -429,6 +455,9 @@ func renderActivitySignatures(pdf *fpdf.Fpdf, layout activitySignatureLayout) {
 			pdf.Text(x+(width-pdf.GetStringWidth(text))/2, textBaseline(headTop+float64(j)*lineHeight, lineHeight, activitySignaturePt), text)
 		}
 		pdf.Rect(x, y+headHeight, width, activitySignatureSpace, "")
+		if i < len(layout.roles) {
+			drawSignatoryMark(pdf, layout.roles[i], layout.marks[layout.roles[i]], x, y+headHeight, width, activitySignatureSpace)
+		}
 		nameTop := y + headHeight + activitySignatureSpace
 		pdf.Rect(x, nameTop, width, nameHeight, "")
 		for j, text := range layout.names[i] {
@@ -442,7 +471,7 @@ func renderActivitySignatures(pdf *fpdf.Fpdf, layout activitySignatureLayout) {
 		pdf.SetFont(activityFont, "", activitySignaturePt)
 		x += width
 	}
-	pdf.SetXY(marginMM, y+headHeight+activitySignatureSpace+nameHeight)
+	pdf.SetXY(left, y+headHeight+activitySignatureSpace+nameHeight)
 }
 
 // drawActivityCell menggambar sel bergaris dengan teks satu baris terpusat

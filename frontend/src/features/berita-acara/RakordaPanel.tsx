@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, Download, FileCheck2, MapPin, Printer, Save, Settings2, UsersRound } from 'lucide-react';
+import { CalendarDays, Download, FileCheck2, MapPin, Printer, Save, Settings2, Signature, UsersRound } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { DataState } from '@/components/DataState';
@@ -14,6 +14,7 @@ import { useCan } from '@/lib/permissions';
 import { uppercaseBusinessText } from '@/lib/text';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
+import { SignatureSettingsPanel } from './SignatureSettingsPanel';
 import { RakordaArchive } from './RakordaArchive';
 import type { ScheduleSettings } from './types';
 
@@ -55,6 +56,8 @@ export function RakordaPanel({ config = rakordaConfig, scheduleID, regencyName, 
   const queryClient = useQueryClient();
   const [date, setDate] = useState(defaultDate);
   const [location, setLocation] = useState('');
+  const [showSignatures, setShowSignatures] = useState(false);
+  const hasSignatures = config.apiPath === 'sosialisasi';
   const [rowCount, setRowCount] = useState(config.defaultRowCount);
   const apiBase = `/api/v1/bast/${config.apiPath}`;
 
@@ -95,6 +98,7 @@ export function RakordaPanel({ config = rakordaConfig, scheduleID, regencyName, 
   };
 
   return <div className="grid gap-5">
+    {hasSignatures && showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} document="sosialisasi" documentLabel={config.name} />}
     <div className="grid gap-5 xl:grid-cols-[22rem_minmax(0,1fr)]">
       <Card className="self-start">
         <CardHeader className="border-b"><CardTitle className="flex items-center gap-2 text-base"><Settings2 className="size-4 text-primary" aria-hidden="true" />Pengaturan daftar hadir</CardTitle></CardHeader>
@@ -118,6 +122,7 @@ export function RakordaPanel({ config = rakordaConfig, scheduleID, regencyName, 
           {settingsReady && date && <div className="flex flex-wrap gap-2">
             <Button variant="outline" disabled={!preview.data} onClick={printPreview}><Printer aria-hidden="true" />Cetak</Button>
             <Button variant="outline" disabled={!preview.data} onClick={downloadPreview}><Download aria-hidden="true" />Unduh PDF kosong</Button>
+            {hasSignatures && <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>}
           </div>}
           {settingsReady && date && config.locationOptional && !savedLocation.trim() && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">Lokasi belum diisi: dicetak kosong.</p>}
           {settingsReady && date && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label={config.documentTitle} />}

@@ -95,7 +95,7 @@ func TestRenderDP3IncludesProcurementHeadingAndUnderlinedTitle(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := decodedPDFStreams(t, rendered.PDF)
-	for _, want := range []string{"PENGADAAN BARANG", "LIQUEFIED", "PETROLEUM GAS", "TAHUN ANGGARAN 2026", "PT PERTAMINA PATRA NIAGA", dp3Title} {
+	for _, want := range []string{"Pengadaan Barang Penyediaan dan Pendistribusian Paket Perdana", "Liquefied Petroleum Gas", "Sasaran Tahun Anggaran 2026 di PT Pertamina Patra Niaga", dp3Title} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("rendered DP3 is missing %q", want)
 		}
@@ -134,7 +134,7 @@ func TestRenderDP3LongRowsNeverOverflowPageBottom(t *testing.T) {
 	}
 }
 
-func TestRenderDP3UppercasesLegacyBusinessValues(t *testing.T) {
+func TestRenderDP3PrintsTitleCaseNamesAndMachinesAsTyped(t *testing.T) {
 	snapshot := DP3Snapshot{
 		DocumentType: AggregateDocumentDP3, DocumentDate: "2026-10-02", RegencyName: "Kabupaten Wajo",
 		HandoverLocation: "Lapangan Desa", ConsultantCompanyName: "Konsultan Jaya", FiscalYear: 2026,
@@ -150,12 +150,12 @@ func TestRenderDP3UppercasesLegacyBusinessValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := decodedPDFStreams(t, rendered.PDF)
-	for _, want := range []string{"KABUPATEN WAJO", "LAPANGAN DESA", "KONSULTAN JAYA", "SITI AMINAH", "JALAN SAWAH", "DESA BARU", "POMPA TANI", "BUDI SANTOSO", "ANDI SAPUTRA"} {
+	for _, want := range []string{"Kabupaten Wajo", "Lapangan Desa", "Konsultan Jaya", "Siti Aminah", "Jalan Sawah", "Desa Baru", "Pompa Tani", "Budi Santoso", "Andi Saputra"} {
 		if !strings.Contains(content, want) {
-			t.Fatalf("rendered DP3 is missing uppercase legacy value %q", want)
+			t.Fatalf("rendered DP3 is missing %q", want)
 		}
 	}
-	if strings.Contains(content, "Siti Aminah") || strings.Contains(content, "Jalan Sawah") || strings.Contains(content, "Andi Saputra") {
-		t.Fatal("rendered DP3 still contains mixed-case legacy business values")
+	if strings.Contains(content, "SITI AMINAH") || strings.Contains(content, "JALAN SAWAH") || strings.Contains(content, "POMPA TANI") {
+		t.Fatal("rendered DP3 should title-case names and print machine values as typed")
 	}
 }

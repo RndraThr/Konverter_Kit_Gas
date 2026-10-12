@@ -127,13 +127,13 @@ export function BeritaAcaraPage() {
         </Select>
       </div>
       <div className="hidden pb-2 md:block" role="presentation">
-        <TabsList activateOnFocus variant="line" className="h-auto w-full flex-wrap justify-start gap-y-1" aria-label="Jenis berita acara">
-          {documentTypes.map((document) => <TabsTrigger className="min-h-11 flex-auto px-3" key={document.value} value={document.value}>{document.label}</TabsTrigger>)}
+        <TabsList activateOnFocus variant="line" className="h-auto w-full flex-wrap justify-start gap-y-1 group-data-horizontal/tabs:h-auto" aria-label="Jenis berita acara">
+          {documentTypes.map((document) => <TabsTrigger className="h-auto min-h-11 flex-auto px-3" key={document.value} value={document.value}>{document.label}</TabsTrigger>)}
         </TabsList>
       </div>
       {documentTypes.map((document) => <TabsContent className="pt-3" key={document.value} value={document.value}>
         {document.value === 'ba-perorangan' && selectedSchedule && programType
-          ? <section aria-label={`BA Perorangan ${programTypeLabel(programType)}`}><BAIndividualPanel programID={selectedSchedule.program_id} regencyID={selectedSchedule.regency_id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} /></section>
+          ? <section aria-label={`BA Perorangan ${programTypeLabel(programType)}`}><BAIndividualPanel scheduleID={selectedSchedule.id} programID={selectedSchedule.program_id} regencyID={selectedSchedule.regency_id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} /></section>
           : document.value === 'dp3' && selectedSchedule && programType
             ? <section aria-label="DP3"><DP3Panel scheduleID={selectedSchedule.id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} defaultDate={selectedSchedule.start_date.slice(0, 10)} /></section>
             : document.value === 'rekap-harian' && selectedSchedule && programType

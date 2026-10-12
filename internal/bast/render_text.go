@@ -1,5 +1,10 @@
 package bast
 
+// Nama orang, alamat, lokasi, dan nama penandatangan dikapitalkan di sini lalu
+// dicetak huruf judul (textnorm.DisplayTitle); nomor seri tetap kapital. Data
+// barang (merek, tipe, daya, BBM, nama komponen, satuan) dicetak apa adanya
+// dari Template Paket, yang sudah ditulis sesuai EYD.
+
 import "konkit/internal/textnorm"
 
 func renderBusinessText(value string) string {
@@ -14,19 +19,9 @@ func uppercaseRecipientDocument(document RecipientDocument) RecipientDocument {
 	snapshot.Recipient.Village = renderBusinessText(snapshot.Recipient.Village)
 	snapshot.Recipient.District = renderBusinessText(snapshot.Recipient.District)
 	snapshot.Recipient.Regency = renderBusinessText(snapshot.Recipient.Regency)
-	snapshot.Equipment.MachineBrand = renderBusinessText(snapshot.Equipment.MachineBrand)
-	snapshot.Equipment.MachineType = renderBusinessText(snapshot.Equipment.MachineType)
 	snapshot.Equipment.MachineSerial = renderBusinessText(snapshot.Equipment.MachineSerial)
-	snapshot.Equipment.HoseBrand = renderBusinessText(snapshot.Equipment.HoseBrand)
-	snapshot.Equipment.HoseSpec = renderBusinessText(snapshot.Equipment.HoseSpec)
 	snapshot.Equipment.HoseSerial = renderBusinessText(snapshot.Equipment.HoseSerial)
-	snapshot.Equipment.ConverterBrand = renderBusinessText(snapshot.Equipment.ConverterBrand)
 	snapshot.Equipment.ConverterSerial = renderBusinessText(snapshot.Equipment.ConverterSerial)
-	snapshot.Components = append([]ComponentSnapshot(nil), snapshot.Components...)
-	for index := range snapshot.Components {
-		snapshot.Components[index].Label = renderBusinessText(snapshot.Components[index].Label)
-		snapshot.Components[index].Unit = renderBusinessText(snapshot.Components[index].Unit)
-	}
 	snapshot.Signatures.ReceiverName = renderBusinessText(snapshot.Signatures.ReceiverName)
 	snapshot.Signatures.ExecutorName = renderBusinessText(snapshot.Signatures.ExecutorName)
 	snapshot.Signatures.SupervisorName = renderBusinessText(snapshot.Signatures.SupervisorName)
@@ -49,10 +44,6 @@ func uppercaseDP3Snapshot(snapshot DP3Snapshot) DP3Snapshot {
 		recipient.Village = renderBusinessText(recipient.Village)
 		recipient.District = renderBusinessText(recipient.District)
 		recipient.Regency = renderBusinessText(recipient.Regency)
-		recipient.MachineBrand = renderBusinessText(recipient.MachineBrand)
-		recipient.MachineType = renderBusinessText(recipient.MachineType)
-		recipient.MachinePower = renderBusinessText(recipient.MachinePower)
-		recipient.MachineFuelType = renderBusinessText(recipient.MachineFuelType)
 	}
 	return snapshot
 }
@@ -70,17 +61,7 @@ func uppercaseDailyRecapSnapshot(snapshot DailyRecapSnapshot) DailyRecapSnapshot
 		recipient := &snapshot.Recipients[index]
 		recipient.FullName = renderBusinessText(recipient.FullName)
 		recipient.FarmerCardNumber = renderBusinessText(recipient.FarmerCardNumber)
-		recipient.MachineBrand = renderBusinessText(recipient.MachineBrand)
-		recipient.MachineType = renderBusinessText(recipient.MachineType)
 		recipient.MachineSerial = renderBusinessText(recipient.MachineSerial)
-		recipient.MachinePower = renderBusinessText(recipient.MachinePower)
-		recipient.MachineFuelType = renderBusinessText(recipient.MachineFuelType)
-	}
-	snapshot.Variants = append([]DailyRecapVariant(nil), snapshot.Variants...)
-	for index := range snapshot.Variants {
-		snapshot.Variants[index].Label = renderBusinessText(snapshot.Variants[index].Label)
-		snapshot.Variants[index].MachineBrand = renderBusinessText(snapshot.Variants[index].MachineBrand)
-		snapshot.Variants[index].MachineType = renderBusinessText(snapshot.Variants[index].MachineType)
 	}
 	return snapshot
 }
@@ -96,8 +77,6 @@ func uppercaseClosingKabupatenSnapshot(snapshot ClosingKabupatenSnapshot) Closin
 	snapshot.Rows = append([]ClosingKabupatenRow(nil), snapshot.Rows...)
 	for index := range snapshot.Rows {
 		snapshot.Rows[index].Location = renderBusinessText(snapshot.Rows[index].Location)
-		snapshot.Rows[index].MachineBrand = renderBusinessText(snapshot.Rows[index].MachineBrand)
-		snapshot.Rows[index].MachineType = renderBusinessText(snapshot.Rows[index].MachineType)
 	}
 	return snapshot
 }
@@ -111,10 +90,5 @@ func uppercaseClosingSnapshot(snapshot ClosingTitikSerahSnapshot) ClosingTitikSe
 	snapshot.Signatories.InstallerName = renderBusinessText(snapshot.Signatories.InstallerName)
 	snapshot.Signatories.SupervisorName = renderBusinessText(snapshot.Signatories.SupervisorName)
 	snapshot.Signatories.PertaminaRepName = renderBusinessText(snapshot.Signatories.PertaminaRepName)
-	snapshot.Rows = append([]ClosingRow(nil), snapshot.Rows...)
-	for index := range snapshot.Rows {
-		snapshot.Rows[index].MachineBrand = renderBusinessText(snapshot.Rows[index].MachineBrand)
-		snapshot.Rows[index].MachineType = renderBusinessText(snapshot.Rows[index].MachineType)
-	}
 	return snapshot
 }

@@ -67,6 +67,8 @@ export type ScheduleSettings = {
   servis_1_end: string;
   servis_2_start: string;
   servis_2_end: string;
+  /** Nama Organisasi (Sistem > Pengaturan), dipakai bila Konsultan Distribusi dikosongkan. */
+  consultant_company_default?: string;
 };
 
 /** Di profil, ref menunjuk barang template; description/notes boleh memuat {merk}, {tipe}, {spek}. */

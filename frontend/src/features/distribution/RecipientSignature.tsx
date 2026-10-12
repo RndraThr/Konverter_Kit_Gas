@@ -1,12 +1,12 @@
-import { type PointerEvent, useEffect, useRef, useState } from 'react';
-import { Eraser, PenLine, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import { PenLine, Trash2 } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { apiRequest, ApiError } from '../../lib/api';
 import type { DataResponse, DistributionSlot } from './types';
 import { Button } from '@/components/ui/button';
+import { SignaturePad } from '@/components/SignaturePad';
 
 const padHeight = 220;
-const trimPadding = 12;
 
 // Recipient signature in POS Dokumen: drawn with finger, pen or mouse on a
 // transparent canvas, trimmed to the strokes and saved as PNG. Berita Acara
@@ -43,106 +43,4 @@ export function RecipientSignature({ slot, editable, onChanged }: { slot: Distri
         : <p className="text-sm text-muted-foreground">Belum ada tanda tangan.</p>}
     {error && <p role="alert" className="text-sm text-destructive">{error instanceof ApiError ? error.message : 'Tanda tangan belum dapat disimpan.'}</p>}
   </section>;
-}
-
-type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
-
-function SignaturePad({ saving, onSave, onCancel }: { saving: boolean; onSave: (png: string) => void; onCancel?: () => void }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const last = useRef<{ x: number; y: number } | null>(null);
-  const bounds = useRef<Bounds | null>(null);
-  const [empty, setEmpty] = useState(true);
-
-  // Backing store at device resolution so strokes stay sharp.
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ratio = window.devicePixelRatio || 1;
-    canvas.width = Math.round(canvas.clientWidth * ratio);
-    canvas.height = Math.round(padHeight * ratio);
-    const context = canvas.getContext('2d');
-    if (!context) return;
-    context.scale(ratio, ratio);
-    context.lineCap = 'round';
-    context.lineJoin = 'round';
-    context.lineWidth = 2.6;
-    context.strokeStyle = '#1e2d6e';
-  }, []);
-
-  const point = (event: PointerEvent<HTMLCanvasElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-  };
-  const extend = (x: number, y: number) => {
-    const b = bounds.current;
-    bounds.current = b ? { minX: Math.min(b.minX, x), minY: Math.min(b.minY, y), maxX: Math.max(b.maxX, x), maxY: Math.max(b.maxY, y) } : { minX: x, minY: y, maxX: x, maxY: y };
-  };
-  const start = (event: PointerEvent<HTMLCanvasElement>) => {
-    event.currentTarget.setPointerCapture(event.pointerId);
-    const p = point(event);
-    last.current = p;
-    extend(p.x, p.y);
-    const context = canvasRef.current?.getContext('2d');
-    context?.beginPath();
-    context?.arc(p.x, p.y, 1.3, 0, Math.PI * 2);
-    context?.fill();
-    setEmpty(false);
-  };
-  const move = (event: PointerEvent<HTMLCanvasElement>) => {
-    if (!last.current) return;
-    const p = point(event);
-    const context = canvasRef.current?.getContext('2d');
-    if (!context) return;
-    context.beginPath();
-    context.moveTo(last.current.x, last.current.y);
-    context.lineTo(p.x, p.y);
-    context.stroke();
-    last.current = p;
-    extend(p.x, p.y);
-  };
-  const end = () => { last.current = null; };
-
-  const clear = () => {
-    const canvas = canvasRef.current;
-    canvas?.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
-    bounds.current = null;
-    setEmpty(true);
-  };
-
-  // Crop to the strokes (plus a margin) so the signature fills the Berita Acara box.
-  const save = () => {
-    const canvas = canvasRef.current;
-    const b = bounds.current;
-    if (!canvas || !b) return;
-    const ratio = canvas.width / canvas.clientWidth;
-    const x = Math.max(0, (b.minX - trimPadding) * ratio);
-    const y = Math.max(0, (b.minY - trimPadding) * ratio);
-    const width = Math.max(60, Math.min(canvas.width - x, (b.maxX - b.minX + trimPadding * 2) * ratio));
-    const height = Math.max(60, Math.min(canvas.height - y, (b.maxY - b.minY + trimPadding * 2) * ratio));
-    const output = document.createElement('canvas');
-    output.width = Math.round(width);
-    output.height = Math.round(height);
-    output.getContext('2d')?.drawImage(canvas, x, y, width, height, 0, 0, output.width, output.height);
-    onSave(output.toDataURL('image/png').split(',')[1] ?? '');
-  };
-
-  return <div className="space-y-2">
-    <canvas
-      ref={canvasRef}
-      aria-label="Area tanda tangan penerima"
-      className="block w-full touch-none rounded-md border border-dashed bg-white"
-      style={{ height: padHeight }}
-      onPointerDown={start}
-      onPointerMove={move}
-      onPointerUp={end}
-      onPointerCancel={end}
-      onPointerLeave={end}
-    />
-    <p className="text-xs text-muted-foreground">Minta penerima menandatangani di kotak putih.</p>
-    <div className="flex flex-wrap gap-2">
-      <Button type="button" disabled={empty || saving} onClick={save}>{saving ? 'Menyimpan...' : 'Simpan tanda tangan'}</Button>
-      <Button type="button" variant="outline" disabled={empty || saving} onClick={clear}><Eraser aria-hidden="true" />Ulangi</Button>
-      {onCancel && <Button type="button" variant="ghost" disabled={saving} onClick={onCancel}>Batal</Button>}
-    </div>
-  </div>;
 }

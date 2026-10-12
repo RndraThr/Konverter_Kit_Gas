@@ -173,17 +173,18 @@ func pemeriksaanDocumentType(code string) string { return pemeriksaanDocumentPre
 
 // PemeriksaanSnapshot adalah snapshot_json satu form BA Pemeriksaan.
 type PemeriksaanSnapshot struct {
-	DocumentType  string             `json:"document_type"`
-	DocumentDate  string             `json:"document_date"`
-	PONumber      string             `json:"po_number"`
-	SupplierName  string             `json:"supplier_name"`
-	RegencyName   string             `json:"regency_name"`
-	ProvinceName  string             `json:"province_name"`
-	FiscalYear    int                `json:"fiscal_year"`
-	TotalPackages int                `json:"total_packages"`
-	Form          PemeriksaanForm    `json:"form"`
-	Logos         []LogoSnapshot     `json:"logos"`
-	Signatories   closingSignatories `json:"signatories"`
+	DocumentType   string             `json:"document_type"`
+	DocumentDate   string             `json:"document_date"`
+	PONumber       string             `json:"po_number"`
+	SupplierName   string             `json:"supplier_name"`
+	RegencyName    string             `json:"regency_name"`
+	ProvinceName   string             `json:"province_name"`
+	FiscalYear     int                `json:"fiscal_year"`
+	TotalPackages  int                `json:"total_packages"`
+	Form           PemeriksaanForm    `json:"form"`
+	Logos          []LogoSnapshot     `json:"logos"`
+	Signatories    closingSignatories `json:"signatories"`
+	SignatureMarks SignatureMarks     `json:"signature_marks,omitempty"`
 }
 
 // PemeriksaanFormSummary adalah satu form dengan baris dan No. PO yang sudah
@@ -211,7 +212,7 @@ func buildPemeriksaanSnapshot(ctx DP3Context, settings ScheduleSettings, form Pe
 		DocumentType:  pemeriksaanDocumentType(form.Code),
 		DocumentDate:  documentDate,
 		PONumber:      poNumber,
-		SupplierName:  strings.TrimSpace(settings.ConsultantCompanyName),
+		SupplierName:  settings.Consultant(),
 		RegencyName:   textnorm.BusinessUpper(ctx.RegencyName),
 		ProvinceName:  textnorm.BusinessUpper(ctx.ProvinceName),
 		FiscalYear:    ctx.FiscalYear,

@@ -103,10 +103,22 @@ func (s *DP3Service) Preview(ctx context.Context, scheduleID, documentDate strin
 	if err != nil {
 		return AggregatePreview{}, err
 	}
+	marks, markImages, err := loadSignatoryMarks(ctx, s.repository, ctxData.ScheduleID, "dp3")
+	if err != nil {
+		return AggregatePreview{}, err
+	}
+	snapshot.SignatureMarks = marks
+	wet, wetImages, err := loadWetSignature(ctx, s.repository, ctxData.ScheduleID, "dp3", documentDate, snapshot)
+	if err != nil {
+		return AggregatePreview{}, err
+	}
+	snapshot.Wet = wet
 	logoBytes, err := loadLogoBytes(ctx, s.storage, logos)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
+	mergeImages(logoBytes, markImages)
+	mergeImages(logoBytes, wetImages)
 	rendered, err := RenderDP3(snapshot, logoBytes)
 	if err != nil {
 		return AggregatePreview{}, err
@@ -137,6 +149,19 @@ func (s *DP3Service) Finalize(ctx context.Context, actor auth.Principal, schedul
 	if err != nil {
 		return AggregateDocument{}, err
 	}
+	marks, markImages, err := loadSignatoryMarks(ctx, s.repository, ctxData.ScheduleID, "dp3")
+	if err != nil {
+		return AggregateDocument{}, err
+	}
+	snapshot.SignatureMarks = marks
+	wet, wetImages, err := loadWetSignature(ctx, s.repository, ctxData.ScheduleID, "dp3", documentDate, snapshot)
+	if err != nil {
+		return AggregateDocument{}, err
+	}
+	if wet.Enabled && !wet.Scanned {
+		return AggregateDocument{}, ErrWetSignatureRequired
+	}
+	snapshot.Wet = wet
 	snapshotJSON, err := json.Marshal(snapshot)
 	if err != nil {
 		return AggregateDocument{}, err
@@ -145,6 +170,8 @@ func (s *DP3Service) Finalize(ctx context.Context, actor auth.Principal, schedul
 	if err != nil {
 		return AggregateDocument{}, err
 	}
+	mergeImages(logoBytes, markImages)
+	mergeImages(logoBytes, wetImages)
 	rendered, err := RenderDP3(snapshot, logoBytes)
 	if err != nil {
 		return AggregateDocument{}, err

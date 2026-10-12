@@ -92,3 +92,15 @@ func TestScheduleSettingsInputRejectsAttendanceRowCountOutsideRange(t *testing.T
 		}
 	}
 }
+
+// Konsultan Distribusi jadwal yang kosong memakai Nama Organisasi.
+func TestScheduleSettingsConsultantFallsBackToOrganizationName(t *testing.T) {
+	settings := ScheduleSettings{ConsultantCompanyDefault: "PT Kian Santang Muliatama Tbk"}
+	if got := settings.Consultant(); got != "PT Kian Santang Muliatama Tbk" {
+		t.Fatalf("consultant=%q", got)
+	}
+	settings.ConsultantCompanyName = " PT LAIN "
+	if got := settings.Consultant(); got != "PT LAIN" {
+		t.Fatalf("consultant=%q", got)
+	}
+}

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, FileCheck2, RefreshCw, Settings2, Users } from 'lucide-react';
+import { Download, FileCheck2, RefreshCw, Signature, Users } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { DataState } from '@/components/DataState';
@@ -12,8 +12,10 @@ import { apiBlobRequest, ApiError, apiRequest } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
+import { SignatureSettingsPanel } from './SignatureSettingsPanel';
+import { useWetSignatureBlocked, WetSignatureBar } from './WetSignatureBar';
 import { incompletePreviewNote, previewBlockingStatus } from './previewStatus';
-import { ScheduleSettingsPanel } from './ScheduleSettingsPanel';
+import { DocumentInfoFields } from './DocumentInfoFields';
 import type { AggregateDocument, DP3Recipient, DP3Summary } from './types';
 
 type Props = { scheduleID: string; regencyName: string; programType: ProgramType; defaultDate: string };
@@ -36,7 +38,7 @@ export function DP3Panel({ scheduleID, regencyName, programType, defaultDate }: 
   const canManage = useCan('bast.manage');
   const queryClient = useQueryClient();
   const [documentDate, setDocumentDate] = useState(defaultDate);
-  const [showSettings, setShowSettings] = useState(false);
+  const [showSignatures, setShowSignatures] = useState(false);
   const [showRecipients, setShowRecipients] = useState(false);
 
   const summary = useQuery({
@@ -75,6 +77,7 @@ export function DP3Panel({ scheduleID, regencyName, programType, defaultDate }: 
     },
     onError: (error) => toast.error(errorMessage(error)),
   });
+  const wetBlocked = useWetSignatureBlocked(scheduleID, 'dp3', documentDate);
 
   if (programType === 'fisherman') return <DataState kind="empty" title="DP3 Nelayan belum tersedia" description="Fase pertama hanya mendukung program Petani." />;
   if (summary.isPending) return <DataState kind="loading" title="Memuat DP3" description="Menyiapkan daftar nominatif penerima." />;
@@ -90,7 +93,7 @@ export function DP3Panel({ scheduleID, regencyName, programType, defaultDate }: 
   const busy = finalize.isPending;
 
   return <div className="grid gap-5">
-    {showSettings && <ScheduleSettingsPanel scheduleID={scheduleID} />}
+    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} document="dp3" documentLabel="DP3" />}
 
     <div className="grid gap-4 lg:grid-cols-3">
       <Card className="lg:col-span-1">
@@ -106,13 +109,15 @@ export function DP3Panel({ scheduleID, regencyName, programType, defaultDate }: 
       <Card className="lg:col-span-2">
         <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><CardTitle className="text-base">Dokumen DP3</CardTitle><Badge variant="outline">Petani</Badge></div></CardHeader>
         <CardContent className="grid gap-4 pt-5">
-          <div className="grid gap-3 sm:grid-cols-[16rem_1fr] sm:items-end">
+          <div className="grid gap-3 sm:items-start sm:grid-cols-[11rem_minmax(0,1fr)_minmax(0,1fr)]">
             <FormField label="Tanggal dokumen" type="date" value={documentDate} onChange={(e) => setDocumentDate(e.target.value)} />
-            <div className="flex flex-wrap gap-2">
-              {canManage && <Button disabled={busy || status !== 'ready'} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
-              <Button variant="ghost" onClick={() => setShowSettings((value) => !value)}><Settings2 />{showSettings ? 'Tutup pengaturan' : 'Pengaturan'}</Button>
-            </div>
+            <DocumentInfoFields scheduleID={scheduleID} fields={[{ key: 'handover_location', label: 'Lokasi / Titik Serah' }, { key: 'consultant_company_name', label: 'Konsultan Distribusi' }]} />
           </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
+            <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>
+            {canManage && <Button disabled={busy || status !== 'ready' || wetBlocked} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
+          </div>
+          <WetSignatureBar scheduleID={scheduleID} document="dp3" date={documentDate} label="DP3" />
 
           {activeDoc && <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center">
             <div><div className="flex items-center gap-2"><FileCheck2 className="size-4 text-emerald-600" /><strong className="text-sm">{activeDoc.filename}</strong></div><p className="mt-1 text-xs text-muted-foreground">Versi {activeDoc.version} · {activeDoc.page_count} halaman · {activeDoc.recipient_count} penerima</p></div>

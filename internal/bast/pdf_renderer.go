@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"konkit/internal/textnorm"
+
 	"github.com/go-pdf/fpdf"
 )
 
@@ -96,13 +98,12 @@ func RenderPetaniBundle(input BundleRenderInput) (RenderedBundle, error) {
 	}
 
 	pdf := fpdf.New("P", "mm", "A4", "")
+	registerArial(pdf)
 	pdf.SetMargins(marginMM, topMarginMM, marginMM)
 	pdf.SetAutoPageBreak(false, marginMM)
 	pdf.SetTitle(strings.TrimSuffix(filename, ".pdf"), false)
 	pdf.SetAuthor("KONKIT", false)
-	creationDate, _ := time.Parse("2006-01-02", input.LocalDate)
-	pdf.SetCreationDate(creationDate)
-	pdf.SetCatalogSort(true)
+	fixPDFDates(pdf, input.LocalDate)
 
 	logosByRender := make(map[string][]registeredLogo)
 	for _, document := range documents {
@@ -117,6 +118,7 @@ func RenderPetaniBundle(input BundleRenderInput) (RenderedBundle, error) {
 		logosByRender[key] = logos
 	}
 	registerSignatures(pdf, input.LogoBytes)
+	registerSignatoryImages(pdf, input.LogoBytes)
 
 	events := make([]string, 0, len(documents))
 	pageRanges := make([]RenderedRecipientPages, 0, len(documents))
@@ -200,7 +202,7 @@ func renderRecipient(pdf *fpdf.Fpdf, document RecipientDocument, logos []registe
 	labelValue(pdf, "Hari / Tanggal", formatIndonesianDate(snapshot.LocalDate), false)
 	pdf.Ln(2)
 
-	pdf.SetFont("Helvetica", "B", 9)
+	pdf.SetFont(arialFamily, "B", 9)
 	pdf.SetX(marginMM)
 	pdf.CellFormat(0, 4.8, "A.  Data Penerima", "", 1, "L", false, 0, "")
 	details := []struct {
@@ -208,11 +210,11 @@ func renderRecipient(pdf *fpdf.Fpdf, document RecipientDocument, logos []registe
 		value string
 		bold  bool
 	}{
-		{"Nama", snapshot.Recipient.FullName, true},
-		{"Alamat", snapshot.Recipient.Address, false},
-		{"Desa", snapshot.Recipient.Village, false},
-		{"Kecamatan", snapshot.Recipient.District, false},
-		{"Kota/Kabupaten", snapshot.Recipient.Regency, false},
+		{"Nama", textnorm.DisplayTitle(snapshot.Recipient.FullName), true},
+		{"Alamat", textnorm.DisplayTitle(snapshot.Recipient.Address), false},
+		{"Desa", textnorm.DisplayTitle(snapshot.Recipient.Village), false},
+		{"Kecamatan", textnorm.DisplayTitle(snapshot.Recipient.District), false},
+		{"Kota/Kabupaten", textnorm.DisplayTitle(snapshot.Recipient.Regency), false},
 		{"No. KTP", snapshot.Recipient.NIK, false},
 		{"No. Kartu Petani", snapshot.Recipient.SectorIdentifier, false},
 		{"No. HP", snapshot.Recipient.PhoneNumber, false},
@@ -222,7 +224,7 @@ func renderRecipient(pdf *fpdf.Fpdf, document RecipientDocument, logos []registe
 	}
 	pdf.Ln(3)
 
-	pdf.SetFont("Helvetica", "B", 9)
+	pdf.SetFont(arialFamily, "B", 9)
 	pdf.SetX(marginMM)
 	pdf.CellFormat(0, 4.8, "B.  Data Paket Perdana yang akan diterima", "", 1, "L", false, 0, "")
 	pdf.Ln(0.8)
@@ -238,7 +240,7 @@ func renderRecipient(pdf *fpdf.Fpdf, document RecipientDocument, logos []registe
 		renderComponentRow(pdf, component, rowHeight)
 	}
 
-	pdf.SetFont("Helvetica", "", 9)
+	pdf.SetFont(arialFamily, "", 9)
 	declLines := len(pdf.SplitLines([]byte(declarationText), pageWidthMM-2*marginMM))
 	needed := 3 + float64(declLines)*4.1 + signatureHMM
 	if pdf.GetY()+needed > pageHeightMM-bottomMarginMM {
@@ -262,13 +264,13 @@ func renderProcurementHeading(pdf *fpdf.Fpdf, marginX, contentWidth float64, fis
 	for _, line := range lines {
 		width := 0.0
 		for _, segment := range line {
-			pdf.SetFont("Helvetica", segment.style, fontSize)
+			pdf.SetFont(arialFamily, segment.style, fontSize)
 			width += pdf.GetStringWidth(segment.text)
 		}
 		y := pdf.GetY()
 		pdf.SetXY(marginX+(contentWidth-width)/2, y)
 		for _, segment := range line {
-			pdf.SetFont("Helvetica", segment.style, fontSize)
+			pdf.SetFont(arialFamily, segment.style, fontSize)
 			segmentWidth := pdf.GetStringWidth(segment.text)
 			pdf.CellFormat(segmentWidth, lineHeight, segment.text, "", 0, "L", false, 0, "")
 		}
@@ -299,9 +301,9 @@ func renderHeader(pdf *fpdf.Fpdf, logos []registeredLogo) {
 		x += widths[i] + gap
 	}
 	pdf.SetXY(marginMM, 33.8)
-	pdf.SetFont("Helvetica", "B", 12.75)
+	pdf.SetFont(arialFamily, "B", 12.75)
 	pdf.CellFormat(contentWidth, 5.6, baPeroranganTitle, "", 1, "C", false, 0, "")
-	pdf.SetFont("Helvetica", "BI", 9)
+	pdf.SetFont(arialFamily, "BI", 9)
 	pdf.CellFormat(contentWidth, 4.2, baPeroranganSubtitle, "", 1, "C", false, 0, "")
 	pdf.Ln(2.2)
 }
@@ -310,13 +312,13 @@ func addContinuationPage(pdf *fpdf.Fpdf, slot int, logos []registeredLogo, event
 	pdf.AddPage()
 	*events = append(*events, fmt.Sprintf("PAGE %d RECIPIENT %d CONTINUATION", pdf.PageNo(), slot))
 	renderHeader(pdf, logos)
-	pdf.SetFont("Helvetica", "BI", 8)
+	pdf.SetFont(arialFamily, "BI", 8)
 	pdf.CellFormat(pageWidthMM-2*marginMM, 5, fmt.Sprintf("LANJUTAN - PENERIMA NOMOR %d", slot), "B", 1, "C", false, 0, "")
 	pdf.Ln(2)
 }
 
 func labelValue(pdf *fpdf.Fpdf, label, value string, bold bool) {
-	pdf.SetFont("Helvetica", "", 9)
+	pdf.SetFont(arialFamily, "", 9)
 	pdf.SetX(marginMM)
 	pdf.CellFormat(29.6, infoRowMM, label, "", 0, "L", false, 0, "")
 	pdf.CellFormat(3.7, infoRowMM, ":", "", 0, "C", false, 0, "")
@@ -324,7 +326,7 @@ func labelValue(pdf *fpdf.Fpdf, label, value string, bold bool) {
 	if bold {
 		style = "B"
 	}
-	pdf.SetFont("Helvetica", style, 9)
+	pdf.SetFont(arialFamily, style, 9)
 	pdf.CellFormat(pageWidthMM-2*marginMM-33.3, infoRowMM, value, "", 1, "L", false, 0, "")
 }
 
@@ -343,7 +345,7 @@ func renderHoseTable(pdf *fpdf.Fpdf, equipment EquipmentSnapshot) {
 	brands, specs := splitHosePair(equipment.HoseBrand), splitHosePair(equipment.HoseSpec)
 	x, y, rowHeight := marginMM, pdf.GetY(), minRowMM
 
-	pdf.SetFont("Helvetica", "", tableFontPt)
+	pdf.SetFont(arialFamily, "", tableFontPt)
 	labelWidth := pdf.GetStringWidth(hoseLabelPair) + 1.2
 	labels := [2]string{"Panjang Selang Hisap", "Panjang Selang Buang"}
 
@@ -352,7 +354,7 @@ func renderHoseTable(pdf *fpdf.Fpdf, equipment EquipmentSnapshot) {
 		drawCell(pdf, x, rowY, widths[0], rowHeight, brands[row], "C", false)
 		specX := x + widths[0]
 		pdf.Rect(specX, rowY, widths[1], rowHeight, "")
-		pdf.SetFont("Helvetica", "", tableFontPt)
+		pdf.SetFont(arialFamily, "", tableFontPt)
 		pdf.SetXY(specX+cellPadMM, rowY+(rowHeight-tableLineMM)/2)
 		pdf.CellFormat(labelWidth, tableLineMM, labels[row], "", 0, "L", false, 0, "")
 		pdf.CellFormat(widths[1]-2*cellPadMM-labelWidth, tableLineMM, ": "+specs[row], "", 0, "L", false, 0, "")
@@ -377,7 +379,7 @@ func splitHosePair(value string) [2]string {
 func renderTable(pdf *fpdf.Fpdf, widths []float64, headers []string, rows [][]string) {
 	renderFixedRow(pdf, widths, headers, nil, minRowMM, true)
 	for _, row := range rows {
-		pdf.SetFont("Helvetica", "", tableFontPt)
+		pdf.SetFont(arialFamily, "", tableFontPt)
 		height := minRowMM
 		for i, value := range row {
 			lines := len(pdf.SplitLines([]byte(value), widths[i]-2*cellPadMM))
@@ -415,7 +417,7 @@ func drawCell(pdf *fpdf.Fpdf, x, y, w, h float64, text, align string, bold bool)
 	if bold {
 		style = "B"
 	}
-	pdf.SetFont("Helvetica", style, tableFontPt)
+	pdf.SetFont(arialFamily, style, tableFontPt)
 	lines := pdf.SplitLines([]byte(text), w-2*cellPadMM)
 	textHeight := float64(len(lines)) * tableLineMM
 	pdf.SetXY(x+cellPadMM, y+maxFloat(0.3, (h-textHeight)/2))
@@ -429,7 +431,7 @@ func renderComponentHeader(pdf *fpdf.Fpdf) {
 }
 
 func componentRowHeight(pdf *fpdf.Fpdf, component ComponentSnapshot) float64 {
-	pdf.SetFont("Helvetica", "", tableFontPt)
+	pdf.SetFont(arialFamily, "", tableFontPt)
 	lines := len(pdf.SplitLines([]byte(component.Label), componentWidths[0]-2*cellPadMM))
 	return maxFloat(minRowMM, float64(lines)*tableLineMM+2)
 }
@@ -442,7 +444,7 @@ func renderComponentRow(pdf *fpdf.Fpdf, component ComponentSnapshot, height floa
 
 func renderDeclarationAndSignatures(pdf *fpdf.Fpdf, signatures SignatureSnapshot) {
 	pdf.Ln(3)
-	pdf.SetFont("Helvetica", "", 9)
+	pdf.SetFont(arialFamily, "", 9)
 	pdf.SetX(marginMM)
 	pdf.MultiCell(pageWidthMM-2*marginMM, 4.1, declarationText, "", "J", false)
 
@@ -456,16 +458,19 @@ func renderDeclarationAndSignatures(pdf *fpdf.Fpdf, signatures SignatureSnapshot
 	signatureTop := pdf.GetY()
 	renderFixedRow(pdf, widths, []string{"", "", ""}, nil, 15.5, false)
 	drawSignature(pdf, marginMM, signatureTop, widths[0], 15.5, signatures.ReceiverSignatureKey)
-	renderFixedRow(pdf, widths, []string{signatures.ReceiverName, signatures.ExecutorName, signatures.SupervisorName}, nil, 9.5, true)
+	drawSignatoryMark(pdf, SignatoryInstaller, signatures.Marks[SignatoryInstaller], marginMM+widths[0], signatureTop, widths[1], 15.5)
+	drawSignatoryMark(pdf, SignatorySupervisor, signatures.Marks[SignatorySupervisor], marginMM+widths[0]+widths[1], signatureTop, widths[2], 15.5)
+	renderFixedRow(pdf, widths, []string{textnorm.DisplayTitle(signatures.ReceiverName), textnorm.DisplayTitle(signatures.ExecutorName), textnorm.DisplayTitle(signatures.SupervisorName)}, nil, 9.5, true)
 }
 
+// formatIndonesianDate mencetak "Selasa, 10 Desember 2024" (huruf judul, KBBI).
 func formatIndonesianDate(value string) string {
 	date, err := time.Parse("2006-01-02", value)
 	if err != nil {
 		return value
 	}
-	days := [...]string{"MINGGU", "SENIN", "SELASA", "RABU", "KAMIS", "JUMAT", "SABTU"}
-	months := [...]string{"", "JANUARI", "FEBRUARI", "MARET", "APRIL", "MEI", "JUNI", "JULI", "AGUSTUS", "SEPTEMBER", "OKTOBER", "NOVEMBER", "DESEMBER"}
+	days := [...]string{"Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"}
+	months := [...]string{"", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"}
 	return fmt.Sprintf("%s, %d %s %d", days[date.Weekday()], date.Day(), months[date.Month()], date.Year())
 }
 

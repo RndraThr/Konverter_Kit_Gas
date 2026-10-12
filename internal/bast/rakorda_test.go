@@ -261,7 +261,7 @@ func TestZoneWithWordsSpellsTheZoneNumber(t *testing.T) {
 			t.Fatalf("zoneWithWords(%q)=%q, want %q", input, got, want)
 		}
 	}
-	if got := rakordaNarrative("2026-10-03", 2026, "ZONA 4"); !strings.HasSuffix(got, "(TERMASUK PENDISTRIBUSIAN DAN PEMASANGAN) ZONA 4 (EMPAT).") {
+	if got := segmentsText(rakordaNarrative("2026-10-03", 2026, "ZONA 4")); got != "Pada hari ini, Sabtu, tanggal 3 Oktober tahun 2026, telah dilakukan Rapat Koordinasi (Rakor) Pengadaan Barang Penyediaan dan Pendistribusian Paket Perdana Liquefied Petroleum Gas (LPG) untuk Mesin Pompa Air bagi Petani Sasaran Tahun Anggaran 2026 di PT Pertamina Patra Niaga (Termasuk Pendistribusian dan Pemasangan) Zona 4 (Empat)." {
 		t.Fatalf("rakorda narrative=%q", got)
 	}
 }

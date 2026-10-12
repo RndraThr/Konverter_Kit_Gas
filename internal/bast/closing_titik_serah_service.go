@@ -64,11 +64,23 @@ func (s *ClosingTitikSerahService) Preview(ctx context.Context, scheduleID, docu
 	if err != nil {
 		return AggregatePreview{}, err
 	}
-	snapshot := buildClosingTitikSerahSnapshot(ctxData, settings, logos, documentDate, 1, rows)
+	snapshot := buildClosingTitikSerahSnapshot(ctxData, settings, logos, documentDate, nextVersionOrFirst(ctx, s.repository, scheduleID, AggregateDocumentClosingTitikSerah, documentDate), rows)
+	marks, markImages, err := loadSignatoryMarks(ctx, s.repository, ctxData.ScheduleID, "closing-titik-serah")
+	if err != nil {
+		return AggregatePreview{}, err
+	}
+	snapshot.SignatureMarks = marks
+	wet, wetImages, err := loadWetSignature(ctx, s.repository, ctxData.ScheduleID, "closing-titik-serah", documentDate, snapshot)
+	if err != nil {
+		return AggregatePreview{}, err
+	}
+	snapshot.Wet = wet
 	logoBytes, err := loadLogoBytes(ctx, s.storage, logos)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
+	mergeImages(logoBytes, markImages)
+	mergeImages(logoBytes, wetImages)
 	rendered, err := RenderClosingTitikSerah(snapshot, logoBytes)
 	if err != nil {
 		return AggregatePreview{}, err
@@ -93,6 +105,19 @@ func (s *ClosingTitikSerahService) Finalize(ctx context.Context, actor auth.Prin
 		return AggregateDocument{}, err
 	}
 	snapshot := buildClosingTitikSerahSnapshot(ctxData, settings, logos, documentDate, version, rows)
+	marks, markImages, err := loadSignatoryMarks(ctx, s.repository, ctxData.ScheduleID, "closing-titik-serah")
+	if err != nil {
+		return AggregateDocument{}, err
+	}
+	snapshot.SignatureMarks = marks
+	wet, wetImages, err := loadWetSignature(ctx, s.repository, ctxData.ScheduleID, "closing-titik-serah", documentDate, snapshot)
+	if err != nil {
+		return AggregateDocument{}, err
+	}
+	if wet.Enabled && !wet.Scanned {
+		return AggregateDocument{}, ErrWetSignatureRequired
+	}
+	snapshot.Wet = wet
 	snapshotJSON, err := json.Marshal(snapshot)
 	if err != nil {
 		return AggregateDocument{}, err
@@ -101,6 +126,8 @@ func (s *ClosingTitikSerahService) Finalize(ctx context.Context, actor auth.Prin
 	if err != nil {
 		return AggregateDocument{}, err
 	}
+	mergeImages(logoBytes, markImages)
+	mergeImages(logoBytes, wetImages)
 	rendered, err := RenderClosingTitikSerah(snapshot, logoBytes)
 	if err != nil {
 		return AggregateDocument{}, err

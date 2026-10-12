@@ -67,14 +67,26 @@ func (s *ServisBerkalaService) Summary(ctx context.Context, scheduleID string, s
 
 func (s *ServisBerkalaService) Preview(ctx context.Context, scheduleID, documentDate string, scope auth.RegencyScope) (AggregatePreview, error) {
 	scheduleID, documentDate = strings.TrimSpace(scheduleID), strings.TrimSpace(documentDate)
-	snapshot, ctxData, err := s.snapshot(ctx, scheduleID, documentDate, 1, false, scope)
+	snapshot, ctxData, err := s.snapshot(ctx, scheduleID, documentDate, nextVersionOrFirst(ctx, s.repository, scheduleID, AggregateDocumentServisBerkala, documentDate), false, scope)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
+	marks, markImages, err := loadSignatoryMarks(ctx, s.repository, ctxData.ScheduleID, "servis-berkala")
+	if err != nil {
+		return AggregatePreview{}, err
+	}
+	snapshot.SignatureMarks = marks
+	wet, wetImages, err := loadWetSignature(ctx, s.repository, ctxData.ScheduleID, "servis-berkala", documentDate, snapshot)
+	if err != nil {
+		return AggregatePreview{}, err
+	}
+	snapshot.Wet = wet
 	logoBytes, err := loadLogoBytes(ctx, s.storage, snapshot.Logos)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
+	mergeImages(logoBytes, markImages)
+	mergeImages(logoBytes, wetImages)
 	rendered, err := RenderServisBerkala(snapshot, logoBytes)
 	if err != nil {
 		return AggregatePreview{}, err
@@ -93,6 +105,19 @@ func (s *ServisBerkalaService) Finalize(ctx context.Context, actor auth.Principa
 	if err != nil {
 		return AggregateDocument{}, err
 	}
+	marks, markImages, err := loadSignatoryMarks(ctx, s.repository, ctxData.ScheduleID, "servis-berkala")
+	if err != nil {
+		return AggregateDocument{}, err
+	}
+	snapshot.SignatureMarks = marks
+	wet, wetImages, err := loadWetSignature(ctx, s.repository, ctxData.ScheduleID, "servis-berkala", documentDate, snapshot)
+	if err != nil {
+		return AggregateDocument{}, err
+	}
+	if wet.Enabled && !wet.Scanned {
+		return AggregateDocument{}, ErrWetSignatureRequired
+	}
+	snapshot.Wet = wet
 	snapshotJSON, err := json.Marshal(snapshot)
 	if err != nil {
 		return AggregateDocument{}, err
@@ -101,6 +126,8 @@ func (s *ServisBerkalaService) Finalize(ctx context.Context, actor auth.Principa
 	if err != nil {
 		return AggregateDocument{}, err
 	}
+	mergeImages(logoBytes, markImages)
+	mergeImages(logoBytes, wetImages)
 	rendered, err := RenderServisBerkala(snapshot, logoBytes)
 	if err != nil {
 		return AggregateDocument{}, err

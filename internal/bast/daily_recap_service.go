@@ -113,10 +113,22 @@ func (s *DailyRecapService) Preview(ctx context.Context, scheduleID, localDate s
 		return AggregatePreview{}, err
 	}
 	snapshot := buildDailyRecapSnapshot(ctxData, settings, logos, localDate, recipients)
+	marks, markImages, err := loadSignatoryMarks(ctx, s.repository, ctxData.ScheduleID, "rekap-harian")
+	if err != nil {
+		return AggregatePreview{}, err
+	}
+	snapshot.SignatureMarks = marks
+	wet, wetImages, err := loadWetSignature(ctx, s.repository, ctxData.ScheduleID, "rekap-harian", localDate, snapshot)
+	if err != nil {
+		return AggregatePreview{}, err
+	}
+	snapshot.Wet = wet
 	logoBytes, err := loadLogoBytes(ctx, s.storage, logos)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
+	mergeImages(logoBytes, markImages)
+	mergeImages(logoBytes, wetImages)
 	rendered, err := RenderDailyRecap(snapshot, logoBytes)
 	if err != nil {
 		return AggregatePreview{}, err
@@ -137,6 +149,19 @@ func (s *DailyRecapService) Finalize(ctx context.Context, actor auth.Principal, 
 		return AggregateDocument{}, err
 	}
 	snapshot := buildDailyRecapSnapshot(ctxData, settings, logos, localDate, recipients)
+	marks, markImages, err := loadSignatoryMarks(ctx, s.repository, ctxData.ScheduleID, "rekap-harian")
+	if err != nil {
+		return AggregateDocument{}, err
+	}
+	snapshot.SignatureMarks = marks
+	wet, wetImages, err := loadWetSignature(ctx, s.repository, ctxData.ScheduleID, "rekap-harian", localDate, snapshot)
+	if err != nil {
+		return AggregateDocument{}, err
+	}
+	if wet.Enabled && !wet.Scanned {
+		return AggregateDocument{}, ErrWetSignatureRequired
+	}
+	snapshot.Wet = wet
 	snapshotJSON, err := json.Marshal(snapshot)
 	if err != nil {
 		return AggregateDocument{}, err
@@ -145,6 +170,8 @@ func (s *DailyRecapService) Finalize(ctx context.Context, actor auth.Principal, 
 	if err != nil {
 		return AggregateDocument{}, err
 	}
+	mergeImages(logoBytes, markImages)
+	mergeImages(logoBytes, wetImages)
 	rendered, err := RenderDailyRecap(snapshot, logoBytes)
 	if err != nil {
 		return AggregateDocument{}, err

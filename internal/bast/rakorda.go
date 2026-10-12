@@ -12,16 +12,17 @@ import (
 // RAKORDA and Sosialisasi print blank numbered rows to be filled by hand;
 // Training 10%/100% print Participants taken from the day's distribution.
 type RakordaSnapshot struct {
-	DocumentDate string                `json:"document_date"`
-	Location     string                `json:"location"`
-	RegencyName  string                `json:"regency_name"`
-	ProvinceName string                `json:"province_name"`
-	ZoneName     string                `json:"zone_name"`
-	FiscalYear   int                   `json:"fiscal_year"`
-	RowCount     int                   `json:"row_count"`
-	Participants []ActivityParticipant `json:"participants,omitempty"`
-	Logos        []LogoSnapshot        `json:"logos"`
-	Signatories  closingSignatories    `json:"signatories"`
+	DocumentDate   string                `json:"document_date"`
+	Location       string                `json:"location"`
+	RegencyName    string                `json:"regency_name"`
+	ProvinceName   string                `json:"province_name"`
+	ZoneName       string                `json:"zone_name"`
+	FiscalYear     int                   `json:"fiscal_year"`
+	RowCount       int                   `json:"row_count"`
+	Participants   []ActivityParticipant `json:"participants,omitempty"`
+	Logos          []LogoSnapshot        `json:"logos"`
+	Signatories    closingSignatories    `json:"signatories"`
+	SignatureMarks SignatureMarks        `json:"signature_marks,omitempty"`
 }
 
 func buildRakordaSnapshot(spec rakordaDocumentSpec, ctx DP3Context, settings ScheduleSettings, logos []LogoSnapshot, documentDate string, participants []ActivityParticipant) (RakordaSnapshot, error) {

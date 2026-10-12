@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, Download, FileCheck2, FolderOpen, LockKeyhole, RefreshCw, Users } from 'lucide-react';
+import { CalendarDays, Download, FileCheck2, FolderOpen, LockKeyhole, RefreshCw, Signature, Users } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { DataState } from '@/components/DataState';
@@ -11,18 +11,21 @@ import { apiBlobRequest, ApiError, apiRequest } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
+import { SignatureSettingsPanel } from './SignatureSettingsPanel';
 import type { BundleRequest, DailyBundle, DateSummary, LockResult, RecipientDocument } from './types';
 
-type Props = { programID: string; regencyID: string; regencyName: string; programType: ProgramType };
+// scheduleID: jadwal kabupaten ini, dipakai panel tanda tangan Pelaksana/Konsultan.
+type Props = { programID: string; regencyID: string; regencyName: string; programType: ProgramType; scheduleID?: string };
 type DataResponse<T> = { data: T };
 
 const formatLocalDate = (value: string) => new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${value}T00:00:00Z`));
 
-export function BAIndividualPanel({ programID, regencyID, regencyName, programType }: Props) {
+export function BAIndividualPanel({ programID, regencyID, regencyName, programType, scheduleID }: Props) {
   const canManage = useCan('bast.manage');
   const queryClient = useQueryClient();
   const [chosenDate, setChosenDate] = useState('');
   const [showRecipients, setShowRecipients] = useState(false);
+  const [showSignatures, setShowSignatures] = useState(false);
   const [locallyLocked, setLocallyLocked] = useState<string[]>([]);
   const [operationError, setOperationError] = useState('');
 
@@ -81,7 +84,9 @@ export function BAIndividualPanel({ programID, regencyID, regencyName, programTy
   // a disabled query (never fetched), which would permanently disable these
   // action buttons whenever the preview isn't ready yet.
   const busy = lock.isPending || finalize.isPending;
-  return <div className="grid gap-5 xl:grid-cols-[19rem_minmax(0,1fr)]">
+  return <div className="grid gap-5">
+    {scheduleID && showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} document="ba-perorangan" documentLabel="BA Perorangan" />}
+  <div className="grid gap-5 xl:grid-cols-[19rem_minmax(0,1fr)]">
     <Card className="self-start">
       <CardHeader><CardTitle className="flex items-center gap-2 text-base"><CalendarDays className="size-4 text-primary" />Tanggal pembagian</CardTitle></CardHeader>
       <CardContent className="grid gap-2">
@@ -117,6 +122,7 @@ export function BAIndividualPanel({ programID, regencyID, regencyName, programTy
           {operationError && <p className="text-sm text-destructive" role="alert">{operationError}</p>}
           {selected?.validation_status !== 'configuration_required' && <div className="flex flex-wrap gap-2">
             {canManage && !ready && <Button disabled={busy} onClick={() => lock.mutate()}><LockKeyhole />{lock.isPending ? 'Mengunci...' : 'Kunci total kabupaten'}</Button>}
+            {scheduleID && <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>}
             {canManage && <Button disabled={!ready || busy} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
           </div>}
           {canPreview && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="BA Perorangan" />}
@@ -129,6 +135,7 @@ export function BAIndividualPanel({ programID, regencyID, regencyName, programTy
         <tbody>{sortedRecipients.map((recipient) => <tr key={recipient.distribution_slot_id}><td className="font-semibold tabular-nums">{recipient.slot_number}</td><td className="font-mono text-xs">{recipient.document_number}</td><td>{recipient.final_total}</td></tr>)}</tbody>
       </DataTable>)}
     </div>
+  </div>
   </div>;
 }
 

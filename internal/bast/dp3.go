@@ -94,6 +94,8 @@ type DP3Snapshot struct {
 	FiscalYear            int                    `json:"fiscal_year"`
 	Logos                 []LogoSnapshot         `json:"logos"`
 	Signatories           dp3Signatories         `json:"signatories"`
+	SignatureMarks        SignatureMarks         `json:"signature_marks,omitempty"`
+	Wet                   WetSignature           `json:"wet_signature,omitempty"`
 	Recipients            []dp3RecipientSnapshot `json:"recipients"`
 }
 
@@ -115,7 +117,7 @@ func buildDP3Snapshot(ctx DP3Context, settings ScheduleSettings, logos []LogoSna
 		DocumentDate:          documentDate,
 		RegencyName:           ctx.RegencyName,
 		HandoverLocation:      settings.HandoverLocation,
-		ConsultantCompanyName: settings.ConsultantCompanyName,
+		ConsultantCompanyName: settings.Consultant(),
 		FiscalYear:            ctx.FiscalYear,
 		Logos:                 sortedLogos,
 		Signatories: dp3Signatories{

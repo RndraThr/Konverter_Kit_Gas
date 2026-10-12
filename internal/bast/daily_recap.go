@@ -62,6 +62,8 @@ type DailyRecapSnapshot struct {
 	FiscalYear            int                           `json:"fiscal_year"`
 	Logos                 []LogoSnapshot                `json:"logos"`
 	Signatories           dailyRecapSignatories         `json:"signatories"`
+	SignatureMarks        SignatureMarks                `json:"signature_marks,omitempty"`
+	Wet                   WetSignature                  `json:"wet_signature,omitempty"`
 	Recipients            []dailyRecapRecipientSnapshot `json:"recipients"`
 	Variants              []DailyRecapVariant           `json:"variants"`
 	GrandTotal            int                           `json:"grand_total"`
@@ -85,7 +87,7 @@ func buildDailyRecapSnapshot(ctx DP3Context, settings ScheduleSettings, logos []
 		DocumentDate:          documentDate,
 		RegencyName:           ctx.RegencyName,
 		HandoverLocation:      settings.HandoverLocation,
-		ConsultantCompanyName: settings.ConsultantCompanyName,
+		ConsultantCompanyName: settings.Consultant(),
 		FiscalYear:            ctx.FiscalYear,
 		Logos:                 sortedLogos,
 		Signatories: dailyRecapSignatories{

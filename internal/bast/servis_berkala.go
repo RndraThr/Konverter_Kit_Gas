@@ -36,6 +36,8 @@ type ServisBerkalaSnapshot struct {
 	ConsultantCompanyName string             `json:"consultant_company_name"`
 	Logos                 []LogoSnapshot     `json:"logos"`
 	Signatories           closingSignatories `json:"signatories"`
+	SignatureMarks        SignatureMarks     `json:"signature_marks,omitempty"`
+	Wet                   WetSignature       `json:"wet_signature,omitempty"`
 }
 
 // ServisBerkalaSummary memberi panel info kesiapan dokumen tanpa merender PDF.
@@ -79,7 +81,7 @@ func buildServisBerkalaSnapshot(ctx DP3Context, settings ScheduleSettings, logos
 		FiscalYear:            ctx.FiscalYear,
 		TotalPackages:         totalPackages,
 		Services:              servisPeriods(settings),
-		ConsultantCompanyName: strings.TrimSpace(settings.ConsultantCompanyName),
+		ConsultantCompanyName: settings.Consultant(),
 		Logos:                 sortedLogos,
 		Signatories: closingSignatories{
 			AgricultureOfficeName: textnorm.BusinessUpper(settings.AgricultureOfficeName),

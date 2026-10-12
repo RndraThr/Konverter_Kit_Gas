@@ -85,14 +85,26 @@ func (s *TKDNService) Summary(ctx context.Context, scheduleID string, scope auth
 
 func (s *TKDNService) Preview(ctx context.Context, scheduleID, documentDate string, scope auth.RegencyScope) (AggregatePreview, error) {
 	scheduleID, documentDate = strings.TrimSpace(scheduleID), strings.TrimSpace(documentDate)
-	snapshot, ctxData, err := s.snapshot(ctx, scheduleID, documentDate, 1, scope)
+	snapshot, ctxData, err := s.snapshot(ctx, scheduleID, documentDate, nextVersionOrFirst(ctx, s.repository, scheduleID, AggregateDocumentTKDN, documentDate), scope)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
+	marks, markImages, err := loadSignatoryMarks(ctx, s.repository, ctxData.ScheduleID, "tkdn")
+	if err != nil {
+		return AggregatePreview{}, err
+	}
+	snapshot.SignatureMarks = marks
+	wet, wetImages, err := loadWetSignature(ctx, s.repository, ctxData.ScheduleID, "tkdn", documentDate, snapshot)
+	if err != nil {
+		return AggregatePreview{}, err
+	}
+	snapshot.Wet = wet
 	logoBytes, err := loadLogoBytes(ctx, s.storage, snapshot.Logos)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
+	mergeImages(logoBytes, markImages)
+	mergeImages(logoBytes, wetImages)
 	rendered, err := RenderTKDN(snapshot, logoBytes)
 	if err != nil {
 		return AggregatePreview{}, err
@@ -114,6 +126,19 @@ func (s *TKDNService) Finalize(ctx context.Context, actor auth.Principal, schedu
 	if snapshot.TotalTKDN <= 0 {
 		return AggregateDocument{}, ErrTKDNTotalRequired
 	}
+	marks, markImages, err := loadSignatoryMarks(ctx, s.repository, ctxData.ScheduleID, "tkdn")
+	if err != nil {
+		return AggregateDocument{}, err
+	}
+	snapshot.SignatureMarks = marks
+	wet, wetImages, err := loadWetSignature(ctx, s.repository, ctxData.ScheduleID, "tkdn", documentDate, snapshot)
+	if err != nil {
+		return AggregateDocument{}, err
+	}
+	if wet.Enabled && !wet.Scanned {
+		return AggregateDocument{}, ErrWetSignatureRequired
+	}
+	snapshot.Wet = wet
 	snapshotJSON, err := json.Marshal(snapshot)
 	if err != nil {
 		return AggregateDocument{}, err
@@ -122,6 +147,8 @@ func (s *TKDNService) Finalize(ctx context.Context, actor auth.Principal, schedu
 	if err != nil {
 		return AggregateDocument{}, err
 	}
+	mergeImages(logoBytes, markImages)
+	mergeImages(logoBytes, wetImages)
 	rendered, err := RenderTKDN(snapshot, logoBytes)
 	if err != nil {
 		return AggregateDocument{}, err

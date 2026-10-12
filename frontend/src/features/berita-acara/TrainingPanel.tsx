@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, Download, MapPin, Printer, Save, Settings2 } from 'lucide-react';
+import { CalendarDays, Download, MapPin, Printer, Save, Signature } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { DataState } from '@/components/DataState';
@@ -12,8 +12,8 @@ import { useCan } from '@/lib/permissions';
 import { uppercaseBusinessText } from '@/lib/text';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
+import { SignatureSettingsPanel } from './SignatureSettingsPanel';
 import { RakordaArchive } from './RakordaArchive';
-import { ScheduleSettingsPanel } from './ScheduleSettingsPanel';
 import type { ScheduleSettings, TrainingDate } from './types';
 
 export type TrainingConfig = {
@@ -38,7 +38,7 @@ export function TrainingPanel({ config, scheduleID, regencyName, programType }: 
   const queryClient = useQueryClient();
   const [chosenDate, setChosenDate] = useState('');
   const [location, setLocation] = useState('');
-  const [showSettings, setShowSettings] = useState(false);
+  const [showSignatures, setShowSignatures] = useState(false);
   const apiBase = `/api/v1/bast/${config.apiPath}`;
   const enabled = programType === 'farmer';
 
@@ -83,7 +83,7 @@ export function TrainingPanel({ config, scheduleID, regencyName, programType }: 
   const locationDirty = uppercaseBusinessText(location).trim() !== savedLocation.trim();
 
   return <div className="grid gap-5">
-    {showSettings && <ScheduleSettingsPanel scheduleID={scheduleID} />}
+    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} document={config.apiPath} documentLabel={config.name} />}
 
     <div className="grid gap-5 xl:grid-cols-[19rem_minmax(0,1fr)]">
       <Card className="self-start">
@@ -111,7 +111,7 @@ export function TrainingPanel({ config, scheduleID, regencyName, programType }: 
               <div className="flex flex-wrap gap-2 sm:ml-auto">
                 <Button variant="outline" disabled={!preview.data} onClick={printPreview}><Printer aria-hidden="true" />Cetak</Button>
                 <Button variant="outline" disabled={!preview.data} onClick={downloadPreview}><Download aria-hidden="true" />Unduh PDF</Button>
-                <Button variant="ghost" onClick={() => setShowSettings((value) => !value)}><Settings2 />{showSettings ? 'Tutup pengaturan' : 'Penandatangan'}</Button>
+              <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>
               </div>
             </div>
             {!savedLocation.trim() && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">Lokasi belum diisi: dicetak kosong.</p>}

@@ -299,35 +299,36 @@ test('manages package template equipment options and components as repeatable ro
 
   await userEvent.click(screen.getByRole('button', { name: 'Tambah opsi konkit' }));
   expect(screen.getByRole('group', { name: 'Opsi konkit 1' })).toBeVisible();
-  await userEvent.type(screen.getByLabelText('Merk konkit 1'), 'ergas');
-  expect(screen.getByLabelText('Merk konkit 1')).toHaveValue('ERGAS');
+  await userEvent.type(screen.getByLabelText('Merk konkit 1'), 'Ergas');
+  // Teks barang disimpan persis seperti diketik (EYD), tidak dipaksa kapital.
+  expect(screen.getByLabelText('Merk konkit 1')).toHaveValue('Ergas');
 
   await userEvent.click(screen.getByRole('button', { name: 'Tambah opsi mesin' }));
   expect(screen.getByRole('group', { name: 'Opsi mesin 1' })).toBeVisible();
-  await userEvent.type(screen.getByLabelText('Merk mesin 1'), 'shark');
-  await userEvent.type(screen.getByLabelText('Tipe mesin 1'), 'spwp 80-30/3"');
-  await userEvent.type(screen.getByLabelText('Daya mesin 1'), '5.5 hp');
-  expect(screen.getByLabelText('Merk mesin 1')).toHaveValue('SHARK');
+  await userEvent.type(screen.getByLabelText('Merk mesin 1'), 'Shark');
+  await userEvent.type(screen.getByLabelText('Tipe mesin 1'), 'SPWP 80-30/3"');
+  await userEvent.type(screen.getByLabelText('Daya mesin 1'), '5,5 HP');
+  expect(screen.getByLabelText('Merk mesin 1')).toHaveValue('Shark');
   expect(screen.getByLabelText('Tipe mesin 1')).toHaveValue('SPWP 80-30/3"');
-  expect(screen.getByLabelText('Daya mesin 1')).toHaveValue('5.5 HP');
+  expect(screen.getByLabelText('Daya mesin 1')).toHaveValue('5,5 HP');
 
   await userEvent.click(screen.getByRole('button', { name: 'Tambah opsi selang' }));
   expect(screen.getByRole('group', { name: 'Opsi selang 1' })).toBeVisible();
-  await userEvent.type(screen.getByLabelText('Merk selang hisap 1'), 'trilliunhose');
+  await userEvent.type(screen.getByLabelText('Merk selang hisap 1'), 'Triliunhose');
   await userEvent.type(screen.getByLabelText('Spesifikasi selang hisap 1'), '6 m');
-  await userEvent.type(screen.getByLabelText('Merk selang buang 1'), 'yamakoyo');
+  await userEvent.type(screen.getByLabelText('Merk selang buang 1'), 'Yamakoyo');
   await userEvent.type(screen.getByLabelText('Spesifikasi selang buang 1'), '10 m');
-  expect(screen.getByLabelText('Merk selang hisap 1')).toHaveValue('TRILLIUNHOSE');
-  expect(screen.getByLabelText('Spesifikasi selang hisap 1')).toHaveValue('6 M');
-  expect(screen.getByLabelText('Merk selang buang 1')).toHaveValue('YAMAKOYO');
-  expect(screen.getByLabelText('Spesifikasi selang buang 1')).toHaveValue('10 M');
+  expect(screen.getByLabelText('Merk selang hisap 1')).toHaveValue('Triliunhose');
+  expect(screen.getByLabelText('Spesifikasi selang hisap 1')).toHaveValue('6 m');
+  expect(screen.getByLabelText('Merk selang buang 1')).toHaveValue('Yamakoyo');
+  expect(screen.getByLabelText('Spesifikasi selang buang 1')).toHaveValue('10 m');
 
   await userEvent.click(screen.getByRole('button', { name: 'Tambah komponen' }));
   expect(screen.getByRole('group', { name: 'Komponen 1' })).toBeVisible();
-  await userEvent.type(screen.getByLabelText('Nama komponen 1'), 'Tabung LPG 3 Kg');
-  await userEvent.type(screen.getByLabelText('Satuan komponen 1'), 'tabung');
-  expect(screen.getByLabelText('Nama komponen 1')).toHaveValue('TABUNG LPG 3 KG');
-  expect(screen.getByLabelText('Satuan komponen 1')).toHaveValue('TABUNG');
+  await userEvent.type(screen.getByLabelText('Nama komponen 1'), 'Tabung LPG 3 kg');
+  await userEvent.type(screen.getByLabelText('Satuan komponen 1'), 'Tabung');
+  expect(screen.getByLabelText('Nama komponen 1')).toHaveValue('Tabung LPG 3 kg');
+  expect(screen.getByLabelText('Satuan komponen 1')).toHaveValue('Tabung');
 
   await userEvent.click(screen.getByRole('button', { name: 'Hapus opsi mesin 1' }));
   expect(screen.queryByLabelText('Merk mesin 1')).not.toBeInTheDocument();
