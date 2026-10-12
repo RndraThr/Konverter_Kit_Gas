@@ -12,6 +12,7 @@ import (
 
 type dailyRecapRepositoryStub struct {
 	recipients []DailyRecapRecipient
+	logos      []LogoSnapshot
 }
 
 func (s *dailyRecapRepositoryStub) GetDP3Context(context.Context, string, auth.RegencyScope) (DP3Context, error) {
@@ -24,7 +25,7 @@ func (s *dailyRecapRepositoryStub) ListDailyRecapRecipients(context.Context, str
 	return s.recipients, nil
 }
 func (s *dailyRecapRepositoryStub) ListActiveLogos(context.Context, string) ([]LogoSnapshot, error) {
-	return nil, nil
+	return s.logos, nil
 }
 func (s *dailyRecapRepositoryStub) GetScheduleSettings(context.Context, string, auth.RegencyScope) (ScheduleSettings, error) {
 	return ScheduleSettings{HandoverLocation: "LOKASI", AgricultureOfficeName: "DINAS", AgricultureOfficeNIP: "123", InstallerName: "PELAKSANA", SupervisorName: "PENGAWAS", PertaminaRepName: "PERTAMINA"}, nil
@@ -104,6 +105,28 @@ func TestDailyRecapDatesReportsRecipientValidationStatus(t *testing.T) {
 	}
 	if dates[0].ValidationStatus != "machine_power_required" {
 		t.Fatalf("status=%q", dates[0].ValidationStatus)
+	}
+}
+
+func TestDailyRecapPreviewAllowsIncompleteDataButFinalizeDoesNot(t *testing.T) {
+	repository := &dailyRecapRepositoryStub{recipients: []DailyRecapRecipient{{FullName: "SITI"}}, logos: []LogoSnapshot{{AssetID: "logo", StorageKey: "logo-key", MimeType: "image/png", SortOrder: 1}}}
+	storage := newBundleStorageStub(t)
+	storage.files["logo-key"] = testPNG(t)
+	service := NewDailyRecapService(repository, storage, nil)
+	scope := auth.RegencyScope{Unrestricted: true}
+	preview, err := service.Preview(context.Background(), "schedule-1", "2026-10-02", scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.RecipientCount != 1 || len(preview.PDF) == 0 {
+		t.Fatalf("preview=%+v", preview)
+	}
+	if _, err := service.Finalize(context.Background(), auth.Principal{}, "schedule-1", "2026-10-02", scope, auth.ClientMeta{}); !errors.Is(err, ErrVerificationSnapshotIncomplete) {
+		t.Fatalf("finalize err=%v", err)
+	}
+	repository.recipients = nil
+	if _, err := service.Preview(context.Background(), "schedule-1", "2026-10-02", scope); !errors.Is(err, ErrAggregateNoRecipients) {
+		t.Fatalf("empty preview err=%v", err)
 	}
 }
 

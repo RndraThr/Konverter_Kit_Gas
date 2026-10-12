@@ -163,7 +163,8 @@ func (s *BundleService) prepareDocuments(ctx context.Context, actor auth.Princip
 	if err := validateContext(sourceContext); err != nil {
 		return nil, nil, SourceContext{}, err
 	}
-	recipients, err := s.core.ListRecipients(ctx, request.ProgramID, request.RegencyID, request.LocalDate, scope)
+	// Preview tidak menunggu total dikunci; nomor BA memakai total sementara.
+	recipients, err := s.core.listRecipients(ctx, request.ProgramID, request.RegencyID, request.LocalDate, scope, finalize)
 	if err != nil {
 		return nil, nil, SourceContext{}, err
 	}
@@ -185,7 +186,7 @@ func (s *BundleService) prepareDocuments(ctx context.Context, actor auth.Princip
 		if err != nil {
 			return nil, nil, SourceContext{}, err
 		}
-		snapshot, err := BuildSnapshot(source)
+		snapshot, err := BuildPreviewSnapshot(source)
 		if err != nil {
 			return nil, nil, SourceContext{}, err
 		}

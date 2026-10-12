@@ -3,7 +3,10 @@ import react from '@vitejs/plugin-react';
 import path from 'node:path';
 import tailwindcss from '@tailwindcss/vite';
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // Build disajikan Go di /static/app/; base ini dipakai Vite untuk URL aset
+  // runtime (mis. worker pdf.js lewat ?url dan preload chunk lazy).
+  base: command === 'build' ? '/static/app/' : '/',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -20,4 +23,4 @@ export default defineConfig({
     emptyOutDir: false,
     manifest: true,
   },
-});
+}));

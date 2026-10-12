@@ -12,6 +12,7 @@ import { apiBlobRequest, ApiError, apiRequest } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
+import { incompletePreviewNote, previewBlockingStatus } from './previewStatus';
 import { ScheduleSettingsPanel } from './ScheduleSettingsPanel';
 import type { AggregateDocument, DP3Recipient, DP3Summary } from './types';
 
@@ -54,14 +55,16 @@ export function DP3Panel({ scheduleID, regencyName, programType, defaultDate }: 
     enabled: programType === 'farmer' && documentDate !== '',
   });
 
-  // Only gate the preview fetch on an explicit 'ready' status — defaulting
-  // to 'ready' while summary is still loading (data undefined) would fire
-  // the preview prematurely, before the real validation status is known.
+  // Status mengikuti syarat finalisasi. Preview tetap dibuat walau pengaturan
+  // atau data penerima belum lengkap (isian kosong dicetak titik-titik);
+  // hanya status yang memblokir preview yang menahannya. Preview menunggu
+  // summary selesai agar tidak terpicu sebelum status diketahui.
   const status = summary.data?.data.validation_status ?? 'ready';
+  const canPreview = summary.data !== undefined && !previewBlockingStatus.has(status);
   const preview = useQuery({
     queryKey: ['bast', 'dp3', 'preview', scheduleID, documentDate],
     queryFn: () => apiBlobRequest('/api/v1/bast/dp3/preview', { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, document_date: documentDate }) }),
-    enabled: programType === 'farmer' && summary.data?.data.validation_status === 'ready' && documentDate !== '',
+    enabled: programType === 'farmer' && canPreview && documentDate !== '',
   });
   const finalize = useMutation({
     mutationFn: () => apiRequest<DataResponse<AggregateDocument>>('/api/v1/bast/dp3/finalize', { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, document_date: documentDate }) }),
@@ -121,7 +124,8 @@ export function DP3Panel({ scheduleID, regencyName, programType, defaultDate }: 
             {historicalDocs.map((doc) => <div className="flex items-center justify-between gap-3 text-sm" key={doc.id}><span className="flex flex-wrap items-center gap-2 text-muted-foreground">Versi {doc.version} · {doc.document_date}{doc.status === 'stale' && <Badge variant="destructive">Perlu dibuat ulang</Badge>}</span><Button nativeButton={false} render={<a href={`/api/v1/bast/dp3/documents/${doc.id}/content`} />} variant="ghost" size="sm"><Download />Unduh</Button></div>)}
           </div>}
 
-          {status === 'ready' && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="DP3" />}
+          {canPreview && status !== 'ready' && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">{incompletePreviewNote}</p>}
+          {canPreview && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="DP3" />}
 
           <Button className="justify-start" variant="ghost" onClick={() => setShowRecipients((value) => !value)}><Users />{showRecipients ? 'Sembunyikan penerima' : `Lihat ${data?.total_recipients ?? 0} penerima`}</Button>
         </CardContent>

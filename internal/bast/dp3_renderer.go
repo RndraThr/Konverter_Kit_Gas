@@ -100,7 +100,7 @@ func renderDP3Header(pdf *fpdf.Fpdf, snapshot DP3Snapshot, logos []registeredLog
 
 	metadata := []struct{ label, value string }{
 		{"Hari / Tanggal", formatIndonesianDate(snapshot.DocumentDate)},
-		{"Lokasi / Titik Serah", snapshot.HandoverLocation},
+		{"Lokasi / Titik Serah", orBlank(snapshot.HandoverLocation)},
 		{"Kabupaten / Kota", snapshot.RegencyName},
 		{"Konsultan Distribusi", snapshot.ConsultantCompanyName},
 	}

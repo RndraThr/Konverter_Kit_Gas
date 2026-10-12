@@ -6,6 +6,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList } from '@/components/ui/combobox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { apiRequest } from '@/lib/api';
 import type { DataResponse, ProgramType, Schedule } from '../programs/types';
@@ -117,8 +118,15 @@ export function BeritaAcaraPage() {
     {schedules.isError && <DataState kind="error" title="Jadwal berita acara belum dapat dimuat" description="Periksa koneksi atau hak akses, lalu coba kembali." action={{ label: 'Coba lagi', onClick: () => schedules.refetch() }} />}
 
     <Tabs value={activeTab} onValueChange={(value) => updateParam('tab', value)}>
-      {/* Tab mengisi lebar penuh dan turun ke baris berikut di layar sempit (tanpa scroll). */}
-      <div className="pb-2" role="presentation">
+      {/* Ponsel: pilihan dokumen berupa dropdown; layar md ke atas: tab mengisi lebar penuh dan turun baris bila perlu. */}
+      <div className="grid gap-1.5 pb-2 md:hidden">
+        <Label id="ba-document-type-label">Jenis berita acara</Label>
+        <Select value={activeTab} onValueChange={(value) => value && updateParam('tab', value)}>
+          <SelectTrigger className="w-full" aria-labelledby="ba-document-type-label"><SelectValue /></SelectTrigger>
+          <SelectContent>{documentTypes.map((document) => <SelectItem key={document.value} value={document.value}>{document.label}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+      <div className="hidden pb-2 md:block" role="presentation">
         <TabsList activateOnFocus variant="line" className="h-auto w-full flex-wrap justify-start gap-y-1" aria-label="Jenis berita acara">
           {documentTypes.map((document) => <TabsTrigger className="min-h-11 flex-auto px-3" key={document.value} value={document.value}>{document.label}</TabsTrigger>)}
         </TabsList>

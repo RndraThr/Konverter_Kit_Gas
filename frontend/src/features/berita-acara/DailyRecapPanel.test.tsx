@@ -41,13 +41,22 @@ test('shows the daily recap preview inline for the selected date, without openin
   expect(window.open).not.toHaveBeenCalled()
 })
 
-test('does not request a preview and explains why when recipient data is incomplete', async () => {
+test('still previews incomplete recipient data but explains why finalization is locked', async () => {
   dates = [{ local_date: '2026-10-02', recipient_count: 1, validation_status: 'machine_power_required' }]
   renderPanel()
 
   expect(await screen.findByText('Daya mesin belum lengkap pada sebagian penerima.')).toBeVisible()
-  expect(apiBlobRequest).not.toHaveBeenCalled()
+  expect(screen.getByText(/isian kosong dicetak titik-titik/)).toBeVisible()
+  await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledWith('/api/v1/bast/daily-recap/preview', expect.objectContaining({ method: 'POST' })))
   expect(screen.getByRole('button', { name: 'Finalisasi & sinkronkan' })).toBeDisabled()
+})
+
+test('does not request a preview when the schedule has no BA logo', async () => {
+  dates = [{ local_date: '2026-10-02', recipient_count: 1, validation_status: 'ba_logo_required' }]
+  renderPanel()
+
+  expect(await screen.findByText('Minimal satu logo Berita Acara aktif wajib dikonfigurasi.')).toBeVisible()
+  expect(apiBlobRequest).not.toHaveBeenCalled()
 })
 
 test('shows the API reason when a ready preview request still fails', async () => {
