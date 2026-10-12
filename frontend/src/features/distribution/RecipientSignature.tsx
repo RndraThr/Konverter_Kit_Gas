@@ -31,7 +31,7 @@ export function RecipientSignature({ slot, editable, onChanged }: { slot: Distri
     </div>
     {slot.recipient_signed_at && !drawing
       ? <div className="space-y-3">
-        <img src={`${path}&v=${encodeURIComponent(slot.recipient_signed_at)}`} alt={`Tanda tangan ${slot.full_name ?? 'penerima'}`} className="h-28 max-w-full rounded-md border bg-white object-contain p-2" />
+        <img src={`${path}&v=${encodeURIComponent(slot.recipient_signed_at)}`} alt={`Tanda tangan ${slot.full_name ?? 'penerima'}`} className="block w-full rounded-md border border-dashed bg-white object-contain p-4" style={{ height: padHeight }} />
         <p className="text-xs text-muted-foreground">Ditandatangani {new Date(slot.recipient_signed_at).toLocaleString('id-ID')}</p>
         {editable && <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" onClick={() => setDrawing(true)}><PenLine aria-hidden="true" />Tanda tangan ulang</Button>
