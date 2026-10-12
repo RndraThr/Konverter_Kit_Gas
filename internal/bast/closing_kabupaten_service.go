@@ -72,11 +72,23 @@ func (s *ClosingKabupatenService) Preview(ctx context.Context, scheduleID, docum
 	if err != nil {
 		return AggregatePreview{}, err
 	}
-	snapshot := buildClosingKabupatenSnapshot(ctxData, settings, logos, documentDate, 1, rows)
+	snapshot := buildClosingKabupatenSnapshot(ctxData, settings, logos, documentDate, nextVersionOrFirst(ctx, s.repository, scheduleID, AggregateDocumentClosingKabupaten, documentDate), rows)
+	marks, markImages, err := loadSignatoryMarks(ctx, s.repository, ctxData.ScheduleID, "closing-kabupaten")
+	if err != nil {
+		return AggregatePreview{}, err
+	}
+	snapshot.SignatureMarks = marks
+	wet, wetImages, err := loadWetSignature(ctx, s.repository, ctxData.ScheduleID, "closing-kabupaten", documentDate, snapshot)
+	if err != nil {
+		return AggregatePreview{}, err
+	}
+	snapshot.Wet = wet
 	logoBytes, err := loadLogoBytes(ctx, s.storage, logos)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
+	mergeImages(logoBytes, markImages)
+	mergeImages(logoBytes, wetImages)
 	rendered, err := RenderClosingKabupaten(snapshot, logoBytes)
 	if err != nil {
 		return AggregatePreview{}, err
@@ -101,6 +113,19 @@ func (s *ClosingKabupatenService) Finalize(ctx context.Context, actor auth.Princ
 		return AggregateDocument{}, err
 	}
 	snapshot := buildClosingKabupatenSnapshot(ctxData, settings, logos, documentDate, version, rows)
+	marks, markImages, err := loadSignatoryMarks(ctx, s.repository, ctxData.ScheduleID, "closing-kabupaten")
+	if err != nil {
+		return AggregateDocument{}, err
+	}
+	snapshot.SignatureMarks = marks
+	wet, wetImages, err := loadWetSignature(ctx, s.repository, ctxData.ScheduleID, "closing-kabupaten", documentDate, snapshot)
+	if err != nil {
+		return AggregateDocument{}, err
+	}
+	if wet.Enabled && !wet.Scanned {
+		return AggregateDocument{}, ErrWetSignatureRequired
+	}
+	snapshot.Wet = wet
 	snapshotJSON, err := json.Marshal(snapshot)
 	if err != nil {
 		return AggregateDocument{}, err
@@ -109,6 +134,8 @@ func (s *ClosingKabupatenService) Finalize(ctx context.Context, actor auth.Princ
 	if err != nil {
 		return AggregateDocument{}, err
 	}
+	mergeImages(logoBytes, markImages)
+	mergeImages(logoBytes, wetImages)
 	rendered, err := RenderClosingKabupaten(snapshot, logoBytes)
 	if err != nil {
 		return AggregateDocument{}, err

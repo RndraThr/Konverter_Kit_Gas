@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarRange, Download, FileCheck2, RefreshCw, Save, Settings2 } from 'lucide-react';
+import { CalendarRange, Download, FileCheck2, RefreshCw, Save, Signature } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { DataState } from '@/components/DataState';
@@ -11,7 +11,9 @@ import { apiBlobRequest, ApiError, apiRequest } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
-import { ScheduleSettingsPanel } from './ScheduleSettingsPanel';
+import { SignatureSettingsPanel } from './SignatureSettingsPanel';
+import { useWetSignatureBlocked, WetSignatureBar } from './WetSignatureBar';
+import { DocumentInfoFields } from './DocumentInfoFields';
 import type { AggregateDocument, ScheduleSettings, ServisBerkalaSummary } from './types';
 
 type Props = { scheduleID: string; regencyName: string; programType: ProgramType; defaultDate: string };
@@ -28,7 +30,7 @@ export function ServisBerkalaPanel({ scheduleID, regencyName, programType, defau
   const queryClient = useQueryClient();
   const [documentDate, setDocumentDate] = useState(defaultDate);
   const [dates, setDates] = useState<ServisDates>(emptyDates);
-  const [showSettings, setShowSettings] = useState(false);
+  const [showSignatures, setShowSignatures] = useState(false);
 
   const settings = useQuery({
     queryKey: ['bast', 'schedule-settings', scheduleID],
@@ -81,6 +83,7 @@ export function ServisBerkalaPanel({ scheduleID, regencyName, programType, defau
     },
     onError: (error) => toast.error(errorMessage(error)),
   });
+  const wetBlocked = useWetSignatureBlocked(scheduleID, 'servis-berkala', documentDate);
 
   if (programType === 'fisherman') return <DataState kind="empty" title="BA Servis Berkala Nelayan belum tersedia" description="Fase pertama hanya mendukung program Petani." />;
   if (settings.isPending || summary.isPending) return <DataState kind="loading" title="Memuat BA Servis Berkala" description="Mengambil jadwal servis dan jumlah paket." />;
@@ -91,7 +94,7 @@ export function ServisBerkalaPanel({ scheduleID, regencyName, programType, defau
   const setDate = (key: keyof ServisDates) => (value: string) => setDates((current) => ({ ...current, [key]: value }));
 
   return <div className="grid gap-5">
-    {showSettings && <ScheduleSettingsPanel scheduleID={scheduleID} />}
+    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} document="servis-berkala" documentLabel="Servis Berkala" />}
 
     <div className="grid gap-5 xl:grid-cols-[22rem_minmax(0,1fr)]">
       <Card className="self-start">
@@ -120,13 +123,15 @@ export function ServisBerkalaPanel({ scheduleID, regencyName, programType, defau
       <Card className="min-w-0">
         <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle className="text-base">BA Agenda Servis Berkala</CardTitle><p className="mt-1 text-sm text-muted-foreground">{regencyName} · disimpan ke 11. SERVIS BERKALA</p></div><Badge variant="outline">{totalPackages} paket</Badge></div></CardHeader>
         <CardContent className="grid gap-4 pt-5">
-          <div className="grid gap-3 sm:grid-cols-[16rem_1fr] sm:items-end">
+          <div className="grid gap-3 sm:items-start sm:grid-cols-[12rem_minmax(0,1fr)]">
             <FormField label="Tanggal dokumen" name="servis_document_date" type="date" value={documentDate} onChange={(e) => setDocumentDate(e.target.value)} />
-            <div className="flex flex-wrap gap-2">
-              {canManage && <Button disabled={finalize.isPending || status !== 'ready' || documentDate === ''} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
-              <Button variant="ghost" onClick={() => setShowSettings((value) => !value)}><Settings2 />{showSettings ? 'Tutup pengaturan' : 'Pengaturan'}</Button>
-            </div>
+            <DocumentInfoFields scheduleID={scheduleID} fields={[{ key: 'consultant_company_name', label: 'Perusahaan Pelaksana' }]} />
           </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
+            <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>
+            {canManage && <Button disabled={finalize.isPending || status !== 'ready' || documentDate === '' || wetBlocked} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
+          </div>
+          <WetSignatureBar scheduleID={scheduleID} document="servis-berkala" date={documentDate} label="Servis Berkala" />
 
           {status === 'no_recipients' && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">Belum ada distribusi selesai pada jadwal ini.</div>}
           {status === 'servis_schedule_required' && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">Tanggal servis belum lengkap: dibiarkan kosong di preview. Lengkapi dan simpan jadwal servis sebelum finalisasi.</p>}

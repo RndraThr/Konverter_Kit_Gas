@@ -25,7 +25,8 @@ func (r *Repository) GetScheduleSettings(ctx context.Context, scheduleID string,
 			COALESCE(st.training_100_row_count,$7), COALESCE(st.servis_1_start::text,''),
 			COALESCE(st.servis_1_end::text,''), COALESCE(st.servis_2_start::text,''),
 			COALESCE(st.servis_2_end::text,''),
-			COALESCE(st.updated_at, now())
+			COALESCE(st.updated_at, now()),
+			COALESCE((SELECT value #>> '{}' FROM system_settings WHERE key='organization_name'), '')
 		FROM program_schedules ps
 		LEFT JOIN bast_schedule_settings st ON st.schedule_id = ps.id
 		WHERE ps.id=$1 AND ($2 OR ps.regency_id::text = ANY($3))
@@ -39,7 +40,7 @@ func (r *Repository) GetScheduleSettings(ctx context.Context, scheduleID string,
 		&settings.Training10RowCount, &settings.Training100Location,
 		&settings.Training100RowCount, &settings.Servis1Start,
 		&settings.Servis1End, &settings.Servis2Start,
-		&settings.Servis2End, &settings.UpdatedAt,
+		&settings.Servis2End, &settings.UpdatedAt, &settings.ConsultantCompanyDefault,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ScheduleSettings{}, ErrNotFound

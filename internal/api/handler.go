@@ -262,6 +262,8 @@ type Dependencies struct {
 	BAST              BASTService
 	BASTBranding      BASTBrandingService
 	BASTSettings      BASTScheduleSettingsService
+	BASTSignatory     BASTSignatoryService
+	BASTWetSignature  BASTWetSignatureService
 	DP3               DP3Service
 	DailyRecap        DailyRecapService
 	ClosingTitikSerah ClosingTitikSerahService
@@ -445,6 +447,10 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleBASTRakorda(w, r, rc, h.deps.Training10, strings.TrimPrefix(path, "bast/training-10/"))
 	case strings.HasPrefix(path, "bast/training-100/"):
 		h.handleBASTRakorda(w, r, rc, h.deps.Training100, strings.TrimPrefix(path, "bast/training-100/"))
+	case path == "bast/wet-signature" || strings.HasPrefix(path, "bast/wet-signature/"):
+		h.handleBASTWetSignature(w, r, rc, strings.TrimPrefix(strings.TrimPrefix(path, "bast/wet-signature"), "/"))
+	case path == "bast/signatures" || strings.HasPrefix(path, "bast/signatures/"):
+		h.handleBASTSignatures(w, r, rc, strings.TrimPrefix(strings.TrimPrefix(path, "bast/signatures"), "/"))
 	case path == "bast/branding" || strings.HasPrefix(path, "bast/branding/"):
 		h.handleBASTBranding(w, r, rc, strings.TrimPrefix(strings.TrimPrefix(path, "bast/branding"), "/"))
 	default:

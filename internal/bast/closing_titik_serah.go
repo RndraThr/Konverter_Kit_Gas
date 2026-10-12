@@ -39,6 +39,8 @@ type ClosingTitikSerahSnapshot struct {
 	FiscalYear            int                `json:"fiscal_year"`
 	Logos                 []LogoSnapshot     `json:"logos"`
 	Signatories           closingSignatories `json:"signatories"`
+	SignatureMarks        SignatureMarks     `json:"signature_marks,omitempty"`
+	Wet                   WetSignature       `json:"wet_signature,omitempty"`
 	Rows                  []ClosingRow       `json:"rows"`
 	GrandTotal            int                `json:"grand_total"`
 }
@@ -58,7 +60,7 @@ func buildClosingTitikSerahSnapshot(ctx DP3Context, settings ScheduleSettings, l
 		RegencyCode:           ctx.RegencyCode,
 		ProvinceName:          ctx.ProvinceName,
 		HandoverLocation:      settings.HandoverLocation,
-		ConsultantCompanyName: settings.ConsultantCompanyName,
+		ConsultantCompanyName: settings.Consultant(),
 		FiscalYear:            ctx.FiscalYear,
 		Logos:                 sortedLogos,
 		Signatories: closingSignatories{

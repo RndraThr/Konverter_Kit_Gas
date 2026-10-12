@@ -55,7 +55,7 @@ func (s *BundleService) PreviewBundle(ctx context.Context, request BundleRequest
 	if err != nil {
 		return BundlePreview{}, err
 	}
-	rendered, checksum, err := s.render(ctx, request.LocalDate, documents)
+	rendered, checksum, err := s.render(ctx, request.ProgramID, request.RegencyID, request.LocalDate, documents)
 	if err != nil {
 		return BundlePreview{}, err
 	}
@@ -68,7 +68,7 @@ func (s *BundleService) FinalizeBundle(ctx context.Context, actor auth.Principal
 	if err != nil {
 		return DailyBundle{}, err
 	}
-	rendered, checksum, err := s.render(ctx, request.LocalDate, documents)
+	rendered, checksum, err := s.render(ctx, request.ProgramID, request.RegencyID, request.LocalDate, documents)
 	if err != nil {
 		return DailyBundle{}, err
 	}
@@ -195,8 +195,27 @@ func (s *BundleService) prepareDocuments(ctx context.Context, actor auth.Princip
 	return recipients, documentIDs, sourceContext, nil
 }
 
-func (s *BundleService) render(ctx context.Context, localDate string, documents []RecipientDocument) (RenderedBundle, string, error) {
+func (s *BundleService) render(ctx context.Context, programID, regencyID, localDate string, documents []RecipientDocument) (RenderedBundle, string, error) {
 	logoBytes := map[string][]byte{}
+	// Tanda tangan Pelaksana/Konsultan disimpan per jadwal kabupaten.
+	scheduleID := ""
+	if finder, ok := s.repository.(interface {
+		ScheduleForRegency(context.Context, string, string) (string, error)
+	}); ok {
+		id, err := finder.ScheduleForRegency(ctx, programID, regencyID)
+		if err != nil {
+			return RenderedBundle{}, "", err
+		}
+		scheduleID = id
+	}
+	marks, markImages, err := loadSignatoryMarks(ctx, s.repository, scheduleID, "ba-perorangan")
+	if err != nil {
+		return RenderedBundle{}, "", err
+	}
+	for i := range documents {
+		documents[i].Snapshot.Signatures.Marks = marks
+	}
+	mergeImages(logoBytes, markImages)
 	for _, document := range documents {
 		for _, logo := range document.Snapshot.Render.Logos {
 			if _, exists := logoBytes[logo.AssetID]; exists {

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, Download, FileCheck2, RefreshCw, Settings2, Users } from 'lucide-react';
+import { CalendarDays, Download, FileCheck2, RefreshCw, Signature, Users } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { DataState } from '@/components/DataState';
@@ -11,8 +11,10 @@ import { apiBlobRequest, ApiError, apiRequest } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
+import { SignatureSettingsPanel } from './SignatureSettingsPanel';
+import { useWetSignatureBlocked, WetSignatureBar } from './WetSignatureBar';
 import { incompletePreviewNote, previewBlockingStatus } from './previewStatus';
-import { ScheduleSettingsPanel } from './ScheduleSettingsPanel';
+import { DocumentInfoFields } from './DocumentInfoFields';
 import type { AggregateDocument, DailyRecapDate, DailyRecapRecipient } from './types';
 
 type Props = { scheduleID: string; regencyName: string; programType: ProgramType };
@@ -36,7 +38,7 @@ export function DailyRecapPanel({ scheduleID, regencyName, programType }: Props)
   const canManage = useCan('bast.manage');
   const queryClient = useQueryClient();
   const [chosenDate, setChosenDate] = useState('');
-  const [showSettings, setShowSettings] = useState(false);
+  const [showSignatures, setShowSignatures] = useState(false);
   const [showRecipients, setShowRecipients] = useState(false);
 
   const dates = useQuery({
@@ -71,6 +73,7 @@ export function DailyRecapPanel({ scheduleID, regencyName, programType }: Props)
     },
     onError: (error) => toast.error(errorMessage(error)),
   });
+  const wetBlocked = useWetSignatureBlocked(scheduleID, 'rekap-harian', selectedDate);
 
   if (programType === 'fisherman') return <DataState kind="empty" title="Rekap Harian Nelayan belum tersedia" description="Fase pertama hanya mendukung program Petani." />;
   if (dates.isPending) return <DataState kind="loading" title="Memuat Rekap Harian" description="Menyiapkan tanggal distribusi selesai." />;
@@ -90,7 +93,7 @@ export function DailyRecapPanel({ scheduleID, regencyName, programType }: Props)
   const busy = finalize.isPending;
 
   return <div className="grid gap-5">
-    {showSettings && <ScheduleSettingsPanel scheduleID={scheduleID} requirePertaminaRep />}
+    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} document="rekap-harian" documentLabel="Rekap Harian" />}
 
     <div className="grid gap-5 xl:grid-cols-[19rem_minmax(0,1fr)]">
       <Card className="self-start">
@@ -113,10 +116,14 @@ export function DailyRecapPanel({ scheduleID, regencyName, programType }: Props)
         <Card>
           <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle>{selected ? formatLocalDate(selected.local_date) : 'Rekap Harian'}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{regencyName} · {selected?.recipient_count ?? 0} penerima.</p></div><Badge variant="outline">Petani</Badge></div></CardHeader>
           <CardContent className="grid gap-4 pt-5">
-            <div className="flex flex-wrap gap-2">
-              {canManage && <Button disabled={busy || !selectedReady} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
-              <Button variant="ghost" onClick={() => setShowSettings((value) => !value)}><Settings2 />{showSettings ? 'Tutup pengaturan' : 'Pengaturan'}</Button>
+            <div className="grid gap-3 sm:items-start sm:grid-cols-2">
+              <DocumentInfoFields scheduleID={scheduleID} fields={[{ key: 'handover_location', label: 'Lokasi / Titik Serah' }, { key: 'consultant_company_name', label: 'Konsultan Distribusi' }]} />
             </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
+              <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>
+              {canManage && <Button disabled={busy || !selectedReady || wetBlocked} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
+            </div>
+            <WetSignatureBar scheduleID={scheduleID} document="rekap-harian" date={selectedDate} label="Rekap Harian" />
 
             {activeDoc && <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center">
               <div><div className="flex items-center gap-2"><FileCheck2 className="size-4 text-emerald-600" /><strong className="text-sm">{activeDoc.filename}</strong></div><p className="mt-1 text-xs text-muted-foreground">Versi {activeDoc.version} · {activeDoc.page_count} halaman · {activeDoc.recipient_count} penerima</p></div>

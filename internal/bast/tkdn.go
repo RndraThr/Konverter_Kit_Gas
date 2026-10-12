@@ -74,6 +74,8 @@ type TKDNSnapshot struct {
 	TotalTKDN      float64            `json:"total_tkdn"`
 	Logos          []LogoSnapshot     `json:"logos"`
 	Signatories    closingSignatories `json:"signatories"`
+	SignatureMarks SignatureMarks     `json:"signature_marks,omitempty"`
+	Wet            WetSignature       `json:"wet_signature,omitempty"`
 }
 
 // TKDNSummary memberi panel jumlah paket, susunan TKDN, baris TKDN kabupaten
@@ -92,7 +94,7 @@ func buildTKDNSnapshot(ctx DP3Context, settings ScheduleSettings, profile TKDNPr
 		DocumentType:   AggregateDocumentTKDN,
 		DocumentDate:   documentDate,
 		DocumentNumber: formatTKDNDocumentNumber(ctx.RegencyCode, documentDate, totalPackages, version),
-		ProviderName:   strings.TrimSpace(settings.ConsultantCompanyName),
+		ProviderName:   settings.Consultant(),
 		RegencyName:    textnorm.BusinessUpper(ctx.RegencyName),
 		RegencyCode:    ctx.RegencyCode,
 		ProvinceName:   textnorm.BusinessUpper(ctx.ProvinceName),

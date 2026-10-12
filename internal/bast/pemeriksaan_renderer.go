@@ -55,6 +55,7 @@ func RenderPemeriksaan(snapshots []PemeriksaanSnapshot, logoBytes map[string][]b
 		return RenderedAggregate{}, ErrInvalidInput
 	}
 	pdf := fpdf.New("P", "mm", "A4", "")
+	fixPDFDates(pdf, snapshots[0].DocumentDate)
 	pdf.SetMargins(marginMM, topMarginMM, marginMM)
 	pdf.SetAutoPageBreak(false, bottomMarginMM)
 	pdf.SetTitle(pemeriksaanTitle+" "+pemeriksaanSubtitle, false)
@@ -65,6 +66,7 @@ func RenderPemeriksaan(snapshots []PemeriksaanSnapshot, logoBytes map[string][]b
 	if err != nil {
 		return RenderedAggregate{}, err
 	}
+	registerSignatoryImages(pdf, logoBytes)
 	for _, snapshot := range snapshots {
 		if !strings.HasPrefix(snapshot.DocumentType, pemeriksaanDocumentPrefix) || len(snapshot.Form.Rows) == 0 {
 			return RenderedAggregate{}, ErrInvalidInput
@@ -126,7 +128,7 @@ func renderPemeriksaanForm(pdf *fpdf.Fpdf, snapshot PemeriksaanSnapshot, logos [
 
 	renderPemeriksaanNote(pdf, pdf.GetY()+5, textLeft, tableWidth, snapshot.Form.Note)
 
-	signature := layoutActivitySignatures(pdf, snapshot.Signatories, pemeriksaanSignatureHeaders)
+	signature := layoutActivitySignatures(pdf, snapshot.Signatories, pemeriksaanSignatureHeaders).withMarks(fourSignatories, snapshot.SignatureMarks)
 	pdf.AddPage()
 	pdf.SetXY(marginMM, renderRakordaLogoStrip(pdf, logos)+activitySignatureGap)
 	renderActivitySignatures(pdf, signature)

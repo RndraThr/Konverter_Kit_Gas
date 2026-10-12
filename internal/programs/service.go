@@ -244,7 +244,7 @@ func normalizeDisplayCollection(value any, fields ...string) any {
 		}
 		for _, field := range fields {
 			if text, exists := copyEntry[field].(string); exists {
-				copyEntry[field] = textnorm.BusinessUpper(text)
+				copyEntry[field] = textnorm.ItemText(text)
 			}
 		}
 		normalized[index] = copyEntry

@@ -24,7 +24,7 @@ func TestBundleFilenameUsesIndonesianDayAndDate(t *testing.T) {
 }
 
 func TestFormatIndonesianDateIncludesUppercaseWeekday(t *testing.T) {
-	if got := formatIndonesianDate("2024-12-10"); got != "SELASA, 10 DESEMBER 2024" {
+	if got := formatIndonesianDate("2024-12-10"); got != "Selasa, 10 Desember 2024" {
 		t.Fatalf("date=%q", got)
 	}
 }
@@ -84,7 +84,7 @@ func TestRenderPetaniBundleUsesApprovedFormContent(t *testing.T) {
 	for _, want := range []string{
 		"PENGADAAN BARANG PENYEDIAAN DAN PENDISTRIBUSIAN",
 		"Hari / Tanggal",
-		"SELASA, 10 DESEMBER 2024",
+		"Selasa, 10 Desember 2024",
 		"A.  Data Penerima",
 		"B.  Data Paket Perdana yang akan diterima",
 		"Seluruh Material/Produk/Barang tercantum diatas",
@@ -97,7 +97,7 @@ func TestRenderPetaniBundleUsesApprovedFormContent(t *testing.T) {
 	}
 }
 
-func TestRenderPetaniBundleUppercasesLegacyBusinessValues(t *testing.T) {
+func TestRenderPetaniBundlePrintsTitleCaseNamesAndItemsAsTyped(t *testing.T) {
 	document := makeRenderDocument(1, 1)
 	document.Snapshot.Recipient.FullName = "Nama Lama"
 	document.Snapshot.Recipient.Address = "Jalan Melati"
@@ -111,14 +111,14 @@ func TestRenderPetaniBundleUppercasesLegacyBusinessValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := decodedPDFStreams(t, result.PDF)
-	for _, want := range []string{"NAMA LAMA", "JALAN MELATI", "POMPA TANI", "TABUNG LAMA", "BUAH", "ANDI SAPUTRA"} {
+	for _, want := range []string{"Nama Lama", "Jalan Melati", "Pompa Tani", "Tabung Lama", "Buah", "Andi Saputra"} {
 		if !strings.Contains(content, want) {
-			t.Fatalf("rendered PDF is missing uppercase legacy value %q", want)
+			t.Fatalf("rendered PDF is missing %q", want)
 		}
 	}
-	for _, unwanted := range []string{"Nama Lama", "Jalan Melati", "Pompa Tani", "Tabung Lama", "Andi Saputra"} {
+	for _, unwanted := range []string{"NAMA LAMA", "JALAN MELATI", "POMPA TANI", "TABUNG LAMA", "ANDI SAPUTRA"} {
 		if strings.Contains(content, unwanted) {
-			t.Fatalf("rendered PDF still contains mixed-case legacy value %q", unwanted)
+			t.Fatalf("rendered PDF should title-case names and print items as typed, found %q", unwanted)
 		}
 	}
 }
@@ -265,11 +265,19 @@ func decodedPDFStreams(t *testing.T, data []byte) string {
 			continue
 		}
 		content, readErr := io.ReadAll(reader)
-		closeErr := reader.Close()
-		if readErr != nil || closeErr != nil {
-			t.Fatalf("decode PDF stream: read=%v close=%v", readErr, closeErr)
+		_ = reader.Close()
+		// Stream font tertanam berisi data biner yang dapat memuat
+		// "endstream" sehingga terpotong; stream itu bukan teks halaman.
+		if readErr != nil {
+			continue
 		}
 		decoded.Write(content)
 	}
-	return decoded.String()
+	// Teks berfont Arial tertanam (UTF-8) ditulis sebagai UTF-16BE; menghapus
+	// byte nol membuat teks ASCII-nya dapat dicari seperti font inti. Paragraf
+	// rata kiri-kanan ditulis sebagai larik TJ per kata, misalnya
+	// "[(PADA) -632.250( ) (HARI)] TJ"; potongannya digabung kembali.
+	text := strings.ReplaceAll(decoded.String(), "\x00", "")
+	joined := regexp.MustCompile(`\)\s*-?[0-9.]*\s*\(`).ReplaceAllString(text, "")
+	return decoded.String() + "\n" + text + "\n" + joined
 }

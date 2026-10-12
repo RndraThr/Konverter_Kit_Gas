@@ -31,6 +31,18 @@ type ScheduleSettings struct {
 	Servis2Start          string    `json:"servis_2_start"`
 	Servis2End            string    `json:"servis_2_end"`
 	UpdatedAt             time.Time `json:"updated_at"`
+	// ConsultantCompanyDefault adalah Nama Organisasi (Sistem > Pengaturan),
+	// dipakai bila Konsultan Distribusi jadwal dikosongkan. Hanya baca.
+	ConsultantCompanyDefault string `json:"consultant_company_default"`
+}
+
+// Consultant mengembalikan perusahaan Konsultan Distribusi yang dicetak: isian
+// jadwal, atau Nama Organisasi bila jadwal belum/tidak mengisinya.
+func (s ScheduleSettings) Consultant() string {
+	if value := strings.TrimSpace(s.ConsultantCompanyName); value != "" {
+		return value
+	}
+	return strings.TrimSpace(s.ConsultantCompanyDefault)
 }
 
 const (
@@ -63,6 +75,9 @@ type ScheduleSettingsInput struct {
 	Servis1End   string `json:"servis_1_end"`
 	Servis2Start string `json:"servis_2_start"`
 	Servis2End   string `json:"servis_2_end"`
+	// ConsultantCompanyDefault diterima agar formulir yang mengirim ulang isi
+	// GET tidak ditolak, tetapi diabaikan (nilainya dari Nama Organisasi).
+	ConsultantCompanyDefault string `json:"consultant_company_default"`
 }
 
 func (in *ScheduleSettingsInput) normalize() error {

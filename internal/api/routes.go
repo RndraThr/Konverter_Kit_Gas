@@ -570,6 +570,12 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "servis_schedule_required", "Lengkapi tanggal servis ke-1 dan ke-2 sebelum finalisasi")
 	case errors.Is(err, bast.ErrTKDNTotalRequired):
 		writeError(w, http.StatusConflict, "tkdn_total_required", "Isi TKDN gabungan sebelum finalisasi")
+	case errors.Is(err, bast.ErrSignatoryImageInvalid):
+		writeError(w, http.StatusBadRequest, "signatory_image_invalid", "Gambar harus PNG dengan ukuran maksimal 2 MB")
+	case errors.Is(err, bast.ErrWetScanInvalid):
+		writeError(w, http.StatusBadRequest, "wet_scan_invalid", "Berkas pindaian harus gambar (PNG/JPG) atau PDF dengan ukuran maksimal 8 MB")
+	case errors.Is(err, bast.ErrWetSignatureRequired):
+		writeError(w, http.StatusConflict, "wet_signature_required", "Unggah halaman tanda tangan basah sebelum finalisasi")
 	case errors.Is(err, bast.ErrSignatoryRequired):
 		writeError(w, http.StatusConflict, "signatory_required", "Penandatangan dokumen belum lengkap")
 	case errors.Is(err, bast.ErrRecipientIdentityIncomplete):

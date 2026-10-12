@@ -78,8 +78,8 @@ func TestRenderClosingTitikSerahIncludesProcurementHeadingUnderlinedTitleAndTota
 	}
 	content := decodedPDFStreams(t, rendered.PDF)
 	for _, want := range []string{
-		"PENGADAAN BARANG", "LIQUEFIED", "PETROLEUM GAS", "TAHUN ANGGARAN 2026", "PT PERTAMINA PATRA NIAGA",
-		closingTitle, "FORM REKAPITULASI CLOSING LOKASI / TITIK SERAH", "01/20/WJO/KKT/CTS/X/2026", "Jumlah/Total", "PADA HARI INI",
+		"Pengadaan Barang Penyediaan dan Pendistribusian Paket Perdana", "Liquefied Petroleum Gas", "Sasaran Tahun Anggaran 2026 di PT Pertamina Patra Niaga",
+		closingTitle, "FORM REKAPITULASI CLOSING LOKASI / TITIK SERAH", "01/20/WJO/KKT/CTS/X/2026", "Jumlah/Total", "Pada", "Liquefied",
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("rendered closing titik serah is missing %q", want)
@@ -128,7 +128,7 @@ func TestRenderClosingTitikSerahSignatureNamesWrapInsteadOfOverlapping(t *testin
 	}
 }
 
-func TestRenderClosingTitikSerahUppercasesLegacyBusinessValues(t *testing.T) {
+func TestRenderClosingTitikSerahPrintsTitleCaseNamesAndMachinesAsTyped(t *testing.T) {
 	snapshot := sampleClosingSnapshot()
 	snapshot.RegencyName = "Kabupaten Wajo"
 	snapshot.ProvinceName = "Sulawesi Selatan"
@@ -141,12 +141,32 @@ func TestRenderClosingTitikSerahUppercasesLegacyBusinessValues(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := decodedPDFStreams(t, rendered.PDF)
-	for _, want := range []string{"KABUPATEN WAJO", "SULAWESI SELATAN", "LAPANGAN DESA", "POMPA TANI", "BUDI SANTOSO", "ANDI SAPUTRA"} {
+	for _, want := range []string{"Kabupaten Wajo", "Sulawesi Selatan", "Lapangan Desa", "Pompa Tani", "Budi Santoso", "Andi Saputra"} {
 		if !strings.Contains(content, want) {
-			t.Fatalf("rendered closing titik serah is missing uppercase legacy value %q", want)
+			t.Fatalf("rendered closing titik serah is missing %q", want)
 		}
 	}
-	if strings.Contains(content, "Pompa Tani") || strings.Contains(content, "Budi Santoso") {
-		t.Fatal("rendered closing titik serah still contains mixed-case legacy business values")
+	if strings.Contains(content, "POMPA TANI") || strings.Contains(content, "BUDI SANTOSO") {
+		t.Fatal("rendered closing titik serah should title-case names and print machine values as typed")
 	}
+}
+
+func TestClosingNarrativeFollowsIndonesianSpelling(t *testing.T) {
+	segments := closingNarrative("2026-10-03", 2026)
+	want := "Pada hari ini, Sabtu, tanggal 3 Oktober tahun 2026, telah dilakukan pemasangan dan pendistribusian Paket Perdana Liquefied Petroleum Gas (LPG) untuk Mesin Pompa Air bagi Petani Sasaran Tahun Anggaran 2026 di PT Pertamina Patra Niaga, dengan rincian sebagai berikut:"
+	if got := segmentsText(segments); got != want {
+		t.Fatalf("closing narrative=%q\nwant=%q", got, want)
+	}
+	if segments[1].text != "Liquefied Petroleum Gas" || segments[1].style != "I" {
+		t.Fatalf("foreign term must be italic: %+v", segments[1])
+	}
+}
+
+// segmentsText menggabungkan teks segmen paragraf untuk diperiksa utuh.
+func segmentsText(segments []textSegment) string {
+	var b strings.Builder
+	for _, segment := range segments {
+		b.WriteString(segment.text)
+	}
+	return b.String()
 }

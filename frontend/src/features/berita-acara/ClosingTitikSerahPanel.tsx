@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, FileCheck2, RefreshCw, Settings2 } from 'lucide-react';
+import { Download, FileCheck2, RefreshCw, Signature } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { DataState } from '@/components/DataState';
@@ -12,7 +12,9 @@ import { apiBlobRequest, ApiError, apiRequest } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
-import { ScheduleSettingsPanel } from './ScheduleSettingsPanel';
+import { SignatureSettingsPanel } from './SignatureSettingsPanel';
+import { useWetSignatureBlocked, WetSignatureBar } from './WetSignatureBar';
+import { DocumentInfoFields } from './DocumentInfoFields';
 import type { AggregateDocument, ClosingRow } from './types';
 
 type Props = { scheduleID: string; regencyName: string; programType: ProgramType; defaultDate: string };
@@ -33,7 +35,7 @@ export function ClosingTitikSerahPanel({ scheduleID, regencyName, programType, d
   const canManage = useCan('bast.manage');
   const queryClient = useQueryClient();
   const [documentDate, setDocumentDate] = useState(defaultDate);
-  const [showSettings, setShowSettings] = useState(false);
+  const [showSignatures, setShowSignatures] = useState(false);
   const [showRows, setShowRows] = useState(false);
 
   const rows = useQuery({
@@ -65,6 +67,7 @@ export function ClosingTitikSerahPanel({ scheduleID, regencyName, programType, d
     },
     onError: (error) => toast.error(errorMessage(error)),
   });
+  const wetBlocked = useWetSignatureBlocked(scheduleID, 'closing-titik-serah', documentDate);
 
   if (programType === 'fisherman') return <DataState kind="empty" title="Closing Titik Serah Nelayan belum tersedia" description="Fase pertama hanya mendukung program Petani." />;
   if (rows.isPending) return <DataState kind="loading" title="Memuat Closing Titik Serah" description="Mengumpulkan rekapitulasi closing harian." />;
@@ -75,7 +78,7 @@ export function ClosingTitikSerahPanel({ scheduleID, regencyName, programType, d
   const busy = finalize.isPending;
 
   return <div className="grid gap-5">
-    {showSettings && <ScheduleSettingsPanel scheduleID={scheduleID} requirePertaminaRep />}
+    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} document="closing-titik-serah" documentLabel="Closing Titik Serah" />}
 
     <div className="grid gap-4 lg:grid-cols-3">
       <Card className="lg:col-span-1">
@@ -90,13 +93,15 @@ export function ClosingTitikSerahPanel({ scheduleID, regencyName, programType, d
       <Card className="lg:col-span-2">
         <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><CardTitle className="text-base">Dokumen Closing Titik Serah</CardTitle><Badge variant="outline">Petani</Badge></div></CardHeader>
         <CardContent className="grid gap-4 pt-5">
-          <div className="grid gap-3 sm:grid-cols-[16rem_1fr] sm:items-end">
+          <div className="grid gap-3 sm:items-start sm:grid-cols-[12rem_minmax(0,1fr)]">
             <FormField label="Tanggal closing" type="date" value={documentDate} onChange={(e) => setDocumentDate(e.target.value)} />
-            <div className="flex flex-wrap gap-2">
-              {canManage && <Button disabled={busy || status !== 'ready'} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
-              <Button variant="ghost" onClick={() => setShowSettings((value) => !value)}><Settings2 />{showSettings ? 'Tutup pengaturan' : 'Pengaturan'}</Button>
-            </div>
+            <DocumentInfoFields scheduleID={scheduleID} fields={[{ key: 'handover_location', label: 'Lokasi / Titik Serah' }]} />
           </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
+            <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>
+            {canManage && <Button disabled={busy || status !== 'ready' || wetBlocked} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
+          </div>
+          <WetSignatureBar scheduleID={scheduleID} document="closing-titik-serah" date={documentDate} label="Closing Titik Serah" />
 
           {activeDoc && <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center">
             <div><div className="flex items-center gap-2"><FileCheck2 className="size-4 text-emerald-600" /><strong className="text-sm">{activeDoc.filename}</strong></div><p className="mt-1 text-xs text-muted-foreground">Versi {activeDoc.version} · {activeDoc.page_count} halaman · {activeDoc.recipient_count} paket</p></div>

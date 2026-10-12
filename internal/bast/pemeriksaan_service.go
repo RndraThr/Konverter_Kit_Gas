@@ -95,10 +95,18 @@ func (s *PemeriksaanService) Preview(ctx context.Context, scheduleID, documentDa
 	if err != nil {
 		return AggregatePreview{}, err
 	}
+	marks, markImages, err := loadSignatoryMarks(ctx, s.repository, ctxData.ScheduleID, "ba-pemeriksaan")
+	if err != nil {
+		return AggregatePreview{}, err
+	}
+	for i := range snapshots {
+		snapshots[i].SignatureMarks = marks
+	}
 	logoBytes, err := loadLogoBytes(ctx, s.storage, snapshots[0].Logos)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
+	mergeImages(logoBytes, markImages)
 	rendered, err := RenderPemeriksaan(snapshots, logoBytes)
 	if err != nil {
 		return AggregatePreview{}, err
@@ -116,10 +124,18 @@ func (s *PemeriksaanService) Finalize(ctx context.Context, actor auth.Principal,
 	if err != nil {
 		return nil, err
 	}
+	marks, markImages, err := loadSignatoryMarks(ctx, s.repository, ctxData.ScheduleID, "ba-pemeriksaan")
+	if err != nil {
+		return nil, err
+	}
+	for i := range snapshots {
+		snapshots[i].SignatureMarks = marks
+	}
 	logoBytes, err := loadLogoBytes(ctx, s.storage, snapshots[0].Logos)
 	if err != nil {
 		return nil, err
 	}
+	mergeImages(logoBytes, markImages)
 	folderPath, err := media.BuildFolderPath(media.FolderPathInput{
 		ProgramType: ctxData.ProgramType, ZoneName: ctxData.ZoneName, RegencyName: ctxData.RegencyName,
 		Category: media.FolderBA, Child: pemeriksaanFolder,

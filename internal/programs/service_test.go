@@ -144,14 +144,14 @@ func TestSaveProgramSetupUppercasesBusinessTextAndPreservesTechnicalKeys(t *test
 	}
 }
 
-func TestSaveTemplatesUppercaseDisplayValuesAndPreserveCodes(t *testing.T) {
+func TestSaveTemplatesKeepItemTextAsTypedAndUppercaseNames(t *testing.T) {
 	repository := &repositoryStub{}
 	service := NewService(repository)
 	values := map[string]any{
-		"machine_options":   []any{map[string]any{"code": "shark-spwp8030", "brand": " shark ", "type": " spwp 80-30 ", "power": " 5.5 hp ", "fuel_type": " bensin "}},
+		"machine_options":   []any{map[string]any{"code": "shark-spwp8030", "brand": " Shark ", "type": " SPWP  80-30 ", "power": " 5,5 HP ", "fuel_type": " Bensin "}},
 		"hose_options":      []any{map[string]any{"code": "hose-set", "brand": " triliunhose ", "spec": " 6m/10m ", "suction_brand": " triliun ", "suction_spec": " 6 m ", "discharge_brand": " yamakoyo ", "discharge_spec": " 10 m "}},
 		"converter_options": []any{map[string]any{"code": "ergas-kit", "brand": " ergas ", "spec": " paket lengkap "}},
-		"components":        []any{map[string]any{"code": "lpg", "label": " tabung lpg 3 kg ", "unit": " tabung ", "quantity": float64(1)}},
+		"components":        []any{map[string]any{"code": "lpg", "label": " Tabung LPG 3 kg ", "unit": " Tabung ", "quantity": float64(1)}},
 	}
 	if _, err := service.SavePackageTemplate(context.Background(), auth.Principal{}, PackageTemplateInput{TemplateCode: "pkg-petani", Name: " paket petani ", ProgramType: ProgramFarmer, Status: "draft", Values: values}, auth.ClientMeta{}); err != nil {
 		t.Fatal(err)
@@ -160,7 +160,9 @@ func TestSaveTemplatesUppercaseDisplayValuesAndPreserveCodes(t *testing.T) {
 	hose := repository.packageInput.Values["hose_options"].([]any)[0].(map[string]any)
 	converter := repository.packageInput.Values["converter_options"].([]any)[0].(map[string]any)
 	component := repository.packageInput.Values["components"].([]any)[0].(map[string]any)
-	if repository.packageInput.Name != "PAKET PETANI" || machine["code"] != "shark-spwp8030" || machine["brand"] != "SHARK" || machine["power"] != "5.5 HP" || hose["suction_spec"] != "6 M" || converter["spec"] != "PAKET LENGKAP" || component["label"] != "TABUNG LPG 3 KG" || component["unit"] != "TABUNG" {
+	// Teks barang disimpan seperti diketik (hanya spasi dirapikan); nama
+	// template tetap dikapitalkan.
+	if repository.packageInput.Name != "PAKET PETANI" || machine["code"] != "shark-spwp8030" || machine["brand"] != "Shark" || machine["type"] != "SPWP 80-30" || machine["power"] != "5,5 HP" || hose["suction_spec"] != "6 m" || converter["spec"] != "paket lengkap" || component["label"] != "Tabung LPG 3 kg" || component["unit"] != "Tabung" {
 		t.Fatalf("package input=%+v", repository.packageInput)
 	}
 

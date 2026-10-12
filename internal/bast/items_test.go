@@ -100,16 +100,16 @@ func TestPemeriksaanRowsComeFromTemplateAndJoinDistinctPO(t *testing.T) {
 	// Urutan baris mengikuti template, bukan urutan centang di profil.
 	reversed := PemeriksaanForm{Rows: []PemeriksaanRow{{Ref: ItemKindHoseDischarge}, {Ref: ItemKindHoseSuction}}}
 	rows, number := pemeriksaanRowsFor(reversed, entries, resolved)
-	if len(rows) != 2 || number != "PO-1 / PO-2" || rows[0].Description != "SELANG HISAP (6 M) MERK TRILLIUNHOSE" || rows[1].Description != "SELANG BUANG (10 M) MERK YAMAKOYO" {
+	if len(rows) != 2 || number != "PO-1 / PO-2" || rows[0].Description != "Selang Hisap (6 M) merek TRILLIUNHOSE" || rows[1].Description != "Selang Buang (10 M) merek YAMAKOYO" {
 		t.Fatalf("rows=%+v po=%q", rows, number)
 	}
 	// Keterangan dari Dokumen Pendukung form.
 	rows, _ = pemeriksaanRowsFor(forms["mesin"], entries, resolved)
-	if rows[0].Description != `MESIN SHARK TYPE SPWP 80-30/3"` || rows[0].Unit != "PAKET" || rows[0].QuantityPerPackage != 1 || rows[0].Notes != "Dilengkapi :\n- Manual Book\n- Garansi" {
+	if rows[0].Description != `Mesin SHARK tipe SPWP 80-30/3"` || rows[0].Unit != "PAKET" || rows[0].QuantityPerPackage != 1 || rows[0].Notes != "Dilengkapi :\n- Manual Book\n- Garansi" {
 		t.Fatalf("machine rows=%+v", rows)
 	}
 	rows, _ = pemeriksaanRowsFor(forms["oli"], entries, resolved)
-	if rows[0].Description != "OLI MERK PERTAMINA ENDURO" || rows[0].Unit != "LTR" || rows[0].QuantityPerPackage != 2 || rows[0].Notes != "" {
+	if rows[0].Description != "OLI merek Pertamina Enduro" || rows[0].Unit != "Ltr" || rows[0].QuantityPerPackage != 2 || rows[0].Notes != "" {
 		t.Fatalf("oil rows=%+v", rows)
 	}
 }

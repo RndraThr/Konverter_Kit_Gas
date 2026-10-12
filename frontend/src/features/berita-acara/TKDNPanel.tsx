@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, ExternalLink, FileCheck2, ListChecks, Plus, RefreshCw, Save, Settings2, Trash2 } from 'lucide-react';
+import { Download, ExternalLink, FileCheck2, ListChecks, Plus, RefreshCw, Save, Signature, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -14,7 +14,9 @@ import { apiBlobRequest, ApiError, apiRequest } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
-import { ScheduleSettingsPanel } from './ScheduleSettingsPanel';
+import { SignatureSettingsPanel } from './SignatureSettingsPanel';
+import { useWetSignatureBlocked, WetSignatureBar } from './WetSignatureBar';
+import { DocumentInfoFields } from './DocumentInfoFields';
 import { TemplateEntrySelect } from './TemplateEntrySelect';
 import type { AggregateDocument, TKDNProfile, TKDNRow, TKDNSummary } from './types';
 
@@ -32,7 +34,7 @@ export function TKDNPanel({ scheduleID, programID, regencyName, programType, def
   const [totalTKDN, setTotalTKDN] = useState(0);
   const [rows, setRows] = useState<TKDNRow[]>([]);
   const [showEditor, setShowEditor] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
+  const [showSignatures, setShowSignatures] = useState(false);
 
   const summary = useQuery({
     queryKey: ['bast', 'tkdn', 'summary', scheduleID],
@@ -67,6 +69,7 @@ export function TKDNPanel({ scheduleID, programID, regencyName, programType, def
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['bast', 'tkdn'] }); toast.success('Realisasi TKDN berhasil difinalisasi dan disinkronkan.'); },
     onError: (error) => toast.error(errorMessage(error)),
   });
+  const wetBlocked = useWetSignatureBlocked(scheduleID, 'tkdn', documentDate);
 
   if (programType === 'fisherman') return <DataState kind="empty" title="TKDN Nelayan belum tersedia" description="Fase pertama hanya mendukung program Petani." />;
   if (summary.isPending) return <DataState kind="loading" title="Memuat TKDN" description="Mengambil daftar TKDN program dan jumlah paket." />;
@@ -82,27 +85,33 @@ export function TKDNPanel({ scheduleID, programID, regencyName, programType, def
   const editorValid = rowsValid(rows) && percentValid(totalTKDN);
 
   return <div className="grid gap-5">
-    {showSettings && <ScheduleSettingsPanel scheduleID={scheduleID} />}
+    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} document="tkdn" documentLabel="TKDN" />}
 
     <Card className="min-w-0">
       <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle className="text-base">Realisasi TKDN</CardTitle><p className="mt-1 text-sm text-muted-foreground">{regencyName} · disimpan ke 12. TKDN</p></div><div className="flex flex-wrap gap-2"><Badge variant="outline">{totalPackages} paket</Badge></div></div></CardHeader>
       <CardContent className="grid gap-4 pt-5">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="w-full sm:w-56"><FormField label="Tanggal dokumen" name="tkdn_document_date" type="date" value={documentDate} onChange={(e) => setDocumentDate(e.target.value)} /></div>
-          <div className="flex w-full items-end gap-2 sm:w-64">
+        <div className="grid gap-3 sm:items-start sm:grid-cols-[12rem_17rem_minmax(0,1fr)]">
+          <FormField label="Tanggal dokumen" name="tkdn_document_date" type="date" value={documentDate} onChange={(e) => setDocumentDate(e.target.value)} />
+          <div className="flex items-end gap-2">
             <div className="min-w-0 flex-1"><FormField label="TKDN gabungan (%)" name="total_tkdn" type="number" min={0} max={100} step="0.01" value={totalTKDN} disabled={!canManage} onChange={(e) => setTotalTKDN(Number(e.target.value))} /></div>
             {canManage && <Button variant="outline" disabled={!editorValid || saveProfile.isPending || totalTKDN === profile?.total_tkdn} onClick={() => saveProfile.mutate()}><Save />{saveProfile.isPending ? 'Menyimpan...' : 'Simpan'}</Button>}
           </div>
-          {canOpenSetup && <div className="flex flex-wrap gap-x-4 gap-y-1 pb-2.5 text-xs font-medium sm:ml-auto">
+          <DocumentInfoFields scheduleID={scheduleID} fields={[{ key: 'consultant_company_name', label: 'Nama Penyedia' }]} />
+        </div>
+        <div className="-mt-1 grid gap-1">
+          <p className="text-xs text-muted-foreground">{items.length} baris TKDN; merk dan % TKDN per barang dari Template Paket jadwal. TKDN gabungan berlaku untuk semua kabupaten program.</p>
+          {canOpenSetup && <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium">
             <Link className="inline-flex items-center gap-1 text-primary hover:underline" to="/persiapan-program?tab=templates">Merk & % TKDN di Template Paket<ExternalLink className="size-3" aria-hidden="true" /></Link>
           </div>}
         </div>
-        <p className="-mt-2 text-xs text-muted-foreground">{items.length} baris TKDN; merk dan % TKDN per barang dari Template Paket jadwal. TKDN gabungan berlaku untuk semua kabupaten program.</p>
-        <div className="flex flex-wrap gap-2 border-t pt-4">
-            {canManage && <Button disabled={finalize.isPending || !ready || documentDate === '' || !totalSaved} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
+          <div className="flex flex-wrap gap-2">
             <Button variant="outline" aria-expanded={showEditor} onClick={() => setShowEditor((value) => !value)}><ListChecks />{showEditor ? 'Tutup susunan TKDN' : 'Susunan TKDN'}</Button>
-            <Button variant="ghost" onClick={() => setShowSettings((value) => !value)}><Settings2 />{showSettings ? 'Tutup pengaturan' : 'Pengaturan'}</Button>
+            <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>
+          </div>
+          {canManage && <Button disabled={finalize.isPending || !ready || documentDate === '' || !totalSaved || wetBlocked} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
         </div>
+        <WetSignatureBar scheduleID={scheduleID} document="tkdn" date={documentDate} label="TKDN" />
 
         {!ready && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">Belum ada distribusi selesai pada jadwal ini.</div>}
         {ready && !totalSaved && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">TKDN gabungan belum diisi: dibiarkan kosong di preview. Isi dan simpan sebelum finalisasi.</p>}

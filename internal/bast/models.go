@@ -136,6 +136,8 @@ type SignatureSnapshot struct {
 	ReceiverSignatureKey string `json:"receiver_signature_key,omitempty"`
 	ExecutorName         string `json:"executor_name"`
 	SupervisorName       string `json:"supervisor_name"`
+	// Marks: tanda tangan digital/stempel Pelaksana dan Konsultan.
+	Marks SignatureMarks `json:"marks,omitempty"`
 }
 type Snapshot struct {
 	ProgramType    string              `json:"program_type"`

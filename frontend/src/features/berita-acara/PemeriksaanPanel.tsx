@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, ExternalLink, FileCheck2, ListChecks, RefreshCw, Settings2 } from 'lucide-react';
+import { Download, ExternalLink, FileCheck2, ListChecks, RefreshCw, Signature } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -13,8 +13,9 @@ import { apiBlobRequest, ApiError, apiRequest } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
+import { SignatureSettingsPanel } from './SignatureSettingsPanel';
 import { PemeriksaanFormsEditor } from './PemeriksaanFormsEditor';
-import { ScheduleSettingsPanel } from './ScheduleSettingsPanel';
+import { DocumentInfoFields } from './DocumentInfoFields';
 import type { AggregateDocument, PemeriksaanForm, PemeriksaanProfile, PemeriksaanSummary } from './types';
 
 type Props = { scheduleID: string; programID: string; regencyName: string; programType: ProgramType; defaultDate: string };
@@ -32,7 +33,7 @@ export function PemeriksaanPanel({ scheduleID, programID, regencyName, programTy
   const [forms, setForms] = useState<PemeriksaanForm[]>([]);
   const [previewPage, setPreviewPage] = useState<number | undefined>();
   const [showEditor, setShowEditor] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
+  const [showSignatures, setShowSignatures] = useState(false);
 
   const summary = useQuery({
     queryKey: ['bast', 'pemeriksaan', 'summary', scheduleID],
@@ -79,7 +80,7 @@ export function PemeriksaanPanel({ scheduleID, programID, regencyName, programTy
   const finalizedCount = savedForms.filter((form) => activeByType.has(`pemeriksaan:${form.code}`)).length;
 
   return <div className="grid gap-5">
-    {showSettings && <ScheduleSettingsPanel scheduleID={scheduleID} requirePertaminaRep />}
+    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} document="ba-pemeriksaan" documentLabel="BA Pemeriksaan" />}
 
     <div className="grid gap-5 xl:grid-cols-[22rem_minmax(0,1fr)]">
       <div className="grid content-start gap-5">
@@ -117,18 +118,19 @@ export function PemeriksaanPanel({ scheduleID, programID, regencyName, programTy
       <Card className="min-w-0">
         <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle className="text-base">BA Pemeriksaan Barang</CardTitle><p className="mt-1 text-sm text-muted-foreground">{regencyName} · 1 PDF per form, disimpan ke 10. BA PEMERIKSAAN</p></div><Badge variant="outline">{totalPackages} paket</Badge></div></CardHeader>
         <CardContent className="grid gap-4 pt-5">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div className="grid w-full gap-1.5 sm:w-56">
+          <div className="grid gap-3 sm:items-start sm:grid-cols-[12rem_minmax(0,1fr)]">
+            <div className="grid gap-1.5">
               <Label htmlFor="pemeriksaan_document_date">Tanggal pemeriksaan</Label>
               <Input id="pemeriksaan_document_date" type="date" value={documentDate} onChange={(e) => setDocumentDate(e.target.value)} />
             </div>
-            {canOpenSetup && <div className="flex flex-wrap gap-x-4 gap-y-1 pb-2.5 text-xs font-medium">
+            <DocumentInfoFields scheduleID={scheduleID} fields={[{ key: 'consultant_company_name', label: 'Pemasok' }]} />
+          </div>
+          {canOpenSetup && <div className="-mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium">
               <Link className="inline-flex items-center gap-1 text-primary hover:underline" to={`/persiapan-program?tab=zones&program=${encodeURIComponent(programID)}`}>Isi No. PO per zona<ExternalLink className="size-3" aria-hidden="true" /></Link>
               <Link className="inline-flex items-center gap-1 text-primary hover:underline" to="/persiapan-program?tab=templates">Merk & barang di Template Paket<ExternalLink className="size-3" aria-hidden="true" /></Link>
             </div>}
-          </div>
           <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
-            <Button variant="ghost" onClick={() => setShowSettings((value) => !value)}><Settings2 />{showSettings ? 'Tutup pengaturan' : 'Pengaturan penandatangan'}</Button>
+            <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>
             {canManage && <Button disabled={finalize.isPending || !ready || documentDate === ''} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi semua form'}</Button>}
           </div>
 

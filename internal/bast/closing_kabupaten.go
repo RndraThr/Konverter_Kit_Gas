@@ -30,6 +30,8 @@ type ClosingKabupatenSnapshot struct {
 	FiscalYear            int                   `json:"fiscal_year"`
 	Logos                 []LogoSnapshot        `json:"logos"`
 	Signatories           closingSignatories    `json:"signatories"`
+	SignatureMarks        SignatureMarks        `json:"signature_marks,omitempty"`
+	Wet                   WetSignature          `json:"wet_signature,omitempty"`
 	Rows                  []ClosingKabupatenRow `json:"rows"`
 	GrandTotal            int                   `json:"grand_total"`
 }
@@ -48,7 +50,7 @@ func buildClosingKabupatenSnapshot(ctx DP3Context, settings ScheduleSettings, lo
 		RegencyName:           ctx.RegencyName,
 		RegencyCode:           ctx.RegencyCode,
 		ProvinceName:          ctx.ProvinceName,
-		ConsultantCompanyName: settings.ConsultantCompanyName,
+		ConsultantCompanyName: settings.Consultant(),
 		FiscalYear:            ctx.FiscalYear,
 		Logos:                 sortedLogos,
 		Signatories: closingSignatories{

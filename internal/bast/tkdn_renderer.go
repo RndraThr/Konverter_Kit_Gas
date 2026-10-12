@@ -61,6 +61,7 @@ func RenderTKDN(snapshot TKDNSnapshot, logoBytes map[string][]byte) (RenderedAgg
 		return RenderedAggregate{}, ErrInvalidInput
 	}
 	pdf := fpdf.New("P", "mm", "A4", "")
+	fixPDFDates(pdf, snapshot.DocumentDate)
 	pdf.SetMargins(marginMM, topMarginMM, marginMM)
 	pdf.SetAutoPageBreak(false, bottomMarginMM)
 	pdf.SetTitle(tkdnTitle, false)
@@ -71,68 +72,79 @@ func RenderTKDN(snapshot TKDNSnapshot, logoBytes map[string][]byte) (RenderedAgg
 	if err != nil {
 		return RenderedAggregate{}, err
 	}
+	registerSignatoryImages(pdf, logoBytes)
+	registerWetScan(pdf, logoBytes)
 	contentWidth := pageWidthMM - 2*marginMM
 	textLeft := marginMM + activityColumnWidths[0]
 	textWidth := contentWidth - 2*activityColumnWidths[0]
 
-	pdf.AddPage()
-	pdf.SetXY(marginMM, renderRakordaLogoStrip(pdf, logos)+3)
-	pdf.SetFont(activityFont, "BU", activityTitlePt)
-	pdf.CellFormat(contentWidth, 7, tkdnTitle, "", 1, "C", false, 0, "")
-	pdf.SetFont(activityFont, "", activityTextPt)
-	y := pdf.GetY()
-	number := "No. " + snapshot.DocumentNumber
-	pdf.Text(marginMM+(contentWidth-pdf.GetStringWidth(number))/2, textBaseline(y, 6, activityTextPt), number)
-	y += 6 + 8
-
-	valueLeft := textLeft + tkdnMetaLabelMM + 3.5
-	writeMeta := func(label string) float64 {
-		baseline := textBaseline(y, tkdnMetaRowMM, activityTextPt)
+	// Cetak halaman tanda tangan saja: isi dokumen dilewati.
+	if !snapshot.Wet.PageOnly {
+		pdf.AddPage()
+		pdf.SetXY(marginMM, renderRakordaLogoStrip(pdf, logos)+3)
+		pdf.SetFont(activityFont, "BU", activityTitlePt)
+		pdf.CellFormat(contentWidth, 7, tkdnTitle, "", 1, "C", false, 0, "")
 		pdf.SetFont(activityFont, "", activityTextPt)
-		pdf.Text(textLeft, baseline, label)
-		pdf.Text(textLeft+tkdnMetaLabelMM, baseline, ":")
-		return baseline
-	}
-	writeMeta("Nama Penyedia")
-	pdf.Text(valueLeft, textBaseline(y, tkdnMetaRowMM, activityTextPt), textnorm.DisplayTitle(snapshot.ProviderName))
-	y += tkdnMetaRowMM + 1
-	writeMeta("Nama Pengadaan")
-	pdf.SetXY(valueLeft, y+0.5)
-	renderJustifiedSegments(pdf, valueLeft, textLeft+textWidth-valueLeft, tkdnMetaRowMM, activityTextPt, []textSegment{
-		{text: "Pengadaan Barang Penyediaan dan Pendistribusian Paket Perdana ", style: ""},
-		{text: "Liquefied Petroleum Gas", style: "I"},
-		{text: fmt.Sprintf(" (LPG) untuk Mesin Pompa Air Bagi Petani Sasaran Tahun Anggaran %d di PT Pertamina Patra Niaga", snapshot.FiscalYear), style: ""},
-	})
-	y = pdf.GetY() + 1
-	writeMeta("Kabupaten / Kota")
-	pdf.Text(valueLeft, textBaseline(y, tkdnMetaRowMM, activityTextPt), textnorm.DisplayTitle(snapshot.RegencyName))
-	y += tkdnMetaRowMM + 1
-	writeMeta("Provinsi")
-	pdf.Text(valueLeft, textBaseline(y, tkdnMetaRowMM, activityTextPt), textnorm.DisplayTitle(snapshot.ProvinceName))
-	y += tkdnMetaRowMM + 4
+		y := pdf.GetY()
+		number := "No. " + snapshot.DocumentNumber
+		pdf.Text(marginMM+(contentWidth-pdf.GetStringWidth(number))/2, textBaseline(y, 6, activityTextPt), number)
+		y += 6 + 8
 
-	pdf.SetY(y)
-	renderTKDNTable(pdf, snapshot, logos, textLeft)
-
-	pdf.SetY(pdf.GetY() + 7)
-	for _, paragraph := range []string{
-		"Bahwa informasi yang kami sampaikan adalah benar, sehingga apabila dikemudian hari ditemukan adanya ketidaksesuaian atas informasi komitmen TKDN, maka Perusahaan bersedia menerima sanksi sesuai ketentuan yang berlaku.",
-		"Demikian pernyataan ini kami sampaikan dengan penuh tanggung jawab serta mengikat sesuai dengan ketentuan hukum/peraturan yang berlaku.",
-	} {
-		lines := float64(len(wrapWords(pdf, paragraph, textWidth)))
-		if pdf.GetY()+lines*tkdnParagraphLine > pageHeightMM-bottomMarginMM {
-			pdf.AddPage()
-			pdf.SetY(renderRakordaLogoStrip(pdf, logos) + activityTopGapMM)
+		valueLeft := textLeft + tkdnMetaLabelMM + 3.5
+		writeMeta := func(label string) float64 {
+			baseline := textBaseline(y, tkdnMetaRowMM, activityTextPt)
+			pdf.SetFont(activityFont, "", activityTextPt)
+			pdf.Text(textLeft, baseline, label)
+			pdf.Text(textLeft+tkdnMetaLabelMM, baseline, ":")
+			return baseline
 		}
-		pdf.SetX(textLeft)
-		renderJustifiedSegments(pdf, textLeft, textWidth, tkdnParagraphLine, activityTextPt, []textSegment{{text: paragraph}})
-		pdf.SetY(pdf.GetY() + 3)
-	}
+		writeMeta("Nama Penyedia")
+		pdf.Text(valueLeft, textBaseline(y, tkdnMetaRowMM, activityTextPt), textnorm.DisplayTitle(snapshot.ProviderName))
+		y += tkdnMetaRowMM + 1
+		writeMeta("Nama Pengadaan")
+		pdf.SetXY(valueLeft, y+0.5)
+		renderJustifiedSegments(pdf, valueLeft, textLeft+textWidth-valueLeft, tkdnMetaRowMM, activityTextPt, []textSegment{
+			{text: "Pengadaan Barang Penyediaan dan Pendistribusian Paket Perdana ", style: ""},
+			{text: "Liquefied Petroleum Gas", style: "I"},
+			{text: fmt.Sprintf(" (LPG) untuk Mesin Pompa Air Bagi Petani Sasaran Tahun Anggaran %d di PT Pertamina Patra Niaga", snapshot.FiscalYear), style: ""},
+		})
+		y = pdf.GetY() + 1
+		writeMeta("Kabupaten / Kota")
+		pdf.Text(valueLeft, textBaseline(y, tkdnMetaRowMM, activityTextPt), textnorm.DisplayTitle(snapshot.RegencyName))
+		y += tkdnMetaRowMM + 1
+		writeMeta("Provinsi")
+		pdf.Text(valueLeft, textBaseline(y, tkdnMetaRowMM, activityTextPt), textnorm.DisplayTitle(snapshot.ProvinceName))
+		y += tkdnMetaRowMM + 4
 
-	signature := layoutActivitySignatures(pdf, snapshot.Signatories, tkdnSignatureHeaders)
-	pdf.AddPage()
-	pdf.SetXY(marginMM, renderRakordaLogoStrip(pdf, logos)+activitySignatureGap)
-	renderActivitySignatures(pdf, signature)
+		pdf.SetY(y)
+		renderTKDNTable(pdf, snapshot, logos, textLeft)
+
+		pdf.SetY(pdf.GetY() + 7)
+		for _, paragraph := range []string{
+			"Bahwa informasi yang kami sampaikan adalah benar, sehingga apabila dikemudian hari ditemukan adanya ketidaksesuaian atas informasi komitmen TKDN, maka Perusahaan bersedia menerima sanksi sesuai ketentuan yang berlaku.",
+			"Demikian pernyataan ini kami sampaikan dengan penuh tanggung jawab serta mengikat sesuai dengan ketentuan hukum/peraturan yang berlaku.",
+		} {
+			lines := float64(len(wrapWords(pdf, paragraph, textWidth)))
+			if pdf.GetY()+lines*tkdnParagraphLine > pageHeightMM-bottomMarginMM {
+				pdf.AddPage()
+				pdf.SetY(renderRakordaLogoStrip(pdf, logos) + activityTopGapMM)
+			}
+			pdf.SetX(textLeft)
+			renderJustifiedSegments(pdf, textLeft, textWidth, tkdnParagraphLine, activityTextPt, []textSegment{{text: paragraph}})
+			pdf.SetY(pdf.GetY() + 3)
+		}
+
+	}
+	signature := layoutActivitySignatures(pdf, snapshot.Signatories, tkdnSignatureHeaders).withMarks(fourSignatories, snapshot.SignatureMarks)
+	// Tanda tangan basah: halaman pindaian menggantikan halaman tanda tangan.
+	if snapshot.Wet.Scanned {
+		drawWetScanPage(pdf, "P")
+	} else {
+		pdf.AddPage()
+		pdf.SetXY(marginMM, renderRakordaLogoStrip(pdf, logos)+activitySignatureGap)
+		renderActivitySignatures(pdf, signature)
+		drawWetFooter(pdf, snapshot.Wet, "TKDN", snapshot.DocumentDate)
+	}
 
 	var output bytes.Buffer
 	if err := pdf.Output(&output); err != nil {
