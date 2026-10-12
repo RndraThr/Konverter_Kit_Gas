@@ -83,6 +83,18 @@ test('DCP3 to completed package distribution', async ({ page }, testInfo) => {
   await expect(recipientHeading).toBeVisible();
   await expect.poll(() => recipientHeading.evaluate((element) => element.clientHeight >= element.scrollHeight)).toBe(true);
 
+  // The recipient signs in POS Dokumen; Berita Acara uses the signature.
+  const signaturePad = dokumen.getByLabel('Area tanda tangan penerima');
+  await signaturePad.scrollIntoViewIfNeeded();
+  const pad = await signaturePad.boundingBox();
+  expect(pad).not.toBeNull();
+  await page.mouse.move(pad!.x + 30, pad!.y + pad!.height / 2);
+  await page.mouse.down();
+  for (const [dx, dy] of [[80, -30], [140, 25], [200, -20], [260, 15]]) await page.mouse.move(pad!.x + dx, pad!.y + pad!.height / 2 + dy, { steps: 6 });
+  await page.mouse.up();
+  await dokumen.getByRole('button', { name: 'Simpan tanda tangan' }).click();
+  await expect(dokumen.getByRole('img', { name: `Tanda tangan ${storedCleanName}` })).toBeVisible();
+
   await chooseOption(dokumen.getByLabel('Merk/Tipe Mesin'), /SHARK/);
   await expect(dokumen.getByRole('textbox', { name: 'Serial Number Mesin', exact: true })).toHaveValue(`MESIN-${project.toUpperCase()}`);
   await chooseOption(dokumen.getByLabel('Merk Konkit/Reducer'), /ERGAS/);

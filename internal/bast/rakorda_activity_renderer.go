@@ -91,6 +91,7 @@ func renderActivityAttendance(document activityDocument, snapshot RakordaSnapsho
 	if err != nil {
 		return RenderedAggregate{}, err
 	}
+	registerSignatures(pdf, logoBytes)
 
 	pdf.AddPage()
 	renderActivityHeader(pdf, document, snapshot, logos)

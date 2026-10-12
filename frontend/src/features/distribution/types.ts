@@ -25,6 +25,7 @@ export type DistributionSlot = {
   converter_option_code?: string; converter_serial_number?: string;
   documentation: SlotSummary[]; distributed_at?: string;
   needs_recompletion: boolean; reopened_at?: string; reopened_by?: string; reopened_stage?: RevisionStage; revision_reason?: string;
+  recipient_signed_at?: string;
   created_at: string; updated_at: string;
 };
 

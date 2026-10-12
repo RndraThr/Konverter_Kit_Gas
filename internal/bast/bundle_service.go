@@ -217,6 +217,13 @@ func (s *BundleService) render(ctx context.Context, localDate string, documents 
 			logoBytes[logo.AssetID] = data
 		}
 	}
+	slotIDs := make([]string, 0, len(documents))
+	for _, document := range documents {
+		slotIDs = append(slotIDs, document.Snapshot.Signatures.ReceiverSignatureKey)
+	}
+	if err := addRecipientSignatures(ctx, s.repository, logoBytes, slotIDs); err != nil {
+		return RenderedBundle{}, "", err
+	}
 	rendered, err := RenderPetaniBundle(BundleRenderInput{LocalDate: localDate, Documents: documents, LogoBytes: logoBytes})
 	if err != nil {
 		return RenderedBundle{}, "", err

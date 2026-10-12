@@ -111,6 +111,7 @@ type Service struct {
 	revisionRepository         revisionRepository
 	mediaStageRepository       mediaStageRepository
 	serialRepository           serialRepository
+	signatureRepository        signatureRepository
 	syncRepository             syncRepository
 	myActivityRepository       myActivityRepository
 	storage                    media.Storage
@@ -131,6 +132,7 @@ func NewService(repository any, dependencies ...any) *Service {
 	service.revisionRepository, _ = repository.(revisionRepository)
 	service.mediaStageRepository, _ = repository.(mediaStageRepository)
 	service.serialRepository, _ = repository.(serialRepository)
+	service.signatureRepository, _ = repository.(signatureRepository)
 	service.syncRepository, _ = repository.(syncRepository)
 	service.myActivityRepository, _ = repository.(myActivityRepository)
 	for _, dependency := range dependencies {

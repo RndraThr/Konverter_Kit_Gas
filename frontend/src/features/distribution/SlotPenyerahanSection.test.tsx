@@ -21,7 +21,7 @@ const linkedSlot: DistributionSlot = {
 	id: 'slot-1', schedule_id: 'schedule-1', slot_number: 7, distribution_date: '2026-10-20', status: 'linked',
   full_name: 'Siti Aminah', nik: '7306014101900001',
   machine_option_code: 'MSN-001', machine_serial_number: 'SN-MSN-1', hose_option_code: 'HSE-001', hose_serial_number: 'SN-HSE-1', converter_serial_number: 'SN-CNV-1',
-  documentation: [penyerahanDoc('complete')], needs_recompletion: false, created_at: '2026-09-20T00:00:00Z', updated_at: '2026-09-20T00:00:00Z',
+  documentation: [penyerahanDoc('complete')], needs_recompletion: false, recipient_signed_at: '2026-09-20T08:00:00Z', created_at: '2026-09-20T00:00:00Z', updated_at: '2026-09-20T00:00:00Z',
 };
 
 function renderSection(slot: DistributionSlot, permissions = ['distribution.pos_penyerahan']) {
@@ -37,6 +37,12 @@ test('enables Selesaikan Distribusi when all required documentation is complete'
   renderSection(linkedSlot);
   expect(screen.getByLabelText('POS Penyerahan')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Selesaikan Distribusi' })).toBeEnabled();
+});
+
+test('disables Selesaikan Distribusi until the recipient has signed', () => {
+  renderSection({ ...linkedSlot, recipient_signed_at: undefined });
+  expect(screen.getByRole('button', { name: 'Selesaikan Distribusi' })).toBeDisabled();
+  expect(screen.getByText('Ambil tanda tangan penerima di POS Dokumen sebelum konfirmasi.')).toBeVisible();
 });
 
 test('disables Selesaikan Distribusi when a required item is not complete', () => {

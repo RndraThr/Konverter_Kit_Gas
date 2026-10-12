@@ -590,6 +590,10 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "identifier_conflict", "NIK atau nomor kartu sudah digunakan penerima lain")
 	case errors.Is(err, distribution.ErrIdentityIncomplete):
 		writeError(w, http.StatusConflict, "identity_incomplete", "Identitas wajib penerima belum lengkap")
+	case errors.Is(err, distribution.ErrSignatureRequired):
+		writeError(w, http.StatusConflict, "signature_required", "Tanda tangan penerima belum diambil di POS Dokumen")
+	case errors.Is(err, distribution.ErrSignatureInvalid):
+		writeError(w, http.StatusBadRequest, "signature_invalid", "Tanda tangan harus berupa gambar PNG yang valid")
 	case errors.Is(err, distribution.ErrDocumentationIncomplete):
 		writeError(w, http.StatusConflict, "documentation_incomplete", "Dokumentasi wajib belum lengkap")
 	case errors.Is(err, distribution.ErrMediaMoveFailed):

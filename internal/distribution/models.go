@@ -107,8 +107,11 @@ type DistributionSlot struct {
 	ReopenedBy            *string       `json:"reopened_by,omitempty"`
 	ReopenedStage         string        `json:"reopened_stage,omitempty"`
 	RevisionReason        string        `json:"revision_reason,omitempty"`
-	CreatedAt             time.Time     `json:"created_at"`
-	UpdatedAt             time.Time     `json:"updated_at"`
+	// RecipientSignedAt is when the current recipient signed in POS Dokumen;
+	// the image is at /api/v1/distribution/slots/{n}/signature.
+	RecipientSignedAt *time.Time `json:"recipient_signed_at,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
 type SlotCatalogEntry struct {
