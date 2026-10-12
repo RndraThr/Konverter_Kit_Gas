@@ -91,7 +91,7 @@ type posPenyerahanRepository interface {
 
 // serialRepository finds other slots that already recorded a serial number.
 type serialRepository interface {
-	FindSerialMatches(ctx context.Context, serial, excludeScheduleID string, excludeSlotNumber int) ([]SerialMatch, error)
+	FindSerialMatches(ctx context.Context, serial, excludeScheduleID string, excludeSlotNumber int, scope auth.RegencyScope) ([]SerialMatch, error)
 }
 
 type distributionDateRepository interface {
@@ -585,7 +585,10 @@ func newStorageKey() (string, error) {
 // serial as machine or converter serial, so the field app can warn before a
 // unit is recorded twice. The slot being edited can be excluded. Matching is
 // case-insensitive, like the uppercase normalization applied when saving.
-func (s *Service) CheckSerial(ctx context.Context, serial, excludeScheduleID string, excludeSlotNumber int) ([]SerialMatch, error) {
+// Matches outside the caller's regency scope are returned redacted (see
+// FindSerialMatches) so the global uniqueness warning never leaks other
+// regencies' distribution details.
+func (s *Service) CheckSerial(ctx context.Context, serial, excludeScheduleID string, excludeSlotNumber int, scope auth.RegencyScope) ([]SerialMatch, error) {
 	serial = strings.ToUpper(strings.TrimSpace(serial))
 	if serial == "" || utf8.RuneCountInString(serial) > 100 {
 		return nil, ErrSerialInvalid
@@ -593,5 +596,5 @@ func (s *Service) CheckSerial(ctx context.Context, serial, excludeScheduleID str
 	if s.serialRepository == nil {
 		return nil, errors.New("distribution serial check is unavailable")
 	}
-	return s.serialRepository.FindSerialMatches(ctx, serial, strings.TrimSpace(excludeScheduleID), excludeSlotNumber)
+	return s.serialRepository.FindSerialMatches(ctx, serial, strings.TrimSpace(excludeScheduleID), excludeSlotNumber, scope)
 }

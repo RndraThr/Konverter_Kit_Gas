@@ -1586,12 +1586,13 @@ func (r *Repository) CompleteSlot(ctx context.Context, actor auth.Principal, inp
 }
 
 // FindSerialMatches returns up to 5 non-cancelled slots across all schedules
-// whose machine or converter serial equals serial (already uppercased).
-// Regency scope is intentionally not applied: a unit recorded in another
-// regency is still a duplicate. Only the slot number and regency are exposed.
-func (r *Repository) FindSerialMatches(ctx context.Context, serial, excludeScheduleID string, excludeSlotNumber int) ([]SerialMatch, error) {
+// whose machine or converter serial equals serial (already uppercased). The
+// search spans every regency on purpose — a unit recorded anywhere is still a
+// duplicate — but matches in a regency outside scope are redacted to a bare
+// "used elsewhere" signal so another regency's distribution data is not leaked.
+func (r *Repository) FindSerialMatches(ctx context.Context, serial, excludeScheduleID string, excludeSlotNumber int, scope auth.RegencyScope) ([]SerialMatch, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT ps.id::text, ps.name, rg.name, ds.slot_number,
+		SELECT ps.id::text, ps.name, rg.name, rg.id::text, ds.slot_number,
 			CASE WHEN upper(ds.machine_serial_number) = $1 THEN 'machine' ELSE 'converter' END,
 			ds.status
 		FROM distribution_slots ds
@@ -1610,8 +1611,14 @@ func (r *Repository) FindSerialMatches(ctx context.Context, serial, excludeSched
 	matches := []SerialMatch{}
 	for rows.Next() {
 		var match SerialMatch
-		if err := rows.Scan(&match.ScheduleID, &match.ScheduleName, &match.RegencyName, &match.SlotNumber, &match.Field, &match.Status); err != nil {
+		var regencyID string
+		if err := rows.Scan(&match.ScheduleID, &match.ScheduleName, &match.RegencyName, &regencyID, &match.SlotNumber, &match.Field, &match.Status); err != nil {
 			return nil, fmt.Errorf("scan serial match: %w", err)
+		}
+		if !scope.Allows(regencyID) {
+			// Keep only that the serial clashes and which field; drop everything that
+			// identifies the out-of-scope slot's schedule, regency, number, and state.
+			match = SerialMatch{Field: match.Field, OutOfScope: true}
 		}
 		matches = append(matches, match)
 	}

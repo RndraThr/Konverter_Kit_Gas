@@ -600,9 +600,13 @@ func (h *Handler) handleDistributionSerialCheck(w http.ResponseWriter, r *http.R
 	if !h.authorize(w, r, rc.principal, "distribution.view") {
 		return
 	}
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
 	query := r.URL.Query()
 	excludeSlot, _ := strconv.Atoi(query.Get("slot_number"))
-	result, err := h.deps.Distribution.CheckSerial(r.Context(), query.Get("serial"), query.Get("schedule_id"), excludeSlot)
+	result, err := h.deps.Distribution.CheckSerial(r.Context(), query.Get("serial"), query.Get("schedule_id"), excludeSlot, scope)
 	if err != nil {
 		writeServiceError(w, err)
 		return
