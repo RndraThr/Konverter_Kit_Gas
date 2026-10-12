@@ -11,6 +11,7 @@ import { apiBlobRequest, ApiError, apiRequest } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
+import { incompletePreviewNote, previewBlockingStatus } from './previewStatus';
 import { ScheduleSettingsPanel } from './ScheduleSettingsPanel';
 import type { AggregateDocument, DailyRecapDate, DailyRecapRecipient } from './types';
 
@@ -59,7 +60,7 @@ export function DailyRecapPanel({ scheduleID, regencyName, programType }: Props)
   const preview = useQuery({
     queryKey: ['bast', 'daily-recap', 'preview', scheduleID, selectedDate],
     queryFn: () => apiBlobRequest('/api/v1/bast/daily-recap/preview', { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, local_date: selectedDate }) }),
-    enabled: programType === 'farmer' && selectedDate !== '' && dateItems.find((item) => item.local_date === selectedDate)?.validation_status === 'ready',
+    enabled: programType === 'farmer' && selectedDate !== '' && !previewBlockingStatus.has(dateItems.find((item) => item.local_date === selectedDate)?.validation_status ?? 'no_recipients'),
   });
   const finalize = useMutation({
     mutationFn: () => apiRequest<DataResponse<AggregateDocument>>('/api/v1/bast/daily-recap/finalize', { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, local_date: selectedDate }) }),
@@ -128,7 +129,8 @@ export function DailyRecapPanel({ scheduleID, regencyName, programType }: Props)
             </div>}
 
             {!selectedReady && selected && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">{validationMessage[selected.validation_status] ?? selected.validation_status}</div>}
-            {selectedReady && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} errorDescription={preview.error ? errorMessage(preview.error) : undefined} label="Rekap Harian" />}
+            {selected && !selectedReady && !previewBlockingStatus.has(selected.validation_status) && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">{incompletePreviewNote}</p>}
+            {selected && !previewBlockingStatus.has(selected.validation_status) && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} errorDescription={preview.error ? errorMessage(preview.error) : undefined} label="Rekap Harian" />}
 
             <Button className="justify-start" variant="ghost" onClick={() => setShowRecipients((value) => !value)}><Users />{showRecipients ? 'Sembunyikan rincian' : `Lihat ${selected?.recipient_count ?? 0} penerima`}</Button>
           </CardContent>

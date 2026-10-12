@@ -103,7 +103,8 @@ func (s *DailyRecapService) Recipients(ctx context.Context, scheduleID, localDat
 func (s *DailyRecapService) Preview(ctx context.Context, scheduleID, localDate string, scope auth.RegencyScope) (AggregatePreview, error) {
 	scheduleID = strings.TrimSpace(scheduleID)
 	localDate = strings.TrimSpace(localDate)
-	ctxData, recipients, settings, err := s.load(ctx, scheduleID, localDate, scope)
+	// Preview tidak menuntut pengaturan dan data penerima lengkap; finalisasi tetap ketat.
+	ctxData, recipients, settings, err := s.load(ctx, scheduleID, localDate, scope, false)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
@@ -127,7 +128,7 @@ func (s *DailyRecapService) Preview(ctx context.Context, scheduleID, localDate s
 func (s *DailyRecapService) Finalize(ctx context.Context, actor auth.Principal, scheduleID, localDate string, scope auth.RegencyScope, meta auth.ClientMeta) (AggregateDocument, error) {
 	scheduleID = strings.TrimSpace(scheduleID)
 	localDate = strings.TrimSpace(localDate)
-	ctxData, recipients, settings, err := s.load(ctx, scheduleID, localDate, scope)
+	ctxData, recipients, settings, err := s.load(ctx, scheduleID, localDate, scope, true)
 	if err != nil {
 		return AggregateDocument{}, err
 	}
@@ -216,7 +217,9 @@ func (s *DailyRecapService) Open(ctx context.Context, id string, scope auth.Rege
 	return AggregateContent{Reader: reader, Filename: doc.Filename}, nil
 }
 
-func (s *DailyRecapService) load(ctx context.Context, scheduleID, localDate string, scope auth.RegencyScope) (DP3Context, []DailyRecapRecipient, ScheduleSettings, error) {
+// load memuat konteks, pengaturan, dan penerima. strict=false (preview) hanya
+// mensyaratkan konteks valid dan ada penerima.
+func (s *DailyRecapService) load(ctx context.Context, scheduleID, localDate string, scope auth.RegencyScope, strict bool) (DP3Context, []DailyRecapRecipient, ScheduleSettings, error) {
 	if scheduleID == "" || localDate == "" {
 		return DP3Context{}, nil, ScheduleSettings{}, ErrInvalidInput
 	}
@@ -231,15 +234,22 @@ func (s *DailyRecapService) load(ctx context.Context, scheduleID, localDate stri
 	if err != nil {
 		return DP3Context{}, nil, ScheduleSettings{}, err
 	}
-	if err := validateDailyRecapSettings(settings); err != nil {
-		return DP3Context{}, nil, ScheduleSettings{}, err
+	if strict {
+		if err := validateDailyRecapSettings(settings); err != nil {
+			return DP3Context{}, nil, ScheduleSettings{}, err
+		}
 	}
 	recipients, err := s.repository.ListDailyRecapRecipients(ctx, scheduleID, localDate, scope)
 	if err != nil {
 		return DP3Context{}, nil, ScheduleSettings{}, err
 	}
-	if err := validateDailyRecapRecipients(recipients); err != nil {
-		return DP3Context{}, nil, ScheduleSettings{}, err
+	if !strict && len(recipients) == 0 {
+		return DP3Context{}, nil, ScheduleSettings{}, ErrAggregateNoRecipients
+	}
+	if strict {
+		if err := validateDailyRecapRecipients(recipients); err != nil {
+			return DP3Context{}, nil, ScheduleSettings{}, err
+		}
 	}
 	return ctxData, recipients, settings, nil
 }

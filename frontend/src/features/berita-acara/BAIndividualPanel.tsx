@@ -52,10 +52,13 @@ export function BAIndividualPanel({ programID, regencyID, regencyName, programTy
     },
     onError: (error) => setOperationError(errorMessage(error)),
   });
+  // Preview tidak menunggu total dikunci: nomor BA memakai total sementara dan
+  // data yang belum lengkap dicetak kosong. Finalisasi tetap butuh total terkunci.
+  const canPreview = selected !== undefined && selected.validation_status !== 'configuration_required';
   const preview = useQuery({
-    queryKey: ['bast', 'individual', 'preview', programID, regencyID, selectedDate],
+    queryKey: ['bast', 'individual', 'preview', programID, regencyID, selectedDate, ready],
     queryFn: () => apiBlobRequest('/api/v1/bast/individual/bundles/preview', { method: 'POST', body: JSON.stringify(request) }),
-    enabled: programType === 'farmer' && selectedDate !== '' && ready,
+    enabled: programType === 'farmer' && selectedDate !== '' && canPreview,
   });
   const finalize = useMutation({
     mutationFn: () => apiRequest<DataResponse<DailyBundle>>('/api/v1/bast/individual/bundles/finalize', { method: 'POST', body: JSON.stringify(request) }),
@@ -106,7 +109,7 @@ export function BAIndividualPanel({ programID, regencyID, regencyName, programTy
         <CardContent className="grid gap-4 pt-5">
           <div className="flex items-start gap-3 rounded-lg border bg-muted/25 p-3 text-sm"><FolderOpen className="mt-0.5 size-4 shrink-0 text-primary" /><p>PDF tersimpan langsung di folder 2. BA PERORANGAN tanpa subfolder tanggal.</p></div>
           {selected?.validation_status === 'configuration_required' && <DataState kind="error" title="Konfigurasi belum lengkap" description="Pastikan zona dan profil dokumen program sudah dipublikasikan." />}
-          {selected?.validation_status === 'total_not_locked' && !ready && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-4 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100"><strong>Total pembagian belum dikunci.</strong><p className="mt-1">Nomor BA memakai total pembagian kabupaten sebagai penyebut. Kunci total sebelum preview atau finalisasi.</p></div>}
+          {selected?.validation_status === 'total_not_locked' && !ready && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-4 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100"><strong>Total pembagian belum dikunci.</strong><p className="mt-1">Nomor BA memakai total pembagian kabupaten sebagai penyebut. Preview memakai total sementara; kunci total sebelum finalisasi.</p></div>}
           {selected?.bundle && <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center">
             <div><div className="flex flex-wrap items-center gap-2"><FileCheck2 className={selected.bundle.status === 'stale' ? 'size-4 text-amber-600' : 'size-4 text-emerald-600'} /><strong className="text-sm">{selected.bundle.filename}</strong>{selected.bundle.status === 'stale' && <Badge variant="destructive">Perlu dibuat ulang</Badge>}</div><p className="mt-1 text-xs text-muted-foreground">Versi {selected.bundle.version} · {selected.bundle.page_count} halaman · {selected.bundle.recipient_count} penerima</p></div>
             <Button nativeButton={false} render={<a href={`/api/v1/bast/individual/bundles/${selected.bundle.id}/content`} />} variant="outline"><Download />Unduh PDF</Button>
@@ -116,7 +119,7 @@ export function BAIndividualPanel({ programID, regencyID, regencyName, programTy
             {canManage && !ready && <Button disabled={busy} onClick={() => lock.mutate()}><LockKeyhole />{lock.isPending ? 'Mengunci...' : 'Kunci total kabupaten'}</Button>}
             {canManage && <Button disabled={!ready || busy} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
           </div>}
-          {ready && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="BA Perorangan" />}
+          {canPreview && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="BA Perorangan" />}
           {ready && <Button className="justify-start" onClick={() => setShowRecipients((value) => !value)} variant="ghost"><Users />{showRecipients ? 'Sembunyikan penerima' : `Lihat ${selected?.recipient_count ?? 0} penerima`}</Button>}
         </CardContent>
       </Card>

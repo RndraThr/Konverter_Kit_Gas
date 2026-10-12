@@ -7,18 +7,29 @@ import (
 )
 
 func BuildSnapshot(source SourceData) (Snapshot, error) {
+	return buildSnapshot(source, true)
+}
+
+// BuildPreviewSnapshot seperti BuildSnapshot tetapi membiarkan identitas,
+// nomor BA, peralatan, dan komponen yang belum lengkap tetap kosong agar
+// preview tetap dapat dibuat. Finalisasi selalu memakai BuildSnapshot.
+func BuildPreviewSnapshot(source SourceData) (Snapshot, error) {
+	return buildSnapshot(source, false)
+}
+
+func buildSnapshot(source SourceData, strict bool) (Snapshot, error) {
 	if source.ProgramType != "farmer" {
 		return Snapshot{}, ErrTemplateUnavailable
 	}
-	if strings.TrimSpace(source.DocumentNumber) == "" || strings.TrimSpace(source.LocalDate) == "" || strings.TrimSpace(source.Recipient.FullName) == "" || strings.TrimSpace(source.Recipient.NIK) == "" || strings.TrimSpace(source.Recipient.SectorIdentifier) == "" {
+	if strict && (strings.TrimSpace(source.DocumentNumber) == "" || strings.TrimSpace(source.LocalDate) == "" || strings.TrimSpace(source.Recipient.FullName) == "" || strings.TrimSpace(source.Recipient.NIK) == "" || strings.TrimSpace(source.Recipient.SectorIdentifier) == "") {
 		return Snapshot{}, ErrInvalidInput
 	}
 	if len(source.Render.Logos) == 0 {
 		return Snapshot{}, ErrBrandingNotConfigured
 	}
-	if strings.TrimSpace(source.Equipment.MachineBrand) == "" || strings.TrimSpace(source.Equipment.MachineType) == "" ||
+	if strict && (strings.TrimSpace(source.Equipment.MachineBrand) == "" || strings.TrimSpace(source.Equipment.MachineType) == "" ||
 		strings.TrimSpace(source.Equipment.HoseBrand) == "" || strings.TrimSpace(source.Equipment.HoseSpec) == "" ||
-		strings.TrimSpace(source.Equipment.ConverterBrand) == "" {
+		strings.TrimSpace(source.Equipment.ConverterBrand) == "") {
 		return Snapshot{}, ErrEquipmentUnavailable
 	}
 	if strings.TrimSpace(source.Equipment.HoseSerial) == "" {
@@ -29,7 +40,7 @@ func BuildSnapshot(source SourceData) (Snapshot, error) {
 	source.Render.Logos = logos
 	components := append([]ComponentSnapshot(nil), source.Components...)
 	for i := range components {
-		if strings.TrimSpace(components[i].Label) == "" || components[i].Quantity < 1 || strings.TrimSpace(components[i].Unit) == "" {
+		if strict && (strings.TrimSpace(components[i].Label) == "" || components[i].Quantity < 1 || strings.TrimSpace(components[i].Unit) == "") {
 			return Snapshot{}, ErrInvalidInput
 		}
 		components[i].Checked = true

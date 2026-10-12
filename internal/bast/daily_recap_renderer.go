@@ -84,7 +84,7 @@ func renderDailyRecapHeader(pdf *fpdf.Fpdf, snapshot DailyRecapSnapshot, logos [
 
 	metadata := []struct{ label, value string }{
 		{"Hari / Tanggal", formatIndonesianDate(snapshot.DocumentDate)},
-		{"Lokasi / Titik Serah", snapshot.HandoverLocation},
+		{"Lokasi / Titik Serah", orBlank(snapshot.HandoverLocation)},
 		{"Konsultan Distribusi", snapshot.ConsultantCompanyName},
 	}
 	for _, item := range metadata {

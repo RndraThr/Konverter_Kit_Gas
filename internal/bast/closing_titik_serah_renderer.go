@@ -90,7 +90,7 @@ func renderClosingHeader(pdf *fpdf.Fpdf, snapshot ClosingTitikSerahSnapshot, log
 	pdf.Ln(1.2)
 
 	metadata := []struct{ label, value string }{
-		{"Lokasi / Titik Serah", snapshot.HandoverLocation},
+		{"Lokasi / Titik Serah", orBlank(snapshot.HandoverLocation)},
 		{"Kabupaten / Kota", snapshot.RegencyName},
 		{"Provinsi", snapshot.ProvinceName},
 	}

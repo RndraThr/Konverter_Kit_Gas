@@ -137,11 +137,16 @@ func (s *Service) ListDates(ctx context.Context, programID, regencyID string, sc
 }
 
 func (s *Service) ListRecipients(ctx context.Context, programID, regencyID, localDate string, scope auth.RegencyScope) ([]RecipientDocument, error) {
-	wantedDate, err := time.Parse("2006-01-02", localDate)
-	if err != nil {
+	return s.listRecipients(ctx, programID, regencyID, localDate, scope, true)
+}
+
+// listRecipients menyusun penerima per tanggal beserta nomor BA. requireLock=false
+// (preview) memakai total sementara bila total belum dikunci, dan mengosongkan
+// nomor yang belum dapat dibentuk, agar preview tetap tersedia.
+func (s *Service) listRecipients(ctx context.Context, programID, regencyID, localDate string, scope auth.RegencyScope, requireLock bool) ([]RecipientDocument, error) {
+	if _, err := time.Parse("2006-01-02", localDate); err != nil {
 		return nil, ErrInvalidInput
 	}
-	_ = wantedDate
 	contextData, err := s.repository.GetSourceContext(ctx, programID, regencyID, scope)
 	if err != nil {
 		return nil, err
@@ -149,13 +154,17 @@ func (s *Service) ListRecipients(ctx context.Context, programID, regencyID, loca
 	if err := validateContext(contextData); err != nil {
 		return nil, err
 	}
-	lock, err := s.repository.GetLockedTotal(ctx, programID, regencyID)
-	if err != nil {
-		return nil, ErrFinalTotalMissing
-	}
 	slots, err := s.repository.ListCompletedSlots(ctx, programID, regencyID, scope)
 	if err != nil {
 		return nil, err
+	}
+	finalTotal := 0
+	if lock, err := s.repository.GetLockedTotal(ctx, programID, regencyID); err == nil {
+		finalTotal = lock.FinalTotal
+	} else if requireLock {
+		return nil, ErrFinalTotalMissing
+	} else {
+		finalTotal = provisionalTotal(contextData.SlotQuota, slots)
 	}
 	sort.Slice(slots, func(i, j int) bool { return slots[i].SlotNumber < slots[j].SlotNumber })
 	items := []RecipientDocument{}
@@ -164,13 +173,28 @@ func (s *Service) ListRecipients(ctx context.Context, programID, regencyID, loca
 		if date.Format("2006-01-02") != localDate {
 			continue
 		}
-		number, err := BuildDocumentNumber(NumberInput{SlotNumber: slot.SlotNumber, FinalTotal: lock.FinalTotal, DocumentSeries: contextData.DocumentSeries, RegencyCode: contextData.RegencyCode, LocalDate: date})
+		number, err := BuildDocumentNumber(NumberInput{SlotNumber: slot.SlotNumber, FinalTotal: finalTotal, DocumentSeries: contextData.DocumentSeries, RegencyCode: contextData.RegencyCode, LocalDate: date})
 		if err != nil {
-			return nil, ErrSlotOutOfRange
+			if requireLock {
+				return nil, ErrSlotOutOfRange
+			}
+			number = ""
 		}
-		items = append(items, RecipientDocument{DistributionSlotID: slot.ID, SlotNumber: slot.SlotNumber, FinalTotal: lock.FinalTotal, DocumentNumber: number, LocalDate: localDate})
+		items = append(items, RecipientDocument{DistributionSlotID: slot.ID, SlotNumber: slot.SlotNumber, FinalTotal: finalTotal, DocumentNumber: number, LocalDate: localDate})
 	}
 	return items, nil
+}
+
+// provisionalTotal adalah penyebut nomor BA sebelum total dikunci: kuota slot
+// kabupaten, atau nomor slot terbesar bila kuota belum diisi/lebih kecil.
+func provisionalTotal(quota int, slots []CompletedSlot) int {
+	total := quota
+	for _, slot := range slots {
+		if slot.SlotNumber > total {
+			total = slot.SlotNumber
+		}
+	}
+	return total
 }
 
 func validateContext(value SourceContext) error {

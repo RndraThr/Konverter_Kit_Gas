@@ -40,9 +40,8 @@ func buildRakordaSnapshot(spec rakordaDocumentSpec, ctx DP3Context, settings Sch
 			return RakordaSnapshot{}, ErrInvalidInput
 		}
 	}
-	// RAKORDA wajib berlokasi; Sosialisasi dan Training boleh kosong (lokasi
-	// dicetak titik-titik untuk ditulis tangan).
-	if _, err := time.Parse("2006-01-02", documentDate); err != nil || (spec.kind == RakordaKindRakorda && strings.TrimSpace(location) == "") {
+	// Lokasi boleh kosong untuk semua jenis; dicetak titik-titik untuk ditulis tangan.
+	if _, err := time.Parse("2006-01-02", documentDate); err != nil {
 		return RakordaSnapshot{}, ErrInvalidInput
 	}
 	if ctx.ZonePlaceholder || strings.TrimSpace(ctx.ZoneName) == "" {

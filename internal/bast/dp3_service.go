@@ -47,12 +47,21 @@ func NewDP3Service(repository dp3Repository, storage media.Storage, location *ti
 
 func (s *DP3Service) Summary(ctx context.Context, scheduleID string, scope auth.RegencyScope) (DP3Summary, error) {
 	scheduleID = strings.TrimSpace(scheduleID)
-	_, recipients, err := s.load(ctx, scheduleID, scope)
+	_, recipients, err := s.load(ctx, scheduleID, scope, false)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return DP3Summary{}, err
 		}
 		return DP3Summary{ValidationStatus: dp3ValidationStatus(err)}, nil
+	}
+	// Status mengikuti syarat finalisasi; preview tetap bisa dibuat selama ada penerima.
+	status := dp3ValidationStatus(validateDP3Recipients(recipients))
+	if status == "ready" {
+		settings, err := s.repository.GetScheduleSettings(ctx, scheduleID, scope)
+		if err != nil {
+			return DP3Summary{}, err
+		}
+		status = dp3ValidationStatus(validateDP3Settings(settings))
 	}
 	numbered, unmounted := 0, 0
 	for _, recipient := range recipients {
@@ -62,7 +71,7 @@ func (s *DP3Service) Summary(ctx context.Context, scheduleID string, scope auth.
 			unmounted++
 		}
 	}
-	return DP3Summary{TotalRecipients: len(recipients), NumberedRecipients: numbered, UnmountedRecipients: unmounted, ValidationStatus: "ready"}, nil
+	return DP3Summary{TotalRecipients: len(recipients), NumberedRecipients: numbered, UnmountedRecipients: unmounted, ValidationStatus: status}, nil
 }
 
 func (s *DP3Service) Recipients(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]DP3Recipient, error) {
@@ -76,15 +85,14 @@ func (s *DP3Service) Recipients(ctx context.Context, scheduleID string, scope au
 func (s *DP3Service) Preview(ctx context.Context, scheduleID, documentDate string, scope auth.RegencyScope) (AggregatePreview, error) {
 	scheduleID = strings.TrimSpace(scheduleID)
 	documentDate = strings.TrimSpace(documentDate)
-	ctxData, recipients, err := s.load(ctx, scheduleID, scope)
+	// Preview tidak menuntut pengaturan dan data penerima lengkap; isian kosong
+	// dicetak sebagai titik-titik. Finalisasi tetap memvalidasi semuanya.
+	ctxData, recipients, err := s.load(ctx, scheduleID, scope, false)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
 	settings, err := s.repository.GetScheduleSettings(ctx, scheduleID, scope)
 	if err != nil {
-		return AggregatePreview{}, err
-	}
-	if err := validateDP3Settings(settings); err != nil {
 		return AggregatePreview{}, err
 	}
 	logos, err := s.repository.ListActiveLogos(ctx, ctxData.ProgramID)
@@ -110,7 +118,7 @@ func (s *DP3Service) Preview(ctx context.Context, scheduleID, documentDate strin
 func (s *DP3Service) Finalize(ctx context.Context, actor auth.Principal, scheduleID, documentDate string, scope auth.RegencyScope, meta auth.ClientMeta) (AggregateDocument, error) {
 	scheduleID = strings.TrimSpace(scheduleID)
 	documentDate = strings.TrimSpace(documentDate)
-	ctxData, recipients, err := s.load(ctx, scheduleID, scope)
+	ctxData, recipients, err := s.load(ctx, scheduleID, scope, true)
 	if err != nil {
 		return AggregateDocument{}, err
 	}
@@ -211,7 +219,8 @@ func (s *DP3Service) Open(ctx context.Context, id string, scope auth.RegencyScop
 }
 
 // load melakukan validasi konteks + recipients yang dipakai bersama preview/finalize/summary.
-func (s *DP3Service) load(ctx context.Context, scheduleID string, scope auth.RegencyScope) (DP3Context, []DP3Recipient, error) {
+// strict=false hanya mensyaratkan ada penerima (untuk preview).
+func (s *DP3Service) load(ctx context.Context, scheduleID string, scope auth.RegencyScope, strict bool) (DP3Context, []DP3Recipient, error) {
 	if scheduleID == "" {
 		return DP3Context{}, nil, ErrInvalidInput
 	}
@@ -226,8 +235,13 @@ func (s *DP3Service) load(ctx context.Context, scheduleID string, scope auth.Reg
 	if err != nil {
 		return DP3Context{}, nil, err
 	}
-	if err := validateDP3Recipients(recipients); err != nil {
-		return DP3Context{}, nil, err
+	if !strict && len(recipients) == 0 {
+		return DP3Context{}, nil, ErrAggregateNoRecipients
+	}
+	if strict {
+		if err := validateDP3Recipients(recipients); err != nil {
+			return DP3Context{}, nil, err
+		}
 	}
 	return ctxData, recipients, nil
 }

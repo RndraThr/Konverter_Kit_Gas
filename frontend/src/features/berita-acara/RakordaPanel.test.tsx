@@ -37,7 +37,7 @@ test('shows the blank attendance sheet preview inline once settings are saved, w
   expect(window.open).not.toHaveBeenCalled()
 })
 
-test('skips the preview fetch when the RAKORDA location has not been saved yet', async () => {
+test('still previews when the RAKORDA location is empty, printing blanks for handwriting', async () => {
   vi.mocked(apiRequest).mockImplementation(async (path) => {
     if (path.includes('/settings')) return { data: { ...settings, rakorda_location: '' } }
     if (path.includes('/uploads')) return { data: [] }
@@ -45,5 +45,6 @@ test('skips the preview fetch when the RAKORDA location has not been saved yet',
   })
   renderPanel()
   await screen.findByText('Belum diatur')
-  expect(apiBlobRequest).not.toHaveBeenCalled()
+  expect(screen.getByText(/dicetak titik-titik/)).toBeVisible()
+  await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledWith('/api/v1/bast/rakorda/preview', expect.objectContaining({ method: 'POST' })))
 })

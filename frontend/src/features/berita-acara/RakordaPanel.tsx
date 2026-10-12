@@ -31,7 +31,7 @@ export type RakordaConfig = {
   folder: string;
   filenamePrefix: string;
   note?: string;
-  /** Lokasi boleh kosong; dicetak titik-titik untuk ditulis tangan (Sosialisasi). */
+  /** Lokasi boleh kosong; dicetak titik-titik untuk ditulis tangan. */
   locationOptional?: boolean;
 };
 
@@ -44,6 +44,7 @@ export const rakordaConfig: RakordaConfig = {
   defaultRowCount: 45,
   folder: '6. RAKORDA',
   filenamePrefix: 'DAFTAR-HADIR-RAKORDA',
+  locationOptional: true,
 };
 
 type Props = { config?: RakordaConfig; scheduleID: string; regencyName: string; programType: ProgramType; defaultDate: string };

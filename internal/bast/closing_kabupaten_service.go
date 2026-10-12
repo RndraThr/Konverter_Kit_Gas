@@ -64,7 +64,7 @@ func (s *ClosingKabupatenService) Rows(ctx context.Context, scheduleID string, s
 func (s *ClosingKabupatenService) Preview(ctx context.Context, scheduleID, documentDate string, scope auth.RegencyScope) (AggregatePreview, error) {
 	scheduleID = strings.TrimSpace(scheduleID)
 	documentDate = strings.TrimSpace(documentDate)
-	ctxData, rows, settings, err := s.load(ctx, scheduleID, scope)
+	ctxData, rows, settings, err := s.load(ctx, scheduleID, scope, false)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
@@ -88,7 +88,7 @@ func (s *ClosingKabupatenService) Preview(ctx context.Context, scheduleID, docum
 func (s *ClosingKabupatenService) Finalize(ctx context.Context, actor auth.Principal, scheduleID, documentDate string, scope auth.RegencyScope, meta auth.ClientMeta) (AggregateDocument, error) {
 	scheduleID = strings.TrimSpace(scheduleID)
 	documentDate = strings.TrimSpace(documentDate)
-	ctxData, rows, settings, err := s.load(ctx, scheduleID, scope)
+	ctxData, rows, settings, err := s.load(ctx, scheduleID, scope, true)
 	if err != nil {
 		return AggregateDocument{}, err
 	}
@@ -177,7 +177,7 @@ func (s *ClosingKabupatenService) Open(ctx context.Context, id string, scope aut
 	return AggregateContent{Reader: reader, Filename: doc.Filename}, nil
 }
 
-func (s *ClosingKabupatenService) load(ctx context.Context, scheduleID string, scope auth.RegencyScope) (DP3Context, []ClosingKabupatenRow, ScheduleSettings, error) {
+func (s *ClosingKabupatenService) load(ctx context.Context, scheduleID string, scope auth.RegencyScope, strict bool) (DP3Context, []ClosingKabupatenRow, ScheduleSettings, error) {
 	if scheduleID == "" {
 		return DP3Context{}, nil, ScheduleSettings{}, ErrInvalidInput
 	}
@@ -192,16 +192,24 @@ func (s *ClosingKabupatenService) load(ctx context.Context, scheduleID string, s
 	if err != nil {
 		return DP3Context{}, nil, ScheduleSettings{}, err
 	}
-	if err := validateClosingKabupatenSettings(settings); err != nil {
-		return DP3Context{}, nil, ScheduleSettings{}, err
+	// Preview (strict=false) tidak menuntut pengaturan dan data mesin lengkap.
+	if strict {
+		if err := validateClosingKabupatenSettings(settings); err != nil {
+			return DP3Context{}, nil, ScheduleSettings{}, err
+		}
 	}
 	rows, err := s.repository.ListClosingKabupatenRows(ctx, scheduleID, scope)
 	if err != nil {
 		return DP3Context{}, nil, ScheduleSettings{}, err
 	}
 	rows = withClosingKabupatenLocation(rows, settings.HandoverLocation)
-	if err := validateClosingKabupatenRows(rows); err != nil {
-		return DP3Context{}, nil, ScheduleSettings{}, err
+	if !strict && len(rows) == 0 {
+		return DP3Context{}, nil, ScheduleSettings{}, ErrAggregateNoRecipients
+	}
+	if strict {
+		if err := validateClosingKabupatenRows(rows); err != nil {
+			return DP3Context{}, nil, ScheduleSettings{}, err
+		}
 	}
 	return ctxData, rows, settings, nil
 }

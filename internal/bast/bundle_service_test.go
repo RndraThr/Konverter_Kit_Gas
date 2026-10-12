@@ -41,6 +41,27 @@ func TestFinalizeBundleUploadsToExactPathAndDeletesOldAfterSwap(t *testing.T) {
 	}
 }
 
+func TestPreviewBundleWorksBeforeTotalLockAndWithIncompleteData(t *testing.T) {
+	repository := newBundleRepositoryStub(t)
+	repository.unlocked = true
+	repository.blankSource = true
+	storage := newBundleStorageStub(t)
+	storage.files["logo-key"] = testPNG(t)
+	service := NewBundleService(repository, storage, time.UTC)
+	request := BundleRequest{ProgramID: "program", RegencyID: "regency", LocalDate: "2024-12-10"}
+
+	preview, err := service.PreviewBundle(context.Background(), request, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.RecipientCount != 2 || len(preview.PDF) == 0 {
+		t.Fatalf("preview=%+v", preview)
+	}
+	if _, err := service.FinalizeBundle(context.Background(), auth.Principal{}, request, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{}); !errors.Is(err, ErrFinalTotalMissing) {
+		t.Fatalf("finalize err=%v", err)
+	}
+}
+
 func TestFinalizeBundleChecksumNoOpDoesNotUpload(t *testing.T) {
 	repository := newBundleRepositoryStub(t)
 	storage := newBundleStorageStub(t)
@@ -138,6 +159,8 @@ type bundleRepositoryStub struct {
 	activateErr     error
 	cleanupBundleID string
 	cleanupMessage  string
+	unlocked        bool
+	blankSource     bool
 }
 
 func newBundleRepositoryStub(t *testing.T) *bundleRepositoryStub { return &bundleRepositoryStub{t: t} }
@@ -149,6 +172,9 @@ func (r *bundleRepositoryStub) ListCompletedSlots(context.Context, string, strin
 	return []CompletedSlot{{ID: "slot-2", SlotNumber: 2, DistributedAt: time.Date(2024, 12, 10, 2, 0, 0, 0, time.UTC)}, {ID: "slot-1", SlotNumber: 1, DistributedAt: time.Date(2024, 12, 10, 1, 0, 0, 0, time.UTC)}}, nil
 }
 func (r *bundleRepositoryStub) GetLockedTotal(context.Context, string, string) (LockResult, error) {
+	if r.unlocked {
+		return LockResult{}, ErrNotFound
+	}
 	return LockResult{ProgramID: "program", RegencyID: "regency", FinalTotal: 2}, nil
 }
 func (r *bundleRepositoryStub) LockRegencyTotal(context.Context, auth.Principal, SourceContext, auth.ClientMeta) (LockResult, error) {
@@ -158,7 +184,12 @@ func (r *bundleRepositoryStub) ListActiveBundles(context.Context, string, string
 	return nil, nil
 }
 func (r *bundleRepositoryStub) LoadSourceData(_ context.Context, recipient RecipientDocument, _ SourceContext, _ auth.RegencyScope) (SourceData, error) {
-	return renderSource(recipient), nil
+	source := renderSource(recipient)
+	if r.blankSource {
+		source.Recipient = RecipientSnapshot{}
+		source.Equipment = EquipmentSnapshot{}
+	}
+	return source, nil
 }
 func (r *bundleRepositoryStub) SaveFinalDocument(_ context.Context, _ auth.Principal, recipient RecipientDocument, source SourceData, snapshot Snapshot, _ auth.ClientMeta) (IndividualDocument, error) {
 	return IndividualDocument{ID: "doc-" + recipient.DistributionSlotID, DistributionSlotID: recipient.DistributionSlotID, ProgramID: source.ProgramID, RegencyID: source.RegencyID, DocumentNumber: recipient.DocumentNumber, LocalDate: recipient.LocalDate, SlotNumber: recipient.SlotNumber, FinalTotal: recipient.FinalTotal, Snapshot: snapshot, Status: "final"}, nil
