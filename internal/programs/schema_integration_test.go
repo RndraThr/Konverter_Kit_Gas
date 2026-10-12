@@ -104,10 +104,10 @@ func TestKonkitPackageUsesSingleCombinedHoseComponent(t *testing.T) {
 		if component.Code == "suction_hose" || component.Code == "discharge_hose" {
 			t.Fatalf("legacy split hose component still exists: %+v", component)
 		}
-		if component.Code == "oil" && component.Label == "OLI" && component.Quantity == 2 && component.Unit == "Ltr" {
+		if component.Code == "oil" && component.Label == "Oli" && component.Quantity == 2 && component.Unit == "Liter" {
 			referenceDetails++
 		}
-		if component.Code == "bracket" && component.Label == "Braket" && component.Quantity == 1 && component.Unit == "Ea" {
+		if component.Code == "bracket" && component.Label == "Braket" && component.Quantity == 1 && component.Unit == "Buah" {
 			referenceDetails++
 		}
 	}
@@ -134,7 +134,7 @@ func TestKonkitPackageSeparatesSuctionAndDischargeHoseDetails(t *testing.T) {
 	if err := json.Unmarshal(raw, &options); err != nil {
 		t.Fatal(err)
 	}
-	if len(options) != 1 || options[0].SuctionBrand != "TRILLIUNHOSE" || options[0].SuctionSpec != "6 M" || options[0].DischargeBrand != "YAMAKOYO" || options[0].DischargeSpec != "10 M" {
+	if len(options) != 1 || options[0].SuctionBrand != "Triliunhose" || options[0].SuctionSpec != "6 m" || options[0].DischargeBrand != "Yamakoyo" || options[0].DischargeSpec != "10 m" {
 		t.Fatalf("hose_options=%s", raw)
 	}
 }

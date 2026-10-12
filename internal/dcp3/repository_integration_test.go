@@ -94,7 +94,7 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM dcp3_import_rows WHERE batch_id=$1 AND validation_status='needs_review'`, preview.ID).Scan(&reviewRows); err != nil {
 		t.Fatal(err)
 	}
-	if err := pool.QueryRow(ctx, `SELECT count(*) FROM package_allocations WHERE schedule_id=$1 AND package_snapshot_json->'selected_machine'->>'brand'='SHARK'`, scheduleID).Scan(&packageSnapshots); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM package_allocations WHERE schedule_id=$1 AND package_snapshot_json->'selected_machine'->>'brand'='Shark'`, scheduleID).Scan(&packageSnapshots); err != nil {
 		t.Fatal(err)
 	}
 	if reviewRows != 2 || packageSnapshots != 3 {
