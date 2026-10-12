@@ -196,7 +196,7 @@ func renderRecipient(pdf *fpdf.Fpdf, document RecipientDocument, logos []registe
 	renderProcurementHeading(pdf, marginMM, pageWidthMM-2*marginMM, snapshot.Render.FiscalYear)
 	pdf.Ln(2.8)
 
-	labelValue(pdf, "No. BAST", orBlank(snapshot.DocumentNumber), false)
+	labelValue(pdf, "No. BAST", snapshot.DocumentNumber, false)
 	labelValue(pdf, "Hari / Tanggal", formatIndonesianDate(snapshot.LocalDate), false)
 	pdf.Ln(2)
 

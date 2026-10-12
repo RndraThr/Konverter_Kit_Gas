@@ -173,7 +173,7 @@ func (s *ServisBerkalaService) Open(ctx context.Context, id string, scope auth.R
 }
 
 // snapshot menyusun data dokumen. requireSchedule=true (finalisasi) mewajibkan
-// keempat tanggal servis; preview mencetak tanggal yang kosong sebagai titik-titik.
+// keempat tanggal servis; preview mencetak tanggal yang kosong apa adanya (kosong).
 func (s *ServisBerkalaService) snapshot(ctx context.Context, scheduleID, documentDate string, version int, requireSchedule bool, scope auth.RegencyScope) (ServisBerkalaSnapshot, DP3Context, error) {
 	if scheduleID == "" || !validRequiredDate(documentDate) {
 		return ServisBerkalaSnapshot{}, DP3Context{}, ErrInvalidInput

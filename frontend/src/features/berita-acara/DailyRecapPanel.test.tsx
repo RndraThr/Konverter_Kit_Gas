@@ -46,7 +46,7 @@ test('still previews incomplete recipient data but explains why finalization is 
   renderPanel()
 
   expect(await screen.findByText('Daya mesin belum lengkap pada sebagian penerima.')).toBeVisible()
-  expect(screen.getByText(/isian kosong dicetak titik-titik/)).toBeVisible()
+  expect(screen.getByText(/isian yang belum ada dibiarkan kosong/)).toBeVisible()
   await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledWith('/api/v1/bast/daily-recap/preview', expect.objectContaining({ method: 'POST' })))
   expect(screen.getByRole('button', { name: 'Finalisasi & sinkronkan' })).toBeDisabled()
 })

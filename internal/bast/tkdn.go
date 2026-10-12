@@ -147,10 +147,10 @@ func formatIndonesianNumber(value float64, decimals int) string {
 // ErrTKDNTotalRequired: TKDN gabungan belum diisi saat finalisasi.
 var ErrTKDNTotalRequired = errors.New("tkdn total is required")
 
-// formatTKDNTotal mencetak TKDN gabungan; nilai 0 dianggap belum diisi.
+// formatTKDNTotal mencetak TKDN gabungan; nilai 0 dianggap belum diisi (dicetak kosong).
 func formatTKDNTotal(value float64) string {
 	if value <= 0 {
-		return "…… %"
+		return ""
 	}
 	return formatTKDNPercent(value)
 }

@@ -44,6 +44,6 @@ test('previews with a blank location so it can be filled by hand', async () => {
     throw new Error(`unexpected ${path}`)
   })
   renderPanel()
-  expect(await screen.findByText('Lokasi belum diisi: dicetak titik-titik untuk ditulis tangan.')).toBeVisible()
+  expect(await screen.findByText('Lokasi belum diisi: dicetak kosong.')).toBeVisible()
   await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledWith('/api/v1/bast/sosialisasi/preview', expect.objectContaining({ method: 'POST' })))
 })

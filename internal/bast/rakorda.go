@@ -40,7 +40,7 @@ func buildRakordaSnapshot(spec rakordaDocumentSpec, ctx DP3Context, settings Sch
 			return RakordaSnapshot{}, ErrInvalidInput
 		}
 	}
-	// Lokasi boleh kosong untuk semua jenis; dicetak titik-titik untuk ditulis tangan.
+	// Lokasi boleh kosong untuk semua jenis; dicetak kosong.
 	if _, err := time.Parse("2006-01-02", documentDate); err != nil {
 		return RakordaSnapshot{}, ErrInvalidInput
 	}

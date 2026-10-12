@@ -52,7 +52,7 @@ func TestBuildSosialisasiSnapshotUsesItsOwnSettingsAndSignatories(t *testing.T) 
 		t.Fatalf("signatories=%+v", snapshot.Signatories)
 	}
 
-	// Lokasi boleh kosong untuk Sosialisasi maupun RAKORDA (dicetak titik-titik).
+	// Lokasi boleh kosong untuk Sosialisasi maupun RAKORDA (dicetak kosong).
 	settings.SosialisasiLocation = ""
 	if blank, err := buildRakordaSnapshot(sosialisasiSpec, ctx, settings, nil, "2026-10-03", nil); err != nil || blank.Location != "" {
 		t.Fatalf("blank sosialisasi location=%q err=%v", blank.Location, err)

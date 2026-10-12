@@ -148,7 +148,7 @@ func renderActivityHeader(pdf *fpdf.Fpdf, document activityDocument, snapshot Ra
 	const metadataRowMM, narrativeLineMM, labelWidthMM = 6.0, 5.4, 40.0
 
 	metadata := []struct{ label, value string }{
-		{"Lokasi", orBlank(textnorm.DisplayTitle(snapshot.Location))},
+		{"Lokasi", textnorm.DisplayTitle(snapshot.Location)},
 		{"Kabupaten / Kota", textnorm.DisplayTitle(snapshot.RegencyName)},
 		{"Provinsi", textnorm.DisplayTitle(snapshot.ProvinceName)},
 	}
