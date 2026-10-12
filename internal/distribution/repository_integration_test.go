@@ -1125,20 +1125,33 @@ func TestFindSerialMatches(t *testing.T) {
 	_, err = pool.Exec(ctx, `UPDATE distribution_slots SET machine_serial_number=$1, status='cancelled' WHERE schedule_id=$2 AND slot_number=$3`, machine, scheduleID, cancelled.SlotNumber)
 	must(t, err)
 
-	matches, err := repo.FindSerialMatches(ctx, strings.ToUpper(machine), "", 0)
+	unrestricted := auth.RegencyScope{Unrestricted: true}
+	matches, err := repo.FindSerialMatches(ctx, strings.ToUpper(machine), "", 0, unrestricted)
 	must(t, err)
-	if len(matches) != 1 || matches[0].SlotNumber != first.SlotNumber || matches[0].Field != "machine" || matches[0].RegencyName != "Serial Test" {
+	if len(matches) != 1 || matches[0].SlotNumber != first.SlotNumber || matches[0].Field != "machine" || matches[0].RegencyName != "Serial Test" || matches[0].OutOfScope {
 		t.Fatalf("machine matches = %+v, want only slot %d as machine", matches, first.SlotNumber)
 	}
-	matches, err = repo.FindSerialMatches(ctx, strings.ToUpper(converter), "", 0)
+	matches, err = repo.FindSerialMatches(ctx, strings.ToUpper(converter), "", 0, unrestricted)
 	must(t, err)
 	if len(matches) != 1 || matches[0].Field != "converter" {
 		t.Fatalf("converter matches = %+v, want one converter match", matches)
 	}
-	matches, err = repo.FindSerialMatches(ctx, strings.ToUpper(machine), scheduleID, first.SlotNumber)
+	matches, err = repo.FindSerialMatches(ctx, strings.ToUpper(machine), scheduleID, first.SlotNumber, unrestricted)
 	must(t, err)
 	if len(matches) != 0 {
 		t.Fatalf("excluded slot still matched: %+v", matches)
+	}
+
+	// A caller scoped to a different regency still learns the serial is taken, but gets no
+	// identifying details about the out-of-scope slot.
+	outside := auth.RegencyScope{RegencyIDs: []string{"00000000-0000-0000-0000-000000000000"}}
+	matches, err = repo.FindSerialMatches(ctx, strings.ToUpper(machine), "", 0, outside)
+	must(t, err)
+	if len(matches) != 1 || !matches[0].OutOfScope || matches[0].Field != "machine" {
+		t.Fatalf("out-of-scope match = %+v, want one redacted machine match", matches)
+	}
+	if matches[0].ScheduleID != "" || matches[0].ScheduleName != "" || matches[0].RegencyName != "" || matches[0].SlotNumber != 0 || matches[0].Status != "" {
+		t.Fatalf("out-of-scope match leaked details: %+v", matches[0])
 	}
 }
 
