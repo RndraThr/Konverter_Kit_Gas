@@ -50,6 +50,6 @@ test('lists distribution dates like the daily recap and previews the selected da
 test('previews with a blank location so it can be filled by hand', async () => {
   mockApi({ training_100_location: '' })
   renderPanel()
-  expect(await screen.findByText('Lokasi belum diisi: dicetak titik-titik untuk ditulis tangan.')).toBeVisible()
+  expect(await screen.findByText('Lokasi belum diisi: dicetak kosong.')).toBeVisible()
   await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledWith('/api/v1/bast/training-100/preview', expect.objectContaining({ method: 'POST' })))
 })

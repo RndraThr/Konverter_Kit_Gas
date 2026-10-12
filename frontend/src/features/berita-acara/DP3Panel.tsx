@@ -56,7 +56,7 @@ export function DP3Panel({ scheduleID, regencyName, programType, defaultDate }: 
   });
 
   // Status mengikuti syarat finalisasi. Preview tetap dibuat walau pengaturan
-  // atau data penerima belum lengkap (isian kosong dicetak titik-titik);
+  // atau data penerima belum lengkap (isian yang belum ada dibiarkan kosong);
   // hanya status yang memblokir preview yang menahannya. Preview menunggu
   // summary selesai agar tidak terpicu sebelum status diketahui.
   const status = summary.data?.data.validation_status ?? 'ready';

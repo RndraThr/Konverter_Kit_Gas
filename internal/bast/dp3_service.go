@@ -86,7 +86,7 @@ func (s *DP3Service) Preview(ctx context.Context, scheduleID, documentDate strin
 	scheduleID = strings.TrimSpace(scheduleID)
 	documentDate = strings.TrimSpace(documentDate)
 	// Preview tidak menuntut pengaturan dan data penerima lengkap; isian kosong
-	// dicetak sebagai titik-titik. Finalisasi tetap memvalidasi semuanya.
+	// dibiarkan kosong. Finalisasi tetap memvalidasi semuanya.
 	ctxData, recipients, err := s.load(ctx, scheduleID, scope, false)
 	if err != nil {
 		return AggregatePreview{}, err

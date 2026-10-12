@@ -45,6 +45,6 @@ test('still previews when the RAKORDA location is empty, printing blanks for han
   })
   renderPanel()
   await screen.findByText('Belum diatur')
-  expect(screen.getByText(/dicetak titik-titik/)).toBeVisible()
+  expect(screen.getByText(/dicetak kosong/)).toBeVisible()
   await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledWith('/api/v1/bast/rakorda/preview', expect.objectContaining({ method: 'POST' })))
 })

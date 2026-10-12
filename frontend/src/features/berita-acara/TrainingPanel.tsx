@@ -49,7 +49,7 @@ export function TrainingPanel({ config, scheduleID, regencyName, programType }: 
   const dateItems = dates.data?.data ?? [];
   const selectedDate = dateItems.some((item) => item.local_date === chosenDate) ? chosenDate : dateItems[0]?.local_date ?? '';
   const selected = dateItems.find((item) => item.local_date === selectedDate);
-  // Lokasi boleh kosong: dicetak titik-titik untuk ditulis tangan.
+  // Lokasi boleh kosong: dicetak kosong.
   const ready = selectedDate !== '';
   const preview = useQuery({
     queryKey: ['bast', config.apiPath, 'preview', scheduleID, selectedDate, savedLocation],
@@ -114,7 +114,7 @@ export function TrainingPanel({ config, scheduleID, regencyName, programType }: 
                 <Button variant="ghost" onClick={() => setShowSettings((value) => !value)}><Settings2 />{showSettings ? 'Tutup pengaturan' : 'Penandatangan'}</Button>
               </div>
             </div>
-            {!savedLocation.trim() && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">Lokasi belum diisi: dicetak titik-titik untuk ditulis tangan.</p>}
+            {!savedLocation.trim() && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">Lokasi belum diisi: dicetak kosong.</p>}
             {ready && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label={config.documentTitle} />}
           </CardContent>
         </Card>
