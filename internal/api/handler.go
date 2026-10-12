@@ -115,7 +115,7 @@ type DistributionService interface {
 	RetryMediaMove(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) (distribution.MediaFile, error)
 	OpenMedia(context.Context, string, auth.RegencyScope) (distribution.MediaContent, error)
 	ListSlotCatalog(context.Context, string, auth.RegencyScope) ([]distribution.SlotCatalogEntry, error)
-	CheckSerial(ctx context.Context, serial, excludeScheduleID string, excludeSlotNumber int) ([]distribution.SerialMatch, error)
+	CheckSerial(ctx context.Context, serial, excludeScheduleID string, excludeSlotNumber int, scope auth.RegencyScope) ([]distribution.SerialMatch, error)
 	SyncCandidates(ctx context.Context, scheduleID, since string, scope auth.RegencyScope) (distribution.SyncResult[distribution.SyncCandidate], error)
 	SyncSlots(ctx context.Context, scheduleID, since string, scope auth.RegencyScope) (distribution.SyncResult[distribution.DistributionSlot], error)
 }
