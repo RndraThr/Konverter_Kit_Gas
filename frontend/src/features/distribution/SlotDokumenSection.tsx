@@ -5,6 +5,7 @@ import { apiRequest, ApiError } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
 import type { CandidateLookup, CandidateMatch, DataResponse, DistributionSlot, EquipmentOption, LinkSlotInput, MediaFile, RecipientReplacement, ReplaceRecipientInput, UpdateEquipmentInput, UpdateRecipientInput } from './types';
 import { DocumentationSlot } from './DocumentationSlot';
+import { RecipientSignature } from './RecipientSignature';
 import { PosSectionShell } from './PosSectionShell';
 import { RevisionDialog } from './RevisionDialog';
 import { Button } from '@/components/ui/button';
@@ -250,6 +251,8 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
         {replaceMode && editable && candidatePicker(true)}
       </>}
     </section>
+
+    {currentSlot.status !== 'open' && <RecipientSignature key={currentSlot.nik ?? ''} slot={currentSlot} editable={editable} onChanged={publish} />}
 
     {replacementHistory.length > 0 && <section aria-label="Riwayat penggantian penerima" className="space-y-3 rounded-lg border p-4">
       <h4 className="font-medium">Riwayat penggantian penerima</h4>

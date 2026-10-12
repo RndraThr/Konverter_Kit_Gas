@@ -628,6 +628,9 @@ func (r *Repository) getSlotByID(ctx context.Context, id string) (DistributionSl
 	if phoneNumber != nil {
 		slot.PhoneNumber = *phoneNumber
 	}
+	if slot.RecipientSignedAt, err = r.recipientSignedAt(ctx, id); err != nil {
+		return DistributionSlot{}, err
+	}
 	slot.Documentation, err = r.listSlotDocumentation(ctx, id)
 	if err != nil {
 		return DistributionSlot{}, err
@@ -1548,6 +1551,14 @@ func (r *Repository) CompleteSlot(ctx context.Context, actor auth.Principal, inp
 	}
 	if hasPendingMove {
 		return DistributionSlot{}, ErrMediaMovePending
+	}
+	// The recipient signs in POS Dokumen (Berita Acara uses the signature).
+	var signed bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM distribution_slot_signatures WHERE distribution_slot_id=$1 AND person_id=$2)`, slotID, personID).Scan(&signed); err != nil {
+		return DistributionSlot{}, fmt.Errorf("check recipient signature: %w", err)
+	}
+	if !signed {
+		return DistributionSlot{}, ErrSignatureRequired
 	}
 	equipmentSnapshot, err := buildEquipmentVerificationSnapshot(packageJSON, equipmentSelection)
 	if err != nil {

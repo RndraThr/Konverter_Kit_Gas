@@ -28,7 +28,8 @@ export function SlotPenyerahanSection({ slot, onChanged }: { slot: DistributionS
   const hasFailedMove = requiredMedia.some((file) => file.storage_state === 'move_failed');
   const hasPendingMove = requiredMedia.some((file) => file.storage_state === 'staging' || file.storage_state === 'moving');
   const missingDocumentation = required.some((item) => item.status !== 'complete');
-  const blocked = missingDocumentation || hasPendingMove || hasFailedMove;
+  const missingSignature = !currentSlot.recipient_signed_at;
+  const blocked = missingDocumentation || missingSignature || hasPendingMove || hasFailedMove;
 
   const complete = useMutation({
     mutationFn: () => apiRequest<DataResponse<DistributionSlot>>(`/api/v1/distribution/slots/${currentSlot.slot_number}/complete?schedule_id=${encodeURIComponent(currentSlot.schedule_id)}`, { method: 'POST' }),
@@ -56,7 +57,9 @@ export function SlotPenyerahanSection({ slot, onChanged }: { slot: DistributionS
       ? 'Media masih dipindahkan ke folder final. Tunggu hingga proses selesai.'
       : missingDocumentation
         ? 'Lengkapi seluruh bukti wajib sebelum konfirmasi.'
-        : 'Semua bukti wajib telah terpenuhi dan tersimpan di folder final.';
+        : missingSignature
+          ? 'Ambil tanda tangan penerima di POS Dokumen sebelum konfirmasi.'
+          : 'Semua bukti wajib dan tanda tangan penerima sudah lengkap.';
 
   return <PosSectionShell label="POS Penyerahan" badge="POS Penyerahan" icon={<PackageCheck aria-hidden="true" />} title="Siap diserahkan" state="active">
     {currentSlot.needs_recompletion && <Alert variant="destructive"><TriangleAlert aria-hidden="true" /><AlertDescription>Perlu diselesaikan ulang</AlertDescription></Alert>}

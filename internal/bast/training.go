@@ -129,7 +129,7 @@ func renderActivityParticipantRow(pdf *fpdf.Fpdf, number int, participant Activi
 		x += width
 	}
 	signatureWidth := activityColumnWidths[len(activityColumnWidths)-1]
-	drawRecipientSignature(pdf, x, y+(height-activityRowMM)/2, signatureWidth, activityRowMM, participant.SignatureKey)
+	drawSignature(pdf, x, y+(height-activityRowMM)/2, signatureWidth, activityRowMM, participant.SignatureKey)
 	pdf.SetXY(marginMM, y+height)
 }
 

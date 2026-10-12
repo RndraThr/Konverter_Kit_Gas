@@ -279,6 +279,9 @@ func (h *Handler) handleDistributionSlot(w http.ResponseWriter, r *http.Request,
 		case parts[1] == "replacements" && r.Method == http.MethodGet:
 			h.handleDistributionSlotReplacements(w, r, rc, slotNumber)
 			return
+		case parts[1] == "signature":
+			h.handleDistributionSignature(w, r, rc, slotNumber)
+			return
 		case parts[1] == "reopen" && r.Method == http.MethodPost:
 			h.handleDistributionSlotReopen(w, r, rc, slotNumber)
 			return

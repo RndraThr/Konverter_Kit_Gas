@@ -116,6 +116,7 @@ func RenderPetaniBundle(input BundleRenderInput) (RenderedBundle, error) {
 		}
 		logosByRender[key] = logos
 	}
+	registerSignatures(pdf, input.LogoBytes)
 
 	events := make([]string, 0, len(documents))
 	pageRanges := make([]RenderedRecipientPages, 0, len(documents))
@@ -454,9 +455,7 @@ func renderDeclarationAndSignatures(pdf *fpdf.Fpdf, signatures SignatureSnapshot
 	renderFixedRow(pdf, widths, []string{"PENERIMA PAKET / PETANI", "PELAKSANA PEMASANGAN\nDAN PENDISTRIBUSIAN", "KONSULTAN\nPENGAWAS"}, nil, 11, true)
 	signatureTop := pdf.GetY()
 	renderFixedRow(pdf, widths, []string{"", "", ""}, nil, 15.5, false)
-	if signatures.ReceiverSignatureKey != "" {
-		drawRecipientSignature(pdf, marginMM, signatureTop, widths[0], 15.5, signatures.ReceiverSignatureKey)
-	}
+	drawSignature(pdf, marginMM, signatureTop, widths[0], 15.5, signatures.ReceiverSignatureKey)
 	renderFixedRow(pdf, widths, []string{signatures.ReceiverName, signatures.ExecutorName, signatures.SupervisorName}, nil, 9.5, true)
 }
 

@@ -128,6 +128,13 @@ func (s *RakordaService) Preview(ctx context.Context, scheduleID, documentDate s
 	if err != nil {
 		return AggregatePreview{}, err
 	}
+	slotIDs := make([]string, 0, len(snapshot.Participants))
+	for _, participant := range snapshot.Participants {
+		slotIDs = append(slotIDs, participant.SignatureKey)
+	}
+	if err := addRecipientSignatures(ctx, s.repository, logoBytes, slotIDs); err != nil {
+		return AggregatePreview{}, err
+	}
 	rendered, err := s.spec.render(snapshot, logoBytes)
 	if err != nil {
 		return AggregatePreview{}, err
