@@ -17,6 +17,7 @@ var (
 	ErrFileTooLarge        = errors.New("file exceeds the allowed size")
 	ErrVideoUploadBusy     = errors.New("video upload capacity is currently full")
 	ErrSourceInvalid       = errors.New(`source must be "camera" or "gallery"`)
+	ErrSlotInvalid         = errors.New("slot_id is invalid for this schedule")
 )
 
 var activityTypeCodes = map[string]string{
@@ -30,6 +31,7 @@ var activityTypeCodes = map[string]string{
 	"unloading_oli":         "UNLOADOLI",
 	"unloading_selang":      "UNLOADSELANG",
 	"unloading_tabung_gas":  "UNLOADTABUNG",
+	"dokumen_pendukung":     "DOKPEND",
 }
 
 // activityTypeFolderNames are the exact Google Drive folder names under
@@ -98,6 +100,8 @@ type UploadInput struct {
 	Source           string
 	Data             io.Reader
 	DeclaredSize     int64
+	ScheduleID       string // dokumen_pendukung only — resolves ProgramID/RegencyID and the slot's schedule
+	SlotID           string // dokumen_pendukung only
 }
 
 type MediaContent struct {

@@ -34,6 +34,7 @@ type Service struct {
 
 type programContextResolver interface {
 	ResolveStorageContext(context.Context, string, string, auth.RegencyScope) (programs.StorageContext, error)
+	GetSchedule(context.Context, string, auth.RegencyScope) (programs.Schedule, error)
 }
 
 func NewService(repository repository, storage media.Storage, dependencies ...any) *Service {
@@ -76,15 +77,47 @@ func (s *Service) Upload(ctx context.Context, actor auth.Principal, input Upload
 	input.RegencyID = strings.TrimSpace(input.RegencyID)
 	input.ActivityType = strings.TrimSpace(input.ActivityType)
 	input.Source = strings.TrimSpace(input.Source)
+	input.ScheduleID = strings.TrimSpace(input.ScheduleID)
+	input.SlotID = strings.TrimSpace(input.SlotID)
 	if !isValidActivityType(input.ActivityType) {
 		return ActivityMedia{}, ErrActivityTypeInvalid
 	}
 	if input.Source != "camera" && input.Source != "gallery" {
 		return ActivityMedia{}, ErrSourceInvalid
 	}
-	if input.ProgramID == "" || s.programContexts == nil {
-		return ActivityMedia{}, ErrProgramRequired
+
+	var slotName string
+	if input.ActivityType == "dokumen_pendukung" {
+		if input.ScheduleID == "" {
+			return ActivityMedia{}, ErrScheduleRequired
+		}
+		if s.programContexts == nil {
+			return ActivityMedia{}, ErrProgramRequired
+		}
+		schedule, err := s.programContexts.GetSchedule(ctx, input.ScheduleID, scope)
+		if err != nil {
+			return ActivityMedia{}, err
+		}
+		input.ProgramID, input.RegencyID = schedule.ProgramID, schedule.RegencyID
+		slots, err := s.ListSlots(ctx, input.ScheduleID, scope)
+		if err != nil {
+			return ActivityMedia{}, err
+		}
+		for _, candidate := range slots {
+			if candidate.ID == input.SlotID {
+				slotName = candidate.Name
+				break
+			}
+		}
+		if slotName == "" {
+			return ActivityMedia{}, ErrSlotInvalid
+		}
+	} else {
+		if input.ProgramID == "" || s.programContexts == nil {
+			return ActivityMedia{}, ErrProgramRequired
+		}
 	}
+
 	storageContext, err := s.programContexts.ResolveStorageContext(ctx, input.ProgramID, input.RegencyID, scope)
 	if err != nil {
 		return ActivityMedia{}, err
@@ -100,6 +133,9 @@ func (s *Service) Upload(ctx context.Context, actor auth.Principal, input Upload
 	if err != nil {
 		return ActivityMedia{}, err
 	}
+	if !media.PolicyAllows(policyFor(input.ActivityType), detected.Kind) {
+		return ActivityMedia{}, ErrMediaTypeInvalid
+	}
 	if input.DeclaredSize > detected.MaxBytes {
 		return ActivityMedia{}, ErrFileTooLarge
 	}
@@ -114,16 +150,20 @@ func (s *Service) Upload(ctx context.Context, actor auth.Principal, input Upload
 	if err != nil {
 		return ActivityMedia{}, err
 	}
+	category, child := folderDestination(input.ActivityType)
 	folderPath, err := media.BuildFolderPath(media.FolderPathInput{
 		ProgramType: string(storageContext.ProgramType), ZoneName: storageContext.ZoneName,
-		RegencyName: storageContext.RegencyName, Category: media.FolderPhotos,
-		Child: activityTypeFolderNames[input.ActivityType],
+		RegencyName: storageContext.RegencyName, Category: category, Child: child,
 	})
 	if err != nil {
 		return ActivityMedia{}, err
 	}
 	now := s.now()
-	displayName := fmt.Sprintf("%s-%s-%s", regency.DocumentCode, activityTypeCodes[input.ActivityType], now.Format("20060102-150405"))
+	nameSegment := activityTypeCodes[input.ActivityType]
+	if input.ActivityType == "dokumen_pendukung" {
+		nameSegment = sanitizeSlotName(slotName)
+	}
+	displayName := fmt.Sprintf("%s-%s-%s", regency.DocumentCode, nameSegment, now.Format("20060102-150405"))
 	visibleFilename := displayName + activityFileExtension(detected.MimeType)
 	storageKey, size, checksum, err := media.PutNamed(ctx, s.storage, key, visibleFilename, folderPath, io.LimitReader(detected.Reader, detected.MaxBytes+1))
 	if err != nil {
@@ -150,7 +190,27 @@ func activityFileExtension(mimeType string) string {
 	return map[string]string{
 		"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp",
 		"video/mp4": ".mp4", "video/webm": ".webm", "video/quicktime": ".mov",
+		"application/pdf": ".pdf",
 	}[mimeType]
+}
+
+func folderDestination(activityType string) (media.FolderCategory, string) {
+	if activityType == "dokumen_pendukung" {
+		return media.FolderSupporting, ""
+	}
+	return media.FolderPhotos, activityTypeFolderNames[activityType]
+}
+
+func policyFor(activityType string) string {
+	if activityType == "dokumen_pendukung" {
+		return "document"
+	}
+	return "image_video"
+}
+
+func sanitizeSlotName(name string) string {
+	fields := strings.Fields(name)
+	return strings.ToUpper(strings.Join(fields, "-"))
 }
 
 func (s *Service) Delete(ctx context.Context, actor auth.Principal, id string, meta auth.ClientMeta, scope auth.RegencyScope) error {
