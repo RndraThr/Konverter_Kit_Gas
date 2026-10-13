@@ -80,7 +80,7 @@ export function PemeriksaanPanel({ scheduleID, programID, regencyName, programTy
   const finalizedCount = savedForms.filter((form) => activeByType.has(`pemeriksaan:${form.code}`)).length;
 
   return <div className="grid gap-5">
-    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} document="ba-pemeriksaan" documentLabel="BA Pemeriksaan" />}
+    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} date={documentDate} document="ba-pemeriksaan" documentLabel="BA Pemeriksaan" />}
 
     <div className="grid gap-5 xl:grid-cols-[22rem_minmax(0,1fr)]">
       <div className="grid content-start gap-5">

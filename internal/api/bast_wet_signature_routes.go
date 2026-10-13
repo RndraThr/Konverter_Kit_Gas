@@ -97,12 +97,11 @@ func (h *Handler) handleBASTWetScan(w http.ResponseWriter, r *http.Request, rc r
 		if !h.authorize(w, r, rc.principal, "bast.manage") {
 			return
 		}
-		// Base64 menambah sekitar sepertiga dari batas gambar 8 MB.
-		r.Body = http.MaxBytesReader(w, r.Body, 12<<20)
 		var input struct {
 			ImagePNG []byte `json:"image_png"`
 		}
-		if !decodeJSON(w, r, &input) {
+		// Base64 menambah sekitar sepertiga dari batas gambar 8 MB.
+		if !decodeJSONLimit(w, r, &input, 12<<20) {
 			return
 		}
 		if err := service.Upload(r.Context(), rc.principal, document, scheduleID, date, input.ImagePNG, scope, clientMeta(r)); err != nil {

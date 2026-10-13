@@ -212,6 +212,9 @@ func (s *BundleService) render(ctx context.Context, programID, regencyID, localD
 	if err != nil {
 		return RenderedBundle{}, "", err
 	}
+	if signatureLayoutFrom(ctx) != nil && len(documents) > 1 {
+		documents = documents[:1]
+	}
 	for i := range documents {
 		documents[i].Snapshot.Signatures.Marks = marks
 	}
@@ -249,4 +252,24 @@ func (s *BundleService) render(ctx context.Context, programID, regencyID, localD
 	}
 	hash := sha256.Sum256(rendered.PDF)
 	return rendered, hex.EncodeToString(hash[:]), nil
+}
+
+// SchedulePreview merender BA Perorangan satu tanggal untuk jadwal (program
+// dan kabupaten jadwal), dipakai editor tanda tangan.
+func (s *BundleService) SchedulePreview(ctx context.Context, scheduleID, date string, scope auth.RegencyScope) (AggregatePreview, error) {
+	finder, ok := s.repository.(interface {
+		ScheduleProgramRegency(context.Context, string, auth.RegencyScope) (string, string, error)
+	})
+	if !ok {
+		return AggregatePreview{}, ErrInvalidInput
+	}
+	programID, regencyID, err := finder.ScheduleProgramRegency(ctx, scheduleID, scope)
+	if err != nil {
+		return AggregatePreview{}, err
+	}
+	preview, err := s.PreviewBundle(ctx, BundleRequest{ProgramID: programID, RegencyID: regencyID, LocalDate: date}, scope)
+	if err != nil {
+		return AggregatePreview{}, err
+	}
+	return AggregatePreview{PDF: preview.PDF, Filename: preview.Filename, RecipientCount: preview.RecipientCount, PageCount: preview.PageCount}, nil
 }

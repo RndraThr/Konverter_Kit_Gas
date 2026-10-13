@@ -129,3 +129,43 @@ func TestDefaultSignatureRulesKeepExternalOfficialsOff(t *testing.T) {
 		t.Fatal("unexpected document roles")
 	}
 }
+
+// Posisi stempel dari UI dibatasi: pusat tetap dekat kotak, ukuran wajar.
+func TestStampPlacementIsClamped(t *testing.T) {
+	rules := SignatureRules{SignatoryInstaller: {
+		Stamp:              true,
+		StampPlacement:     &MarkPlacement{X: 9, Y: -2, Size: 5, Rotation: 400},
+		SignaturePlacement: &MarkPlacement{Size: 9},
+	}}.normalized()
+	if got := *rules[SignatoryInstaller].StampPlacement; got != (MarkPlacement{X: placementMaxX, Y: -placementMaxY, Size: 2.5, Rotation: 180}) {
+		t.Fatalf("stamp placement=%+v", got)
+	}
+	if got := rules[SignatoryInstaller].SignaturePlacement.Size; got != 4 {
+		t.Fatalf("signature size=%v, want 4", got)
+	}
+}
+
+// Stempel dengan posisi tersimpan tetap tercetak, dengan sudut yang dipilih.
+func TestRenderClosingDrawsPlacedStamp(t *testing.T) {
+	images := map[string][]byte{
+		"logo-1": testPNG(t),
+		signatoryImageKey(SignatoryInstaller, SignatoryKindStamp): testPNG(t),
+	}
+	render := func(placement *MarkPlacement) string {
+		snapshot := sampleClosingSnapshot()
+		snapshot.SignatureMarks = SignatureMarks{SignatoryInstaller: {Stamp: true, StampPlacement: placement}}
+		result, err := RenderClosingTitikSerah(snapshot, images)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return decodedPDFStreams(t, result.PDF)
+	}
+	placed := render(&MarkPlacement{X: 0.5, Y: 0.2, Size: 1, Rotation: 30})
+	if placed == render(nil) {
+		t.Fatal("custom placement must change the drawn stamp")
+	}
+	// cos(30°) = 0.866 pada matriks rotasi.
+	if !strings.Contains(placed, "0.86603") {
+		t.Fatal("stamp must be rotated by the stored angle")
+	}
+}

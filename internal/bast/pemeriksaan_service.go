@@ -302,3 +302,8 @@ func (s *PemeriksaanService) closingRows(ctx context.Context, scheduleID string,
 	}
 	return rows, total, nil
 }
+
+// SignaturePreview merender semua form, dipakai editor tanda tangan.
+func (s *PemeriksaanService) SignaturePreview(ctx context.Context, scheduleID, date string, scope auth.RegencyScope) (AggregatePreview, error) {
+	return s.Preview(ctx, scheduleID, date, nil, scope)
+}

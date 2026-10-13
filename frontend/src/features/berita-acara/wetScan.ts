@@ -16,8 +16,11 @@ export function wetSignaturePath(scheduleID: string, document: string, date: str
   return `/api/v1/bast/wet-signature${suffix ? `/${suffix}` : ''}?${query.toString()}`;
 }
 
-/** Sisi terpanjang gambar pindaian: cukup tajam untuk dicetak A4 (~200 dpi). */
-const maxSide = 2339;
+/**
+ * Sisi terpanjang gambar pindaian: ~170 dpi di A4, cukup tajam untuk dicetak
+ * dan foto berwarna tetap di bawah batas unggah 8 MB.
+ */
+const maxSide = 2000;
 
 /**
  * Mengubah berkas pindaian (PDF halaman pertama, atau foto/gambar PNG/JPG)

@@ -85,7 +85,7 @@ export function BAIndividualPanel({ programID, regencyID, regencyName, programTy
   // action buttons whenever the preview isn't ready yet.
   const busy = lock.isPending || finalize.isPending;
   return <div className="grid gap-5">
-    {scheduleID && showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} document="ba-perorangan" documentLabel="BA Perorangan" />}
+    {scheduleID && showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} date={selectedDate} document="ba-perorangan" documentLabel="BA Perorangan" />}
   <div className="grid gap-5 xl:grid-cols-[19rem_minmax(0,1fr)]">
     <Card className="self-start">
       <CardHeader><CardTitle className="flex items-center gap-2 text-base"><CalendarDays className="size-4 text-primary" />Tanggal pembagian</CardTitle></CardHeader>

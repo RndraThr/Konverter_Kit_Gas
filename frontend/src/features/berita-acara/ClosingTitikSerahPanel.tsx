@@ -78,7 +78,7 @@ export function ClosingTitikSerahPanel({ scheduleID, regencyName, programType, d
   const busy = finalize.isPending;
 
   return <div className="grid gap-5">
-    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} document="closing-titik-serah" documentLabel="Closing Titik Serah" />}
+    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} date={documentDate} document="closing-titik-serah" documentLabel="Closing Titik Serah" />}
 
     <div className="grid gap-4 lg:grid-cols-3">
       <Card className="lg:col-span-1">

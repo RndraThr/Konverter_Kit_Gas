@@ -93,7 +93,7 @@ export function DailyRecapPanel({ scheduleID, regencyName, programType }: Props)
   const busy = finalize.isPending;
 
   return <div className="grid gap-5">
-    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} document="rekap-harian" documentLabel="Rekap Harian" />}
+    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} date={selectedDate} document="rekap-harian" documentLabel="Rekap Harian" />}
 
     <div className="grid gap-5 xl:grid-cols-[19rem_minmax(0,1fr)]">
       <Card className="self-start">

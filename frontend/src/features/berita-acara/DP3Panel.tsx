@@ -93,7 +93,7 @@ export function DP3Panel({ scheduleID, regencyName, programType, defaultDate }: 
   const busy = finalize.isPending;
 
   return <div className="grid gap-5">
-    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} document="dp3" documentLabel="DP3" />}
+    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} date={documentDate} document="dp3" documentLabel="DP3" />}
 
     <div className="grid gap-4 lg:grid-cols-3">
       <Card className="lg:col-span-1">

@@ -94,7 +94,7 @@ export function ServisBerkalaPanel({ scheduleID, regencyName, programType, defau
   const setDate = (key: keyof ServisDates) => (value: string) => setDates((current) => ({ ...current, [key]: value }));
 
   return <div className="grid gap-5">
-    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} document="servis-berkala" documentLabel="Servis Berkala" />}
+    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} date={documentDate} document="servis-berkala" documentLabel="Servis Berkala" />}
 
     <div className="grid gap-5 xl:grid-cols-[22rem_minmax(0,1fr)]">
       <Card className="self-start">
