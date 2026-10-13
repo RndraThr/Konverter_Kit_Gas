@@ -76,7 +76,7 @@ export function RecipientMobileCard({ recipient, canManage, onEdit, onCancel, on
           <Button type="button" variant="outline" className="min-h-11 flex-1" aria-expanded={expanded} aria-label={`${expanded ? 'Tutup' : 'Lihat'} detail ${recipient.full_name}`} onClick={() => setExpanded((value) => !value)}>{expanded ? <ChevronUp /> : <ChevronDown />}{expanded ? 'Tutup detail' : 'Lihat detail'}</Button>
           {canManage && <>
             <Button type="button" variant="outline" size="icon" className="size-11" aria-label={`Edit ${recipient.full_name}`} onClick={() => onEdit(recipient)}><Pencil /></Button>
-            {recipient.allocation_status === 'cancelled'
+            {recipient.allocation_status === 'cancelled' || recipient.allocation_status === 'replaced'
               ? <Button type="button" variant="outline" size="icon" className="size-11" aria-label={`Pulihkan ${recipient.full_name}`} onClick={() => onRestore(recipient)}><RotateCcw /></Button>
               : <Button type="button" variant="outline" size="icon" className="size-11 text-destructive" aria-label={`Batalkan ${recipient.full_name}`} onClick={() => onCancel(recipient)}><Ban /></Button>}
           </>}

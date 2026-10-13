@@ -339,7 +339,7 @@ export function DashboardPage() {
             <td><div className="flex flex-col items-start gap-2"><Badge variant={allocationBadgeVariant(item.allocation_status)}>{allocationStatusLabel[item.allocation_status] ?? item.allocation_status}</Badge><Badge variant={distributionBadgeVariant(item.distribution_status)}>{item.distribution_status ? distributionStatusLabel[item.distribution_status] ?? item.distribution_status : 'Belum distribusi'}</Badge></div></td>
             {canManage && <td className="border-l bg-card group-hover:bg-muted"><div className="flex items-center justify-center gap-1">
               <Button type="button" variant="ghost" size="icon-sm" aria-label="Edit" title="Edit penerima" onClick={() => openEdit(item)}><Pencil /></Button>
-              {item.allocation_status === 'cancelled'
+              {item.allocation_status === 'cancelled' || item.allocation_status === 'replaced'
                 ? <Button type="button" variant="ghost" size="icon-sm" aria-label="Pulihkan" title="Pulihkan penerima" onClick={() => restoreMutation.mutate(item.allocation_id)}><Undo2 /></Button>
                 : <Button type="button" variant="ghost" size="icon-sm" aria-label="Batalkan" title="Batalkan penerima" className="text-destructive" onClick={() => setPendingCancel(item)}><Ban /></Button>}
             </div></td>}

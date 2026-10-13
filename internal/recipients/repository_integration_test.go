@@ -572,6 +572,32 @@ func TestCancelHidesFromDefaultListAndRestoreReturnsToReady(t *testing.T) {
 	}
 }
 
+func TestRestoreReturnsReplacedRecipientToReady(t *testing.T) {
+	pool := recipientsIntegrationPool(t)
+	fixture := seedRecipientFixture(t, pool)
+	repository := NewRepository(pool)
+	ctx := context.Background()
+	unrestricted := auth.RegencyScope{Unrestricted: true}
+
+	// Diganti dari nomor bagi: nomor dan penerima aktual sudah dilepas.
+	if _, err := pool.Exec(ctx, `UPDATE package_allocations SET status='replaced', distribution_number=NULL, actual_recipient_person_id=NULL WHERE id=$1`, fixture.needsReviewAllocID); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.Restore(ctx, auth.Principal{}, fixture.needsReviewAllocID, auth.ClientMeta{UserAgent: "test"}, unrestricted); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := getRecipientByID(ctx, pool, fixture.needsReviewAllocID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored.AllocationStatus != "ready" {
+		t.Fatalf("expected status ready after restoring a replaced recipient, got %q", restored.AllocationStatus)
+	}
+	if err := repository.Restore(ctx, auth.Principal{}, fixture.distributedAllocID, auth.ClientMeta{}, unrestricted); !errors.Is(err, ErrNotCancelled) {
+		t.Fatalf("a distributed recipient must not be restored, got %v", err)
+	}
+}
+
 func TestCancelRejectsAlreadyDistributedAllocation(t *testing.T) {
 	pool := recipientsIntegrationPool(t)
 	fixture := seedRecipientFixture(t, pool)

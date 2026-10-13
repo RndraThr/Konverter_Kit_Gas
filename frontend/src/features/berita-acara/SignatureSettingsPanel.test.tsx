@@ -117,6 +117,24 @@ test('signature and stamp positions are saved with the print rule', async () => 
   expect(installer.signature_placement).toMatchObject({ x: 0, y: 0, rotation: -5 })
 })
 
+test('size and rotation can be typed exactly, limited to their range', async () => {
+  renderPanel()
+  await selectParty('Pelaksana Pemasangan & Pendistribusian')
+  const pelaksana = await sidePanel('Pelaksana Pemasangan & Pendistribusian')
+  const rotation = within(pelaksana).getByLabelText('Putar stempel Pelaksana Pemasangan & Pendistribusian (derajat)')
+  // The default stamp is straight.
+  expect(rotation).toHaveValue('0')
+  await userEvent.clear(rotation)
+  await userEvent.type(rotation, '-12{Enter}')
+  const size = within(pelaksana).getByLabelText('Ukuran stempel Pelaksana Pemasangan & Pendistribusian (persen)')
+  await userEvent.clear(size)
+  await userEvent.type(size, '900')
+  fireEvent.blur(size)
+  await userEvent.click(screen.getByRole('button', { name: 'Simpan' }))
+  await waitFor(() => expect(writes('/api/v1/bast/signatures')).toHaveLength(1))
+  expect(writes('/api/v1/bast/signatures')[0].rules.installer.stamp_placement).toEqual({ x: -0.4, y: 0, size: 2.5, rotation: -12 })
+})
+
 test('arrow keys nudge the selected mark', async () => {
   renderPanel()
   const stamp = await screen.findByRole('button', { name: 'Stempel Pelaksana Pemasangan & Pendistribusian' })
