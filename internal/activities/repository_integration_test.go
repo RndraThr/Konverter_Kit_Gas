@@ -227,3 +227,44 @@ func TestInsertListGetByIDAndSoftDeleteRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestInsertDokumenPendukungDocumentRow proves migrations 00066-00068 (which widened the
+// activity_media CHECK constraints on activity_type, media_type, and mime_type to accept
+// "dokumen_pendukung" / "document" / "application/pdf") actually compose with repository.Insert's
+// real INSERT statement against the fully-migrated activity_media table. Each migration's own
+// test only exercised its single CHECK constraint on a throwaway temp-table copy, and the
+// pre-existing roundtrip test above only ever inserted with "rakor"/"image"/"image/jpeg" values —
+// so nothing in the committed suite proved this exact combination round-trips end to end. This was
+// previously only verified manually via a throwaway probe script during the end-to-end smoke pass.
+func TestInsertDokumenPendukungDocumentRow(t *testing.T) {
+	pool := activitiesIntegrationPool(t)
+	fixture := seedActivityFixture(t, pool)
+	repository := NewRepository(pool)
+	ctx := context.Background()
+	actor := auth.Principal{UserID: fixture.actorUserID}
+	meta := auth.ClientMeta{IPAddress: "127.0.0.1", UserAgent: "test"}
+	scope := auth.RegencyScope{RegencyIDs: []string{fixture.inScopeRegencyID}}
+
+	created, err := repository.Insert(ctx, actor, insertInput{
+		RegencyID: fixture.inScopeRegencyID, ActivityType: "dokumen_pendukung", StorageKey: "storage-key-dokumen-1",
+		DisplayName: "WAT-DOKPEND-20260916-154500", OriginalFilename: "scan.pdf",
+		MediaType: "document", MimeType: "application/pdf", ByteSize: 4096, Checksum: "checksum-dokumen-1", Source: "camera",
+	}, meta)
+	if err != nil {
+		t.Fatalf("Insert() error = %v, want nil (migrations 00066-00068 should allow this combination)", err)
+	}
+	if created.ActivityType != "dokumen_pendukung" || created.MediaType != "document" || created.MimeType != "application/pdf" {
+		t.Fatalf("created = %+v, want activity_type=dokumen_pendukung media_type=document mime_type=application/pdf", created)
+	}
+	if created.RegencyName != "Wajo Activities Test" || created.Status != "active" || created.DisplayName != "WAT-DOKPEND-20260916-154500" {
+		t.Fatalf("created = %+v", created)
+	}
+
+	fetched, err := repository.GetByID(ctx, created.ID, scope)
+	if err != nil {
+		t.Fatalf("GetByID() error = %v", err)
+	}
+	if fetched.ID != created.ID || fetched.ActivityType != "dokumen_pendukung" || fetched.MediaType != "document" || fetched.MimeType != "application/pdf" {
+		t.Fatalf("fetched = %+v, want round-trip of created row", fetched)
+	}
+}
