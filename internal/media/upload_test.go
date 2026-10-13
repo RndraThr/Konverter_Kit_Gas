@@ -98,6 +98,43 @@ func TestPolicyAllows(t *testing.T) {
 	}
 }
 
+func TestDetectUploadRecognizesPDF(t *testing.T) {
+	pdfBytes := []byte("%PDF-1.4\n%fake-but-valid-magic-bytes-for-detection\n")
+	detected, err := DetectUpload(bytes.NewReader(pdfBytes), "scan.pdf")
+	if err != nil {
+		t.Fatalf("DetectUpload() error = %v", err)
+	}
+	if detected.Kind != KindDocument {
+		t.Fatalf("Kind = %v, want KindDocument", detected.Kind)
+	}
+	if detected.MimeType != "application/pdf" {
+		t.Fatalf("MimeType = %q, want application/pdf", detected.MimeType)
+	}
+	if detected.MaxBytes != MaxDocumentBytes {
+		t.Fatalf("MaxBytes = %d, want %d", detected.MaxBytes, MaxDocumentBytes)
+	}
+}
+
+func TestDetectUploadRejectsFakePDFExtension(t *testing.T) {
+	notActuallyPDF := []byte("this is plain text, not a PDF")
+	_, err := DetectUpload(bytes.NewReader(notActuallyPDF), "scan.pdf")
+	if !errors.Is(err, ErrUnsupportedUpload) {
+		t.Fatalf("err = %v, want ErrUnsupportedUpload", err)
+	}
+}
+
+func TestPolicyAllowsDocumentPolicy(t *testing.T) {
+	if !PolicyAllows("document", KindDocument) {
+		t.Fatal("policy \"document\" must allow KindDocument")
+	}
+	if PolicyAllows("document", KindImage) {
+		t.Fatal("policy \"document\" must not allow KindImage")
+	}
+	if PolicyAllows("image_video", KindDocument) {
+		t.Fatal("policy \"image_video\" must not allow KindDocument (regression guard)")
+	}
+}
+
 func TestVideoLimiterCapacityReleaseAndConcurrentAccess(t *testing.T) {
 	limiter := NewVideoLimiter(3)
 	releases := make([]func(), 0, 3)
