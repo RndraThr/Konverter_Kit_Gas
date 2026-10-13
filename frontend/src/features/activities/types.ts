@@ -8,7 +8,8 @@ export type ActivityType =
   | 'unloading_mesin_pompa'
   | 'unloading_oli'
   | 'unloading_selang'
-  | 'unloading_tabung_gas';
+  | 'unloading_tabung_gas'
+  | 'dokumen_pendukung';
 
 export type ActivityMedia = {
   id: string;
@@ -19,7 +20,7 @@ export type ActivityMedia = {
   activity_type: ActivityType;
   display_name: string;
   original_filename: string;
-  media_type: 'image' | 'video';
+  media_type: 'image' | 'video' | 'document';
   mime_type: string;
   byte_size: number;
   checksum: string;
@@ -43,6 +44,13 @@ export type RegencyOption = { id: string; name: string; document_code: string };
 export type ProgramOption = { id: string; name: string; code: string; program_type: 'farmer' | 'fisherman'; status: string };
 export type ProgramZone = { id: string; name: string; is_placeholder: boolean; regencies?: RegencyOption[] };
 
+export type SupportingDocumentSlot = {
+  id: string;
+  schedule_id: string;
+  name: string;
+  is_active: boolean;
+};
+
 export const activityTypeLabels: Record<ActivityType, string> = {
   ceremony_sosialisasi: 'Ceremony & Sosialisasi',
   pelatihan_teknis: 'Pelatihan Teknis',
@@ -54,4 +62,5 @@ export const activityTypeLabels: Record<ActivityType, string> = {
   unloading_oli: 'Unloading Oli',
   unloading_selang: 'Unloading Selang Hisap & Buang',
   unloading_tabung_gas: 'Unloading Tabung Gas',
+  dokumen_pendukung: 'Dokumen Pendukung',
 };
