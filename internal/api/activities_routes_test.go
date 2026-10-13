@@ -28,6 +28,7 @@ type fakeActivitiesService struct {
 	listedScheduleID string
 	createdName      string
 	patchedID        string
+	scannedPageCount int
 }
 
 func (f *fakeActivitiesService) List(_ context.Context, filter activities.Filter, scope auth.RegencyScope) (activities.Page, error) {

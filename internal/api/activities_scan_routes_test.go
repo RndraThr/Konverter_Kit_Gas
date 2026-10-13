@@ -1,0 +1,52 @@
+package api
+
+import (
+	"bytes"
+	"context"
+	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"konkit/internal/activities"
+	"konkit/internal/auth"
+)
+
+func (f *fakeActivitiesService) ScanUpload(_ context.Context, _ auth.Principal, input activities.ScanUploadInput, _ auth.ClientMeta, _ auth.RegencyScope) (activities.ActivityMedia, error) {
+	f.listedScheduleID = input.ScheduleID // reuse the field; the assertion below only needs the count and IDs
+	f.patchedID = input.SlotID
+	f.scannedPageCount = len(input.Pages)
+	return activities.ActivityMedia{ID: "media-1", MediaType: "document", MimeType: "application/pdf"}, nil
+}
+
+const fakeJPEGBytes0 = "\xff\xd8\xff\xe0\x00\x10JFIF\x00" // minimal JPEG SOI+APP0 header, enough for http.DetectContentType in the real service — this stub never calls DetectUpload, so any non-empty bytes are fine here
+
+func TestHandleActivitiesSupportingDocumentsScanPostsAllPages(t *testing.T) {
+	secret := []byte(supportingSlotsTestSecret0)
+	officer := &fakeAuthService{principal: auth.Principal{UserID: "u"}, allowedPermissions: map[string]bool{"activities.manage": true}}
+	service := &fakeActivitiesService{}
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("schedule_id", "schedule-1")
+	_ = writer.WriteField("slot_id", "slot-1")
+	for i := 0; i < 3; i++ {
+		part, _ := writer.CreateFormFile("page", "page.jpg")
+		_, _ = part.Write([]byte(fakeJPEGBytes0))
+	}
+	_ = writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/activities/supporting-documents/scan", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: officer, Activities: service, SessionSecret: secret}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if service.listedScheduleID != "schedule-1" || service.patchedID != "slot-1" || service.scannedPageCount != 3 {
+		t.Fatalf("scheduleID = %q, slotID = %q, pages = %d", service.listedScheduleID, service.patchedID, service.scannedPageCount)
+	}
+}

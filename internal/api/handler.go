@@ -145,6 +145,7 @@ type ActivitiesService interface {
 	ListSlots(context.Context, string, auth.RegencyScope) ([]activities.SupportingDocumentSlot, error)
 	CreateSlot(context.Context, auth.Principal, string, string, auth.ClientMeta, auth.RegencyScope) (activities.SupportingDocumentSlot, error)
 	PatchSlot(context.Context, auth.Principal, string, *string, *bool, auth.ClientMeta, auth.RegencyScope) (activities.SupportingDocumentSlot, error)
+	ScanUpload(context.Context, auth.Principal, activities.ScanUploadInput, auth.ClientMeta, auth.RegencyScope) (activities.ActivityMedia, error)
 }
 
 type BASTService interface {
@@ -426,6 +427,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleSupportingDocumentSlots(w, r, rc)
 	case strings.HasPrefix(path, "activities/supporting-documents/slots/"):
 		h.handleSupportingDocumentSlotItem(w, r, rc, strings.TrimPrefix(path, "activities/supporting-documents/slots/"))
+	case path == "activities/supporting-documents/scan":
+		h.handleActivitiesSupportingDocumentsScan(w, r, rc)
 	case strings.HasPrefix(path, "bast/individual/"):
 		h.handleBASTIndividual(w, r, rc, strings.TrimPrefix(path, "bast/individual/"))
 	case strings.HasPrefix(path, "bast/schedules/"):
