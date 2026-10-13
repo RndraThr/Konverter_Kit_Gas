@@ -146,10 +146,6 @@ func (s *Service) Upload(ctx context.Context, actor auth.Principal, input Upload
 		}
 		defer release()
 	}
-	key, err := newStorageKey()
-	if err != nil {
-		return ActivityMedia{}, err
-	}
 	category, child := folderDestination(input.ActivityType)
 	folderPath, err := media.BuildFolderPath(media.FolderPathInput{
 		ProgramType: string(storageContext.ProgramType), ZoneName: storageContext.ZoneName,
@@ -158,25 +154,53 @@ func (s *Service) Upload(ctx context.Context, actor auth.Principal, input Upload
 	if err != nil {
 		return ActivityMedia{}, err
 	}
-	now := s.now()
 	nameSegment := activityTypeCodes[input.ActivityType]
 	if input.ActivityType == "dokumen_pendukung" {
 		nameSegment = sanitizeSlotName(slotName)
 	}
-	displayName := fmt.Sprintf("%s-%s-%s", regency.DocumentCode, nameSegment, now.Format("20060102-150405"))
-	visibleFilename := displayName + activityFileExtension(detected.MimeType)
-	storageKey, size, checksum, err := media.PutNamed(ctx, s.storage, key, visibleFilename, folderPath, io.LimitReader(detected.Reader, detected.MaxBytes+1))
+	displayName := fmt.Sprintf("%s-%s-%s", regency.DocumentCode, nameSegment, s.now().Format("20060102-150405"))
+
+	return s.store(ctx, actor, preparedUpload{
+		ActivityType: input.ActivityType, ProgramID: input.ProgramID, RegencyID: input.RegencyID,
+		DisplayName: displayName, OriginalFilename: strings.TrimSpace(input.OriginalFilename),
+		Source: input.Source, Detected: detected,
+	}, folderPath, meta)
+}
+
+// preparedUpload carries everything store() needs to persist a detected
+// upload (a direct file upload or an assembled scan PDF) to storage and the
+// activity_media table.
+type preparedUpload struct {
+	ActivityType     string
+	ProgramID        string
+	RegencyID        string
+	DisplayName      string
+	OriginalFilename string
+	Source           string
+	Detected         media.DetectedUpload
+}
+
+// store performs the shared storage+insert tail for Upload and ScanUpload:
+// generate a storage key, write the file, enforce the size cap, insert the
+// activity_media row, and roll back storage on insert failure.
+func (s *Service) store(ctx context.Context, actor auth.Principal, prepared preparedUpload, folderPath []string, meta auth.ClientMeta) (ActivityMedia, error) {
+	key, err := newStorageKey()
 	if err != nil {
 		return ActivityMedia{}, err
 	}
-	if size > detected.MaxBytes {
+	visibleFilename := prepared.DisplayName + activityFileExtension(prepared.Detected.MimeType)
+	storageKey, size, checksum, err := media.PutNamed(ctx, s.storage, key, visibleFilename, folderPath, io.LimitReader(prepared.Detected.Reader, prepared.Detected.MaxBytes+1))
+	if err != nil {
+		return ActivityMedia{}, err
+	}
+	if size > prepared.Detected.MaxBytes {
 		_ = s.storage.Delete(context.Background(), storageKey)
 		return ActivityMedia{}, ErrFileTooLarge
 	}
 	stored, err := s.repository.Insert(ctx, actor, insertInput{
-		ProgramID: input.ProgramID, RegencyID: input.RegencyID, ActivityType: input.ActivityType, StorageKey: storageKey,
-		DisplayName: displayName, OriginalFilename: strings.TrimSpace(input.OriginalFilename),
-		MediaType: string(detected.Kind), MimeType: detected.MimeType, ByteSize: size, Checksum: checksum, Source: input.Source,
+		ProgramID: prepared.ProgramID, RegencyID: prepared.RegencyID, ActivityType: prepared.ActivityType, StorageKey: storageKey,
+		DisplayName: prepared.DisplayName, OriginalFilename: prepared.OriginalFilename,
+		MediaType: string(prepared.Detected.Kind), MimeType: prepared.Detected.MimeType, ByteSize: size, Checksum: checksum, Source: prepared.Source,
 	}, meta)
 	if err != nil {
 		_ = s.storage.Delete(context.Background(), storageKey)
