@@ -16,6 +16,7 @@ import { DCP3ImportPage } from '../features/dcp3/DCP3ImportPage';
 import { DistributionPage } from '../features/distribution/DistributionPage';
 import { ReportsPage } from '../features/reports/ReportsPage';
 import { ActivityDocumentationPage } from '../features/activities/ActivityDocumentationPage';
+import SupportingDocumentsRoute from '../features/activities/SupportingDocumentsPage';
 import { BeritaAcaraPage } from '../features/berita-acara/BeritaAcaraPage';
 
 function ProtectedPage({ permission, children }: { permission: string; children: ReactNode }) {
@@ -46,6 +47,7 @@ export const dashboardRoutes: RouteObject[] = [{
       { value: 'unloading_selang', label: 'Selang Hisap & Buang' },
       { value: 'unloading_tabung_gas', label: 'Tabung Gas' },
     ]} /></ProtectedPage> },
+    { path: 'dokumentasi/dokumen-pendukung', element: <ProtectedPage permission="activities.view"><SupportingDocumentsRoute /></ProtectedPage> },
     { path: 'berita-acara', element: <ProtectedPage permission="bast.view"><BeritaAcaraPage /></ProtectedPage> },
     { path: 'laporan', element: <ProtectedPage permission="distribution.view"><ReportsPage /></ProtectedPage> },
     { path: 'pengguna', element: <ProtectedPage permission="users.view"><UsersPage /></ProtectedPage> },

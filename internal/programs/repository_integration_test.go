@@ -626,6 +626,72 @@ func TestIntegrationZoneLifecycleUsesIDForUpdates(t *testing.T) {
 	}
 }
 
+// TestRepositoryGetScheduleReturnsNotFoundOutsideScope proves GetSchedule returns the full
+// schedule (with ProgramID/RegencyID) when the caller's scope allows it, and ErrNotFound when
+// the schedule's regency sits outside the caller's scope.
+func TestRepositoryGetScheduleReturnsNotFoundOutsideScope(t *testing.T) {
+	pool := programsIntegrationPool(t)
+	repository := NewRepository(pool)
+	service := NewService(repository)
+	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	programCode := "GSC-" + suffix
+	templateCode := "GSC-PKG-" + suffix
+	regencyCode := fmt.Sprintf("%c%c%c", 'A'+suffix[len(suffix)-1]%20, 'A'+suffix[len(suffix)-2]%20, 'A'+suffix[len(suffix)-3]%20)
+	actor := auth.Principal{}
+	meta := auth.ClientMeta{IPAddress: "127.0.0.1", UserAgent: "programs-get-schedule-test"}
+
+	regency, err := service.SaveRegency(ctx, actor, RegencyInput{ProvinceName: "Sulawesi Selatan", Name: "Kabupaten Get Schedule " + suffix, DocumentCode: regencyCode, IsActive: true}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program, err := service.SaveProgram(ctx, actor, ProgramInput{Code: programCode, Name: "Program Get Schedule", ProgramType: ProgramFarmer, FiscalYear: 2026, Status: "active"}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template, err := service.SavePackageTemplate(ctx, actor, PackageTemplateInput{
+		TemplateCode: templateCode, Name: "Template Get Schedule", ProgramType: ProgramFarmer,
+		Values: map[string]any{"machine_options": []any{map[string]any{"code": "m", "brand": "M", "type": "T", "power": "P", "fuel_type": "F"}}, "hose_options": []any{map[string]any{"code": "h", "brand": "H", "spec": "S"}}},
+		Status: "published",
+	}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var documentationTemplateID string
+	if err := pool.QueryRow(ctx, `SELECT id::text FROM documentation_template_versions WHERE template_code = 'DOK-PETANI' AND version = 1`).Scan(&documentationTemplateID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), "DELETE FROM program_schedules WHERE program_id IN (SELECT id FROM programs WHERE code = $1)", programCode)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM programs WHERE code = $1", programCode)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM package_template_versions WHERE template_code = $1", templateCode)
+		_, _ = pool.Exec(context.Background(), "DELETE FROM regencies WHERE id = $1", regency.ID)
+	})
+
+	schedule, err := service.SaveSchedule(ctx, actor, ScheduleInput{
+		ProgramID: program.ID, RegencyID: regency.ID, PackageTemplateVersionID: template.ID,
+		DocumentationTemplateVersionID: documentationTemplateID, Name: "Tahap Get Schedule",
+		StartDate: time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC), EndDate: time.Date(2026, 9, 30, 0, 0, 0, 0, time.UTC),
+		Status: "active",
+	}, auth.RegencyScope{Unrestricted: true}, meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := repository.GetSchedule(ctx, schedule.ID, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatalf("GetSchedule() error = %v", err)
+	}
+	if got.ID != schedule.ID || got.ProgramID != schedule.ProgramID || got.RegencyID != schedule.RegencyID {
+		t.Fatalf("got %+v, want ID/ProgramID/RegencyID matching %+v", got, schedule)
+	}
+
+	_, err = repository.GetSchedule(ctx, schedule.ID, auth.RegencyScope{RegencyIDs: []string{"00000000-0000-0000-0000-000000000000"}})
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("err = %v, want ErrNotFound for out-of-scope regency", err)
+	}
+}
+
 func containsRegencyID(regencies []Regency, id string) bool {
 	for _, regency := range regencies {
 		if regency.ID == id {

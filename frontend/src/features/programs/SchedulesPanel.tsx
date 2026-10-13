@@ -15,6 +15,7 @@ import { useCan } from '../../lib/permissions';
 import { uppercaseBusinessText } from '../../lib/text';
 import { SetupDialog, SetupFormSection } from './SetupDialog';
 import { SetupToolbar } from './SetupToolbar';
+import { SupportingDocumentSlotsPanel } from './SupportingDocumentSlotsPanel';
 import { DataResponse, dateInputValue, datePayload, DocumentationTemplate, formatDate, PackageTemplate, Program, Regency, Schedule } from './types';
 
 const today = new Date().toISOString().slice(0, 10);
@@ -73,6 +74,9 @@ export function SchedulesPanel() {
       <FormField label="Konsultan pengawas" name="supervisor_name" value={values.supervisor_name} onChange={(e) => setValues({ ...values, supervisor_name: uppercaseBusinessText(e.target.value) })} />
       <FormField className="sm:col-span-2" label="Catatan" name="notes" value={values.notes} onChange={(e) => setValues({ ...values, notes: uppercaseBusinessText(e.target.value) })} />
       </SetupFormSection>
+      {editing && <SetupFormSection title="Dokumen pendukung" description="Kelola nama dokumen pendukung yang dapat diunggah pada jadwal ini.">
+        <SupportingDocumentSlotsPanel scheduleId={editing.id} />
+      </SetupFormSection>}
       {mutation.isError && <Alert className="sm:col-span-2" variant="destructive"><AlertDescription>Jadwal belum dapat disimpan. Periksa kecocokan jenis template.</AlertDescription></Alert>}
     </SetupDialog>
   </section>;

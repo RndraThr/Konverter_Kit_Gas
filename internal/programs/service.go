@@ -24,6 +24,7 @@ type repository interface {
 	SaveProgram(context.Context, auth.Principal, ProgramInput, auth.ClientMeta) (Program, error)
 	ListSchedules(context.Context, auth.RegencyScope) ([]Schedule, error)
 	SaveSchedule(context.Context, auth.Principal, ScheduleInput, auth.RegencyScope, auth.ClientMeta) (Schedule, error)
+	GetSchedule(context.Context, string, auth.RegencyScope) (Schedule, error)
 	ListPackageTemplates(context.Context) ([]PackageTemplate, error)
 	SavePackageTemplate(context.Context, auth.Principal, PackageTemplateInput, auth.ClientMeta) (PackageTemplate, error)
 	ListDocumentationTemplates(context.Context) ([]DocumentationTemplate, error)
@@ -107,6 +108,14 @@ func (s *Service) SaveSchedule(ctx context.Context, actor auth.Principal, input 
 		input.ReceiptPolicy = map[string]any{"mode": "block_repeat"}
 	}
 	return s.repository.SaveSchedule(ctx, actor, input, scope, meta)
+}
+
+func (s *Service) GetSchedule(ctx context.Context, id string, scope auth.RegencyScope) (Schedule, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return Schedule{}, ErrInvalidInput
+	}
+	return s.repository.GetSchedule(ctx, id, scope)
 }
 
 func (s *Service) ListPackageTemplates(ctx context.Context) ([]PackageTemplate, error) {

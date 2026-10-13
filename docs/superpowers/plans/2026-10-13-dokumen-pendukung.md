@@ -303,10 +303,12 @@ git commit -m "feat(programs): add scoped GetSchedule lookup for Dokumen Penduku
 - Consumes: `auth.Principal`, `auth.RegencyScope`, `auth.ClientMeta` (all already imported in `internal/activities`); the `program_schedules` table from Task 1's migration context (no Go-level dependency — slots are scoped by `schedule_id`, validated against `program_schedules` only implicitly via the FK and via the programs-package schedule lookup used at upload time in Task 6, not here).
 - Produces:
   - `type SupportingDocumentSlot struct { ID, ScheduleID, Name string; IsActive bool; SortOrder int; CreatedAt, UpdatedAt time.Time }`
-  - `Service.ListSlots(ctx context.Context, scheduleID string) ([]SupportingDocumentSlot, error)`
-  - `Service.CreateSlot(ctx context.Context, actor auth.Principal, scheduleID, name string, meta auth.ClientMeta) (SupportingDocumentSlot, error)`
-  - `Service.PatchSlot(ctx context.Context, actor auth.Principal, id string, name *string, isActive *bool, meta auth.ClientMeta) (SupportingDocumentSlot, error)`
-  - `ErrSlotNameRequired`, `ErrSlotNotFound` (new, package `activities`)
+  - `Service.ListSlots(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]SupportingDocumentSlot, error)`
+  - `Service.CreateSlot(ctx context.Context, actor auth.Principal, scheduleID, name string, meta auth.ClientMeta, scope auth.RegencyScope) (SupportingDocumentSlot, error)`
+  - `Service.PatchSlot(ctx context.Context, actor auth.Principal, id string, name *string, isActive *bool, meta auth.ClientMeta, scope auth.RegencyScope) (SupportingDocumentSlot, error)`
+  - `ErrSlotNameRequired`, `ErrSlotNotFound`, `ErrScheduleNotFound` (new, package `activities`)
+
+**Security-critical — every one of these three methods MUST enforce `scope`, not just accept it.** `schedule_id`/slot `id` are plain UUIDs a client controls; without a regency-scope check at the SQL level, any authenticated user with `programs.manage` could create or rename a slot on a schedule belonging to a kabupaten outside their assignment (IDOR). `CreateSlot`/`PatchSlot` must fail with `ErrScheduleNotFound`/`ErrSlotNotFound` (not succeed) when the target schedule's regency is outside `scope`; `ListSlots` must return an empty list (not an error) for an out-of-scope `schedule_id`, matching how `activities.List` already filters by scope at the SQL level elsewhere in this package.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -432,6 +434,7 @@ import (
 var (
 	ErrSlotNameRequired = errors.New("supporting document slot name is required")
 	ErrSlotNotFound     = errors.New("supporting document slot not found")
+	ErrScheduleNotFound = errors.New("schedule not found")
 )
 
 type SupportingDocumentSlot struct {
@@ -445,20 +448,20 @@ type SupportingDocumentSlot struct {
 }
 
 type slotRepository interface {
-	ListSlots(ctx context.Context, scheduleID string) ([]SupportingDocumentSlot, error)
-	InsertSlot(ctx context.Context, actor auth.Principal, scheduleID, name string, meta auth.ClientMeta) (SupportingDocumentSlot, error)
-	PatchSlotRow(ctx context.Context, actor auth.Principal, id string, name *string, isActive *bool, meta auth.ClientMeta) (SupportingDocumentSlot, error)
+	ListSlots(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]SupportingDocumentSlot, error)
+	InsertSlot(ctx context.Context, actor auth.Principal, scheduleID, name string, meta auth.ClientMeta, scope auth.RegencyScope) (SupportingDocumentSlot, error)
+	PatchSlotRow(ctx context.Context, actor auth.Principal, id string, name *string, isActive *bool, meta auth.ClientMeta, scope auth.RegencyScope) (SupportingDocumentSlot, error)
 }
 
-func (s *Service) ListSlots(ctx context.Context, scheduleID string) ([]SupportingDocumentSlot, error) {
+func (s *Service) ListSlots(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]SupportingDocumentSlot, error) {
 	scheduleID = strings.TrimSpace(scheduleID)
 	if scheduleID == "" {
 		return nil, ErrScheduleRequired
 	}
-	return s.slotRepository.ListSlots(ctx, scheduleID)
+	return s.slotRepository.ListSlots(ctx, scheduleID, scope)
 }
 
-func (s *Service) CreateSlot(ctx context.Context, actor auth.Principal, scheduleID, name string, meta auth.ClientMeta) (SupportingDocumentSlot, error) {
+func (s *Service) CreateSlot(ctx context.Context, actor auth.Principal, scheduleID, name string, meta auth.ClientMeta, scope auth.RegencyScope) (SupportingDocumentSlot, error) {
 	scheduleID = strings.TrimSpace(scheduleID)
 	name = strings.TrimSpace(name)
 	if scheduleID == "" {
@@ -467,10 +470,10 @@ func (s *Service) CreateSlot(ctx context.Context, actor auth.Principal, schedule
 	if name == "" {
 		return SupportingDocumentSlot{}, ErrSlotNameRequired
 	}
-	return s.slotRepository.InsertSlot(ctx, actor, scheduleID, name, meta)
+	return s.slotRepository.InsertSlot(ctx, actor, scheduleID, name, meta, scope)
 }
 
-func (s *Service) PatchSlot(ctx context.Context, actor auth.Principal, id string, name *string, isActive *bool, meta auth.ClientMeta) (SupportingDocumentSlot, error) {
+func (s *Service) PatchSlot(ctx context.Context, actor auth.Principal, id string, name *string, isActive *bool, meta auth.ClientMeta, scope auth.RegencyScope) (SupportingDocumentSlot, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return SupportingDocumentSlot{}, ErrSlotNotFound
@@ -482,15 +485,20 @@ func (s *Service) PatchSlot(ctx context.Context, actor auth.Principal, id string
 		}
 		name = &trimmed
 	}
-	return s.slotRepository.PatchSlotRow(ctx, actor, id, name, isActive, meta)
+	return s.slotRepository.PatchSlotRow(ctx, actor, id, name, isActive, meta, scope)
 }
 
-func (r *Repository) ListSlots(ctx context.Context, scheduleID string) ([]SupportingDocumentSlot, error) {
+// ListSlots filters by the schedule's regency at the SQL level — like
+// activities.List elsewhere in this package, an out-of-scope schedule_id
+// yields an empty list, not an error.
+func (r *Repository) ListSlots(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]SupportingDocumentSlot, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, schedule_id::text, name, is_active, sort_order, created_at, updated_at
-		FROM supporting_document_slots WHERE schedule_id = $1 AND is_active
-		ORDER BY sort_order, name
-	`, scheduleID)
+		SELECT s.id::text, s.schedule_id::text, s.name, s.is_active, s.sort_order, s.created_at, s.updated_at
+		FROM supporting_document_slots s
+		JOIN program_schedules ps ON ps.id = s.schedule_id
+		WHERE s.schedule_id = $1 AND s.is_active AND ($2 OR ps.regency_id::text = ANY($3))
+		ORDER BY s.sort_order, s.name
+	`, scheduleID, scope.Unrestricted, scope.RegencyIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -506,17 +514,28 @@ func (r *Repository) ListSlots(ctx context.Context, scheduleID string) ([]Suppor
 	return items, rows.Err()
 }
 
-func (r *Repository) InsertSlot(ctx context.Context, actor auth.Principal, scheduleID, name string, meta auth.ClientMeta) (SupportingDocumentSlot, error) {
+// InsertSlot only inserts if scheduleID resolves to a schedule whose regency
+// is in scope — the SELECT...FROM program_schedules in place of a bare VALUES
+// list makes an out-of-scope or nonexistent schedule_id insert zero rows
+// instead of succeeding, which ErrScheduleNotFound below turns into a clear
+// not-found error (the same convention programs.GetSchedule already uses).
+func (r *Repository) InsertSlot(ctx context.Context, actor auth.Principal, scheduleID, name string, meta auth.ClientMeta, scope auth.RegencyScope) (SupportingDocumentSlot, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return SupportingDocumentSlot{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var item SupportingDocumentSlot
-	if err := tx.QueryRow(ctx, `
-		INSERT INTO supporting_document_slots (schedule_id, name) VALUES ($1, $2)
+	err = tx.QueryRow(ctx, `
+		INSERT INTO supporting_document_slots (schedule_id, name)
+		SELECT ps.id, $2 FROM program_schedules ps
+		WHERE ps.id = $1 AND ($3 OR ps.regency_id::text = ANY($4))
 		RETURNING id::text, schedule_id::text, name, is_active, sort_order, created_at, updated_at
-	`, scheduleID, name).Scan(&item.ID, &item.ScheduleID, &item.Name, &item.IsActive, &item.SortOrder, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	`, scheduleID, name, scope.Unrestricted, scope.RegencyIDs).Scan(&item.ID, &item.ScheduleID, &item.Name, &item.IsActive, &item.SortOrder, &item.CreatedAt, &item.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return SupportingDocumentSlot{}, ErrScheduleNotFound
+	}
+	if err != nil {
 		return SupportingDocumentSlot{}, err
 	}
 	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "supporting_document_slot.created", ResourceType: "supporting_document_slot", ResourceID: item.ID, Metadata: map[string]any{"schedule_id": scheduleID, "name": name}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
@@ -528,7 +547,10 @@ func (r *Repository) InsertSlot(ctx context.Context, actor auth.Principal, sched
 	return item, nil
 }
 
-func (r *Repository) PatchSlotRow(ctx context.Context, actor auth.Principal, id string, name *string, isActive *bool, meta auth.ClientMeta) (SupportingDocumentSlot, error) {
+// PatchSlotRow joins to program_schedules in the UPDATE so an id belonging to
+// an out-of-scope regency matches zero rows (-> ErrSlotNotFound) instead of
+// being patched.
+func (r *Repository) PatchSlotRow(ctx context.Context, actor auth.Principal, id string, name *string, isActive *bool, meta auth.ClientMeta, scope auth.RegencyScope) (SupportingDocumentSlot, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return SupportingDocumentSlot{}, err
@@ -536,13 +558,14 @@ func (r *Repository) PatchSlotRow(ctx context.Context, actor auth.Principal, id 
 	defer func() { _ = tx.Rollback(ctx) }()
 	var item SupportingDocumentSlot
 	err = tx.QueryRow(ctx, `
-		UPDATE supporting_document_slots SET
-			name = COALESCE($2, name),
-			is_active = COALESCE($3, is_active),
+		UPDATE supporting_document_slots s SET
+			name = COALESCE($2, s.name),
+			is_active = COALESCE($3, s.is_active),
 			updated_at = now()
-		WHERE id = $1
-		RETURNING id::text, schedule_id::text, name, is_active, sort_order, created_at, updated_at
-	`, id, name, isActive).Scan(&item.ID, &item.ScheduleID, &item.Name, &item.IsActive, &item.SortOrder, &item.CreatedAt, &item.UpdatedAt)
+		FROM program_schedules ps
+		WHERE s.id = $1 AND ps.id = s.schedule_id AND ($4 OR ps.regency_id::text = ANY($5))
+		RETURNING s.id::text, s.schedule_id::text, s.name, s.is_active, s.sort_order, s.created_at, s.updated_at
+	`, id, name, isActive, scope.Unrestricted, scope.RegencyIDs).Scan(&item.ID, &item.ScheduleID, &item.Name, &item.IsActive, &item.SortOrder, &item.CreatedAt, &item.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return SupportingDocumentSlot{}, ErrSlotNotFound
 	}
@@ -559,7 +582,7 @@ func (r *Repository) PatchSlotRow(ctx context.Context, actor auth.Principal, id 
 }
 ```
 
-Add `slotRepository slotRepository` as a field on `Service` in `internal/activities/service.go`, and set it from `NewService` by adding `case slotRepository: value` alongside the existing `programContextResolver`/`*media.VideoLimiter` cases in the `for _, dependency := range dependencies` loop — the same concrete `*Repository` that is already passed as the first positional argument satisfies this interface too (it has `ListSlots`/`InsertSlot`/`PatchSlotRow` after this task), so **also pass `repository` itself a second time into the variadic `dependencies` list at the `activities.NewService(...)` call site** in `cmd/server/main.go`, OR — simpler, avoiding a main.go change — set `slotRepository: repository` directly inside `NewService`'s body since `repository` (the first positional param, already typed as the narrower `repository` interface) doesn't itself expose `ListSlots` unless you also add those three methods to the pre-existing `repository` interface declaration at the top of `service.go`. Prefer that: add `ListSlots`, `InsertSlot`, `PatchSlotRow` to the existing `repository` interface in `service.go`, assign `slotRepository: repository` directly in `NewService`, and delete the separate `slotRepository` field/type — one repository interface, no main.go change, no second type-switch case. Use a plain field name `repository` (the one that already exists) for all of it; `ErrScheduleRequired` referenced above must already exist in the package — it does (`internal/activities/models.go`'s `ErrRegencyRequired`/`ErrProgramRequired` neighbors — check the exact existing name there; if the package has no `ErrScheduleRequired` yet, add it next to those in `models.go` as part of this task, since Task 6 will need it too).
+Add `slotRepository slotRepository` as a field on `Service` in `internal/activities/service.go`. Wire it in `NewService` with `slotRepo := repository.(slotRepository)` (no comma-ok — the real `*Repository` always implements this once this task adds `ListSlots`/`InsertSlot`/`PatchSlotRow` to it, so this assertion never panics in production; using the loud form means a future caller wiring in an incompatible stub gets an immediate, clear panic at construction time instead of a confusing nil-pointer panic the first time a slot method is called) and set `slotRepository: slotRepo` in the `&Service{...}` literal — no change to the pre-existing `repository` interface, no main.go change, no type-switch loop (this is the same first positional `repository` parameter asserted to a second interface, not one of the variadic `dependencies`).
 
 - [ ] **Step 4: Run tests to verify they pass**
 
@@ -645,15 +668,15 @@ type fakeActivitiesService struct {
 	patchedID        string
 }
 
-func (f *fakeActivitiesService) ListSlots(_ context.Context, scheduleID string) ([]activities.SupportingDocumentSlot, error) {
+func (f *fakeActivitiesService) ListSlots(_ context.Context, scheduleID string, _ auth.RegencyScope) ([]activities.SupportingDocumentSlot, error) {
 	f.listedScheduleID = scheduleID
 	return []activities.SupportingDocumentSlot{{ID: "slot-1", ScheduleID: scheduleID, Name: "Surat Tugas", IsActive: true}}, nil
 }
-func (f *fakeActivitiesService) CreateSlot(_ context.Context, _ auth.Principal, scheduleID, name string, _ auth.ClientMeta) (activities.SupportingDocumentSlot, error) {
+func (f *fakeActivitiesService) CreateSlot(_ context.Context, _ auth.Principal, scheduleID, name string, _ auth.ClientMeta, _ auth.RegencyScope) (activities.SupportingDocumentSlot, error) {
 	f.createdName = name
 	return activities.SupportingDocumentSlot{ID: "slot-2", ScheduleID: scheduleID, Name: name, IsActive: true}, nil
 }
-func (f *fakeActivitiesService) PatchSlot(_ context.Context, _ auth.Principal, id string, _ *string, isActive *bool, _ auth.ClientMeta) (activities.SupportingDocumentSlot, error) {
+func (f *fakeActivitiesService) PatchSlot(_ context.Context, _ auth.Principal, id string, _ *string, isActive *bool, _ auth.ClientMeta, _ auth.RegencyScope) (activities.SupportingDocumentSlot, error) {
 	f.patchedID = id
 	active := isActive != nil && *isActive
 	return activities.SupportingDocumentSlot{ID: id, IsActive: active}, nil
@@ -724,9 +747,9 @@ type ActivitiesService interface {
 	Upload(context.Context, auth.Principal, activities.UploadInput, auth.ClientMeta, auth.RegencyScope) (activities.ActivityMedia, error)
 	Delete(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) error
 	OpenContent(context.Context, string, auth.RegencyScope) (activities.MediaContent, error)
-	ListSlots(context.Context, string) ([]activities.SupportingDocumentSlot, error)
-	CreateSlot(context.Context, auth.Principal, string, string, auth.ClientMeta) (activities.SupportingDocumentSlot, error)
-	PatchSlot(context.Context, auth.Principal, string, *string, *bool, auth.ClientMeta) (activities.SupportingDocumentSlot, error)
+	ListSlots(context.Context, string, auth.RegencyScope) ([]activities.SupportingDocumentSlot, error)
+	CreateSlot(context.Context, auth.Principal, string, string, auth.ClientMeta, auth.RegencyScope) (activities.SupportingDocumentSlot, error)
+	PatchSlot(context.Context, auth.Principal, string, *string, *bool, auth.ClientMeta, auth.RegencyScope) (activities.SupportingDocumentSlot, error)
 }
 ```
 
@@ -755,7 +778,11 @@ func (h *Handler) handleSupportingDocumentSlots(w http.ResponseWriter, r *http.R
 			writeFieldError(w, http.StatusBadRequest, "validation_failed", "schedule_id wajib diisi", map[string]string{"schedule_id": "wajib diisi"})
 			return
 		}
-		items, err := h.deps.Activities.ListSlots(r.Context(), scheduleID)
+		scope, ok := h.regencyScope(w, r, rc.principal)
+		if !ok {
+			return
+		}
+		items, err := h.deps.Activities.ListSlots(r.Context(), scheduleID, scope)
 		if err != nil {
 			writeServiceError(w, err)
 			return
@@ -772,7 +799,11 @@ func (h *Handler) handleSupportingDocumentSlots(w http.ResponseWriter, r *http.R
 		if !decodeJSON(w, r, &input) {
 			return
 		}
-		item, err := h.deps.Activities.CreateSlot(r.Context(), rc.principal, input.ScheduleID, input.Name, clientMeta(r))
+		scope, ok := h.regencyScope(w, r, rc.principal)
+		if !ok {
+			return
+		}
+		item, err := h.deps.Activities.CreateSlot(r.Context(), rc.principal, input.ScheduleID, input.Name, clientMeta(r), scope)
 		if err != nil {
 			writeServiceError(w, err)
 			return
@@ -802,7 +833,11 @@ func (h *Handler) handleSupportingDocumentSlotItem(w http.ResponseWriter, r *htt
 	if !decodeJSON(w, r, &input) {
 		return
 	}
-	item, err := h.deps.Activities.PatchSlot(r.Context(), rc.principal, id, input.Name, input.IsActive, clientMeta(r))
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	item, err := h.deps.Activities.PatchSlot(r.Context(), rc.principal, id, input.Name, input.IsActive, clientMeta(r), scope)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -987,7 +1022,7 @@ func (s *Service) Upload(ctx context.Context, actor auth.Principal, input Upload
 			return ActivityMedia{}, err
 		}
 		input.ProgramID, input.RegencyID = schedule.ProgramID, schedule.RegencyID
-		slots, err := s.ListSlots(ctx, input.ScheduleID)
+		slots, err := s.ListSlots(ctx, input.ScheduleID, scope)
 		if err != nil {
 			return ActivityMedia{}, err
 		}
@@ -1252,7 +1287,7 @@ func (s *Service) ScanUpload(ctx context.Context, actor auth.Principal, input Sc
 	if err != nil {
 		return ActivityMedia{}, err
 	}
-	slots, err := s.ListSlots(ctx, input.ScheduleID)
+	slots, err := s.ListSlots(ctx, input.ScheduleID, scope)
 	if err != nil {
 		return ActivityMedia{}, err
 	}

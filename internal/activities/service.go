@@ -25,6 +25,7 @@ type repository interface {
 
 type Service struct {
 	repository      repository
+	slotRepository  slotRepository
 	storage         media.Storage
 	programContexts programContextResolver
 	videoLimiter    *media.VideoLimiter
@@ -33,6 +34,7 @@ type Service struct {
 
 type programContextResolver interface {
 	ResolveStorageContext(context.Context, string, string, auth.RegencyScope) (programs.StorageContext, error)
+	GetSchedule(context.Context, string, auth.RegencyScope) (programs.Schedule, error)
 }
 
 func NewService(repository repository, storage media.Storage, dependencies ...any) *Service {
@@ -46,7 +48,8 @@ func NewService(repository repository, storage media.Storage, dependencies ...an
 			videoLimiter = value
 		}
 	}
-	return &Service{repository: repository, storage: storage, programContexts: resolver, videoLimiter: videoLimiter, now: time.Now}
+	slotRepo := repository.(slotRepository)
+	return &Service{repository: repository, slotRepository: slotRepo, storage: storage, programContexts: resolver, videoLimiter: videoLimiter, now: time.Now}
 }
 
 func (s *Service) List(ctx context.Context, filter Filter, scope auth.RegencyScope) (Page, error) {
@@ -74,15 +77,47 @@ func (s *Service) Upload(ctx context.Context, actor auth.Principal, input Upload
 	input.RegencyID = strings.TrimSpace(input.RegencyID)
 	input.ActivityType = strings.TrimSpace(input.ActivityType)
 	input.Source = strings.TrimSpace(input.Source)
+	input.ScheduleID = strings.TrimSpace(input.ScheduleID)
+	input.SlotID = strings.TrimSpace(input.SlotID)
 	if !isValidActivityType(input.ActivityType) {
 		return ActivityMedia{}, ErrActivityTypeInvalid
 	}
 	if input.Source != "camera" && input.Source != "gallery" {
 		return ActivityMedia{}, ErrSourceInvalid
 	}
-	if input.ProgramID == "" || s.programContexts == nil {
-		return ActivityMedia{}, ErrProgramRequired
+
+	var slotName string
+	if input.ActivityType == "dokumen_pendukung" {
+		if input.ScheduleID == "" {
+			return ActivityMedia{}, ErrScheduleRequired
+		}
+		if s.programContexts == nil {
+			return ActivityMedia{}, ErrProgramRequired
+		}
+		schedule, err := s.programContexts.GetSchedule(ctx, input.ScheduleID, scope)
+		if err != nil {
+			return ActivityMedia{}, err
+		}
+		input.ProgramID, input.RegencyID = schedule.ProgramID, schedule.RegencyID
+		slots, err := s.ListSlots(ctx, input.ScheduleID, scope)
+		if err != nil {
+			return ActivityMedia{}, err
+		}
+		for _, candidate := range slots {
+			if candidate.ID == input.SlotID {
+				slotName = candidate.Name
+				break
+			}
+		}
+		if slotName == "" {
+			return ActivityMedia{}, ErrSlotInvalid
+		}
+	} else {
+		if input.ProgramID == "" || s.programContexts == nil {
+			return ActivityMedia{}, ErrProgramRequired
+		}
 	}
+
 	storageContext, err := s.programContexts.ResolveStorageContext(ctx, input.ProgramID, input.RegencyID, scope)
 	if err != nil {
 		return ActivityMedia{}, err
@@ -98,6 +133,9 @@ func (s *Service) Upload(ctx context.Context, actor auth.Principal, input Upload
 	if err != nil {
 		return ActivityMedia{}, err
 	}
+	if !media.PolicyAllows(policyFor(input.ActivityType), detected.Kind) {
+		return ActivityMedia{}, ErrMediaTypeInvalid
+	}
 	if input.DeclaredSize > detected.MaxBytes {
 		return ActivityMedia{}, ErrFileTooLarge
 	}
@@ -108,33 +146,61 @@ func (s *Service) Upload(ctx context.Context, actor auth.Principal, input Upload
 		}
 		defer release()
 	}
-	key, err := newStorageKey()
-	if err != nil {
-		return ActivityMedia{}, err
-	}
+	category, child := folderDestination(input.ActivityType)
 	folderPath, err := media.BuildFolderPath(media.FolderPathInput{
 		ProgramType: string(storageContext.ProgramType), ZoneName: storageContext.ZoneName,
-		RegencyName: storageContext.RegencyName, Category: media.FolderPhotos,
-		Child: activityTypeFolderNames[input.ActivityType],
+		RegencyName: storageContext.RegencyName, Category: category, Child: child,
 	})
 	if err != nil {
 		return ActivityMedia{}, err
 	}
-	now := s.now()
-	displayName := fmt.Sprintf("%s-%s-%s", regency.DocumentCode, activityTypeCodes[input.ActivityType], now.Format("20060102-150405"))
-	visibleFilename := displayName + activityFileExtension(detected.MimeType)
-	storageKey, size, checksum, err := media.PutNamed(ctx, s.storage, key, visibleFilename, folderPath, io.LimitReader(detected.Reader, detected.MaxBytes+1))
+	nameSegment := activityTypeCodes[input.ActivityType]
+	if input.ActivityType == "dokumen_pendukung" {
+		nameSegment = sanitizeSlotName(slotName)
+	}
+	displayName := fmt.Sprintf("%s-%s-%s", regency.DocumentCode, nameSegment, s.now().Format("20060102-150405"))
+
+	return s.store(ctx, actor, preparedUpload{
+		ActivityType: input.ActivityType, ProgramID: input.ProgramID, RegencyID: input.RegencyID,
+		DisplayName: displayName, OriginalFilename: strings.TrimSpace(input.OriginalFilename),
+		Source: input.Source, Detected: detected,
+	}, folderPath, meta)
+}
+
+// preparedUpload carries everything store() needs to persist a detected
+// upload (a direct file upload or an assembled scan PDF) to storage and the
+// activity_media table.
+type preparedUpload struct {
+	ActivityType     string
+	ProgramID        string
+	RegencyID        string
+	DisplayName      string
+	OriginalFilename string
+	Source           string
+	Detected         media.DetectedUpload
+}
+
+// store performs the shared storage+insert tail for Upload and ScanUpload:
+// generate a storage key, write the file, enforce the size cap, insert the
+// activity_media row, and roll back storage on insert failure.
+func (s *Service) store(ctx context.Context, actor auth.Principal, prepared preparedUpload, folderPath []string, meta auth.ClientMeta) (ActivityMedia, error) {
+	key, err := newStorageKey()
 	if err != nil {
 		return ActivityMedia{}, err
 	}
-	if size > detected.MaxBytes {
+	visibleFilename := prepared.DisplayName + activityFileExtension(prepared.Detected.MimeType)
+	storageKey, size, checksum, err := media.PutNamed(ctx, s.storage, key, visibleFilename, folderPath, io.LimitReader(prepared.Detected.Reader, prepared.Detected.MaxBytes+1))
+	if err != nil {
+		return ActivityMedia{}, err
+	}
+	if size > prepared.Detected.MaxBytes {
 		_ = s.storage.Delete(context.Background(), storageKey)
 		return ActivityMedia{}, ErrFileTooLarge
 	}
 	stored, err := s.repository.Insert(ctx, actor, insertInput{
-		ProgramID: input.ProgramID, RegencyID: input.RegencyID, ActivityType: input.ActivityType, StorageKey: storageKey,
-		DisplayName: displayName, OriginalFilename: strings.TrimSpace(input.OriginalFilename),
-		MediaType: string(detected.Kind), MimeType: detected.MimeType, ByteSize: size, Checksum: checksum, Source: input.Source,
+		ProgramID: prepared.ProgramID, RegencyID: prepared.RegencyID, ActivityType: prepared.ActivityType, StorageKey: storageKey,
+		DisplayName: prepared.DisplayName, OriginalFilename: prepared.OriginalFilename,
+		MediaType: string(prepared.Detected.Kind), MimeType: prepared.Detected.MimeType, ByteSize: size, Checksum: checksum, Source: prepared.Source,
 	}, meta)
 	if err != nil {
 		_ = s.storage.Delete(context.Background(), storageKey)
@@ -148,7 +214,27 @@ func activityFileExtension(mimeType string) string {
 	return map[string]string{
 		"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp",
 		"video/mp4": ".mp4", "video/webm": ".webm", "video/quicktime": ".mov",
+		"application/pdf": ".pdf",
 	}[mimeType]
+}
+
+func folderDestination(activityType string) (media.FolderCategory, string) {
+	if activityType == "dokumen_pendukung" {
+		return media.FolderSupporting, ""
+	}
+	return media.FolderPhotos, activityTypeFolderNames[activityType]
+}
+
+func policyFor(activityType string) string {
+	if activityType == "dokumen_pendukung" {
+		return "document"
+	}
+	return "image_video"
+}
+
+func sanitizeSlotName(name string) string {
+	fields := strings.Fields(name)
+	return strings.ToUpper(strings.Join(fields, "-"))
 }
 
 func (s *Service) Delete(ctx context.Context, actor auth.Principal, id string, meta auth.ClientMeta, scope auth.RegencyScope) error {

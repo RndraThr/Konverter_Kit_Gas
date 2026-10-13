@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import {
   Activity, BookOpen, BookOpenCheck, CalendarClock, CalendarRange, Camera, ChevronDown, FileClock,
-  Files, FileSpreadsheet, FileText, GraduationCap, ListFilter, MapPinned, Menu, PackageOpen, PanelLeftClose, PanelLeftOpen,
+  FileCheck2, Files, FileSpreadsheet, FileText, GraduationCap, ListFilter, MapPinned, Menu, PackageOpen, PanelLeftClose, PanelLeftOpen,
   PartyPopper, Settings, ShieldCheck, Users, UsersRound, X,
 } from 'lucide-react';
 import { ReactNode, useEffect, useId, useState } from 'react';
@@ -42,6 +42,7 @@ const groups: NavGroup[] = [
     { label: 'Training 10%', to: '/dokumentasi/training-10', permission: 'activities.view', icon: <BookOpen /> },
     { label: 'Training 100%', to: '/dokumentasi/training-100', permission: 'activities.view', icon: <BookOpenCheck /> },
     { label: 'Unloading', to: '/dokumentasi/unloading', permission: 'activities.view', icon: <PackageOpen /> },
+    { label: 'Dokumen Pendukung', to: '/dokumentasi/dokumen-pendukung', permission: 'activities.view', icon: <FileCheck2 /> },
   ] },
   { label: 'Berita Acara', items: [
     { label: 'Berita Acara', to: '/berita-acara', permission: 'bast.view', icon: <Files /> },
