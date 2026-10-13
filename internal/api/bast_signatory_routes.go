@@ -19,9 +19,15 @@ type BASTSignatoryService interface {
 	OpenAsset(context.Context, string, string, string, auth.RegencyScope) ([]byte, error)
 }
 
+type BASTSignatureLayoutService interface {
+	Layout(context.Context, string, string, string, auth.RegencyScope) (bast.SignatureLayout, error)
+}
+
 // handleBASTSignatures melayani /api/v1/bast/signatures:
 //
 //	GET  ?schedule_id=&document=dp3                  isi panel (bast.view)
+//	GET  layout?schedule_id=&document=&date=         editor: PDF halaman tanda
+//	     tangan tanpa tanda dan letak kotak per pihak (bast.view)
 //	PUT  {schedule_id, document, override, rules}    aturan cetak (bast.manage)
 //	PUT  signatories/{role}?schedule_id=  {name, nip} nama/NIP penandatangan
 //	GET|PUT|DELETE signatories/{role}/{signature|stamp}?schedule_id=
@@ -39,6 +45,10 @@ func (h *Handler) handleBASTSignatures(w http.ResponseWriter, r *http.Request, r
 	scheduleID := strings.TrimSpace(r.URL.Query().Get("schedule_id"))
 	if suffix == "" {
 		h.handleBASTSignatureRules(w, r, rc, service, scope)
+		return
+	}
+	if suffix == "layout" {
+		h.handleBASTSignatureLayout(w, r, rc, scope)
 		return
 	}
 	parts := strings.Split(strings.TrimPrefix(suffix, "signatories/"), "/")
@@ -90,11 +100,11 @@ func (h *Handler) handleBASTSignatures(w http.ResponseWriter, r *http.Request, r
 		if !h.authorize(w, r, rc.principal, "bast.manage") {
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, 3<<20)
 		var input struct {
 			ImagePNG []byte `json:"image_png"`
 		}
-		if !decodeJSON(w, r, &input) {
+		// PNG maksimal 2 MB; base64 menambah sekitar sepertiganya.
+		if !decodeJSONLimit(w, r, &input, 3<<20) {
 			return
 		}
 		if err := service.PutAsset(r.Context(), rc.principal, scheduleID, role, kind, input.ImagePNG, scope, clientMeta(r)); err != nil {
@@ -151,4 +161,27 @@ func (h *Handler) handleBASTSignatureRules(w http.ResponseWriter, r *http.Reques
 	default:
 		methodNotAllowed(w, "GET, PUT")
 	}
+}
+
+func (h *Handler) handleBASTSignatureLayout(w http.ResponseWriter, r *http.Request, rc requestContext, scope auth.RegencyScope) {
+	service := h.deps.BASTSignatureLayout
+	if service == nil {
+		writeUnavailable(w)
+		return
+	}
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if !h.authorize(w, r, rc.principal, "bast.view") {
+		return
+	}
+	query := r.URL.Query()
+	layout, err := service.Layout(r.Context(), query.Get("document"), query.Get("schedule_id"), query.Get("date"), scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeData(w, http.StatusOK, layout)
 }

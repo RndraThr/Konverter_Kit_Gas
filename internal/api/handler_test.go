@@ -1146,7 +1146,7 @@ func TestDecodeJSONRejectsBodiesLargerThanOneMiB(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"data":"`+strings.Repeat("x", maxRequestBody)+`"}`))
 	req.Header.Set("Content-Type", "application/json")
 	var target map[string]string
-	if decodeJSON(rec, req, &target) || rec.Code != http.StatusBadRequest {
+	if decodeJSON(rec, req, &target) || rec.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }

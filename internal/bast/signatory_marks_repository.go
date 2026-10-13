@@ -337,8 +337,10 @@ func (r *Repository) ResolveSignatoryMarks(ctx context.Context, scheduleID, docu
 		mark := marks[role]
 		if kind == SignatoryKindSignature {
 			mark.Signature = true
+			mark.SignaturePlacement = rule.SignaturePlacement
 		} else {
 			mark.Stamp = true
+			mark.StampPlacement = rule.StampPlacement
 		}
 		marks[role] = mark
 		images[signatoryImageKey(role, kind)] = image
@@ -361,4 +363,17 @@ func (r *Repository) ScheduleForRegency(ctx context.Context, programID, regencyI
 		return "", fmt.Errorf("schedule for regency: %w", err)
 	}
 	return scheduleID, nil
+}
+
+// ScheduleProgramRegency mengembalikan program dan kabupaten satu jadwal.
+func (r *Repository) ScheduleProgramRegency(ctx context.Context, scheduleID string, scope auth.RegencyScope) (string, string, error) {
+	var programID, regencyID string
+	err := r.pool.QueryRow(ctx, `SELECT program_id::text, regency_id::text FROM program_schedules WHERE id::text=$1 AND ($2 OR regency_id::text = ANY($3))`, scheduleID, scope.Unrestricted, scope.RegencyIDs).Scan(&programID, &regencyID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", ErrNotFound
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("schedule program regency: %w", err)
+	}
+	return programID, regencyID, nil
 }

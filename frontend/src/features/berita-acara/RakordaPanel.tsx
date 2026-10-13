@@ -98,7 +98,7 @@ export function RakordaPanel({ config = rakordaConfig, scheduleID, regencyName, 
   };
 
   return <div className="grid gap-5">
-    {hasSignatures && showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} document="sosialisasi" documentLabel={config.name} />}
+    {hasSignatures && showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} date={date} document="sosialisasi" documentLabel={config.name} />}
     <div className="grid gap-5 xl:grid-cols-[22rem_minmax(0,1fr)]">
       <Card className="self-start">
         <CardHeader className="border-b"><CardTitle className="flex items-center gap-2 text-base"><Settings2 className="size-4 text-primary" aria-hidden="true" />Pengaturan daftar hadir</CardTitle></CardHeader>

@@ -6,12 +6,23 @@ const trimPadding = 12;
 
 type Bounds = { minX: number; minY: number; maxX: number; maxY: number };
 
+/** Hasil coretan yang dipotong: PNG base64 dan letaknya di kanvas (CSS px). */
+export type SignatureCrop = { png: string; left: number; top: number; width: number; height: number };
+
+type Options = {
+  /** Skala minimum backing store; kanvas kecil (kotak tabel BA) perlu lebih tajam dari layar. */
+  resolution?: number;
+  /** Tebal garis (CSS px). */
+  lineWidth?: number;
+};
+
 /**
  * Logika kanvas tanda tangan: digambar dengan jari, pena, atau tetikus di
  * kanvas transparan, lalu diekspor sebagai PNG base64 yang dipotong sesuai
- * coretan. Dipakai pad POS Dokumen dan kartu penandatangan Berita Acara.
+ * coretan. Dipakai pad POS Dokumen dan editor penandatangan Berita Acara.
  */
-export function useSignatureCanvas(height: number, onStroke?: () => void) {
+export function useSignatureCanvas(height: number, onStroke?: () => void, options: Options = {}) {
+  const { resolution = 1, lineWidth = 2.6 } = options;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const last = useRef<{ x: number; y: number } | null>(null);
   const bounds = useRef<Bounds | null>(null);
@@ -21,7 +32,7 @@ export function useSignatureCanvas(height: number, onStroke?: () => void) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ratio = window.devicePixelRatio || 1;
+    const ratio = Math.max(window.devicePixelRatio || 1, resolution);
     canvas.width = Math.round(canvas.clientWidth * ratio);
     canvas.height = Math.round(height * ratio);
     const context = canvas.getContext('2d');
@@ -29,10 +40,10 @@ export function useSignatureCanvas(height: number, onStroke?: () => void) {
     context.scale(ratio, ratio);
     context.lineCap = 'round';
     context.lineJoin = 'round';
-    context.lineWidth = 2.6;
+    context.lineWidth = lineWidth;
     context.strokeStyle = '#1e2d6e';
     context.fillStyle = '#1e2d6e';
-  }, [height]);
+  }, [height, resolution, lineWidth]);
 
   const point = (event: PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -43,7 +54,7 @@ export function useSignatureCanvas(height: number, onStroke?: () => void) {
     bounds.current = b ? { minX: Math.min(b.minX, x), minY: Math.min(b.minY, y), maxX: Math.max(b.maxX, x), maxY: Math.max(b.maxY, y) } : { minX: x, minY: y, maxX: x, maxY: y };
   };
   const onPointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
-    event.currentTarget.setPointerCapture(event.pointerId);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
     const p = point(event);
     last.current = p;
     extend(p.x, p.y);
@@ -92,10 +103,29 @@ export function useSignatureCanvas(height: number, onStroke?: () => void) {
     return output.toDataURL('image/png').split(',')[1] ?? '';
   }, []);
 
+  // Seperti exportPNG tetapi tanpa ukuran minimum, dan mengembalikan letak
+  // potongan agar tanda tangan bisa ditaruh tepat di tempat dicoret.
+  const exportCrop = useCallback((padding = 4): SignatureCrop | null => {
+    const canvas = canvasRef.current;
+    const b = bounds.current;
+    if (!canvas || !b || canvas.clientWidth === 0) return null;
+    const ratio = canvas.width / canvas.clientWidth;
+    const left = Math.max(0, b.minX - padding);
+    const top = Math.max(0, b.minY - padding);
+    const width = Math.max(1, Math.min(canvas.clientWidth - left, b.maxX - b.minX + padding * 2));
+    const cropHeight = Math.max(1, Math.min(canvas.clientHeight - top, b.maxY - b.minY + padding * 2));
+    const output = document.createElement('canvas');
+    output.width = Math.round(width * ratio);
+    output.height = Math.round(cropHeight * ratio);
+    output.getContext('2d')?.drawImage(canvas, left * ratio, top * ratio, width * ratio, cropHeight * ratio, 0, 0, output.width, output.height);
+    return { png: output.toDataURL('image/png').split(',')[1] ?? '', left, top, width, height: cropHeight };
+  }, []);
+
   return {
     empty,
     clear,
     exportPNG,
+    exportCrop,
     canvasProps: { ref: canvasRef, onPointerDown, onPointerMove, onPointerUp: end, onPointerCancel: end, onPointerLeave: end },
   };
 }

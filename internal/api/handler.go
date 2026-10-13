@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -247,36 +248,37 @@ type RakordaService interface {
 }
 
 type Dependencies struct {
-	Auth              AuthService
-	Profile           ProfileService
-	Administration    AdministrationService
-	Settings          SettingsService
-	Health            HealthService
-	Audit             AuditService
-	Programs          ProgramSetupService
-	DCP3              DCP3Service
-	Distribution      DistributionService
-	Reports           ReportsService
-	Recipients        RecipientsService
-	Activities        ActivitiesService
-	BAST              BASTService
-	BASTBranding      BASTBrandingService
-	BASTSettings      BASTScheduleSettingsService
-	BASTSignatory     BASTSignatoryService
-	BASTWetSignature  BASTWetSignatureService
-	DP3               DP3Service
-	DailyRecap        DailyRecapService
-	ClosingTitikSerah ClosingTitikSerahService
-	ClosingKabupaten  ClosingKabupatenService
-	ServisBerkala     ServisBerkalaService
-	TKDN              TKDNService
-	Pemeriksaan       PemeriksaanService
-	Items             ItemService
-	Rakorda           RakordaService
-	Sosialisasi       RakordaService
-	Training10        RakordaService
-	Training100       RakordaService
-	SessionSecret     []byte
+	Auth                AuthService
+	Profile             ProfileService
+	Administration      AdministrationService
+	Settings            SettingsService
+	Health              HealthService
+	Audit               AuditService
+	Programs            ProgramSetupService
+	DCP3                DCP3Service
+	Distribution        DistributionService
+	Reports             ReportsService
+	Recipients          RecipientsService
+	Activities          ActivitiesService
+	BAST                BASTService
+	BASTBranding        BASTBrandingService
+	BASTSettings        BASTScheduleSettingsService
+	BASTSignatory       BASTSignatoryService
+	BASTWetSignature    BASTWetSignatureService
+	BASTSignatureLayout BASTSignatureLayoutService
+	DP3                 DP3Service
+	DailyRecap          DailyRecapService
+	ClosingTitikSerah   ClosingTitikSerahService
+	ClosingKabupaten    ClosingKabupatenService
+	ServisBerkala       ServisBerkalaService
+	TKDN                TKDNService
+	Pemeriksaan         PemeriksaanService
+	Items               ItemService
+	Rakorda             RakordaService
+	Sosialisasi         RakordaService
+	Training10          RakordaService
+	Training100         RakordaService
+	SessionSecret       []byte
 	// Realtime pushes change signals over WebSocket (nil: endpoint unavailable).
 	Realtime *realtime.Hub
 }
@@ -496,14 +498,25 @@ func (h *Handler) authorizeAny(w http.ResponseWriter, r *http.Request, principal
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
+	return decodeJSONLimit(w, r, dst, maxRequestBody)
+}
+
+// decodeJSONLimit seperti decodeJSON dengan batas ukuran body sendiri, untuk
+// permintaan berisi gambar base64 (tanda tangan, stempel, pindaian).
+func decodeJSONLimit(w http.ResponseWriter, r *http.Request, dst any, limit int64) bool {
 	if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "application/json") {
 		writeError(w, http.StatusUnsupportedMediaType, "content_type_invalid", "Gunakan Content-Type application/json")
 		return false
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBody)
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(dst); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, "request_too_large", fmt.Sprintf("Isi permintaan melebihi batas %d MB", limit>>20))
+			return false
+		}
 		writeError(w, http.StatusBadRequest, "invalid_json", "Isi permintaan JSON tidak valid")
 		return false
 	}

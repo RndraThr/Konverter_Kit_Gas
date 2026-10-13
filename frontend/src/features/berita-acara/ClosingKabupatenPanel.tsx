@@ -76,7 +76,7 @@ export function ClosingKabupatenPanel({ scheduleID, regencyName, programType, de
   const busy = finalize.isPending;
 
   return <div className="grid gap-5">
-    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} document="closing-kabupaten" documentLabel="Closing Kabupaten" />}
+    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} date={documentDate} document="closing-kabupaten" documentLabel="Closing Kabupaten" />}
 
     <div className="grid gap-4 lg:grid-cols-3">
       <Card className="lg:col-span-1">

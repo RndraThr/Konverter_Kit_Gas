@@ -66,8 +66,9 @@ func TestLoadWetSignatureMatchesScanByCode(t *testing.T) {
 	}
 }
 
-// Cetak halaman tanda tangan hanya menghasilkan halaman terakhir dengan kode
-// dokumen; pindaian menggantikan halaman tanda tangan buatan sistem.
+// Cetak halaman tanda tangan hanya menghasilkan halaman terakhir (tanpa
+// tulisan kode di kaki halaman); pindaian menggantikan halaman tanda tangan
+// buatan sistem.
 func TestRenderClosingWetSignaturePages(t *testing.T) {
 	images := map[string][]byte{"logo-1": testPNG(t)}
 	full, err := RenderClosingTitikSerah(sampleClosingSnapshot(), images)
@@ -84,8 +85,8 @@ func TestRenderClosingWetSignaturePages(t *testing.T) {
 	if page.PageCount != 1 {
 		t.Fatalf("signature page pages=%d, want 1", page.PageCount)
 	}
-	if !strings.Contains(decodedPDFStreams(t, page.PDF), "ABCD1234") {
-		t.Fatal("printed signature page must carry the document code")
+	if strings.Contains(decodedPDFStreams(t, page.PDF), "ABCD1234") != printWetFooter {
+		t.Fatalf("document code footer printed=%v, want %v", !printWetFooter, printWetFooter)
 	}
 
 	scanned := sampleClosingSnapshot()

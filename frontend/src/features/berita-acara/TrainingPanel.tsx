@@ -83,7 +83,7 @@ export function TrainingPanel({ config, scheduleID, regencyName, programType }: 
   const locationDirty = uppercaseBusinessText(location).trim() !== savedLocation.trim();
 
   return <div className="grid gap-5">
-    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} document={config.apiPath} documentLabel={config.name} />}
+    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} date={selectedDate} document={config.apiPath} documentLabel={config.name} />}
 
     <div className="grid gap-5 xl:grid-cols-[19rem_minmax(0,1fr)]">
       <Card className="self-start">
