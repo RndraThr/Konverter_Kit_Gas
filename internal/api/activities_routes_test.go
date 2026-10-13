@@ -25,6 +25,9 @@ type fakeActivitiesService struct {
 	uploadReadErr    error
 	seenRegencyScope auth.RegencyScope
 	seenDeleteID     string
+	listedScheduleID string
+	createdName      string
+	patchedID        string
 }
 
 func (f *fakeActivitiesService) List(_ context.Context, filter activities.Filter, scope auth.RegencyScope) (activities.Page, error) {
@@ -45,6 +48,19 @@ func (f *fakeActivitiesService) Delete(_ context.Context, _ auth.Principal, id s
 func (f *fakeActivitiesService) OpenContent(_ context.Context, id string, scope auth.RegencyScope) (activities.MediaContent, error) {
 	f.seenDeleteID, f.seenRegencyScope = id, scope
 	return f.content, f.contentErr
+}
+func (f *fakeActivitiesService) ListSlots(_ context.Context, scheduleID string, _ auth.RegencyScope) ([]activities.SupportingDocumentSlot, error) {
+	f.listedScheduleID = scheduleID
+	return []activities.SupportingDocumentSlot{{ID: "slot-1", ScheduleID: scheduleID, Name: "Surat Tugas", IsActive: true}}, nil
+}
+func (f *fakeActivitiesService) CreateSlot(_ context.Context, _ auth.Principal, scheduleID, name string, _ auth.ClientMeta, _ auth.RegencyScope) (activities.SupportingDocumentSlot, error) {
+	f.createdName = name
+	return activities.SupportingDocumentSlot{ID: "slot-2", ScheduleID: scheduleID, Name: name, IsActive: true}, nil
+}
+func (f *fakeActivitiesService) PatchSlot(_ context.Context, _ auth.Principal, id string, _ *string, isActive *bool, _ auth.ClientMeta, _ auth.RegencyScope) (activities.SupportingDocumentSlot, error) {
+	f.patchedID = id
+	active := isActive != nil && *isActive
+	return activities.SupportingDocumentSlot{ID: id, IsActive: active}, nil
 }
 
 func TestActivitiesListRequiresViewPermissionAndForwardsFilters(t *testing.T) {
