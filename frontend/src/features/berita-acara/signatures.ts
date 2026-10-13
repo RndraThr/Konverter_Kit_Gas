@@ -4,7 +4,61 @@
 export type SignatoryRole = 'agriculture_office' | 'installer' | 'supervisor' | 'pertamina';
 export type SignatoryKind = 'signature' | 'stamp';
 
-export type SignatureRule = { signature: boolean; stamp: boolean };
+/**
+ * Posisi tanda tangan/stempel dalam satuan tinggi kotak tanda tangan (sama
+ * seperti PDF): x/y geseran pusat dari tengah kotak, size sisi terpanjang,
+ * rotation derajat (positif searah jarum jam).
+ */
+export type MarkPlacement = { x: number; y: number; size: number; rotation: number };
+
+export type SignatureRule = {
+  signature: boolean;
+  stamp: boolean;
+  signature_placement?: MarkPlacement | null;
+  stamp_placement?: MarkPlacement | null;
+};
+
+/** Posisi bawaan stempel bila belum diatur (sama dengan server). */
+export const defaultStampPlacement: MarkPlacement = { x: -0.4, y: 0, size: 0.78, rotation: -8 };
+export const placementLimits = { maxX: 3, maxY: 0.5 };
+export const sizeLimits: Record<SignatoryKind, { min: number; max: number }> = {
+  signature: { min: 0.2, max: 4 },
+  stamp: { min: 0.3, max: 2.5 },
+};
+/** Batas gambar boleh keluar dari kotak, satuan tinggi kotak. */
+export const markOverflow = 0.75;
+
+/**
+ * Posisi bawaan tanda tangan (sama dengan server): proporsional di tengah
+ * kotak, lebar maksimal min(lebar kotak - 6 mm, 60 mm) dan tinggi kotak - 4 mm.
+ */
+export function defaultSignaturePlacement(aspect: number, boxWidthMM: number, boxHeightMM: number): MarkPlacement {
+  const ratio = aspect > 0 ? aspect : 3;
+  let width = Math.min(boxWidthMM - 6, 60);
+  let height = width / ratio;
+  if (height > boxHeightMM - 4) {
+    height = boxHeightMM - 4;
+    width = height * ratio;
+  }
+  return { x: 0, y: 0, size: Math.round((Math.max(width, height) / boxHeightMM) * 1000) / 1000, rotation: 0 };
+}
+
+export const samePlacement = (a?: MarkPlacement | null, b?: MarkPlacement | null) =>
+  (a ?? null) === (b ?? null) || (!!a && !!b && a.x === b.x && a.y === b.y && a.size === b.size && a.rotation === b.rotation);
+
+/** Kotak tanda tangan satu pihak pada halaman PDF (mm). */
+export type SignatureBox = { role: SignatoryRole; page: number; x: number; y: number; w: number; h: number };
+
+/** Isi editor: PDF halaman tanda tangan tanpa tanda (base64) dan letak kotak. */
+export type SignatureLayout = {
+  document_key: string;
+  page: number;
+  page_width: number;
+  page_height: number;
+  boxes: SignatureBox[];
+  pdf: string;
+};
+
 export type SignatureRules = Partial<Record<SignatoryRole, SignatureRule>>;
 
 export type SignatoryCard = {

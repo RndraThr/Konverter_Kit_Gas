@@ -85,7 +85,7 @@ export function TKDNPanel({ scheduleID, programID, regencyName, programType, def
   const editorValid = rowsValid(rows) && percentValid(totalTKDN);
 
   return <div className="grid gap-5">
-    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} document="tkdn" documentLabel="TKDN" />}
+    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} date={documentDate} document="tkdn" documentLabel="TKDN" />}
 
     <Card className="min-w-0">
       <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle className="text-base">Realisasi TKDN</CardTitle><p className="mt-1 text-sm text-muted-foreground">{regencyName} · disimpan ke 12. TKDN</p></div><div className="flex flex-wrap gap-2"><Badge variant="outline">{totalPackages} paket</Badge></div></div></CardHeader>

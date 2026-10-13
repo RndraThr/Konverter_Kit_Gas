@@ -91,6 +91,9 @@ func loadWetSignature(ctx context.Context, repository any, scheduleID, documentK
 	if !wetSignatureDocuments[documentKey] {
 		return WetSignature{}, nil, nil
 	}
+	if signatureLayoutFrom(ctx) != nil {
+		return WetSignature{PageOnly: true}, nil, nil
+	}
 	code := contentCode(documentKey, date, snapshot)
 	if request := wetPageFrom(ctx); request != nil {
 		request.code = code
@@ -145,10 +148,15 @@ func drawWetScanPage(pdf *fpdf.Fpdf, orientation string) {
 	pdf.ImageOptions(wetScanImageKey, (pageW-drawW)/2, (pageH-drawH)/2, drawW, drawH, false, fpdf.ImageOptions{ImageType: "PNG"}, 0, "")
 }
 
+// printWetFooter: tulisan kode dokumen di kaki halaman tanda tangan basah.
+// Disembunyikan atas permintaan pengguna; kode tetap dipakai untuk mencocokkan
+// pindaian dengan isi dokumen dan tampil di aplikasi.
+const printWetFooter = false
+
 // drawWetFooter menulis kode dokumen di kaki halaman tanda tangan yang
-// dicetak untuk ditandatangani basah.
+// dicetak untuk ditandatangani basah (bila printWetFooter aktif).
 func drawWetFooter(pdf *fpdf.Fpdf, wet WetSignature, title, date string) {
-	if !wet.Enabled || wet.Code == "" {
+	if !printWetFooter || !wet.Enabled || wet.Code == "" {
 		return
 	}
 	pageW, pageH := pdf.GetPageSize()

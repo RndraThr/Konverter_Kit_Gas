@@ -19,8 +19,11 @@ type SyncCandidate struct {
 	CandidateMatch
 	// Linked is true once the allocation got a distribution number; the app
 	// hides it from POS Dokumen search.
-	Linked    bool      `json:"linked"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Linked bool `json:"linked"`
+	// AllocationStatus (candidate, ready, needs_review, distributed, replaced,
+	// cancelled) lets Monitoring leave cancelled and replaced allocations out.
+	AllocationStatus string    `json:"allocation_status"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 // SyncResult carries changed items plus the server time to use as the next cursor.
@@ -38,7 +41,7 @@ func (r *Repository) SyncCandidates(ctx context.Context, scheduleID string, sinc
 	rows, err := r.pool.Query(ctx, `
 		SELECT pa.id::text, p.full_name, COALESCE(p.nik,''), COALESCE(psi.identifier_type,''), COALESCE(psi.normalized_value,''),
 			COALESCE(p.address,''), COALESCE(p.village,''), COALESCE(p.district,''), COALESCE(p.phone_number,''), cn.program_type,
-			pa.distribution_number IS NOT NULL,
+			pa.distribution_number IS NOT NULL, pa.status,
 			GREATEST(pa.updated_at, cn.updated_at, p.updated_at)
 		FROM package_allocations pa
 		JOIN candidate_nominations cn ON cn.id = pa.nomination_id
@@ -56,7 +59,7 @@ func (r *Repository) SyncCandidates(ctx context.Context, scheduleID string, sinc
 	for rows.Next() {
 		var item SyncCandidate
 		if err := rows.Scan(&item.AllocationID, &item.FullName, &item.NIK, &item.SectorIdentifierType, &item.SectorIdentifier,
-			&item.Address, &item.Village, &item.District, &item.PhoneNumber, &item.ProgramType, &item.Linked, &item.UpdatedAt); err != nil {
+			&item.Address, &item.Village, &item.District, &item.PhoneNumber, &item.ProgramType, &item.Linked, &item.AllocationStatus, &item.UpdatedAt); err != nil {
 			return result, fmt.Errorf("scan sync candidate: %w", err)
 		}
 		result.Items = append(result.Items, item)

@@ -15,14 +15,13 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Recipient signature taken in POS Dokumen: a small transparent PNG drawn on
-// the phone or in the browser. It belongs to the recipient linked at signing
-// time; after a replacement it no longer counts (see signedRecipientJoin).
+// Recipient signature taken in POS Dokumen (optional): a small transparent PNG
+// drawn on the phone or in the browser. It belongs to the recipient linked at
+// signing time; after a replacement it no longer counts (see
+// signedRecipientJoin). Without it, Berita Acara leaves the signature box
+// empty for a wet signature.
 
-var (
-	ErrSignatureInvalid  = errors.New("recipient signature must be a PNG image")
-	ErrSignatureRequired = errors.New("recipient signature is required")
-)
+var ErrSignatureInvalid = errors.New("recipient signature must be a PNG image")
 
 const (
 	maxSignatureBytes = 512 << 10

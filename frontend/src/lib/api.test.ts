@@ -38,3 +38,15 @@ test('exposes the bootstrap CSRF token read-only to upload clients', async () =>
   await getBootstrap();
   expect(getCSRFToken()).toBe('csrf-from-bootstrap');
 });
+
+test('explains a proxy 413 (HTML body) as a file that is too large', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html><body>413 Request Entity Too Large</body></html>', {
+    status: 413,
+    headers: { 'Content-Type': 'text/html' },
+  })));
+
+  await expect(apiRequest('/api/v1/bast/wet-signature/scan', { method: 'PUT', body: '{}' })).rejects.toMatchObject({
+    status: 413,
+    message: 'Berkas terlalu besar untuk diunggah',
+  });
+});

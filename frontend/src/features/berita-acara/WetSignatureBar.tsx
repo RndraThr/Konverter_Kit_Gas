@@ -27,9 +27,10 @@ export function useWetSignatureBlocked(scheduleID: string, document: string, dat
 type Props = { scheduleID: string; document: string; date: string; label: string };
 
 /**
- * Langkah tanda tangan basah di panel BA: cetak halaman tanda tangan (dengan
- * kode dokumen), lalu unggah hasil pindai/foto halaman yang sudah
- * ditandatangani. Tampil hanya bila mode tanda tangan basah aktif.
+ * Langkah tanda tangan basah di panel BA: cetak halaman tanda tangan, lalu
+ * unggah hasil pindai/foto halaman yang sudah ditandatangani. Kode dokumen
+ * (tampil di sini) mencocokkan pindaian dengan isi dokumen. Tampil hanya bila
+ * mode tanda tangan basah aktif.
  */
 export function WetSignatureBar({ scheduleID, document, date, label }: Props) {
   const canManage = useCan('bast.manage');
