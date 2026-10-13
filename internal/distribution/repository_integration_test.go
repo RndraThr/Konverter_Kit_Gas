@@ -1190,7 +1190,7 @@ func TestMobileSyncDelta(t *testing.T) {
 	}
 	candidates, err := repo.SyncCandidates(ctx, scheduleID, nil, scope)
 	must(t, err)
-	if len(candidates.Items) != 1 || candidates.Items[0].NIK != nik || candidates.Items[0].Linked {
+	if len(candidates.Items) != 1 || candidates.Items[0].NIK != nik || candidates.Items[0].Linked || candidates.Items[0].AllocationStatus == "" {
 		t.Fatalf("full candidate sync = %+v", candidates.Items)
 	}
 
