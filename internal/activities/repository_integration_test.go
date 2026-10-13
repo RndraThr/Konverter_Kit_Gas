@@ -52,13 +52,14 @@ func must(t *testing.T, err error) {
 
 // seedScheduleForTest creates a minimal program_schedules row (with its required program,
 // package template version, documentation template version, and regency) so slot repository
-// tests can scope rows by schedule_id.
-func seedScheduleForTest(t *testing.T, pool *pgxpool.Pool) (scheduleID string) {
+// tests can scope rows by schedule_id. It returns both the schedule id and the regency id it
+// belongs to, so callers can build an auth.RegencyScope that is or isn't in scope for it.
+func seedScheduleForTest(t *testing.T, pool *pgxpool.Pool) (scheduleID, regencyID string) {
 	t.Helper()
 	ctx := context.Background()
 	suffix := strings.ReplaceAll(t.Name(), "/", "-") + "-" + fmt.Sprintf("%d", time.Now().UnixNano())
 
-	var regencyCode, regencyID string
+	var regencyCode string
 	must(t, pool.QueryRow(ctx, `
 		SELECT code FROM (
 			SELECT chr(65+(g%26)::int)||chr(65+((g/26)%26)::int)||chr(65+((g/676)%26)::int) AS code
@@ -85,31 +86,65 @@ func seedScheduleForTest(t *testing.T, pool *pgxpool.Pool) (scheduleID string) {
 		_, _ = pool.Exec(cleanupCtx, `DELETE FROM documentation_template_versions WHERE id=$1`, documentationID)
 		_, _ = pool.Exec(cleanupCtx, `DELETE FROM regencies WHERE id=$1`, regencyID)
 	})
-	return scheduleID
+	return scheduleID, regencyID
 }
 
 func TestInsertAndListSlotsScopedBySchedule(t *testing.T) {
 	pool := activitiesIntegrationPool(t)
 	repo := NewRepository(pool)
 	ctx := context.Background()
-	scheduleAID := seedScheduleForTest(t, pool)
-	scheduleBID := seedScheduleForTest(t, pool)
+	scheduleAID, regencyAID := seedScheduleForTest(t, pool)
+	scheduleBID, regencyBID := seedScheduleForTest(t, pool)
+	unrestricted := auth.RegencyScope{Unrestricted: true}
 
-	_, err := repo.InsertSlot(ctx, auth.Principal{}, scheduleAID, "Surat Tugas", auth.ClientMeta{})
+	_, err := repo.InsertSlot(ctx, auth.Principal{}, scheduleAID, "Surat Tugas", auth.ClientMeta{}, unrestricted)
 	if err != nil {
 		t.Fatalf("InsertSlot() error = %v", err)
 	}
-	_, err = repo.InsertSlot(ctx, auth.Principal{}, scheduleBID, "SK Penetapan", auth.ClientMeta{})
+	slotB, err := repo.InsertSlot(ctx, auth.Principal{}, scheduleBID, "SK Penetapan", auth.ClientMeta{}, unrestricted)
 	if err != nil {
 		t.Fatalf("InsertSlot() error = %v", err)
 	}
 
-	listA, err := repo.ListSlots(ctx, scheduleAID)
+	listA, err := repo.ListSlots(ctx, scheduleAID, unrestricted)
 	if err != nil {
 		t.Fatalf("ListSlots() error = %v", err)
 	}
 	if len(listA) != 1 || listA[0].Name != "Surat Tugas" {
 		t.Fatalf("listA = %+v, want exactly one slot named Surat Tugas", listA)
+	}
+
+	// Cross-regency IDOR check (security review finding): a caller scoped only to regency A must
+	// not be able to list, create, or patch slots belonging to schedule B's regency B.
+	scopedToA := auth.RegencyScope{RegencyIDs: []string{regencyAID}}
+	if regencyAID == regencyBID {
+		t.Fatalf("test fixtures produced the same regency for schedule A and B, scope assertions below are meaningless")
+	}
+
+	listBFromA, err := repo.ListSlots(ctx, scheduleBID, scopedToA)
+	if err != nil {
+		t.Fatalf("ListSlots() out-of-scope error = %v, want nil (empty list, not an error)", err)
+	}
+	if len(listBFromA) != 0 {
+		t.Fatalf("ListSlots() out-of-scope = %+v, want empty list", listBFromA)
+	}
+
+	if _, err := repo.InsertSlot(ctx, auth.Principal{}, scheduleBID, "Should Not Insert", auth.ClientMeta{}, scopedToA); !errors.Is(err, ErrScheduleNotFound) {
+		t.Fatalf("InsertSlot() out-of-scope err = %v, want ErrScheduleNotFound", err)
+	}
+
+	renamed := "Should Not Rename"
+	if _, err := repo.PatchSlotRow(ctx, auth.Principal{}, slotB.ID, &renamed, nil, auth.ClientMeta{}, scopedToA); !errors.Is(err, ErrSlotNotFound) {
+		t.Fatalf("PatchSlotRow() out-of-scope err = %v, want ErrSlotNotFound", err)
+	}
+
+	// Confirm slot B is genuinely untouched by the rejected patch attempt above.
+	listB, err := repo.ListSlots(ctx, scheduleBID, unrestricted)
+	if err != nil {
+		t.Fatalf("ListSlots() error = %v", err)
+	}
+	if len(listB) != 1 || listB[0].Name != "SK Penetapan" {
+		t.Fatalf("listB = %+v, want slot B name unchanged by rejected out-of-scope patch", listB)
 	}
 }
 
