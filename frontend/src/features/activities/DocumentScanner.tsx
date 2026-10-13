@@ -48,10 +48,19 @@ function loadOpenCv(): Promise<void> {
     script.async = true;
     script.crossOrigin = 'anonymous';
     script.integrity = OPENCV_JS_INTEGRITY;
-    script.addEventListener('error', () => reject(new Error('opencv_load_failed')));
+    script.addEventListener('error', () => {
+      // Clear the cache so the NEXT call to loadOpenCv() (e.g. from the user's "Coba
+      // lagi" retry) re-attempts the CDN fetch instead of replaying this same
+      // already-rejected promise forever (spec §10 requires retry to actually work).
+      openCvLoad = undefined;
+      reject(new Error('opencv_load_failed'));
+    });
     script.addEventListener('load', () => {
       if (window.cv) window.cv.onRuntimeInitialized = () => resolve();
-      else reject(new Error('opencv_load_failed'));
+      else {
+        openCvLoad = undefined;
+        reject(new Error('opencv_load_failed'));
+      }
     });
     document.head.appendChild(script);
   });
@@ -82,8 +91,9 @@ export default function DocumentScanner({ scheduleId, slotId, programId, onDone,
     let timer = 0;
     let cancelled = false;
     Promise.all([
-      loadOpenCv(),
-      navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } }),
+      loadOpenCv().catch(() => { throw new Error('opencv'); }),
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } })
+        .catch(() => { throw new Error('camera'); }),
     ])
       .then(([, activeStream]) => {
         if (cancelled) { activeStream.getTracks().forEach((track) => track.stop()); return; }
@@ -114,8 +124,13 @@ export default function DocumentScanner({ scheduleId, slotId, programId, onDone,
         };
         tick();
       })
-      .catch(() => {
-        if (!cancelled) setError('Kamera tidak dapat diakses. Beri izin kamera pada browser, lalu coba lagi.');
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        setError(
+          cause instanceof Error && cause.message === 'opencv'
+            ? 'Deteksi dokumen gagal dimuat. Periksa koneksi internet, lalu coba lagi.'
+            : 'Kamera tidak dapat diakses. Beri izin kamera pada browser, lalu coba lagi.',
+        );
       });
     return () => { cancelled = true; window.clearTimeout(timer); stream?.getTracks().forEach((track) => track.stop()); };
   }, [video, attempt]);

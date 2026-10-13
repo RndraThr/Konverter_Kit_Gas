@@ -92,4 +92,51 @@ describe('DocumentScanner', () => {
     expect(body.getAll('page')).toHaveLength(2);
     await waitFor(() => expect(onDone).toHaveBeenCalled());
   });
+
+  it('shows the OpenCV-specific error on CDN load failure, then actually recovers on "Coba lagi" (not a stale cached rejection)', async () => {
+    // This scenario needs full control over the OpenCV <script> load lifecycle, so unlike
+    // the other test it does NOT rely on the global beforeEach's `window.cv` stub — it
+    // deletes it immediately to force the component down the real CDN-script-tag path.
+    delete (window as unknown as { cv?: unknown }).cv;
+
+    const appendedScripts: HTMLScriptElement[] = [];
+    const originalAppendChild = document.head.appendChild.bind(document.head);
+    vi.spyOn(document.head, 'appendChild').mockImplementation(((node: Node) => {
+      if (node instanceof HTMLScriptElement) appendedScripts.push(node);
+      return originalAppendChild(node);
+    }) as typeof document.head.appendChild);
+
+    const onDone = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <DocumentScanner scheduleId="s1" slotId="slot-1" programId="p1" onDone={onDone} onClose={onClose} />,
+    );
+
+    // First attempt: the CDN <script> fails to load.
+    await waitFor(() => expect(appendedScripts).toHaveLength(1));
+    appendedScripts[0].dispatchEvent(new Event('error'));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toMatch(/Deteksi dokumen gagal dimuat/);
+    expect(alert.textContent).not.toMatch(/Kamera tidak dapat diakses/);
+
+    // "Coba lagi" must trigger a genuinely NEW load attempt (a fresh <script> tag), not
+    // replay the already-rejected cached promise from the first attempt.
+    fireEvent.click(screen.getByRole('button', { name: 'Coba lagi' }));
+    await waitFor(() => expect(appendedScripts).toHaveLength(2));
+
+    const video = document.querySelector('video');
+    expect(video).toBeTruthy();
+    attachStream(video as HTMLVideoElement);
+
+    // Second attempt succeeds: opencv.js's UMD wrapper assigns `window.cv` on script
+    // `load`, then calls `onRuntimeInitialized` once its WASM finishes compiling.
+    (window as unknown as { cv?: { onRuntimeInitialized?: () => void } }).cv = {};
+    appendedScripts[1].dispatchEvent(new Event('load'));
+    await waitFor(() => expect(window.cv?.onRuntimeInitialized).toBeTypeOf('function'));
+    window.cv!.onRuntimeInitialized!();
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Ambil Halaman' })).toBeEnabled());
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
 });
