@@ -3,9 +3,7 @@ package bast
 import (
 	"context"
 	"fmt"
-	"hash/fnv"
 	"math"
-	"math/rand"
 	"strings"
 
 	"konkit/internal/auth"
@@ -161,38 +159,4 @@ func layoutParticipantRow(pdf *fpdf.Fpdf, participant ActivityParticipant) ([][]
 		}
 	}
 	return lines, math.Max(activityRowMM, float64(maxLines)*participantLineMM+2*participantPadMM)
-}
-
-// drawRecipientSignature menggambar tanda tangan penerima pada kotak tanda
-// tangan. Sementara berupa coretan dummy yang stabil per slot distribusi (sama
-// di BA perorangan dan Training); nanti diganti tanda tangan digital penerimaan.
-func drawRecipientSignature(pdf *fpdf.Fpdf, x, y, width, height float64, seed string) {
-	hash := fnv.New64a()
-	_, _ = hash.Write([]byte(seed))
-	random := rand.New(rand.NewSource(int64(hash.Sum64())))
-	// Kotak tanda tangan berproporsi tetap (2,6 : 1) di tengah sel agar bentuk
-	// tanda tangan orang yang sama identik di kotak besar maupun kecil.
-	boxH := math.Min(height-1.5, (width-4.4)/2.6)
-	boxW := boxH * 2.6
-	left, right := x+(width-boxW)/2, x+(width+boxW)/2
-	mid := y + height/2
-	amp := boxH * 0.28
-	pdf.SetDrawColor(30, 45, 110)
-	pdf.SetLineWidth(0.25)
-	px, py := left, mid+(random.Float64()-0.5)*amp
-	strokes := 3 + random.Intn(2)
-	step := (right - left) / float64(strokes)
-	for i := 0; i < strokes; i++ {
-		nx := px + step
-		ny := mid + (random.Float64()-0.5)*amp*1.6
-		cx := px + step*0.5
-		cy := mid + (random.Float64()-0.5)*amp*3.2
-		pdf.Curve(px, py, cx, cy, nx, ny, "D")
-		px, py = nx, ny
-	}
-	// Garis bawah pendek seperti paraf.
-	underline := mid + amp*0.9
-	pdf.Line(left+step*0.3, underline, left+step*(0.3+1.6*random.Float64()+0.6), underline-random.Float64()*0.8)
-	pdf.SetDrawColor(0, 0, 0)
-	pdf.SetLineWidth(0.2)
 }

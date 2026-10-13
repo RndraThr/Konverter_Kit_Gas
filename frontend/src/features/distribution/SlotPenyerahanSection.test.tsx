@@ -39,10 +39,10 @@ test('enables Selesaikan Distribusi when all required documentation is complete'
   expect(screen.getByRole('button', { name: 'Selesaikan Distribusi' })).toBeEnabled();
 });
 
-test('disables Selesaikan Distribusi until the recipient has signed', () => {
+test('allows Selesaikan Distribusi without a digital signature and says the box stays empty', () => {
   renderSection({ ...linkedSlot, recipient_signed_at: undefined });
-  expect(screen.getByRole('button', { name: 'Selesaikan Distribusi' })).toBeDisabled();
-  expect(screen.getByText('Ambil tanda tangan penerima di POS Dokumen sebelum konfirmasi.')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Selesaikan Distribusi' })).toBeEnabled();
+  expect(screen.getByText(/kolom tanda tangan di Berita Acara dibiarkan kosong/)).toBeVisible();
 });
 
 test('disables Selesaikan Distribusi when a required item is not complete', () => {

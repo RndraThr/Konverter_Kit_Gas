@@ -27,7 +27,7 @@ export function RecipientSignature({ slot, editable, onChanged }: { slot: Distri
   return <section aria-labelledby={`signature-heading-${slot.id}`} className="space-y-3 rounded-lg border p-4">
     <div className="space-y-1">
       <h4 id={`signature-heading-${slot.id}`} className="font-medium">Tanda tangan penerima</h4>
-      <p className="text-sm text-muted-foreground">Dipakai di Berita Acara perorangan dan daftar hadir Training. Wajib sebelum distribusi diselesaikan.</p>
+      <p className="text-sm text-muted-foreground">Opsional. Dipakai di Berita Acara perorangan dan daftar hadir Training; bila kosong, kolom tanda tangan dibiarkan kosong untuk tanda tangan basah.</p>
     </div>
     {slot.recipient_signed_at && !drawing
       ? <div className="space-y-3">
