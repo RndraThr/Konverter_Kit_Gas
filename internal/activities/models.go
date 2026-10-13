@@ -10,6 +10,7 @@ var (
 	ErrNotFound            = errors.New("activity media not found")
 	ErrRegencyRequired     = errors.New("regency_id is required")
 	ErrProgramRequired     = errors.New("program_id is required")
+	ErrScheduleRequired    = errors.New("schedule_id is required")
 	ErrRegencyNotFound     = errors.New("regency not found")
 	ErrActivityTypeInvalid = errors.New("activity_type is not a recognized activity type")
 	ErrMediaTypeInvalid    = errors.New("file must be a supported image or video format")

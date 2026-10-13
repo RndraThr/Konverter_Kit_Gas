@@ -3,7 +3,10 @@ package activities
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	"konkit/internal/auth"
 
@@ -44,6 +47,69 @@ func must(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// seedScheduleForTest creates a minimal program_schedules row (with its required program,
+// package template version, documentation template version, and regency) so slot repository
+// tests can scope rows by schedule_id.
+func seedScheduleForTest(t *testing.T, pool *pgxpool.Pool) (scheduleID string) {
+	t.Helper()
+	ctx := context.Background()
+	suffix := strings.ReplaceAll(t.Name(), "/", "-") + "-" + fmt.Sprintf("%d", time.Now().UnixNano())
+
+	var regencyCode, regencyID string
+	must(t, pool.QueryRow(ctx, `
+		SELECT code FROM (
+			SELECT chr(65+(g%26)::int)||chr(65+((g/26)%26)::int)||chr(65+((g/676)%26)::int) AS code
+			FROM generate_series(0,17575) AS g
+		) candidates
+		WHERE NOT EXISTS (SELECT 1 FROM regencies WHERE document_code=candidates.code)
+		ORDER BY code DESC LIMIT 1
+	`).Scan(&regencyCode))
+	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan',$1,$2,true) RETURNING id::text`, "Slot Test "+suffix, regencyCode).Scan(&regencyID))
+
+	var programID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES($1,'Program Test Slot','farmer',2026,'active') RETURNING id::text`, "SLOT-TEST-"+suffix).Scan(&programID))
+	var packageID, documentationID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES($1,1,'Paket Test Slot','farmer','{}'::jsonb,'published') RETURNING id::text`, "PKG-SLOT-"+suffix).Scan(&packageID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES($1,1,'Dok Test Slot','farmer','published') RETURNING id::text`, "DOC-SLOT-"+suffix).Scan(&documentationID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal Test Slot','2026-01-01','2026-12-31','active','{}'::jsonb) RETURNING id::text`, programID, regencyID, packageID, documentationID).Scan(&scheduleID))
+
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM supporting_document_slots WHERE schedule_id=$1`, scheduleID)
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM program_schedules WHERE id=$1`, scheduleID)
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM programs WHERE id=$1`, programID)
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM package_template_versions WHERE id=$1`, packageID)
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM documentation_template_versions WHERE id=$1`, documentationID)
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM regencies WHERE id=$1`, regencyID)
+	})
+	return scheduleID
+}
+
+func TestInsertAndListSlotsScopedBySchedule(t *testing.T) {
+	pool := activitiesIntegrationPool(t)
+	repo := NewRepository(pool)
+	ctx := context.Background()
+	scheduleAID := seedScheduleForTest(t, pool)
+	scheduleBID := seedScheduleForTest(t, pool)
+
+	_, err := repo.InsertSlot(ctx, auth.Principal{}, scheduleAID, "Surat Tugas", auth.ClientMeta{})
+	if err != nil {
+		t.Fatalf("InsertSlot() error = %v", err)
+	}
+	_, err = repo.InsertSlot(ctx, auth.Principal{}, scheduleBID, "SK Penetapan", auth.ClientMeta{})
+	if err != nil {
+		t.Fatalf("InsertSlot() error = %v", err)
+	}
+
+	listA, err := repo.ListSlots(ctx, scheduleAID)
+	if err != nil {
+		t.Fatalf("ListSlots() error = %v", err)
+	}
+	if len(listA) != 1 || listA[0].Name != "Surat Tugas" {
+		t.Fatalf("listA = %+v, want exactly one slot named Surat Tugas", listA)
 	}
 }
 

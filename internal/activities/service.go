@@ -25,6 +25,7 @@ type repository interface {
 
 type Service struct {
 	repository      repository
+	slotRepository  slotRepository
 	storage         media.Storage
 	programContexts programContextResolver
 	videoLimiter    *media.VideoLimiter
@@ -46,7 +47,8 @@ func NewService(repository repository, storage media.Storage, dependencies ...an
 			videoLimiter = value
 		}
 	}
-	return &Service{repository: repository, storage: storage, programContexts: resolver, videoLimiter: videoLimiter, now: time.Now}
+	slotRepo, _ := repository.(slotRepository)
+	return &Service{repository: repository, slotRepository: slotRepo, storage: storage, programContexts: resolver, videoLimiter: videoLimiter, now: time.Now}
 }
 
 func (s *Service) List(ctx context.Context, filter Filter, scope auth.RegencyScope) (Page, error) {
