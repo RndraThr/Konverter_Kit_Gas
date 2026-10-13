@@ -39,6 +39,12 @@ export class ApiError extends Error {
 
 type ApiRequestInit = RequestInit & { acceptedStatuses?: number[] };
 
+// Pesan cadangan bila respons galat bukan JSON aplikasi (mis. 413 dari proxy
+// nginx saat berkas melebihi batas unggah).
+function fallbackMessage(status: number) {
+  return status === 413 ? 'Berkas terlalu besar untuk diunggah' : 'Permintaan tidak dapat diproses';
+}
+
 export async function apiRequest<T>(path: string, init: ApiRequestInit = {}): Promise<T> {
   const { acceptedStatuses = [], ...requestInit } = init;
   const method = (requestInit.method ?? 'GET').toUpperCase();
@@ -60,7 +66,7 @@ export async function apiRequest<T>(path: string, init: ApiRequestInit = {}): Pr
     throw new ApiError(
       response.status,
       payload.error?.code ?? 'request_failed',
-      payload.error?.message ?? 'Permintaan tidak dapat diproses',
+      payload.error?.message ?? fallbackMessage(response.status),
       payload.error?.fields,
     );
   }
@@ -81,7 +87,7 @@ export async function apiBlobRequest(path: string, init: ApiRequestInit = {}): P
   }
   if (!response.ok && !acceptedStatuses.includes(response.status)) {
     const payload = await response.json().catch(() => ({})) as ErrorResponse;
-    throw new ApiError(response.status, payload.error?.code ?? 'request_failed', payload.error?.message ?? 'Permintaan tidak dapat diproses', payload.error?.fields);
+    throw new ApiError(response.status, payload.error?.code ?? 'request_failed', payload.error?.message ?? fallbackMessage(response.status), payload.error?.fields);
   }
   return response.blob();
 }
