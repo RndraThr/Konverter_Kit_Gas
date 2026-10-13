@@ -126,6 +126,7 @@ func run(ctx context.Context, cfg config.Config) error {
 			"servis-berkala":      bastServisBerkalaService,
 			"tkdn":                bastTKDNService,
 		}),
+		BASTOverview: bastRepository,
 		BASTWetSignature: bast.NewWetSignatureService(bastRepository, map[string]bast.WetPreviewer{
 			"dp3":                 bastDP3Service,
 			"rekap-harian":        bastDailyRecapService,
