@@ -96,9 +96,9 @@ var placementSizeLimits = map[string][2]float64{
 	SignatoryKindStamp:     {0.3, 2.5},
 }
 
-// defaultStampPlacement: menimpa sisi kiri tanda tangan, sedikit miring
-// seperti cap basah.
-var defaultStampPlacement = MarkPlacement{X: -0.4, Y: 0, Size: 0.78, Rotation: -8}
+// defaultStampPlacement: menimpa sisi kiri tanda tangan, lurus (tidak
+// diputar) sampai pengguna mengaturnya sendiri.
+var defaultStampPlacement = MarkPlacement{X: -0.4, Y: 0, Size: 0.78, Rotation: 0}
 
 func clampFloat(value, low, high float64) float64 {
 	if math.IsNaN(value) {

@@ -376,18 +376,47 @@ function PlacementControls({ kind, heading, placement, custom, onChange }: Contr
   const label = kind === 'signature' ? 'tanda tangan' : 'stempel';
   const limits = sizeLimits[kind];
   return <div className="grid gap-2 rounded-md bg-muted/40 p-2">
-    <label className="grid grid-cols-[3.5rem_minmax(0,1fr)_3rem] items-center gap-2 text-xs">
+    <div className="grid grid-cols-[3.5rem_minmax(0,1fr)_4.5rem] items-center gap-2 text-xs">
       <span>Ukuran</span>
       <input type="range" aria-label={`Ukuran ${label} ${heading}`} min={limits.min * 100} max={limits.max * 100} step={1} value={Math.round(placement.size * 100)} onChange={(event) => onChange({ ...placement, size: Number(event.target.value) / 100 })} />
-      <span className="text-right tabular-nums">{Math.round(placement.size * 100)}%</span>
-    </label>
-    <label className="grid grid-cols-[3.5rem_minmax(0,1fr)_3rem] items-center gap-2 text-xs">
+      <ExactNumber label={`Ukuran ${label} ${heading} (persen)`} unit="%" value={Math.round(placement.size * 100)} min={limits.min * 100} max={limits.max * 100} onCommit={(value) => onChange({ ...placement, size: value / 100 })} />
+    </div>
+    <div className="grid grid-cols-[3.5rem_minmax(0,1fr)_4.5rem] items-center gap-2 text-xs">
       <span>Putar</span>
       <input type="range" aria-label={`Putar ${label} ${heading}`} min={-180} max={180} step={1} value={Math.round(placement.rotation)} onChange={(event) => onChange({ ...placement, rotation: Number(event.target.value) })} />
-      <span className="text-right tabular-nums">{Math.round(placement.rotation)}°</span>
-    </label>
+      <ExactNumber label={`Putar ${label} ${heading} (derajat)`} unit="°" value={Math.round(placement.rotation)} min={-180} max={180} onCommit={(value) => onChange({ ...placement, rotation: value })} />
+    </div>
     <Button type="button" size="sm" variant="ghost" className="justify-self-start" disabled={!custom} onClick={() => onChange(null)}><RotateCcw aria-hidden="true" />Posisi bawaan {label}</Button>
   </div>;
+}
+
+type ExactNumberProps = { label: string; unit: string; value: number; min: number; max: number; onCommit: (value: number) => void };
+
+/** Angka slider yang bisa diketik langsung; disimpan saat Enter atau keluar dari isian, dibatasi min/max. */
+function ExactNumber({ label, unit, value, min, max, onCommit }: ExactNumberProps) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft === null) return;
+    const parsed = Number(draft.replace(',', '.'));
+    if (draft.trim() !== '' && Number.isFinite(parsed)) onCommit(Math.round(Math.min(max, Math.max(min, parsed))));
+    setDraft(null);
+  };
+  return <span className="flex items-center gap-0.5">
+    <Input
+      aria-label={label}
+      inputMode="numeric"
+      className="h-7 px-1.5 text-right text-xs tabular-nums"
+      value={draft ?? String(value)}
+      onFocus={(event) => { setDraft(String(value)); event.currentTarget.select(); }}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') { event.preventDefault(); commit(); }
+        if (event.key === 'Escape') setDraft(null);
+      }}
+    />
+    <span className="text-muted-foreground">{unit}</span>
+  </span>;
 }
 
 type SwitchRowProps = { id: string; checked: boolean; disabled: boolean; onToggle: () => void; label: string; description: string };

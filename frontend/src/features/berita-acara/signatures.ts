@@ -19,7 +19,7 @@ export type SignatureRule = {
 };
 
 /** Posisi bawaan stempel bila belum diatur (sama dengan server). */
-export const defaultStampPlacement: MarkPlacement = { x: -0.4, y: 0, size: 0.78, rotation: -8 };
+export const defaultStampPlacement: MarkPlacement = { x: -0.4, y: 0, size: 0.78, rotation: 0 };
 export const placementLimits = { maxX: 3, maxY: 0.5 };
 export const sizeLimits: Record<SignatoryKind, { min: number; max: number }> = {
   signature: { min: 0.2, max: 4 },
