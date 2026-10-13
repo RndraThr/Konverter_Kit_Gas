@@ -133,6 +133,56 @@ func TestActivitiesUploadRequiresManagePermissionAndParsesMultipart(t *testing.T
 	}
 }
 
+func TestActivitiesUploadMapsActivitiesDomainErrorsToHTTPStatus(t *testing.T) {
+	manager := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"activities.manage": true}}
+	secret := []byte("01234567890123456789012345678901")
+
+	newUploadRequest := func() (*http.Request, *multipart.Writer, *strings.Builder) {
+		var body strings.Builder
+		writer := multipart.NewWriter(&body)
+		_ = writer.WriteField("source", "gallery")
+		_ = writer.WriteField("activity_type", "dokumen_pendukung")
+		_ = writer.WriteField("program_id", "program-1")
+		_ = writer.WriteField("regency_id", "regency-1")
+		_ = writer.WriteField("schedule_id", "schedule-1")
+		_ = writer.WriteField("slot_id", "00000000-0000-0000-0000-000000000000")
+		_ = writer.WriteField("file_size", "15")
+		part, err := writer.CreateFormFile("file", "doc.pdf")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = part.Write([]byte("fake pdf bytes"))
+		_ = writer.Close()
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/activities/media", strings.NewReader(body.String()))
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+		req.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+		return req, writer, &body
+	}
+
+	// A bogus/out-of-scope slot_id must surface as a 400 validation error,
+	// not fall through to the generic 500 internal_error default case.
+	invalidSlotService := &fakeActivitiesService{uploadErr: activities.ErrSlotInvalid}
+	req, _, _ := newUploadRequest()
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: manager, Activities: invalidSlotService, SessionSecret: secret}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"code":"validation_failed"`) {
+		t.Fatalf("ErrSlotInvalid: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	// A schedule that doesn't exist (or is out of the caller's regency scope)
+	// must surface as a 404 not_found, matching the project's convention of
+	// treating out-of-scope access the same as "not found".
+	scheduleNotFoundService := &fakeActivitiesService{uploadErr: activities.ErrScheduleNotFound}
+	req, _, _ = newUploadRequest()
+	rec = httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: manager, Activities: scheduleNotFoundService, SessionSecret: secret}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), `"code":"not_found"`) {
+		t.Fatalf("ErrScheduleNotFound: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestActivityUploadRejectsFileBeforeMetadata(t *testing.T) {
 	manager := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"activities.manage": true}}
 	service := &fakeActivitiesService{}
