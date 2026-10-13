@@ -52,6 +52,19 @@ func (r *repositoryStub) restoreAfterFailedStorageDelete(context.Context, string
 	return nil
 }
 
+// ListSlots, InsertSlot, and PatchSlotRow exist only so repositoryStub satisfies the
+// slotRepository interface that NewService asserts against; no existing test in this file
+// exercises slot behavior, so these are unused zero-value stubs.
+func (r *repositoryStub) ListSlots(context.Context, string) ([]SupportingDocumentSlot, error) {
+	return nil, nil
+}
+func (r *repositoryStub) InsertSlot(context.Context, auth.Principal, string, string, auth.ClientMeta) (SupportingDocumentSlot, error) {
+	return SupportingDocumentSlot{}, nil
+}
+func (r *repositoryStub) PatchSlotRow(context.Context, auth.Principal, string, *string, *bool, auth.ClientMeta) (SupportingDocumentSlot, error) {
+	return SupportingDocumentSlot{}, nil
+}
+
 type storageStub struct {
 	putKey, deletedKey string
 	putFilename        string

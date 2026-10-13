@@ -47,7 +47,7 @@ func NewService(repository repository, storage media.Storage, dependencies ...an
 			videoLimiter = value
 		}
 	}
-	slotRepo, _ := repository.(slotRepository)
+	slotRepo := repository.(slotRepository)
 	return &Service{repository: repository, slotRepository: slotRepo, storage: storage, programContexts: resolver, videoLimiter: videoLimiter, now: time.Now}
 }
 
