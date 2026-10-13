@@ -668,6 +668,14 @@ func (r *Repository) scheduleByID(ctx context.Context, id string) (Schedule, err
 	return item, err
 }
 
+func (r *Repository) GetSchedule(ctx context.Context, id string, scope auth.RegencyScope) (Schedule, error) {
+	item, err := scanSchedule(r.pool.QueryRow(ctx, scheduleSelect+` WHERE s.id=$1 AND ($2 OR s.regency_id::text = ANY($3))`, id, scope.Unrestricted, scope.RegencyIDs))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Schedule{}, ErrNotFound
+	}
+	return item, err
+}
+
 func recordSetupAudit(ctx context.Context, tx pgx.Tx, actor auth.Principal, meta auth.ClientMeta, action, resourceType, resourceID string, metadata map[string]any) error {
 	return audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "program_setup." + action, ResourceType: resourceType, ResourceID: resourceID, Metadata: metadata, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent})
 }
