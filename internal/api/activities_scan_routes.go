@@ -48,15 +48,27 @@ func (h *Handler) handleActivitiesSupportingDocumentsScan(w http.ResponseWriter,
 		}
 		switch part.FormName() {
 		case "schedule_id":
-			data, _ := io.ReadAll(io.LimitReader(part, 128))
+			data, readErr := io.ReadAll(io.LimitReader(part, 129))
+			if readErr != nil || len(data) > 128 {
+				writeError(w, http.StatusBadRequest, "multipart_invalid", "Format unggahan tidak valid")
+				return
+			}
 			scheduleID = strings.TrimSpace(string(data))
 		case "slot_id":
-			data, _ := io.ReadAll(io.LimitReader(part, 128))
+			data, readErr := io.ReadAll(io.LimitReader(part, 129))
+			if readErr != nil || len(data) > 128 {
+				writeError(w, http.StatusBadRequest, "multipart_invalid", "Format unggahan tidak valid")
+				return
+			}
 			slotID = strings.TrimSpace(string(data))
 		case "page":
 			buf, err := io.ReadAll(io.LimitReader(part, activities.MaxScanPageBytes+1))
 			if err != nil {
 				writeError(w, http.StatusBadRequest, "multipart_invalid", "Format unggahan tidak valid")
+				return
+			}
+			if int64(len(buf)) > activities.MaxScanPageBytes {
+				writeError(w, http.StatusRequestEntityTooLarge, "media_too_large", "Berkas melebihi batas unggahan")
 				return
 			}
 			pages = append(pages, bytes.NewReader(buf))

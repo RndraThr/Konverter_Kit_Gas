@@ -50,3 +50,36 @@ func TestHandleActivitiesSupportingDocumentsScanPostsAllPages(t *testing.T) {
 		t.Fatalf("scheduleID = %q, slotID = %q, pages = %d", service.listedScheduleID, service.patchedID, service.scannedPageCount)
 	}
 }
+
+func TestHandleActivitiesSupportingDocumentsScanRejectsOversizedPage(t *testing.T) {
+	secret := []byte(supportingSlotsTestSecret0)
+	officer := &fakeAuthService{principal: auth.Principal{UserID: "u"}, allowedPermissions: map[string]bool{"activities.manage": true}}
+	service := &fakeActivitiesService{}
+
+	oversized := bytes.Repeat([]byte("a"), int(activities.MaxScanPageBytes)+1)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("schedule_id", "schedule-1")
+	_ = writer.WriteField("slot_id", "slot-1")
+	part, _ := writer.CreateFormFile("page", "page.jpg")
+	_, _ = part.Write(oversized)
+	_ = writer.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/activities/supporting-documents/scan", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+
+	rec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: officer, Activities: service, SessionSecret: secret}).ServeHTTP(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, body = %s, want 413", rec.Code, rec.Body.String())
+	}
+	if !bytes.Contains(rec.Body.Bytes(), []byte("media_too_large")) {
+		t.Fatalf("body = %s, want media_too_large error code", rec.Body.String())
+	}
+	if service.scannedPageCount != 0 {
+		t.Fatal("ScanUpload must not be called with a truncated oversized page")
+	}
+}
