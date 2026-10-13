@@ -43,8 +43,8 @@ func TestValidateSignaturePNG(t *testing.T) {
 	}
 }
 
-// The recipient signs in POS Dokumen; completion waits for it, and a signature
-// of a replaced recipient no longer counts.
+// The recipient may sign in POS Dokumen; completion does not wait for it, and
+// a signature of a replaced recipient no longer counts.
 func TestIntegrationRecipientSignature(t *testing.T) {
 	pool := distributionIntegrationPool(t)
 	ctx := context.Background()
@@ -70,8 +70,10 @@ func TestIntegrationRecipientSignature(t *testing.T) {
 		_, err := pool.Exec(ctx, `UPDATE media_files SET storage_state='final' WHERE id=$1`, fixture.mediaID)
 		return err
 	}())
-	if _, err := repo.CompleteSlot(ctx, auth.Principal{}, CompleteSlotInput{ScheduleID: fixture.scheduleID, SlotNumber: fixture.slotNumber}, auth.ClientMeta{}, scope); !errors.Is(err, ErrSignatureRequired) {
-		t.Fatalf("unsigned completion err=%v, want ErrSignatureRequired", err)
+	// The signature is optional: an unsigned slot gets past it to the next
+	// check (this fixture has no equipment chosen).
+	if _, err := repo.CompleteSlot(ctx, auth.Principal{}, CompleteSlotInput{ScheduleID: fixture.scheduleID, SlotNumber: fixture.slotNumber}, auth.ClientMeta{}, scope); !errors.Is(err, ErrEquipmentOptionNotFound) {
+		t.Fatalf("unsigned completion err=%v, want ErrEquipmentOptionNotFound", err)
 	}
 
 	slot, err := service.SaveRecipientSignature(ctx, auth.Principal{}, input, auth.ClientMeta{}, scope)
@@ -84,9 +86,6 @@ func TestIntegrationRecipientSignature(t *testing.T) {
 	content, err := service.OpenRecipientSignature(ctx, fixture.scheduleID, fixture.slotNumber, scope)
 	if err != nil || !bytes.Equal(content.ImagePNG, image) {
 		t.Fatalf("open signature err=%v same=%v", err, bytes.Equal(content.ImagePNG, image))
-	}
-	if _, err := repo.CompleteSlot(ctx, auth.Principal{}, CompleteSlotInput{ScheduleID: fixture.scheduleID, SlotNumber: fixture.slotNumber}, auth.ClientMeta{}, scope); errors.Is(err, ErrSignatureRequired) {
-		t.Fatal("signed slot still reports a missing signature")
 	}
 
 	// Another person on the slot: the old signature is ignored.

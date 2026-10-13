@@ -12,8 +12,9 @@ import (
 
 // Tanda tangan asli penerima (diambil di POS Dokumen) untuk BA perorangan dan
 // daftar hadir Training. Byte PNG ikut di peta gambar yang sama dengan logo,
-// dengan kunci "signature:<ID slot distribusi>". Penerimaan tanpa tanda tangan
-// asli tetap memakai paraf buatan (drawRecipientSignature).
+// dengan kunci "signature:<ID slot distribusi>". Tanda tangan bersifat
+// opsional: tanpa tanda tangan asli, kotak dibiarkan kosong untuk tanda tangan
+// basah setelah dicetak.
 
 const signatureImagePrefix = "signature:"
 
@@ -92,7 +93,7 @@ func registerSignatures(pdf *fpdf.Fpdf, images map[string][]byte) {
 }
 
 // drawSignature menggambar tanda tangan asli penerima slot di tengah sel,
-// proporsional, atau paraf buatan bila belum ada.
+// proporsional. Tanpa tanda tangan, sel dibiarkan kosong.
 func drawSignature(pdf *fpdf.Fpdf, x, y, width, height float64, slotID string) {
 	if slotID == "" {
 		return
@@ -100,7 +101,6 @@ func drawSignature(pdf *fpdf.Fpdf, x, y, width, height float64, slotID string) {
 	name := signatureImageKey(slotID)
 	info := pdf.GetImageInfo(name)
 	if info == nil || info.Width() <= 0 || info.Height() <= 0 {
-		drawRecipientSignature(pdf, x, y, width, height, slotID)
 		return
 	}
 	boxW, boxH := width-4, height-1.5
