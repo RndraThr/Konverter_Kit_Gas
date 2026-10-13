@@ -17,6 +17,10 @@ type JScanify = {
 };
 
 const OPENCV_JS_URL = 'https://docs.opencv.org/4.7.0/opencv.js';
+// Pinned against the exact bytes served at OPENCV_JS_URL at the time this was written (verified via
+// `curl -s $OPENCV_JS_URL | openssl dgst -sha384 -binary | openssl base64 -A`) — guards against a CDN
+// compromise silently swapping in different script contents under the same URL.
+const OPENCV_JS_INTEGRITY = 'sha384-7NgX/1nBIFcqsilWilRzcsVBOcPRmtwBvqsFS0QdyP6i356G43SIDx5JKd1aNqtz';
 
 declare global {
   interface Window {
@@ -42,6 +46,8 @@ function loadOpenCv(): Promise<void> {
     const script = document.createElement('script');
     script.src = OPENCV_JS_URL;
     script.async = true;
+    script.crossOrigin = 'anonymous';
+    script.integrity = OPENCV_JS_INTEGRITY;
     script.addEventListener('error', () => reject(new Error('opencv_load_failed')));
     script.addEventListener('load', () => {
       if (window.cv) window.cv.onRuntimeInitialized = () => resolve();
