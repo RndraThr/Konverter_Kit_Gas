@@ -104,7 +104,8 @@ func TestRenderClosingDrawsSignatoryMarks(t *testing.T) {
 		t.Fatal(err)
 	}
 	snapshot := sampleClosingSnapshot()
-	snapshot.SignatureMarks = SignatureMarks{SignatoryInstaller: {Signature: true, Stamp: true}}
+	// Stempel bawaan lurus; posisi diputar diatur eksplisit agar rotasi ikut diuji.
+	snapshot.SignatureMarks = SignatureMarks{SignatoryInstaller: {Signature: true, Stamp: true, StampPlacement: &MarkPlacement{X: -0.4, Size: 0.78, Rotation: -8}}}
 	marked, err := RenderClosingTitikSerah(snapshot, images)
 	if err != nil {
 		t.Fatal(err)

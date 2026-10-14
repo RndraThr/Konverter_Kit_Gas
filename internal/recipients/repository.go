@@ -610,13 +610,16 @@ func (r *Repository) Restore(ctx context.Context, actor auth.Principal, allocati
 	if err != nil {
 		return err
 	}
-	if currentStatus != "cancelled" {
+	// Penerima yang dibatalkan, atau yang diganti dari nomor bagi (mis. salah
+	// pilih orang), kembali menjadi calon siap. Penggantian sudah melepas
+	// nomor bagi dan penerima aktualnya; riwayat penggantian tetap tersimpan.
+	if currentStatus != "cancelled" && currentStatus != "replaced" {
 		return ErrNotCancelled
 	}
-	if _, err := tx.Exec(ctx, `UPDATE package_allocations SET status='ready', updated_at=now() WHERE id=$1`, allocationID); err != nil {
+	if _, err := tx.Exec(ctx, `UPDATE package_allocations SET status='ready', distribution_number=NULL, actual_recipient_person_id=NULL, updated_at=now() WHERE id=$1`, allocationID); err != nil {
 		return fmt.Errorf("restore allocation: %w", err)
 	}
-	if err := recordRecipientAudit(ctx, tx, actor, meta, "restored", allocationID, nil); err != nil {
+	if err := recordRecipientAudit(ctx, tx, actor, meta, "restored", allocationID, map[string]any{"previous_status": currentStatus}); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

@@ -5,8 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -95,7 +97,7 @@ func TestIntegrationRepositoryPersistsProgramSetupAndVersionsPublishedTemplate(t
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
 	programCode := "TEST-" + suffix
 	templateCode := "TEST-PKG-" + suffix
-	regencyCode := fmt.Sprintf("%c%c%c", 'A'+suffix[len(suffix)-1]%20, 'A'+suffix[len(suffix)-2]%20, 'A'+suffix[len(suffix)-3]%20)
+	regencyCode := freeRegencyCode(t, pool)
 	actor := auth.Principal{}
 	meta := auth.ClientMeta{IPAddress: "127.0.0.1", UserAgent: "programs-integration-test"}
 
@@ -224,7 +226,7 @@ func TestSaveScheduleRoundTripsSlotQuota(t *testing.T) {
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
 	programCode := "QTA-" + suffix
 	templateCode := "QTA-PKG-" + suffix
-	regencyCode := fmt.Sprintf("%c%c%c", 'A'+suffix[len(suffix)-1]%20, 'A'+suffix[len(suffix)-2]%20, 'A'+suffix[len(suffix)-3]%20)
+	regencyCode := freeRegencyCode(t, pool)
 	actor := auth.Principal{}
 	meta := auth.ClientMeta{IPAddress: "127.0.0.1", UserAgent: "programs-quota-test"}
 
@@ -314,8 +316,8 @@ func TestIntegrationSaveScheduleUpdateRejectsHijackOfOutOfScopeExistingRecord(t 
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
 	programCode := "HJK-" + suffix
 	templateCode := "HJK-PKG-" + suffix
-	victimCode := fmt.Sprintf("%c%c%c", 'A'+suffix[len(suffix)-1]%20, 'A'+suffix[len(suffix)-2]%20, 'A'+suffix[len(suffix)-3]%20)
-	attackerCode := fmt.Sprintf("%c%c%c", 'A'+suffix[len(suffix)-4]%20, 'A'+suffix[len(suffix)-5]%20, 'A'+suffix[len(suffix)-6]%20)
+	victimCode := freeRegencyCode(t, pool)
+	attackerCode := freeRegencyCode(t, pool, victimCode)
 	actor := auth.Principal{}
 	meta := auth.ClientMeta{IPAddress: "127.0.0.1", UserAgent: "programs-hijack-test"}
 
@@ -393,8 +395,8 @@ func TestIntegrationListRegenciesAndSchedulesRespectRegencyScope(t *testing.T) {
 	meta := auth.ClientMeta{IPAddress: "127.0.0.1", UserAgent: "programs-scope-integration-test-" + suffix}
 	actor := auth.Principal{}
 
-	codeA := fmt.Sprintf("%c%c%c", 'A'+suffix[len(suffix)-1]%20, 'A'+suffix[len(suffix)-2]%20, 'A'+suffix[len(suffix)-3]%20)
-	codeB := fmt.Sprintf("%c%c%c", 'A'+suffix[len(suffix)-4]%20, 'A'+suffix[len(suffix)-5]%20, 'A'+suffix[len(suffix)-6]%20)
+	codeA := freeRegencyCode(t, pool)
+	codeB := freeRegencyCode(t, pool, codeA)
 
 	regencyA, err := service.SaveRegency(ctx, actor, RegencyInput{
 		ProvinceName: "Sulawesi Selatan", Name: "Kabupaten Scope A " + suffix,
@@ -447,7 +449,7 @@ func TestIntegrationZoneLifecycleUsesIDForUpdates(t *testing.T) {
 	ctx := context.Background()
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
 	programCode := "ZNE-" + suffix
-	regencyCode := fmt.Sprintf("%c%c%c", 'A'+suffix[len(suffix)-1]%20, 'A'+suffix[len(suffix)-2]%20, 'A'+suffix[len(suffix)-3]%20)
+	regencyCode := freeRegencyCode(t, pool)
 	actor := auth.Principal{}
 	meta := auth.ClientMeta{IPAddress: "127.0.0.1", UserAgent: "programs-zone-integration-test-" + suffix}
 
@@ -594,7 +596,7 @@ func TestIntegrationZoneLifecycleUsesIDForUpdates(t *testing.T) {
 	// ResolveStorageContext must surface ErrZoneNotConfigured while the regency sits on the placeholder.
 	regency2, err := service.SaveRegency(ctx, actor, RegencyInput{
 		ProvinceName: "Sulawesi Selatan", Name: "Kabupaten Zona Dua " + suffix,
-		DocumentCode: fmt.Sprintf("%c%c%c", 'A'+suffix[len(suffix)-4]%20, 'A'+suffix[len(suffix)-5]%20, 'A'+suffix[len(suffix)-6]%20),
+		DocumentCode: freeRegencyCode(t, pool, regencyCode),
 		IsActive:     true,
 	}, meta)
 	if err != nil {
@@ -634,6 +636,28 @@ func containsRegencyID(regencies []Regency, id string) bool {
 		}
 	}
 	return false
+}
+
+// freeRegencyCode returns a random three-letter regency document code that no
+// regency uses yet and that is not in taken. Codes built from clock digits
+// only spanned a thousand values and collided with seeded regencies.
+func freeRegencyCode(t *testing.T, pool *pgxpool.Pool, taken ...string) string {
+	t.Helper()
+	for range 500 {
+		code := string([]byte{byte('A' + rand.IntN(26)), byte('A' + rand.IntN(26)), byte('A' + rand.IntN(26))})
+		if slices.Contains(taken, code) {
+			continue
+		}
+		var used bool
+		if err := pool.QueryRow(context.Background(), `SELECT EXISTS(SELECT 1 FROM regencies WHERE document_code = $1)`, code).Scan(&used); err != nil {
+			t.Fatal(err)
+		}
+		if !used {
+			return code
+		}
+	}
+	t.Fatal("no free regency document code")
+	return ""
 }
 
 func programsIntegrationPool(t *testing.T) *pgxpool.Pool {

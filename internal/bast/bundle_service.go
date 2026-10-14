@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
@@ -224,17 +223,9 @@ func (s *BundleService) render(ctx context.Context, programID, regencyID, localD
 			if _, exists := logoBytes[logo.AssetID]; exists {
 				continue
 			}
-			reader, err := s.storage.Open(ctx, logo.StorageKey)
+			data, err := readStoredLogo(ctx, s.storage, logo.StorageKey)
 			if err != nil {
 				return RenderedBundle{}, "", err
-			}
-			data, readErr := io.ReadAll(reader)
-			closeErr := reader.Close()
-			if readErr != nil {
-				return RenderedBundle{}, "", readErr
-			}
-			if closeErr != nil {
-				return RenderedBundle{}, "", closeErr
 			}
 			logoBytes[logo.AssetID] = data
 		}

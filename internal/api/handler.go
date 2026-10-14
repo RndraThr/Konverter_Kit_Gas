@@ -269,6 +269,7 @@ type Dependencies struct {
 	BASTSettings        BASTScheduleSettingsService
 	BASTSignatory       BASTSignatoryService
 	BASTWetSignature    BASTWetSignatureService
+	BASTOverview        BASTOverviewService
 	BASTSignatureLayout BASTSignatureLayoutService
 	DP3                 DP3Service
 	DailyRecap          DailyRecapService
@@ -431,6 +432,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleSupportingDocumentSlotItem(w, r, rc, strings.TrimPrefix(path, "activities/supporting-documents/slots/"))
 	case path == "activities/supporting-documents/scan":
 		h.handleActivitiesSupportingDocumentsScan(w, r, rc)
+	case path == "bast/overview":
+		h.handleBASTOverview(w, r, rc)
 	case strings.HasPrefix(path, "bast/individual/"):
 		h.handleBASTIndividual(w, r, rc, strings.TrimPrefix(path, "bast/individual/"))
 	case strings.HasPrefix(path, "bast/schedules/"):

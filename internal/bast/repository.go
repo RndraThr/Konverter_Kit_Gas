@@ -87,7 +87,7 @@ func (r *Repository) LoadSourceData(ctx context.Context, recipient RecipientDocu
 		SELECT p.program_type,p.fiscal_year,
 			person.full_name,COALESCE(person.nik,''),COALESCE(identifier.display_value,''),COALESCE(person.address,''),COALESCE(person.village,''),COALESCE(person.district,''),r.name,COALESCE(person.phone_number,''),
 			COALESCE(ds.machine_option_code,''),COALESCE(ds.machine_serial_number,''),COALESCE(ds.hose_option_code,''),COALESCE(ds.hose_serial_number,''),COALESCE(ds.converter_option_code,''),COALESCE(ds.converter_serial_number,''),
-			pt.id::text,pt.values_json,ds.verification_snapshot_json,COALESCE(u.full_name,u.username,''),COALESCE(ps.supervisor_name,''),ds.id::text
+			pt.id::text,pt.values_json,ds.verification_snapshot_json,COALESCE(NULLIF(st.installer_name,''),u.full_name,u.username,''),COALESCE(NULLIF(st.supervisor_name,''),ps.supervisor_name,''),ds.id::text
 		FROM distribution_slots ds
 		JOIN program_schedules ps ON ps.id=ds.schedule_id
 		JOIN programs p ON p.id=ps.program_id JOIN regencies r ON r.id=ps.regency_id
@@ -95,6 +95,9 @@ func (r *Repository) LoadSourceData(ctx context.Context, recipient RecipientDocu
 		LEFT JOIN person_sector_identifiers identifier ON identifier.person_id=person.id AND identifier.identifier_type='farmer_card'
 		JOIN package_template_versions pt ON pt.id=ps.package_template_version_id
 		LEFT JOIN users u ON u.id=ds.distributed_by
+		-- Nama Pelaksana dan Konsultan Pengawas mengikuti Penandatangan jadwal;
+		-- akun yang menyelesaikan distribusi hanya cadangan bila belum diisi.
+		LEFT JOIN bast_schedule_settings st ON st.schedule_id=ps.id
 		WHERE ds.id=$1 AND ps.program_id=$2 AND ps.regency_id=$3 AND ds.status='completed' AND ($4 OR ps.regency_id::text=ANY($5))
 	`, recipient.DistributionSlotID, sourceContext.ProgramID, sourceContext.RegencyID, scope.Unrestricted, scope.RegencyIDs).Scan(&source.ProgramType, &source.Render.FiscalYear, &source.Recipient.FullName, &source.Recipient.NIK, &source.Recipient.SectorIdentifier, &source.Recipient.Address, &source.Recipient.Village, &source.Recipient.District, &source.Recipient.Regency, &source.Recipient.PhoneNumber, &machineCode, &source.Equipment.MachineSerial, &hoseCode, &source.Equipment.HoseSerial, &converterCode, &source.Equipment.ConverterSerial, &source.PackageTemplateVersionID, &packageJSON, &verificationJSON, &source.ExecutorName, &source.SupervisorName, &source.DistributionSlotID)
 	if errors.Is(err, pgx.ErrNoRows) {

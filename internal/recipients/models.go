@@ -13,7 +13,7 @@ var (
 	ErrNIKInUse              = errors.New("nik is already registered to another person")
 	ErrSectorIdentifierInUse = errors.New("sector identifier is already registered to another person")
 	ErrAlreadyCancelled      = errors.New("recipient is already cancelled")
-	ErrNotCancelled          = errors.New("recipient is not cancelled")
+	ErrNotCancelled          = errors.New("Hanya penerima yang dibatalkan atau diganti yang dapat dipulihkan")
 	ErrCancelNotAllowed      = errors.New("recipient: cannot cancel a completed distribution")
 )
 

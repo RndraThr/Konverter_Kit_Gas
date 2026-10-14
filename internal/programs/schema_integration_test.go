@@ -13,7 +13,7 @@ func TestProgramZoneSchemaEnforcesOneAssignmentPerProgramRegency(t *testing.T) {
 	ctx := context.Background()
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
 	programCode := "ZONE-SCHEMA-" + suffix
-	regencyCode := schemaRegencyCode(suffix)
+	regencyCode := freeRegencyCode(t, pool)
 
 	var programID, regencyID, firstZoneID, secondZoneID string
 	if err := pool.QueryRow(ctx, `
@@ -137,9 +137,4 @@ func TestKonkitPackageSeparatesSuctionAndDischargeHoseDetails(t *testing.T) {
 	if len(options) != 1 || options[0].SuctionBrand != "Triliunhose" || options[0].SuctionSpec != "6 m" || options[0].DischargeBrand != "Yamakoyo" || options[0].DischargeSpec != "10 m" {
 		t.Fatalf("hose_options=%s", raw)
 	}
-}
-
-func schemaRegencyCode(suffix string) string {
-	last := len(suffix) - 1
-	return fmt.Sprintf("%c%c%c", 'A'+suffix[last]%20, 'A'+suffix[last-1]%20, 'A'+suffix[last-2]%20)
 }
