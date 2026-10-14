@@ -12,7 +12,7 @@ function clampZoom(value: number) {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, value));
 }
 
-export type PreviewMediaItem = { id: string; url: string; title: string; mediaType?: 'image' | 'video' };
+export type PreviewMediaItem = { id: string; url: string; title: string; mediaType?: 'image' | 'video' | 'document' };
 type Props = { items: PreviewMediaItem[]; index: number | null; onIndexChange: (index: number | null) => void };
 type PointSnapshot = { x: number; y: number };
 

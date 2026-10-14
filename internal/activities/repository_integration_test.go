@@ -47,6 +47,66 @@ func must(t *testing.T, err error) {
 	}
 }
 
+func TestInsertAndListSlotsScopedByRegency(t *testing.T) {
+	pool := activitiesIntegrationPool(t)
+	repo := NewRepository(pool)
+	ctx := context.Background()
+	fixture := seedActivityFixture(t, pool)
+	regencyAID, regencyBID := fixture.inScopeRegencyID, fixture.outOfScopeRegencyID
+	unrestricted := auth.RegencyScope{Unrestricted: true}
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM supporting_document_slots WHERE regency_id IN ($1,$2)`, regencyAID, regencyBID)
+	})
+
+	_, err := repo.InsertSlot(ctx, auth.Principal{}, regencyAID, "Surat Tugas", auth.ClientMeta{}, unrestricted)
+	if err != nil {
+		t.Fatalf("InsertSlot() error = %v", err)
+	}
+	slotB, err := repo.InsertSlot(ctx, auth.Principal{}, regencyBID, "SK Penetapan", auth.ClientMeta{}, unrestricted)
+	if err != nil {
+		t.Fatalf("InsertSlot() error = %v", err)
+	}
+
+	listA, err := repo.ListSlots(ctx, regencyAID, unrestricted)
+	if err != nil {
+		t.Fatalf("ListSlots() error = %v", err)
+	}
+	if len(listA) != 1 || listA[0].Name != "Surat Tugas" {
+		t.Fatalf("listA = %+v, want exactly one slot named Surat Tugas", listA)
+	}
+
+	// Cross-regency IDOR check (security review finding): a caller scoped only to regency A must
+	// not be able to list, create, or patch slots belonging to regency B.
+	scopedToA := auth.RegencyScope{RegencyIDs: []string{regencyAID}}
+
+	listBFromA, err := repo.ListSlots(ctx, regencyBID, scopedToA)
+	if err != nil {
+		t.Fatalf("ListSlots() out-of-scope error = %v, want nil (empty list, not an error)", err)
+	}
+	if len(listBFromA) != 0 {
+		t.Fatalf("ListSlots() out-of-scope = %+v, want empty list", listBFromA)
+	}
+
+	if _, err := repo.InsertSlot(ctx, auth.Principal{}, regencyBID, "Should Not Insert", auth.ClientMeta{}, scopedToA); !errors.Is(err, ErrRegencyNotFound) {
+		t.Fatalf("InsertSlot() out-of-scope err = %v, want ErrRegencyNotFound", err)
+	}
+
+	renamed := "Should Not Rename"
+	if _, err := repo.PatchSlotRow(ctx, auth.Principal{}, slotB.ID, &renamed, nil, auth.ClientMeta{}, scopedToA); !errors.Is(err, ErrSlotNotFound) {
+		t.Fatalf("PatchSlotRow() out-of-scope err = %v, want ErrSlotNotFound", err)
+	}
+
+	// Confirm slot B is genuinely untouched by the rejected patch attempt above.
+	listB, err := repo.ListSlots(ctx, regencyBID, unrestricted)
+	if err != nil {
+		t.Fatalf("ListSlots() error = %v", err)
+	}
+	if len(listB) != 1 || listB[0].Name != "SK Penetapan" {
+		t.Fatalf("listB = %+v, want slot B name unchanged by rejected out-of-scope patch", listB)
+	}
+}
+
 func TestGetRegencyEnforcesScope(t *testing.T) {
 	pool := activitiesIntegrationPool(t)
 	fixture := seedActivityFixture(t, pool)
@@ -124,5 +184,46 @@ func TestInsertListGetByIDAndSoftDeleteRoundTrip(t *testing.T) {
 	}
 	if _, err := repository.GetByID(ctx, created.ID, scope); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestInsertDokumenPendukungDocumentRow proves migrations 00066-00068 (which widened the
+// activity_media CHECK constraints on activity_type, media_type, and mime_type to accept
+// "dokumen_pendukung" / "document" / "application/pdf") actually compose with repository.Insert's
+// real INSERT statement against the fully-migrated activity_media table. Each migration's own
+// test only exercised its single CHECK constraint on a throwaway temp-table copy, and the
+// pre-existing roundtrip test above only ever inserted with "rakor"/"image"/"image/jpeg" values —
+// so nothing in the committed suite proved this exact combination round-trips end to end. This was
+// previously only verified manually via a throwaway probe script during the end-to-end smoke pass.
+func TestInsertDokumenPendukungDocumentRow(t *testing.T) {
+	pool := activitiesIntegrationPool(t)
+	fixture := seedActivityFixture(t, pool)
+	repository := NewRepository(pool)
+	ctx := context.Background()
+	actor := auth.Principal{UserID: fixture.actorUserID}
+	meta := auth.ClientMeta{IPAddress: "127.0.0.1", UserAgent: "test"}
+	scope := auth.RegencyScope{RegencyIDs: []string{fixture.inScopeRegencyID}}
+
+	created, err := repository.Insert(ctx, actor, insertInput{
+		RegencyID: fixture.inScopeRegencyID, ActivityType: "dokumen_pendukung", StorageKey: "storage-key-dokumen-1",
+		DisplayName: "WAT-DOKPEND-20260916-154500", OriginalFilename: "scan.pdf",
+		MediaType: "document", MimeType: "application/pdf", ByteSize: 4096, Checksum: "checksum-dokumen-1", Source: "camera",
+	}, meta)
+	if err != nil {
+		t.Fatalf("Insert() error = %v, want nil (migrations 00066-00068 should allow this combination)", err)
+	}
+	if created.ActivityType != "dokumen_pendukung" || created.MediaType != "document" || created.MimeType != "application/pdf" {
+		t.Fatalf("created = %+v, want activity_type=dokumen_pendukung media_type=document mime_type=application/pdf", created)
+	}
+	if created.RegencyName != "Wajo Activities Test" || created.Status != "active" || created.DisplayName != "WAT-DOKPEND-20260916-154500" {
+		t.Fatalf("created = %+v", created)
+	}
+
+	fetched, err := repository.GetByID(ctx, created.ID, scope)
+	if err != nil {
+		t.Fatalf("GetByID() error = %v", err)
+	}
+	if fetched.ID != created.ID || fetched.ActivityType != "dokumen_pendukung" || fetched.MediaType != "document" || fetched.MimeType != "application/pdf" {
+		t.Fatalf("fetched = %+v, want round-trip of created row", fetched)
 	}
 }

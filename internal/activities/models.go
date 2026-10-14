@@ -7,15 +7,17 @@ import (
 )
 
 var (
-	ErrNotFound            = errors.New("activity media not found")
-	ErrRegencyRequired     = errors.New("regency_id is required")
-	ErrProgramRequired     = errors.New("program_id is required")
-	ErrRegencyNotFound     = errors.New("regency not found")
-	ErrActivityTypeInvalid = errors.New("activity_type is not a recognized activity type")
-	ErrMediaTypeInvalid    = errors.New("file must be a supported image or video format")
-	ErrFileTooLarge        = errors.New("file exceeds the allowed size")
-	ErrVideoUploadBusy     = errors.New("video upload capacity is currently full")
-	ErrSourceInvalid       = errors.New(`source must be "camera" or "gallery"`)
+	ErrNotFound             = errors.New("activity media not found")
+	ErrRegencyRequired      = errors.New("regency_id is required")
+	ErrProgramRequired      = errors.New("program_id is required")
+	ErrRegencyNotFound      = errors.New("regency not found")
+	ErrActivityTypeInvalid  = errors.New("activity_type is not a recognized activity type")
+	ErrMediaTypeInvalid     = errors.New("file must be a supported image or video format")
+	ErrFileTooLarge         = errors.New("file exceeds the allowed size")
+	ErrVideoUploadBusy      = errors.New("video upload capacity is currently full")
+	ErrSourceInvalid        = errors.New(`source must be "camera" or "gallery"`)
+	ErrSlotInvalid          = errors.New("slot_id is invalid for this regency")
+	ErrDocumentNameRequired = errors.New("a slot_id or a custom document name is required")
 )
 
 var activityTypeCodes = map[string]string{
@@ -29,6 +31,7 @@ var activityTypeCodes = map[string]string{
 	"unloading_oli":         "UNLOADOLI",
 	"unloading_selang":      "UNLOADSELANG",
 	"unloading_tabung_gas":  "UNLOADTABUNG",
+	"dokumen_pendukung":     "DOKPEND",
 }
 
 // activityTypeFolderNames are the exact Google Drive folder names under
@@ -97,6 +100,8 @@ type UploadInput struct {
 	Source           string
 	Data             io.Reader
 	DeclaredSize     int64
+	SlotID           string // dokumen_pendukung only — picks a name from the regency's slot list
+	CustomName       string // dokumen_pendukung only — ad-hoc name for a document outside the slot list; ignored if SlotID is set
 }
 
 type MediaContent struct {
