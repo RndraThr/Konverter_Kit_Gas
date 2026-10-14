@@ -15,16 +15,16 @@ func (h *Handler) handleSupportingDocumentSlots(w http.ResponseWriter, r *http.R
 		if !h.authorize(w, r, rc.principal, "activities.view") {
 			return
 		}
-		scheduleID := strings.TrimSpace(r.URL.Query().Get("schedule_id"))
-		if scheduleID == "" {
-			writeFieldError(w, http.StatusBadRequest, "validation_failed", "schedule_id wajib diisi", map[string]string{"schedule_id": "wajib diisi"})
+		regencyID := strings.TrimSpace(r.URL.Query().Get("regency_id"))
+		if regencyID == "" {
+			writeFieldError(w, http.StatusBadRequest, "validation_failed", "regency_id wajib diisi", map[string]string{"regency_id": "wajib diisi"})
 			return
 		}
 		scope, ok := h.regencyScope(w, r, rc.principal)
 		if !ok {
 			return
 		}
-		items, err := h.deps.Activities.ListSlots(r.Context(), scheduleID, scope)
+		items, err := h.deps.Activities.ListSlots(r.Context(), regencyID, scope)
 		if err != nil {
 			writeServiceError(w, err)
 			return
@@ -35,8 +35,8 @@ func (h *Handler) handleSupportingDocumentSlots(w http.ResponseWriter, r *http.R
 			return
 		}
 		var input struct {
-			ScheduleID string `json:"schedule_id"`
-			Name       string `json:"name"`
+			RegencyID string `json:"regency_id"`
+			Name      string `json:"name"`
 		}
 		if !decodeJSON(w, r, &input) {
 			return
@@ -45,7 +45,7 @@ func (h *Handler) handleSupportingDocumentSlots(w http.ResponseWriter, r *http.R
 		if !ok {
 			return
 		}
-		item, err := h.deps.Activities.CreateSlot(r.Context(), rc.principal, input.ScheduleID, input.Name, clientMeta(r), scope)
+		item, err := h.deps.Activities.CreateSlot(r.Context(), rc.principal, input.RegencyID, input.Name, clientMeta(r), scope)
 		if err != nil {
 			writeServiceError(w, err)
 			return

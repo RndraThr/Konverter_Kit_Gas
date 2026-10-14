@@ -30,7 +30,7 @@ func (h *Handler) handleActivitiesSupportingDocumentsScan(w http.ResponseWriter,
 		writeError(w, http.StatusBadRequest, "multipart_invalid", "Format unggahan tidak valid")
 		return
 	}
-	var scheduleID, slotID string
+	var programID, regencyID, slotID, customName string
 	var pages []io.Reader
 	for {
 		part, nextErr := reader.NextPart()
@@ -47,13 +47,20 @@ func (h *Handler) handleActivitiesSupportingDocumentsScan(w http.ResponseWriter,
 			return
 		}
 		switch part.FormName() {
-		case "schedule_id":
+		case "program_id":
 			data, readErr := io.ReadAll(io.LimitReader(part, 129))
 			if readErr != nil || len(data) > 128 {
 				writeError(w, http.StatusBadRequest, "multipart_invalid", "Format unggahan tidak valid")
 				return
 			}
-			scheduleID = strings.TrimSpace(string(data))
+			programID = strings.TrimSpace(string(data))
+		case "regency_id":
+			data, readErr := io.ReadAll(io.LimitReader(part, 129))
+			if readErr != nil || len(data) > 128 {
+				writeError(w, http.StatusBadRequest, "multipart_invalid", "Format unggahan tidak valid")
+				return
+			}
+			regencyID = strings.TrimSpace(string(data))
 		case "slot_id":
 			data, readErr := io.ReadAll(io.LimitReader(part, 129))
 			if readErr != nil || len(data) > 128 {
@@ -61,6 +68,13 @@ func (h *Handler) handleActivitiesSupportingDocumentsScan(w http.ResponseWriter,
 				return
 			}
 			slotID = strings.TrimSpace(string(data))
+		case "custom_name":
+			data, readErr := io.ReadAll(io.LimitReader(part, 257))
+			if readErr != nil || len(data) > 256 {
+				writeError(w, http.StatusBadRequest, "multipart_invalid", "Format unggahan tidak valid")
+				return
+			}
+			customName = strings.TrimSpace(string(data))
 		case "page":
 			buf, err := io.ReadAll(io.LimitReader(part, activities.MaxScanPageBytes+1))
 			if err != nil {
@@ -82,7 +96,7 @@ func (h *Handler) handleActivitiesSupportingDocumentsScan(w http.ResponseWriter,
 		return
 	}
 	result, err := h.deps.Activities.ScanUpload(r.Context(), rc.principal, activities.ScanUploadInput{
-		ScheduleID: scheduleID, SlotID: slotID, Source: "camera", Pages: pages,
+		ProgramID: programID, RegencyID: regencyID, SlotID: slotID, CustomName: customName, Source: "camera", Pages: pages,
 	}, clientMeta(r), scope)
 	if err != nil {
 		writeServiceError(w, err)

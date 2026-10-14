@@ -45,9 +45,6 @@ func (r *repositoryStub) SaveSchedule(_ context.Context, _ auth.Principal, input
 	r.scheduleInput = input
 	return Schedule{}, nil
 }
-func (r *repositoryStub) GetSchedule(context.Context, string, auth.RegencyScope) (Schedule, error) {
-	return Schedule{}, nil
-}
 func (r *repositoryStub) ListPackageTemplates(context.Context) ([]PackageTemplate, error) {
 	return nil, nil
 }

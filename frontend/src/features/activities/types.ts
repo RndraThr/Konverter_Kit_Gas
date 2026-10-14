@@ -46,7 +46,7 @@ export type ProgramZone = { id: string; name: string; is_placeholder: boolean; r
 
 export type SupportingDocumentSlot = {
   id: string;
-  schedule_id: string;
+  regency_id: string;
   name: string;
   is_active: boolean;
 };

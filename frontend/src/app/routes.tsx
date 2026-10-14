@@ -47,7 +47,7 @@ export const dashboardRoutes: RouteObject[] = [{
       { value: 'unloading_selang', label: 'Selang Hisap & Buang' },
       { value: 'unloading_tabung_gas', label: 'Tabung Gas' },
     ]} /></ProtectedPage> },
-    { path: 'dokumentasi/dokumen-pendukung', element: <ProtectedPage permission="activities.view"><SupportingDocumentsRoute /></ProtectedPage> },
+    { path: 'dokumen-pendukung', element: <ProtectedPage permission="activities.view"><SupportingDocumentsRoute /></ProtectedPage> },
     { path: 'berita-acara', element: <ProtectedPage permission="bast.view"><BeritaAcaraPage /></ProtectedPage> },
     { path: 'laporan', element: <ProtectedPage permission="distribution.view"><ReportsPage /></ProtectedPage> },
     { path: 'pengguna', element: <ProtectedPage permission="users.view"><UsersPage /></ProtectedPage> },

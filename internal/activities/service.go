@@ -34,7 +34,6 @@ type Service struct {
 
 type programContextResolver interface {
 	ResolveStorageContext(context.Context, string, string, auth.RegencyScope) (programs.StorageContext, error)
-	GetSchedule(context.Context, string, auth.RegencyScope) (programs.Schedule, error)
 }
 
 func NewService(repository repository, storage media.Storage, dependencies ...any) *Service {
@@ -77,45 +76,25 @@ func (s *Service) Upload(ctx context.Context, actor auth.Principal, input Upload
 	input.RegencyID = strings.TrimSpace(input.RegencyID)
 	input.ActivityType = strings.TrimSpace(input.ActivityType)
 	input.Source = strings.TrimSpace(input.Source)
-	input.ScheduleID = strings.TrimSpace(input.ScheduleID)
 	input.SlotID = strings.TrimSpace(input.SlotID)
+	input.CustomName = strings.TrimSpace(input.CustomName)
 	if !isValidActivityType(input.ActivityType) {
 		return ActivityMedia{}, ErrActivityTypeInvalid
 	}
 	if input.Source != "camera" && input.Source != "gallery" {
 		return ActivityMedia{}, ErrSourceInvalid
 	}
+	if input.ProgramID == "" || s.programContexts == nil {
+		return ActivityMedia{}, ErrProgramRequired
+	}
 
-	var slotName string
+	var nameSegment string
 	if input.ActivityType == "dokumen_pendukung" {
-		if input.ScheduleID == "" {
-			return ActivityMedia{}, ErrScheduleRequired
-		}
-		if s.programContexts == nil {
-			return ActivityMedia{}, ErrProgramRequired
-		}
-		schedule, err := s.programContexts.GetSchedule(ctx, input.ScheduleID, scope)
+		segment, err := s.resolveDocumentNameSegment(ctx, input.RegencyID, input.SlotID, input.CustomName, scope)
 		if err != nil {
 			return ActivityMedia{}, err
 		}
-		input.ProgramID, input.RegencyID = schedule.ProgramID, schedule.RegencyID
-		slots, err := s.ListSlots(ctx, input.ScheduleID, scope)
-		if err != nil {
-			return ActivityMedia{}, err
-		}
-		for _, candidate := range slots {
-			if candidate.ID == input.SlotID {
-				slotName = candidate.Name
-				break
-			}
-		}
-		if slotName == "" {
-			return ActivityMedia{}, ErrSlotInvalid
-		}
-	} else {
-		if input.ProgramID == "" || s.programContexts == nil {
-			return ActivityMedia{}, ErrProgramRequired
-		}
+		nameSegment = segment
 	}
 
 	storageContext, err := s.programContexts.ResolveStorageContext(ctx, input.ProgramID, input.RegencyID, scope)
@@ -154,9 +133,8 @@ func (s *Service) Upload(ctx context.Context, actor auth.Principal, input Upload
 	if err != nil {
 		return ActivityMedia{}, err
 	}
-	nameSegment := activityTypeCodes[input.ActivityType]
-	if input.ActivityType == "dokumen_pendukung" {
-		nameSegment = sanitizeSlotName(slotName)
+	if nameSegment == "" {
+		nameSegment = activityTypeCodes[input.ActivityType]
 	}
 	displayName := fmt.Sprintf("%s-%s-%s", regency.DocumentCode, nameSegment, s.now().Format("20060102-150405"))
 
@@ -235,6 +213,30 @@ func policyFor(activityType string) string {
 func sanitizeSlotName(name string) string {
 	fields := strings.Fields(name)
 	return strings.ToUpper(strings.Join(fields, "-"))
+}
+
+// resolveDocumentNameSegment picks the sanitized name segment for a
+// dokumen_pendukung upload: a slot from the regency's managed list (preferred),
+// or an ad-hoc free-text name for a document outside that list. Exactly one of
+// slotID/customName must resolve to a name, or ErrSlotInvalid/ErrDocumentNameRequired
+// is returned.
+func (s *Service) resolveDocumentNameSegment(ctx context.Context, regencyID, slotID, customName string, scope auth.RegencyScope) (string, error) {
+	if slotID != "" {
+		slots, err := s.ListSlots(ctx, regencyID, scope)
+		if err != nil {
+			return "", err
+		}
+		for _, candidate := range slots {
+			if candidate.ID == slotID {
+				return sanitizeSlotName(candidate.Name), nil
+			}
+		}
+		return "", ErrSlotInvalid
+	}
+	if customName != "" {
+		return sanitizeSlotName(customName), nil
+	}
+	return "", ErrDocumentNameRequired
 }
 
 func (s *Service) Delete(ctx context.Context, actor auth.Principal, id string, meta auth.ClientMeta, scope auth.RegencyScope) error {

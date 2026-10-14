@@ -42,7 +42,9 @@ const groups: NavGroup[] = [
     { label: 'Training 10%', to: '/dokumentasi/training-10', permission: 'activities.view', icon: <BookOpen /> },
     { label: 'Training 100%', to: '/dokumentasi/training-100', permission: 'activities.view', icon: <BookOpenCheck /> },
     { label: 'Unloading', to: '/dokumentasi/unloading', permission: 'activities.view', icon: <PackageOpen /> },
-    { label: 'Dokumen Pendukung', to: '/dokumentasi/dokumen-pendukung', permission: 'activities.view', icon: <FileCheck2 /> },
+  ] },
+  { label: 'Dokumen Pendukung', items: [
+    { label: 'Dokumen Pendukung', to: '/dokumen-pendukung', permission: 'activities.view', icon: <FileCheck2 /> },
   ] },
   { label: 'Berita Acara', items: [
     { label: 'Berita Acara', to: '/berita-acara', permission: 'bast.view', icon: <Files /> },

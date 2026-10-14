@@ -29,10 +29,12 @@ var (
 
 // ScanUploadInput describes a set of camera-captured (or gallery-picked)
 // page images to assemble into a single PDF and store as a dokumen_pendukung
-// upload against a schedule slot.
+// upload against a regency's slot list (or an ad-hoc custom name).
 type ScanUploadInput struct {
-	ScheduleID string
+	ProgramID  string
+	RegencyID  string
 	SlotID     string
+	CustomName string
 	Source     string
 	Pages      []io.Reader
 }
@@ -50,31 +52,20 @@ func (s *Service) ScanUpload(ctx context.Context, actor auth.Principal, input Sc
 	if input.Source != "camera" && input.Source != "gallery" {
 		input.Source = "camera"
 	}
-
-	schedule, err := s.programContexts.GetSchedule(ctx, input.ScheduleID, scope)
-	if err != nil {
-		return ActivityMedia{}, err
-	}
-	slots, err := s.ListSlots(ctx, input.ScheduleID, scope)
-	if err != nil {
-		return ActivityMedia{}, err
-	}
-	var slotName string
-	for _, candidate := range slots {
-		if candidate.ID == input.SlotID {
-			slotName = candidate.Name
-			break
-		}
-	}
-	if slotName == "" {
-		return ActivityMedia{}, ErrSlotInvalid
+	if input.ProgramID == "" || s.programContexts == nil {
+		return ActivityMedia{}, ErrProgramRequired
 	}
 
-	storageContext, err := s.programContexts.ResolveStorageContext(ctx, schedule.ProgramID, schedule.RegencyID, scope)
+	nameSegment, err := s.resolveDocumentNameSegment(ctx, input.RegencyID, input.SlotID, input.CustomName, scope)
 	if err != nil {
 		return ActivityMedia{}, err
 	}
-	regency, err := s.repository.GetRegency(ctx, schedule.RegencyID, scope)
+
+	storageContext, err := s.programContexts.ResolveStorageContext(ctx, input.ProgramID, input.RegencyID, scope)
+	if err != nil {
+		return ActivityMedia{}, err
+	}
+	regency, err := s.repository.GetRegency(ctx, input.RegencyID, scope)
 	if err != nil {
 		return ActivityMedia{}, err
 	}
@@ -97,10 +88,10 @@ func (s *Service) ScanUpload(ctx context.Context, actor auth.Principal, input Sc
 	if err != nil {
 		return ActivityMedia{}, err
 	}
-	displayName := fmt.Sprintf("%s-%s-%s", regency.DocumentCode, sanitizeSlotName(slotName), s.now().Format("20060102-150405"))
+	displayName := fmt.Sprintf("%s-%s-%s", regency.DocumentCode, nameSegment, s.now().Format("20060102-150405"))
 
 	return s.store(ctx, actor, preparedUpload{
-		ActivityType: "dokumen_pendukung", ProgramID: schedule.ProgramID, RegencyID: schedule.RegencyID,
+		ActivityType: "dokumen_pendukung", ProgramID: input.ProgramID, RegencyID: input.RegencyID,
 		DisplayName: displayName, OriginalFilename: displayName + ".pdf", Source: input.Source, Detected: detected,
 	}, folderPath, meta)
 }

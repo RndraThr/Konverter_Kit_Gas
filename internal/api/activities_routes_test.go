@@ -25,7 +25,7 @@ type fakeActivitiesService struct {
 	uploadReadErr    error
 	seenRegencyScope auth.RegencyScope
 	seenDeleteID     string
-	listedScheduleID string
+	listedRegencyID  string
 	createdName      string
 	patchedID        string
 	scannedPageCount int
@@ -50,13 +50,13 @@ func (f *fakeActivitiesService) OpenContent(_ context.Context, id string, scope 
 	f.seenDeleteID, f.seenRegencyScope = id, scope
 	return f.content, f.contentErr
 }
-func (f *fakeActivitiesService) ListSlots(_ context.Context, scheduleID string, _ auth.RegencyScope) ([]activities.SupportingDocumentSlot, error) {
-	f.listedScheduleID = scheduleID
-	return []activities.SupportingDocumentSlot{{ID: "slot-1", ScheduleID: scheduleID, Name: "Surat Tugas", IsActive: true}}, nil
+func (f *fakeActivitiesService) ListSlots(_ context.Context, regencyID string, _ auth.RegencyScope) ([]activities.SupportingDocumentSlot, error) {
+	f.listedRegencyID = regencyID
+	return []activities.SupportingDocumentSlot{{ID: "slot-1", RegencyID: regencyID, Name: "Surat Tugas", IsActive: true}}, nil
 }
-func (f *fakeActivitiesService) CreateSlot(_ context.Context, _ auth.Principal, scheduleID, name string, _ auth.ClientMeta, _ auth.RegencyScope) (activities.SupportingDocumentSlot, error) {
+func (f *fakeActivitiesService) CreateSlot(_ context.Context, _ auth.Principal, regencyID, name string, _ auth.ClientMeta, _ auth.RegencyScope) (activities.SupportingDocumentSlot, error) {
 	f.createdName = name
-	return activities.SupportingDocumentSlot{ID: "slot-2", ScheduleID: scheduleID, Name: name, IsActive: true}, nil
+	return activities.SupportingDocumentSlot{ID: "slot-2", RegencyID: regencyID, Name: name, IsActive: true}, nil
 }
 func (f *fakeActivitiesService) PatchSlot(_ context.Context, _ auth.Principal, id string, _ *string, isActive *bool, _ auth.ClientMeta, _ auth.RegencyScope) (activities.SupportingDocumentSlot, error) {
 	f.patchedID = id
@@ -144,7 +144,6 @@ func TestActivitiesUploadMapsActivitiesDomainErrorsToHTTPStatus(t *testing.T) {
 		_ = writer.WriteField("activity_type", "dokumen_pendukung")
 		_ = writer.WriteField("program_id", "program-1")
 		_ = writer.WriteField("regency_id", "regency-1")
-		_ = writer.WriteField("schedule_id", "schedule-1")
 		_ = writer.WriteField("slot_id", "00000000-0000-0000-0000-000000000000")
 		_ = writer.WriteField("file_size", "15")
 		part, err := writer.CreateFormFile("file", "doc.pdf")
@@ -171,15 +170,15 @@ func TestActivitiesUploadMapsActivitiesDomainErrorsToHTTPStatus(t *testing.T) {
 		t.Fatalf("ErrSlotInvalid: status=%d body=%s", rec.Code, rec.Body.String())
 	}
 
-	// A schedule that doesn't exist (or is out of the caller's regency scope)
+	// A regency that doesn't exist (or is out of the caller's regency scope)
 	// must surface as a 404 not_found, matching the project's convention of
 	// treating out-of-scope access the same as "not found".
-	scheduleNotFoundService := &fakeActivitiesService{uploadErr: activities.ErrScheduleNotFound}
+	regencyNotFoundService := &fakeActivitiesService{uploadErr: activities.ErrRegencyNotFound}
 	req, _, _ = newUploadRequest()
 	rec = httptest.NewRecorder()
-	NewHandler(Dependencies{Auth: manager, Activities: scheduleNotFoundService, SessionSecret: secret}).ServeHTTP(rec, req)
+	NewHandler(Dependencies{Auth: manager, Activities: regencyNotFoundService, SessionSecret: secret}).ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), `"code":"not_found"`) {
-		t.Fatalf("ErrScheduleNotFound: status=%d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("ErrRegencyNotFound: status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

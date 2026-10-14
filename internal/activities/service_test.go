@@ -99,18 +99,12 @@ func (s *storageStub) EnsureFolders(context.Context, [][]string) error {
 var _ media.Storage = (*storageStub)(nil)
 
 type programContextResolverStub struct {
-	context     programs.StorageContext
-	err         error
-	schedule    programs.Schedule
-	scheduleErr error
+	context programs.StorageContext
+	err     error
 }
 
 func (r *programContextResolverStub) ResolveStorageContext(context.Context, string, string, auth.RegencyScope) (programs.StorageContext, error) {
 	return r.context, r.err
-}
-
-func (r *programContextResolverStub) GetSchedule(context.Context, string, auth.RegencyScope) (programs.Schedule, error) {
-	return r.schedule, r.scheduleErr
 }
 
 func TestUploadRequiresProgramBeforeStorage(t *testing.T) {
@@ -249,17 +243,16 @@ func TestUploadGeneratesAKeyAndPersistsTheReturnedStorageKey(t *testing.T) {
 func TestUploadDokumenPendukungRejectsNonPDF(t *testing.T) {
 	repository := &repositoryStub{
 		regency:     regencyInfo{ID: "regency-1", Name: "Wajo", DocumentCode: "WJO"},
-		slotsResult: []SupportingDocumentSlot{{ID: "slot-1", ScheduleID: "schedule-1", Name: "Surat Tugas", IsActive: true}},
+		slotsResult: []SupportingDocumentSlot{{ID: "slot-1", RegencyID: "regency-1", Name: "Surat Tugas", IsActive: true}},
 	}
 	storage := &storageStub{}
 	resolver := &programContextResolverStub{
-		context:  programs.StorageContext{ProgramID: "program-1", ProgramType: programs.ProgramFarmer, ZoneName: "Zona 1", RegencyID: "regency-1", RegencyName: "Wajo"},
-		schedule: programs.Schedule{ID: "schedule-1", ProgramID: "program-1", RegencyID: "regency-1"},
+		context: programs.StorageContext{ProgramID: "program-1", ProgramType: programs.ProgramFarmer, ZoneName: "Zona 1", RegencyID: "regency-1", RegencyName: "Wajo"},
 	}
 	service := NewService(repository, storage, resolver)
 	jpeg := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0}
 	_, err := service.Upload(context.Background(), auth.Principal{}, UploadInput{
-		ActivityType: "dokumen_pendukung", ScheduleID: "schedule-1", SlotID: "slot-1",
+		ActivityType: "dokumen_pendukung", ProgramID: "program-1", RegencyID: "regency-1", SlotID: "slot-1",
 		Source: "gallery", OriginalFilename: "photo.jpg", Data: bytes.NewReader(jpeg), DeclaredSize: int64(len(jpeg)),
 	}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
 	if !errors.Is(err, ErrMediaTypeInvalid) {
@@ -270,17 +263,16 @@ func TestUploadDokumenPendukungRejectsNonPDF(t *testing.T) {
 func TestUploadDokumenPendukungAcceptsPDFAndNamesFromSlot(t *testing.T) {
 	repository := &repositoryStub{
 		regency:     regencyInfo{ID: "regency-1", Name: "Wajo", DocumentCode: "WJO"},
-		slotsResult: []SupportingDocumentSlot{{ID: "slot-1", ScheduleID: "schedule-1", Name: "Surat Tugas", IsActive: true}},
+		slotsResult: []SupportingDocumentSlot{{ID: "slot-1", RegencyID: "regency-1", Name: "Surat Tugas", IsActive: true}},
 	}
 	storage := &storageStub{}
 	resolver := &programContextResolverStub{
-		context:  programs.StorageContext{ProgramID: "program-1", ProgramType: programs.ProgramFarmer, ZoneName: "Zona 1", RegencyID: "regency-1", RegencyName: "Wajo"},
-		schedule: programs.Schedule{ID: "schedule-1", ProgramID: "program-1", RegencyID: "regency-1"},
+		context: programs.StorageContext{ProgramID: "program-1", ProgramType: programs.ProgramFarmer, ZoneName: "Zona 1", RegencyID: "regency-1", RegencyName: "Wajo"},
 	}
 	service := NewService(repository, storage, resolver)
 	pdf := []byte("%PDF-1.4\n%fake pdf content for test\n")
 	_, err := service.Upload(context.Background(), auth.Principal{}, UploadInput{
-		ActivityType: "dokumen_pendukung", ScheduleID: "schedule-1", SlotID: "slot-1",
+		ActivityType: "dokumen_pendukung", ProgramID: "program-1", RegencyID: "regency-1", SlotID: "slot-1",
 		Source: "gallery", OriginalFilename: "scan.pdf", Data: bytes.NewReader(pdf), DeclaredSize: int64(len(pdf)),
 	}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
 	if err != nil {
@@ -291,6 +283,43 @@ func TestUploadDokumenPendukungAcceptsPDFAndNamesFromSlot(t *testing.T) {
 	}
 	if repository.insertInput.MediaType != "document" {
 		t.Fatalf("MediaType = %q, want document", repository.insertInput.MediaType)
+	}
+}
+
+func TestUploadDokumenPendukungAcceptsCustomNameWithoutASlot(t *testing.T) {
+	repository := &repositoryStub{regency: regencyInfo{ID: "regency-1", Name: "Wajo", DocumentCode: "WJO"}}
+	storage := &storageStub{}
+	resolver := &programContextResolverStub{
+		context: programs.StorageContext{ProgramID: "program-1", ProgramType: programs.ProgramFarmer, ZoneName: "Zona 1", RegencyID: "regency-1", RegencyName: "Wajo"},
+	}
+	service := NewService(repository, storage, resolver)
+	pdf := []byte("%PDF-1.4\n%fake pdf content for test\n")
+	_, err := service.Upload(context.Background(), auth.Principal{}, UploadInput{
+		ActivityType: "dokumen_pendukung", ProgramID: "program-1", RegencyID: "regency-1", CustomName: "Surat Keterangan Domisili",
+		Source: "gallery", OriginalFilename: "scan.pdf", Data: bytes.NewReader(pdf), DeclaredSize: int64(len(pdf)),
+	}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(repository.insertInput.DisplayName, "SURAT-KETERANGAN-DOMISILI") {
+		t.Fatalf("DisplayName = %q, want to contain SURAT-KETERANGAN-DOMISILI", repository.insertInput.DisplayName)
+	}
+}
+
+func TestUploadDokumenPendukungRejectsWhenNeitherSlotNorCustomNameGiven(t *testing.T) {
+	repository := &repositoryStub{regency: regencyInfo{ID: "regency-1", Name: "Wajo", DocumentCode: "WJO"}}
+	storage := &storageStub{}
+	resolver := &programContextResolverStub{
+		context: programs.StorageContext{ProgramID: "program-1", ProgramType: programs.ProgramFarmer, ZoneName: "Zona 1", RegencyID: "regency-1", RegencyName: "Wajo"},
+	}
+	service := NewService(repository, storage, resolver)
+	pdf := []byte("%PDF-1.4\n%fake pdf content for test\n")
+	_, err := service.Upload(context.Background(), auth.Principal{}, UploadInput{
+		ActivityType: "dokumen_pendukung", ProgramID: "program-1", RegencyID: "regency-1",
+		Source: "gallery", OriginalFilename: "scan.pdf", Data: bytes.NewReader(pdf), DeclaredSize: int64(len(pdf)),
+	}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if !errors.Is(err, ErrDocumentNameRequired) {
+		t.Fatalf("err = %v, want ErrDocumentNameRequired", err)
 	}
 }
 

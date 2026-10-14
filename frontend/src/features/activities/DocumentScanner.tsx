@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 // package's own README. See the task report for the full verification trail.
 // @ts-expect-error -- jscanify ships no TypeScript typings for either entry point.
 import jscanify from 'jscanify/client';
-import { LoaderCircle, RefreshCw } from 'lucide-react';
+import { LoaderCircle, RefreshCw, X } from 'lucide-react';
 import { apiRequest, ApiError } from '../../lib/api';
 import { Button } from '../../components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../../components/ui/dialog';
@@ -73,13 +73,14 @@ function loadOpenCv(): Promise<void> {
 // perspective-crop to a flat rectangle, a quick sharpen/contrast pass, then
 // accumulate pages until "Selesai" assembles them server-side into one PDF.
 // No color-mode picker (spec §2) — the enhance step always runs, unconditionally.
-export default function DocumentScanner({ scheduleId, slotId, programId, onDone, onClose }: {
-  scheduleId: string; slotId: string; programId: string; onDone: () => void; onClose: () => void;
+export default function DocumentScanner({ programId, regencyId, slotId, customName, onDone, onClose }: {
+  programId: string; regencyId: string; slotId: string; customName: string; onDone: () => void; onClose: () => void;
 }) {
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const scannerRef = useRef<JScanify>(new jscanify());
-  const [pages, setPages] = useState<Blob[]>([]);
+  const [pages, setPages] = useState<{ id: number; blob: Blob; previewUrl: string }[]>([]);
+  const nextPageId = useRef(0);
   const [starting, setStarting] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -135,6 +136,10 @@ export default function DocumentScanner({ scheduleId, slotId, programId, onDone,
     return () => { cancelled = true; window.clearTimeout(timer); stream?.getTracks().forEach((track) => track.stop()); };
   }, [video, attempt]);
 
+  const pagesRef = useRef(pages);
+  pagesRef.current = pages;
+  useEffect(() => () => { pagesRef.current.forEach((page) => URL.revokeObjectURL(page.previewUrl)); }, []);
+
   const enhance = (canvas: HTMLCanvasElement): HTMLCanvasElement => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return canvas;
@@ -169,16 +174,31 @@ export default function DocumentScanner({ scheduleId, slotId, programId, onDone,
       return;
     }
     const finished = enhance(cropped);
-    finished.toBlob((blob) => { if (blob) setPages((current) => [...current, blob]); }, 'image/jpeg', 0.85);
+    finished.toBlob((blob) => {
+      if (!blob) return;
+      const id = nextPageId.current;
+      nextPageId.current += 1;
+      setPages((current) => [...current, { id, blob, previewUrl: URL.createObjectURL(blob) }]);
+    }, 'image/jpeg', 0.85);
+  };
+
+  const removePage = (id: number) => {
+    setPages((current) => {
+      const target = current.find((page) => page.id === id);
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return current.filter((page) => page.id !== id);
+    });
   };
 
   const finish = async () => {
     setSubmitting(true);
     try {
       const form = new FormData();
-      form.append('schedule_id', scheduleId);
-      form.append('slot_id', slotId);
-      pages.forEach((page, index) => form.append('page', page, `page-${index}.jpg`));
+      form.append('program_id', programId);
+      form.append('regency_id', regencyId);
+      if (customName) form.append('custom_name', customName);
+      else form.append('slot_id', slotId);
+      pages.forEach((page, index) => form.append('page', page.blob, `page-${index}.jpg`));
       await apiRequest('/api/v1/activities/supporting-documents/scan', { method: 'POST', body: form });
       onDone();
     } catch (cause) {
@@ -192,7 +212,7 @@ export default function DocumentScanner({ scheduleId, slotId, programId, onDone,
     <DialogContent aria-label="Scan Dokumen Pendukung" className="max-w-md">
       <DialogHeader>
         <DialogTitle>Scan Dokumen Pendukung</DialogTitle>
-        <DialogDescription>Arahkan kamera ke dokumen — tepi terdeteksi otomatis. Program: {programId}.</DialogDescription>
+        <DialogDescription>Arahkan kamera ke dokumen — tepi terdeteksi otomatis.</DialogDescription>
       </DialogHeader>
       {error ? <div className="space-y-3">
         <p className="text-sm text-destructive" role="alert">{error}</p>
@@ -204,6 +224,14 @@ export default function DocumentScanner({ scheduleId, slotId, programId, onDone,
           {starting && <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-white"><LoaderCircle className="size-6 animate-spin" aria-hidden="true" /></div>}
         </div>
         <p className="text-sm text-muted-foreground">{pages.length} halaman terkumpul.</p>
+        {pages.length > 0 && <ul className="flex flex-wrap gap-2">
+          {pages.map((page, index) => <li key={page.id} className="relative">
+            <img src={page.previewUrl} alt={`Halaman ${index + 1}`} className="h-20 w-16 rounded border object-cover" />
+            <button type="button" aria-label={`Hapus halaman ${index + 1}`} onClick={() => removePage(page.id)} className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground">
+              <X className="size-3" aria-hidden="true" />
+            </button>
+          </li>)}
+        </ul>}
         <div className="flex flex-wrap gap-2">
           <Button type="button" onClick={capture} disabled={starting}>Ambil Halaman</Button>
           <Button type="button" variant="outline" disabled={!pages.length || submitting} onClick={finish}>{submitting ? 'Menyimpan...' : 'Selesai'}</Button>

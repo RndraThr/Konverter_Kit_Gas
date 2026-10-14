@@ -3,10 +3,7 @@ package activities
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
 	"testing"
-	"time"
 
 	"konkit/internal/auth"
 
@@ -50,63 +47,28 @@ func must(t *testing.T, err error) {
 	}
 }
 
-// seedScheduleForTest creates a minimal program_schedules row (with its required program,
-// package template version, documentation template version, and regency) so slot repository
-// tests can scope rows by schedule_id. It returns both the schedule id and the regency id it
-// belongs to, so callers can build an auth.RegencyScope that is or isn't in scope for it.
-func seedScheduleForTest(t *testing.T, pool *pgxpool.Pool) (scheduleID, regencyID string) {
-	t.Helper()
-	ctx := context.Background()
-	suffix := strings.ReplaceAll(t.Name(), "/", "-") + "-" + fmt.Sprintf("%d", time.Now().UnixNano())
-
-	var regencyCode string
-	must(t, pool.QueryRow(ctx, `
-		SELECT code FROM (
-			SELECT chr(65+(g%26)::int)||chr(65+((g/26)%26)::int)||chr(65+((g/676)%26)::int) AS code
-			FROM generate_series(0,17575) AS g
-		) candidates
-		WHERE NOT EXISTS (SELECT 1 FROM regencies WHERE document_code=candidates.code)
-		ORDER BY code DESC LIMIT 1
-	`).Scan(&regencyCode))
-	must(t, pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan',$1,$2,true) RETURNING id::text`, "Slot Test "+suffix, regencyCode).Scan(&regencyID))
-
-	var programID string
-	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES($1,'Program Test Slot','farmer',2026,'active') RETURNING id::text`, "SLOT-TEST-"+suffix).Scan(&programID))
-	var packageID, documentationID string
-	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES($1,1,'Paket Test Slot','farmer','{}'::jsonb,'published') RETURNING id::text`, "PKG-SLOT-"+suffix).Scan(&packageID))
-	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES($1,1,'Dok Test Slot','farmer','published') RETURNING id::text`, "DOC-SLOT-"+suffix).Scan(&documentationID))
-	must(t, pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal Test Slot','2026-01-01','2026-12-31','active','{}'::jsonb) RETURNING id::text`, programID, regencyID, packageID, documentationID).Scan(&scheduleID))
-
-	t.Cleanup(func() {
-		cleanupCtx := context.Background()
-		_, _ = pool.Exec(cleanupCtx, `DELETE FROM supporting_document_slots WHERE schedule_id=$1`, scheduleID)
-		_, _ = pool.Exec(cleanupCtx, `DELETE FROM program_schedules WHERE id=$1`, scheduleID)
-		_, _ = pool.Exec(cleanupCtx, `DELETE FROM programs WHERE id=$1`, programID)
-		_, _ = pool.Exec(cleanupCtx, `DELETE FROM package_template_versions WHERE id=$1`, packageID)
-		_, _ = pool.Exec(cleanupCtx, `DELETE FROM documentation_template_versions WHERE id=$1`, documentationID)
-		_, _ = pool.Exec(cleanupCtx, `DELETE FROM regencies WHERE id=$1`, regencyID)
-	})
-	return scheduleID, regencyID
-}
-
-func TestInsertAndListSlotsScopedBySchedule(t *testing.T) {
+func TestInsertAndListSlotsScopedByRegency(t *testing.T) {
 	pool := activitiesIntegrationPool(t)
 	repo := NewRepository(pool)
 	ctx := context.Background()
-	scheduleAID, regencyAID := seedScheduleForTest(t, pool)
-	scheduleBID, regencyBID := seedScheduleForTest(t, pool)
+	fixture := seedActivityFixture(t, pool)
+	regencyAID, regencyBID := fixture.inScopeRegencyID, fixture.outOfScopeRegencyID
 	unrestricted := auth.RegencyScope{Unrestricted: true}
+	t.Cleanup(func() {
+		cleanupCtx := context.Background()
+		_, _ = pool.Exec(cleanupCtx, `DELETE FROM supporting_document_slots WHERE regency_id IN ($1,$2)`, regencyAID, regencyBID)
+	})
 
-	_, err := repo.InsertSlot(ctx, auth.Principal{}, scheduleAID, "Surat Tugas", auth.ClientMeta{}, unrestricted)
+	_, err := repo.InsertSlot(ctx, auth.Principal{}, regencyAID, "Surat Tugas", auth.ClientMeta{}, unrestricted)
 	if err != nil {
 		t.Fatalf("InsertSlot() error = %v", err)
 	}
-	slotB, err := repo.InsertSlot(ctx, auth.Principal{}, scheduleBID, "SK Penetapan", auth.ClientMeta{}, unrestricted)
+	slotB, err := repo.InsertSlot(ctx, auth.Principal{}, regencyBID, "SK Penetapan", auth.ClientMeta{}, unrestricted)
 	if err != nil {
 		t.Fatalf("InsertSlot() error = %v", err)
 	}
 
-	listA, err := repo.ListSlots(ctx, scheduleAID, unrestricted)
+	listA, err := repo.ListSlots(ctx, regencyAID, unrestricted)
 	if err != nil {
 		t.Fatalf("ListSlots() error = %v", err)
 	}
@@ -115,13 +77,10 @@ func TestInsertAndListSlotsScopedBySchedule(t *testing.T) {
 	}
 
 	// Cross-regency IDOR check (security review finding): a caller scoped only to regency A must
-	// not be able to list, create, or patch slots belonging to schedule B's regency B.
+	// not be able to list, create, or patch slots belonging to regency B.
 	scopedToA := auth.RegencyScope{RegencyIDs: []string{regencyAID}}
-	if regencyAID == regencyBID {
-		t.Fatalf("test fixtures produced the same regency for schedule A and B, scope assertions below are meaningless")
-	}
 
-	listBFromA, err := repo.ListSlots(ctx, scheduleBID, scopedToA)
+	listBFromA, err := repo.ListSlots(ctx, regencyBID, scopedToA)
 	if err != nil {
 		t.Fatalf("ListSlots() out-of-scope error = %v, want nil (empty list, not an error)", err)
 	}
@@ -129,8 +88,8 @@ func TestInsertAndListSlotsScopedBySchedule(t *testing.T) {
 		t.Fatalf("ListSlots() out-of-scope = %+v, want empty list", listBFromA)
 	}
 
-	if _, err := repo.InsertSlot(ctx, auth.Principal{}, scheduleBID, "Should Not Insert", auth.ClientMeta{}, scopedToA); !errors.Is(err, ErrScheduleNotFound) {
-		t.Fatalf("InsertSlot() out-of-scope err = %v, want ErrScheduleNotFound", err)
+	if _, err := repo.InsertSlot(ctx, auth.Principal{}, regencyBID, "Should Not Insert", auth.ClientMeta{}, scopedToA); !errors.Is(err, ErrRegencyNotFound) {
+		t.Fatalf("InsertSlot() out-of-scope err = %v, want ErrRegencyNotFound", err)
 	}
 
 	renamed := "Should Not Rename"
@@ -139,7 +98,7 @@ func TestInsertAndListSlotsScopedBySchedule(t *testing.T) {
 	}
 
 	// Confirm slot B is genuinely untouched by the rejected patch attempt above.
-	listB, err := repo.ListSlots(ctx, scheduleBID, unrestricted)
+	listB, err := repo.ListSlots(ctx, regencyBID, unrestricted)
 	if err != nil {
 		t.Fatalf("ListSlots() error = %v", err)
 	}

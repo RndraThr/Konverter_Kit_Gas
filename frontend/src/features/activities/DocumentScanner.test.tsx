@@ -64,7 +64,7 @@ describe('DocumentScanner', () => {
     const onDone = vi.fn();
     const onClose = vi.fn();
     render(
-      <DocumentScanner scheduleId="s1" slotId="slot-1" programId="p1" onDone={onDone} onClose={onClose} />,
+      <DocumentScanner programId="p1" regencyId="r1" slotId="slot-1" customName="" onDone={onDone} onClose={onClose} />,
     );
 
     const video = document.querySelector('video');
@@ -87,7 +87,8 @@ describe('DocumentScanner', () => {
       expect.objectContaining({ method: 'POST' }),
     );
     const body = (apiRequest as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1].body as FormData;
-    expect(body.get('schedule_id')).toBe('s1');
+    expect(body.get('program_id')).toBe('p1');
+    expect(body.get('regency_id')).toBe('r1');
     expect(body.get('slot_id')).toBe('slot-1');
     expect(body.getAll('page')).toHaveLength(2);
     await waitFor(() => expect(onDone).toHaveBeenCalled());
@@ -109,7 +110,7 @@ describe('DocumentScanner', () => {
     const onDone = vi.fn();
     const onClose = vi.fn();
     render(
-      <DocumentScanner scheduleId="s1" slotId="slot-1" programId="p1" onDone={onDone} onClose={onClose} />,
+      <DocumentScanner programId="p1" regencyId="r1" slotId="slot-1" customName="" onDone={onDone} onClose={onClose} />,
     );
 
     // First attempt: the CDN <script> fails to load.
