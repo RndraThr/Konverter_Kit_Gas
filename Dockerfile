@@ -1,7 +1,11 @@
 # syntax=docker/dockerfile:1
 
 # ---- Stage 1: frontend build ----
-FROM node:20-alpine AS frontend
+# Debian (glibc), sama seperti CI: dependensi native seperti `canvas` (dibawa
+# jscanify) punya binary siap pakai untuk glibc, sedangkan di Alpine (musl)
+# npm harus meng-compile-nya dan gagal karena tidak ada Python/toolchain.
+# Tahap ini hanya membangun aset statis, jadi image akhir tidak berubah.
+FROM node:20-bookworm-slim AS frontend
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
