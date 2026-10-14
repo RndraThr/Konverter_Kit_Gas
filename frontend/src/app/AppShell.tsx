@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import {
-  Activity, BookOpen, BookOpenCheck, CalendarClock, CalendarRange, Camera, ChevronDown, FileClock,
+  Activity, BookOpen, BookOpenCheck, BookOpenText, CalendarClock, CalendarRange, Camera, ChevronDown, FileClock,
   FileCheck2, Files, FileSpreadsheet, FileText, GraduationCap, ListFilter, MapPinned, Menu, PackageOpen, PanelLeftClose, PanelLeftOpen,
   PartyPopper, Settings, ShieldCheck, Users, UsersRound, X,
 } from 'lucide-react';
@@ -18,6 +18,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn } from '@/lib/utils';
 import { apiRequest, getBootstrap, type BootstrapUser } from '../lib/api';
 import { PermissionsProvider } from '../lib/permissions';
+import { PageHelp } from '../features/guide/PageHelp';
 
 type NavItem = { label: string; pageTitle?: string; to: string; permission?: string; icon: ReactNode };
 type NavGroup = { label: string; items: NavItem[] };
@@ -55,6 +56,9 @@ const groups: NavGroup[] = [
   { label: 'Administrasi', items: [
     { label: 'Pengguna', to: '/pengguna', permission: 'users.view', icon: <UsersRound /> },
     { label: 'Role & akses', to: '/role', permission: 'roles.view', icon: <ShieldCheck /> },
+  ] },
+  { label: 'Bantuan', items: [
+    { label: 'Panduan', to: '/panduan', icon: <BookOpenText /> },
   ] },
   { label: 'Sistem', items: [
     { label: 'Pengaturan', to: '/pengaturan', permission: 'settings.view', icon: <Settings /> },
@@ -368,6 +372,7 @@ export function AppShell() {
           <MobileNavigation permissions={user.permissions} connectionState={connectionState} />
           <PageContext />
           <LiveClock />
+          <PageHelp permissions={user.permissions} />
           <AccountMenu user={user} csrfToken={bootstrap.data.meta.csrf_token} />
         </header>
         <main className="mx-auto w-full max-w-360 p-4 sm:p-6 lg:p-8"><PermissionsProvider permissions={user.permissions}><Outlet /></PermissionsProvider></main>

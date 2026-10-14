@@ -40,28 +40,28 @@ export function ReportsPage() {
       <div className="grid min-w-0 gap-2">
         <Label id="report-schedule-label">Jadwal</Label>
         <Select value={scheduleID} onValueChange={(value) => setScheduleID(value ?? '')}>
-          <SelectTrigger className="w-full" aria-labelledby="report-schedule-label"><SelectValue placeholder="Pilih kabupaten dan jadwal" /></SelectTrigger>
+          <SelectTrigger className="w-full min-w-0" aria-labelledby="report-schedule-label"><SelectValue placeholder="Pilih kabupaten dan jadwal" /></SelectTrigger>
           <SelectContent>{schedules.data?.data.map((schedule) => <SelectItem key={schedule.id} value={schedule.id}>{schedule.regency?.name} / {schedule.name}</SelectItem>)}</SelectContent>
         </Select>
       </div>
       <div className="grid min-w-0 gap-2">
         <Label id="report-allocation-status-label">Status alokasi</Label>
         <Select value={allocationStatus} onValueChange={(value) => setAllocationStatus(value ?? '')}>
-          <SelectTrigger className="w-full" aria-labelledby="report-allocation-status-label"><SelectValue placeholder="Semua status alokasi" /></SelectTrigger>
+          <SelectTrigger className="w-full min-w-0" aria-labelledby="report-allocation-status-label"><SelectValue placeholder="Semua status alokasi" /></SelectTrigger>
           <SelectContent><SelectItem value="">Semua status alokasi</SelectItem>{ALLOCATION_STATUSES.map((status) => <SelectItem key={status} value={status}>{statusText(status)}</SelectItem>)}</SelectContent>
         </Select>
       </div>
       <div className="grid min-w-0 gap-2">
         <Label id="report-distribution-status-label">Status distribusi</Label>
         <Select value={distributionStatus} onValueChange={(value) => setDistributionStatus(value ?? '')}>
-          <SelectTrigger className="w-full" aria-labelledby="report-distribution-status-label"><SelectValue placeholder="Semua status distribusi" /></SelectTrigger>
+          <SelectTrigger className="w-full min-w-0" aria-labelledby="report-distribution-status-label"><SelectValue placeholder="Semua status distribusi" /></SelectTrigger>
           <SelectContent><SelectItem value="">Semua status distribusi</SelectItem>{DISTRIBUTION_STATUSES.map((status) => <SelectItem key={status} value={status}>{statusText(status)}</SelectItem>)}</SelectContent>
         </Select>
       </div>
       <div className="grid min-w-0 gap-2">
         <Label id="report-documentation-status-label">Dokumentasi</Label>
         <Select value={documentationStatus} onValueChange={(value) => setDocumentationStatus(value ?? '')}>
-          <SelectTrigger className="w-full" aria-labelledby="report-documentation-status-label"><SelectValue placeholder="Semua dokumentasi" /></SelectTrigger>
+          <SelectTrigger className="w-full min-w-0" aria-labelledby="report-documentation-status-label"><SelectValue placeholder="Semua dokumentasi" /></SelectTrigger>
           <SelectContent><SelectItem value="">Semua dokumentasi</SelectItem><SelectItem value="complete">Lengkap</SelectItem><SelectItem value="incomplete">Belum lengkap</SelectItem></SelectContent>
         </Select>
       </div>

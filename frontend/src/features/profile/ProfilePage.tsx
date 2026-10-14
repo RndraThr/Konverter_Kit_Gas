@@ -11,6 +11,8 @@ import { StatusBadge } from '../../components/StatusBadge';
 import { apiRequest, BootstrapResponse, getBootstrap } from '../../lib/api';
 import { uppercaseBusinessText } from '../../lib/text';
 import { ChangePasswordForm } from './ChangePasswordForm';
+import { usePermissions } from '../../lib/permissions';
+import { GuideStartCard } from '../guide/GuideStartCard';
 
 export function ProfilePage() {
   const client = useQueryClient();
@@ -23,10 +25,12 @@ export function ProfilePage() {
     onSuccess: (result) => client.setQueryData<BootstrapResponse>(['bootstrap'], (old) => old ? { ...old, data: { ...old.data, ...result.data } } : old),
   });
   const submit = (event: FormEvent) => { event.preventDefault(); mutation.mutate(); };
+  const permissions = usePermissions();
   const account = bootstrap.data?.data;
 
   return <div className="mx-auto max-w-6xl space-y-6">
     <PageHeader title="Profil saya" description="Kelola identitas dan keamanan akun Anda dalam satu tempat." />
+    <GuideStartCard permissions={permissions} dismissible />
 
     <Card className="gap-0 overflow-hidden py-0 shadow-none">
       <CardHeader className="bg-muted/20 px-5 py-5 sm:px-6">
