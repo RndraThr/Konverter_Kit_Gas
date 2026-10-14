@@ -85,7 +85,7 @@ func renderDailyRecapTable(pdf *fpdf.Fpdf, snapshot DailyRecapSnapshot, logos []
 	for i, recipient := range snapshot.Recipients {
 		// Tinggi baris dihitung dan diperiksa SEBELUM baris digambar, agar
 		// baris terakhir di suatu halaman tidak pernah melewati margin bawah.
-		row := layoutFormalRowGroup(pdf, dailyRecapColumnWidths, [][]string{dailyRecapRowCells(i+1, recipient)})
+		row := layoutFormalRowGroup(pdf, dailyRecapColumnWidths, [][]string{dailyRecapRowCells(rowNumber(recipient.RowNumber, i), recipient)})
 		if pdf.GetY()+row.height() > pageHeightMM-bottomMarginMM {
 			addFormalPage(pdf, logos, activityTopGapMM)
 			renderFormalTableHeader(pdf, dailyRecapColumnWidths, dailyRecapHeaders)
@@ -155,4 +155,13 @@ func joinVariantDescription(brand, typ string) string {
 		return brand
 	}
 	return brand + " / " + typ
+}
+
+// rowNumber memakai nomor urut berjalan dari snapshot; snapshot lama tanpa
+// nomor itu tetap bernomor 1, 2, 3, ... seperti sebelumnya.
+func rowNumber(running, index int) int {
+	if running > 0 {
+		return running
+	}
+	return index + 1
 }

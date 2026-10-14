@@ -39,6 +39,9 @@ type DP3Context struct {
 
 // DP3Recipient adalah satu baris nominatif DP3 setelah mesin ter-resolve.
 type DP3Recipient struct {
+	// RowNumber adalah nomor urut berjalan lintas hari, sama dengan Rekap Harian.
+	RowNumber          int    `json:"row_number"`
+	SlotID             string `json:"slot_id"`
 	FullName           string `json:"full_name"`
 	NIK                string `json:"nik"`
 	Address            string `json:"address"`
@@ -70,6 +73,8 @@ type dp3Signatories struct {
 }
 
 type dp3RecipientSnapshot struct {
+	RowNumber          int    `json:"row_number,omitempty"`
+	SlotID             string `json:"slot_id,omitempty"`
 	FullName           string `json:"full_name"`
 	NIK                string `json:"nik"`
 	Address            string `json:"address"`
@@ -105,6 +110,7 @@ func buildDP3Snapshot(ctx DP3Context, settings ScheduleSettings, logos []LogoSna
 	rows := make([]dp3RecipientSnapshot, 0, len(recipients))
 	for _, recipient := range recipients {
 		rows = append(rows, dp3RecipientSnapshot{
+			RowNumber: recipient.RowNumber, SlotID: recipient.SlotID,
 			FullName: recipient.FullName, NIK: recipient.NIK, Address: recipient.Address,
 			Village: recipient.Village, District: recipient.District, Regency: recipient.Regency,
 			DistributionNumber: recipient.DistributionNumber, MachineBrand: recipient.MachineBrand,
@@ -216,6 +222,7 @@ func resolveDP3Recipients(rows []dp3RawRecipient) ([]DP3Recipient, error) {
 	recipients := make([]DP3Recipient, 0, len(rows))
 	for _, row := range rows {
 		recipient := DP3Recipient{
+			RowNumber: row.RowNumber, SlotID: row.SlotID,
 			FullName: row.FullName, NIK: row.NIK, Address: row.Address, Village: row.Village,
 			District: row.District, Regency: row.Regency, DistributionNumber: row.DistributionNumber,
 		}
@@ -233,12 +240,30 @@ func resolveDP3Recipients(rows []dp3RawRecipient) ([]DP3Recipient, error) {
 				recipient.Source = "allocation_snapshot"
 			}
 		}
+		// Daya/BBM yang kosong dilengkapi dari opsi mesin paket, seperti Rekap Harian.
+		if strings.TrimSpace(recipient.MachinePower) == "" || strings.TrimSpace(recipient.MachineFuelType) == "" {
+			if machine, ok := machineFromPackageTemplate(row.PackageTemplate, row.MachineOptionCode); ok {
+				if strings.TrimSpace(recipient.MachineBrand) == "" && strings.TrimSpace(recipient.MachineType) == "" {
+					recipient.MachineBrand, recipient.MachineType = machine.Brand, machine.Type
+				}
+				if strings.TrimSpace(recipient.MachinePower) == "" {
+					recipient.MachinePower = machine.Power
+				}
+				if strings.TrimSpace(recipient.MachineFuelType) == "" {
+					recipient.MachineFuelType = machine.FuelType
+				}
+			}
+		}
 		recipients = append(recipients, recipient)
 	}
 	return recipients, nil
 }
 
 type dp3RawRecipient struct {
+	RowNumber            int
+	SlotID               string
+	MachineOptionCode    string
+	PackageTemplate      []byte
 	FullName             string
 	NIK                  string
 	Address              string

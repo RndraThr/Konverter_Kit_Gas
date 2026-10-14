@@ -16,6 +16,8 @@ func (h *Handler) handleBASTDP3(w http.ResponseWriter, r *http.Request, rc reque
 	switch suffix {
 	case "summary":
 		h.handleDP3Summary(w, r, rc)
+	case "dates":
+		h.handleDP3Dates(w, r, rc)
 	case "recipients":
 		h.handleDP3Recipients(w, r, rc)
 	case "preview":
@@ -78,13 +80,48 @@ func (h *Handler) handleDP3Recipients(w http.ResponseWriter, r *http.Request, rc
 	if !ok {
 		return
 	}
-	result, err := h.deps.DP3.Recipients(r.Context(), scheduleID, scope)
+	// Tanggal opsional: tanpa tanggal, penerima semua hari distribusi.
+	date := strings.TrimSpace(r.URL.Query().Get("date"))
+	if date != "" && !validISODate(date) {
+		writeFieldError(w, http.StatusBadRequest, "validation_failed", "Tanggal tidak valid", map[string]string{"date": "gunakan tanggal YYYY-MM-DD"})
+		return
+	}
+	result, err := h.deps.DP3.Recipients(r.Context(), scheduleID, date, scope)
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
 	if result == nil {
 		result = []bast.DP3Recipient{}
+	}
+	writeData(w, http.StatusOK, result)
+}
+
+// handleDP3Dates: satu DP3 per hari distribusi, seperti Rekap Harian.
+func (h *Handler) handleDP3Dates(w http.ResponseWriter, r *http.Request, rc requestContext) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if !h.authorize(w, r, rc.principal, "bast.view") {
+		return
+	}
+	scheduleID := strings.TrimSpace(r.URL.Query().Get("schedule_id"))
+	if scheduleID == "" {
+		writeFieldError(w, http.StatusBadRequest, "validation_failed", "Jadwal wajib dipilih", map[string]string{"schedule_id": "wajib diisi"})
+		return
+	}
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := h.deps.DP3.Dates(r.Context(), scheduleID, scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	if result == nil {
+		result = []bast.DailyRecapDate{}
 	}
 	writeData(w, http.StatusOK, result)
 }

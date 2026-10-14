@@ -59,7 +59,8 @@ test('derives the Petani or Nelayan document variant from the selected schedule'
 });
 
 test('keeps the selected schedule and document tab in the URL', async () => {
-  renderPage('/berita-acara?schedule_id=schedule-farmer&tab=dp3');
+  // DP3 per tanggal distribusi: jadwal ini belum punya hari distribusi.
+  renderPage('/berita-acara?schedule_id=schedule-farmer&tab=dp3', ((path: string) => Promise.resolve(path.includes('/bast/') ? { data: [] } : schedules)) as () => Promise<unknown>);
 
   expect(await screen.findByText('Petani')).toBeVisible();
   await userEvent.click(screen.getByRole('tab', { name: 'TKDN' }));
