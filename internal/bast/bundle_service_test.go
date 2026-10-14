@@ -82,6 +82,12 @@ func TestPreviewBundleOfOneSlotKeepsItsNumber(t *testing.T) {
 	if all.RecipientCount != 2 || one.RecipientCount != 1 || len(one.PDF) == 0 {
 		t.Fatalf("all=%d one=%d", all.RecipientCount, one.RecipientCount)
 	}
+	// The slot's own completion day is used, whatever date the app sends.
+	request.LocalDate = "2024-12-01"
+	request.SlotID = "slot-1"
+	if other, err := service.PreviewBundle(context.Background(), request, scope); err != nil || other.RecipientCount != 1 {
+		t.Fatalf("slot preview with another date: %+v err=%v", other, err)
+	}
 	request.SlotID = "unknown"
 	if _, err := service.PreviewBundle(context.Background(), request, scope); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("unknown slot err=%v", err)

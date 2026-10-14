@@ -42,8 +42,9 @@ type BundleRequest struct {
 	ProgramID string `json:"program_id"`
 	RegencyID string `json:"regency_id"`
 	LocalDate string `json:"local_date"`
-	// SlotID membatasi preview ke BA satu nomor bagi (penerima) pada tanggal
-	// itu; nomor BA tetap dihitung dari seluruh penerima tanggal tersebut.
+	// SlotID membatasi preview ke BA satu nomor bagi (penerima); tanggalnya
+	// diambil dari hari distribusi nomor bagi itu diselesaikan (LocalDate
+	// diabaikan) dan nomor BA tetap dihitung dari seluruh penerima hari itu.
 	// Tidak berlaku untuk finalisasi (satu berkas per tanggal).
 	SlotID string `json:"slot_id,omitempty"`
 }
