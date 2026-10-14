@@ -135,7 +135,7 @@ export function BeritaAcaraPage() {
         {document.value === 'ba-perorangan' && selectedSchedule && programType
           ? <section aria-label={`BA Perorangan ${programTypeLabel(programType)}`}><BAIndividualPanel scheduleID={selectedSchedule.id} programID={selectedSchedule.program_id} regencyID={selectedSchedule.regency_id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} /></section>
           : document.value === 'dp3' && selectedSchedule && programType
-            ? <section aria-label="DP3"><DP3Panel scheduleID={selectedSchedule.id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} defaultDate={selectedSchedule.start_date.slice(0, 10)} /></section>
+            ? <section aria-label="DP3"><DP3Panel scheduleID={selectedSchedule.id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} /></section>
             : document.value === 'rekap-harian' && selectedSchedule && programType
               ? <section aria-label="Rekap Harian"><DailyRecapPanel scheduleID={selectedSchedule.id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} /></section>
               : document.value === 'closing-titik-serah' && selectedSchedule && programType

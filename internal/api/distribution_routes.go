@@ -218,7 +218,17 @@ func (h *Handler) handleDistributionSlotComplete(w http.ResponseWriter, r *http.
 	if !ok {
 		return
 	}
-	result, err := h.deps.Distribution.CompleteSlot(r.Context(), rc.principal, distribution.CompleteSlotInput{ScheduleID: r.URL.Query().Get("schedule_id"), SlotNumber: slotNumber}, clientMeta(r), scope)
+	input := distribution.CompleteSlotInput{ScheduleID: r.URL.Query().Get("schedule_id"), SlotNumber: slotNumber}
+	// Waktu penyelesaian dari HP (antrean offline); opsional.
+	if raw := strings.TrimSpace(r.URL.Query().Get("completed_at")); raw != "" {
+		completedAt, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			writeFieldError(w, http.StatusBadRequest, "validation_failed", "Waktu penyelesaian tidak valid", map[string]string{"completed_at": "gunakan format RFC 3339"})
+			return
+		}
+		input.CompletedAt = &completedAt
+	}
+	result, err := h.deps.Distribution.CompleteSlot(r.Context(), rc.principal, input, clientMeta(r), scope)
 	if err != nil {
 		writeServiceError(w, err)
 		return

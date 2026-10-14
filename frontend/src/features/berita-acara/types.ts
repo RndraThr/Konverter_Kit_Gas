@@ -177,6 +177,8 @@ export type DP3Summary = {
 };
 
 export type DP3Recipient = {
+  row_number: number;
+  slot_id: string;
   full_name: string;
   nik: string;
   address: string;
@@ -206,6 +208,7 @@ export type ClosingKabupatenRow = {
 };
 
 export type DailyRecapRecipient = {
+  row_number: number;
   slot_number: number;
   full_name: string;
   farmer_card_number: string;

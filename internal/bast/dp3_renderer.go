@@ -18,6 +18,9 @@ const (
 	dp3Subtitle = "(FORM DP3)"
 
 	dp3HeaderRowMM = 7.0
+
+	// dp3SignatureRowMM adalah tinggi minimum baris yang memuat paraf penerima.
+	dp3SignatureRowMM = 9.0
 )
 
 type RenderedAggregate struct {
@@ -55,6 +58,7 @@ func RenderDP3(snapshot DP3Snapshot, logoBytes map[string][]byte) (RenderedAggre
 	}
 	registerSignatoryImages(pdf, logoBytes)
 	registerWetScan(pdf, logoBytes)
+	registerSignatures(pdf, logoBytes)
 
 	// Cetak halaman tanda tangan saja: isi dokumen dilewati.
 	if !snapshot.Wet.PageOnly {
@@ -100,22 +104,23 @@ func addDP3ContinuationPage(pdf *fpdf.Fpdf, logos []registeredLogo, gap float64)
 
 func renderDP3Table(pdf *fpdf.Fpdf, snapshot DP3Snapshot, logos []registeredLogo) {
 	renderDP3TableHeader(pdf)
-	rows := snapshot.Recipients
-	// Minimal lima baris visual; baris kosong hanya menjaga layout.
-	visualRows := maxInt(5, len(rows))
-	for i := 0; i < visualRows; i++ {
-		cells := []string{fmt.Sprintf("%d", i+1), "", "", "", "", "", "", "", ""}
-		if i < len(rows) {
-			cells = dp3RowCells(i+1, rows[i])
+	// Hanya baris penerima, tanpa baris kosong pengisi.
+	for i, recipient := range snapshot.Recipients {
+		slotID := recipient.SlotID
+		row := layoutFormalRowGroup(pdf, dp3ColumnWidths, [][]string{dp3RowCells(rowNumber(recipient.RowNumber, i), recipient)})
+		// Ruang cukup untuk paraf (tanda tangan penerima dari distribusi).
+		if slotID != "" && row.heights[0] < dp3SignatureRowMM {
+			row.heights[0] = dp3SignatureRowMM
 		}
-		row := layoutFormalRowGroup(pdf, dp3ColumnWidths, [][]string{cells})
 		// Tinggi baris dihitung dan diperiksa SEBELUM baris digambar, agar
 		// baris terakhir di suatu halaman tidak pernah melewati margin bawah.
 		if pdf.GetY()+row.height() > dp3LandscapeHeightMM-bottomMarginMM {
 			addDP3ContinuationPage(pdf, logos, activityTopGapMM)
 			renderDP3TableHeader(pdf)
 		}
+		top := pdf.GetY()
 		drawFormalRowGroup(pdf, dp3ColumnWidths, row, 0, dp3Aligns)
+		drawSignature(pdf, dp3LandscapeWidthMM-marginMM-dp3ColumnWidths[8], top, dp3ColumnWidths[8], row.height(), slotID)
 	}
 }
 

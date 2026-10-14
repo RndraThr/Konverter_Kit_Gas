@@ -172,7 +172,8 @@ type BASTScheduleSettingsService interface {
 
 type DP3Service interface {
 	Summary(context.Context, string, auth.RegencyScope) (bast.DP3Summary, error)
-	Recipients(context.Context, string, auth.RegencyScope) ([]bast.DP3Recipient, error)
+	Dates(context.Context, string, auth.RegencyScope) ([]bast.DailyRecapDate, error)
+	Recipients(context.Context, string, string, auth.RegencyScope) ([]bast.DP3Recipient, error)
 	Preview(context.Context, string, string, auth.RegencyScope) (bast.AggregatePreview, error)
 	Finalize(context.Context, auth.Principal, string, string, auth.RegencyScope, auth.ClientMeta) (bast.AggregateDocument, error)
 	Documents(context.Context, string, string, auth.RegencyScope) ([]bast.AggregateDocument, error)

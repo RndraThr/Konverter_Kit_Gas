@@ -145,8 +145,8 @@ export function DailyRecapPanel({ scheduleID, regencyName, programType }: Props)
 
         {showRecipients && (recipients.isPending ? <DataState kind="loading" title="Memuat penerima" description="Mengurutkan berdasarkan nomor bagi." /> : recipients.isError ? <DataState kind="error" title="Daftar penerima gagal dimuat" description="Coba muat ulang." action={{ label: 'Coba lagi', onClick: () => recipients.refetch() }} /> : <>
           <DataTable label={`Penerima ${selectedDate}`} minimumWidth={760}>
-            <thead><tr><th>No</th><th>Nama Petani</th><th>No. Kartu Petani</th><th>Merek Mesin</th><th>Tipe Mesin</th><th>No. Seri Mesin</th></tr></thead>
-            <tbody>{recips.map((recipient) => <tr key={recipient.slot_number}><td className="font-semibold tabular-nums">{recipient.slot_number}</td><td><strong>{recipient.full_name}</strong></td><td>{recipient.farmer_card_number || '-'}</td><td>{recipient.machine_brand}</td><td>{recipient.machine_type}</td><td className="font-mono text-xs">{recipient.machine_serial || '-'}</td></tr>)}</tbody>
+            <thead><tr><th>No</th><th>No. Bagi</th><th>Nama Petani</th><th>No. Kartu Petani</th><th>Merek Mesin</th><th>Tipe Mesin</th><th>No. Seri Mesin</th></tr></thead>
+            <tbody>{recips.map((recipient) => <tr key={recipient.slot_number}><td className="font-semibold tabular-nums">{recipient.row_number || recipient.slot_number}</td><td className="tabular-nums text-muted-foreground">{recipient.slot_number}</td><td><strong>{recipient.full_name}</strong></td><td>{recipient.farmer_card_number || '-'}</td><td>{recipient.machine_brand}</td><td>{recipient.machine_type}</td><td className="font-mono text-xs">{recipient.machine_serial || '-'}</td></tr>)}</tbody>
           </DataTable>
           <Card><CardHeader><CardTitle className="text-base">Grand Total per varian</CardTitle></CardHeader><CardContent>
             <DataTable label="Grand total" minimumWidth={480}>

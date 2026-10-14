@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"konkit/internal/auth"
 
@@ -48,21 +49,25 @@ func (r *Repository) GetDP3Context(ctx context.Context, scheduleID string, scope
 	return result, nil
 }
 
-func (r *Repository) ListDP3Recipients(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]DP3Recipient, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT p.full_name, COALESCE(p.nik,''), COALESCE(p.address,''), COALESCE(p.village,''), COALESCE(p.district,''), r.name,
-			pa.distribution_number, pa.package_snapshot_json, ds.verification_snapshot_json
-		FROM package_allocations pa
-		JOIN candidate_nominations cn ON cn.id = pa.nomination_id
-		JOIN people p ON p.id = cn.person_id
-		JOIN program_schedules ps ON ps.id = pa.schedule_id
+// ListDP3Recipients mengembalikan penerima yang distribusinya selesai pada
+// localDate (zona Jakarta), sama dengan Rekap Harian, bernomor urut berjalan
+// lintas hari. localDate kosong berarti semua hari.
+func (r *Repository) ListDP3Recipients(ctx context.Context, scheduleID, localDate string, scope auth.RegencyScope) ([]DP3Recipient, error) {
+	rows, err := r.pool.Query(ctx, completedSlotsNumbered+`
+		SELECT n.row_number, ds.id::text, ds.slot_number, p.full_name, COALESCE(p.nik,''), COALESCE(p.address,''),
+		       COALESCE(p.village,''), COALESCE(p.district,''), r.name,
+		       pa.package_snapshot_json, ds.verification_snapshot_json, COALESCE(ds.machine_option_code,''), pt.values_json
+		FROM numbered n
+		JOIN distribution_slots ds ON ds.id = n.id
+		JOIN program_schedules ps ON ps.id = ds.schedule_id
 		JOIN regencies r ON r.id = ps.regency_id
-		LEFT JOIN distribution_slots ds ON ds.allocation_id = pa.id AND ds.status='completed'
-		WHERE pa.schedule_id=$1
-		  AND pa.status IN ('ready','distributed')
-		  AND ($2 OR ps.regency_id::text = ANY($3))
-		ORDER BY (pa.distribution_number IS NULL), pa.distribution_number ASC NULLS LAST, pa.created_at ASC, pa.id ASC
-	`, scheduleID, scope.Unrestricted, scope.RegencyIDs)
+		JOIN package_template_versions pt ON pt.id = ps.package_template_version_id
+		JOIN people p ON p.id = ds.recipient_person_id
+		LEFT JOIN package_allocations pa ON pa.id = ds.allocation_id
+		WHERE ($2 = '' OR n.local_date::text = $2)
+		  AND ($3 OR ps.regency_id::text = ANY($4))
+		ORDER BY n.row_number
+	`, scheduleID, strings.TrimSpace(localDate), scope.Unrestricted, scope.RegencyIDs)
 	if err != nil {
 		return nil, fmt.Errorf("list DP3 recipients: %w", err)
 	}
@@ -70,9 +75,12 @@ func (r *Repository) ListDP3Recipients(ctx context.Context, scheduleID string, s
 	raw := []dp3RawRecipient{}
 	for rows.Next() {
 		var item dp3RawRecipient
-		if err := rows.Scan(&item.FullName, &item.NIK, &item.Address, &item.Village, &item.District, &item.Regency, &item.DistributionNumber, &item.AllocationSnapshot, &item.VerificationSnapshot); err != nil {
+		var slotNumber int
+		if err := rows.Scan(&item.RowNumber, &item.SlotID, &slotNumber, &item.FullName, &item.NIK, &item.Address, &item.Village, &item.District, &item.Regency,
+			&item.AllocationSnapshot, &item.VerificationSnapshot, &item.MachineOptionCode, &item.PackageTemplate); err != nil {
 			return nil, err
 		}
+		item.DistributionNumber = &slotNumber
 		raw = append(raw, item)
 	}
 	if err := rows.Err(); err != nil {
