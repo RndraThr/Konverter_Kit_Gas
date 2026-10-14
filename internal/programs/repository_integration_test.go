@@ -628,7 +628,6 @@ func TestIntegrationZoneLifecycleUsesIDForUpdates(t *testing.T) {
 	}
 }
 
-
 func containsRegencyID(regencies []Regency, id string) bool {
 	for _, regency := range regencies {
 		if regency.ID == id {

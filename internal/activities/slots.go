@@ -18,13 +18,13 @@ var (
 )
 
 type SupportingDocumentSlot struct {
-	ID         string    `json:"id"`
-	RegencyID  string    `json:"regency_id"`
-	Name       string    `json:"name"`
-	IsActive   bool      `json:"is_active"`
-	SortOrder  int       `json:"sort_order"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID        string    `json:"id"`
+	RegencyID string    `json:"regency_id"`
+	Name      string    `json:"name"`
+	IsActive  bool      `json:"is_active"`
+	SortOrder int       `json:"sort_order"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type slotRepository interface {
