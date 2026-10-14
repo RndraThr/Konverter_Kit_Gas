@@ -86,7 +86,7 @@ func (s *BrandingService) OpenLogo(ctx context.Context, programID, logoID string
 	if err != nil {
 		return LogoContent{}, err
 	}
-	reader, err := s.storage.Open(ctx, logo.StorageKey)
+	reader, err := openStoredLogo(ctx, s.storage, logo.StorageKey)
 	if err != nil {
 		return LogoContent{}, err
 	}
