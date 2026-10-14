@@ -62,6 +62,32 @@ func TestPreviewBundleWorksBeforeTotalLockAndWithIncompleteData(t *testing.T) {
 	}
 }
 
+func TestPreviewBundleOfOneSlotKeepsItsNumber(t *testing.T) {
+	repository := newBundleRepositoryStub(t)
+	storage := newBundleStorageStub(t)
+	storage.files["logo-key"] = testPNG(t)
+	service := NewBundleService(repository, storage, time.UTC)
+	scope := auth.RegencyScope{Unrestricted: true}
+	request := BundleRequest{ProgramID: "program", RegencyID: "regency", LocalDate: "2024-12-10"}
+
+	all, err := service.PreviewBundle(context.Background(), request, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.SlotID = " slot-2 "
+	one, err := service.PreviewBundle(context.Background(), request, scope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if all.RecipientCount != 2 || one.RecipientCount != 1 || len(one.PDF) == 0 {
+		t.Fatalf("all=%d one=%d", all.RecipientCount, one.RecipientCount)
+	}
+	request.SlotID = "unknown"
+	if _, err := service.PreviewBundle(context.Background(), request, scope); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown slot err=%v", err)
+	}
+}
+
 func TestFinalizeBundleChecksumNoOpDoesNotUpload(t *testing.T) {
 	repository := newBundleRepositoryStub(t)
 	storage := newBundleStorageStub(t)
