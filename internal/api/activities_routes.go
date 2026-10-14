@@ -56,7 +56,8 @@ func (h *Handler) handleActivitiesMedia(w http.ResponseWriter, r *http.Request, 
 
 		upload, err := openMediaMultipart(w, r, maxActivityMediaRequestBody, map[string]int64{
 			"program_id": 128, "regency_id": 128, "activity_type": 64, "source": 16, "file_size": 20,
-		}, []string{"program_id", "regency_id", "activity_type", "source", "file_size"})
+			"slot_id": 128, "custom_name": 256,
+		}, []string{"activity_type", "source", "file_size"})
 		if err != nil {
 			var tooLarge *http.MaxBytesError
 			if errors.As(err, &tooLarge) {
@@ -70,6 +71,7 @@ func (h *Handler) handleActivitiesMedia(w http.ResponseWriter, r *http.Request, 
 		input := activities.UploadInput{
 			ProgramID: strings.TrimSpace(upload.Fields["program_id"]), RegencyID: strings.TrimSpace(upload.Fields["regency_id"]), ActivityType: strings.TrimSpace(upload.Fields["activity_type"]),
 			OriginalFilename: upload.Filename, Source: strings.TrimSpace(upload.Fields["source"]), Data: upload.File, DeclaredSize: upload.DeclaredSize,
+			SlotID: strings.TrimSpace(upload.Fields["slot_id"]), CustomName: strings.TrimSpace(upload.Fields["custom_name"]),
 		}
 		scope, ok := h.regencyScope(w, r, rc.principal)
 		if !ok {

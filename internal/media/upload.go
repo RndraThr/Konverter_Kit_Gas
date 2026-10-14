@@ -13,11 +13,13 @@ import (
 type Kind string
 
 const (
-	KindImage Kind = "image"
-	KindVideo Kind = "video"
+	KindImage    Kind = "image"
+	KindVideo    Kind = "video"
+	KindDocument Kind = "document"
 
-	MaxImageBytes int64 = 25 << 20
-	MaxVideoBytes int64 = 500 << 20
+	MaxImageBytes    int64 = 25 << 20
+	MaxVideoBytes    int64 = 500 << 20
+	MaxDocumentBytes int64 = 20 << 20
 )
 
 var ErrUnsupportedUpload = errors.New("unsupported media upload")
@@ -54,6 +56,8 @@ func DetectUpload(source io.Reader, filename string) (DetectedUpload, error) {
 		detected.Kind, detected.MimeType, detected.Extension, detected.MaxBytes = KindImage, mimeType, ".png", MaxImageBytes
 	case "image/webp":
 		detected.Kind, detected.MimeType, detected.Extension, detected.MaxBytes = KindImage, mimeType, ".webp", MaxImageBytes
+	case "application/pdf":
+		detected.Kind, detected.MimeType, detected.Extension, detected.MaxBytes = KindDocument, mimeType, ".pdf", MaxDocumentBytes
 	case "video/mp4":
 		detected.Kind, detected.MimeType, detected.Extension, detected.MaxBytes = KindVideo, mimeType, ".mp4", MaxVideoBytes
 		if extension == ".mov" {
@@ -87,6 +91,8 @@ func PolicyAllows(policy string, kind Kind) bool {
 		return kind == KindVideo
 	case "image_video":
 		return kind == KindImage || kind == KindVideo
+	case "document":
+		return kind == KindDocument
 	default:
 		return false
 	}

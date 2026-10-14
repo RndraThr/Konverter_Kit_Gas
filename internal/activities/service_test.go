@@ -28,6 +28,8 @@ type repositoryStub struct {
 	softDeleteErr error
 	restoreCalled bool
 	insertInput   insertInput
+	slotsResult   []SupportingDocumentSlot
+	slotsErr      error
 }
 
 func (r *repositoryStub) GetRegency(context.Context, string, auth.RegencyScope) (regencyInfo, error) {
@@ -50,6 +52,19 @@ func (r *repositoryStub) SoftDelete(context.Context, auth.Principal, string, aut
 func (r *repositoryStub) restoreAfterFailedStorageDelete(context.Context, string) error {
 	r.restoreCalled = true
 	return nil
+}
+
+// ListSlots, InsertSlot, and PatchSlotRow exist only so repositoryStub satisfies the
+// slotRepository interface that NewService asserts against; no existing test in this file
+// exercises slot behavior, so these are unused zero-value stubs.
+func (r *repositoryStub) ListSlots(context.Context, string, auth.RegencyScope) ([]SupportingDocumentSlot, error) {
+	return r.slotsResult, r.slotsErr
+}
+func (r *repositoryStub) InsertSlot(context.Context, auth.Principal, string, string, auth.ClientMeta, auth.RegencyScope) (SupportingDocumentSlot, error) {
+	return SupportingDocumentSlot{}, nil
+}
+func (r *repositoryStub) PatchSlotRow(context.Context, auth.Principal, string, *string, *bool, auth.ClientMeta, auth.RegencyScope) (SupportingDocumentSlot, error) {
+	return SupportingDocumentSlot{}, nil
 }
 
 type storageStub struct {
@@ -222,6 +237,106 @@ func TestUploadGeneratesAKeyAndPersistsTheReturnedStorageKey(t *testing.T) {
 	}
 	if storage.putKey == "" {
 		t.Fatal("expected Put to be called with a generated key")
+	}
+}
+
+func TestUploadDokumenPendukungRejectsNonPDF(t *testing.T) {
+	repository := &repositoryStub{
+		regency:     regencyInfo{ID: "regency-1", Name: "Wajo", DocumentCode: "WJO"},
+		slotsResult: []SupportingDocumentSlot{{ID: "slot-1", RegencyID: "regency-1", Name: "Surat Tugas", IsActive: true}},
+	}
+	storage := &storageStub{}
+	resolver := &programContextResolverStub{
+		context: programs.StorageContext{ProgramID: "program-1", ProgramType: programs.ProgramFarmer, ZoneName: "Zona 1", RegencyID: "regency-1", RegencyName: "Wajo"},
+	}
+	service := NewService(repository, storage, resolver)
+	jpeg := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0, 0, 0, 0}
+	_, err := service.Upload(context.Background(), auth.Principal{}, UploadInput{
+		ActivityType: "dokumen_pendukung", ProgramID: "program-1", RegencyID: "regency-1", SlotID: "slot-1",
+		Source: "gallery", OriginalFilename: "photo.jpg", Data: bytes.NewReader(jpeg), DeclaredSize: int64(len(jpeg)),
+	}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if !errors.Is(err, ErrMediaTypeInvalid) {
+		t.Fatalf("err = %v, want ErrMediaTypeInvalid", err)
+	}
+}
+
+func TestUploadDokumenPendukungAcceptsPDFAndNamesFromSlot(t *testing.T) {
+	repository := &repositoryStub{
+		regency:     regencyInfo{ID: "regency-1", Name: "Wajo", DocumentCode: "WJO"},
+		slotsResult: []SupportingDocumentSlot{{ID: "slot-1", RegencyID: "regency-1", Name: "Surat Tugas", IsActive: true}},
+	}
+	storage := &storageStub{}
+	resolver := &programContextResolverStub{
+		context: programs.StorageContext{ProgramID: "program-1", ProgramType: programs.ProgramFarmer, ZoneName: "Zona 1", RegencyID: "regency-1", RegencyName: "Wajo"},
+	}
+	service := NewService(repository, storage, resolver)
+	pdf := []byte("%PDF-1.4\n%fake pdf content for test\n")
+	_, err := service.Upload(context.Background(), auth.Principal{}, UploadInput{
+		ActivityType: "dokumen_pendukung", ProgramID: "program-1", RegencyID: "regency-1", SlotID: "slot-1",
+		Source: "gallery", OriginalFilename: "scan.pdf", Data: bytes.NewReader(pdf), DeclaredSize: int64(len(pdf)),
+	}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(repository.insertInput.DisplayName, "SURAT-TUGAS") {
+		t.Fatalf("DisplayName = %q, want to contain SURAT-TUGAS", repository.insertInput.DisplayName)
+	}
+	if repository.insertInput.MediaType != "document" {
+		t.Fatalf("MediaType = %q, want document", repository.insertInput.MediaType)
+	}
+}
+
+func TestUploadDokumenPendukungAcceptsCustomNameWithoutASlot(t *testing.T) {
+	repository := &repositoryStub{regency: regencyInfo{ID: "regency-1", Name: "Wajo", DocumentCode: "WJO"}}
+	storage := &storageStub{}
+	resolver := &programContextResolverStub{
+		context: programs.StorageContext{ProgramID: "program-1", ProgramType: programs.ProgramFarmer, ZoneName: "Zona 1", RegencyID: "regency-1", RegencyName: "Wajo"},
+	}
+	service := NewService(repository, storage, resolver)
+	pdf := []byte("%PDF-1.4\n%fake pdf content for test\n")
+	_, err := service.Upload(context.Background(), auth.Principal{}, UploadInput{
+		ActivityType: "dokumen_pendukung", ProgramID: "program-1", RegencyID: "regency-1", CustomName: "Surat Keterangan Domisili",
+		Source: "gallery", OriginalFilename: "scan.pdf", Data: bytes.NewReader(pdf), DeclaredSize: int64(len(pdf)),
+	}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(repository.insertInput.DisplayName, "SURAT-KETERANGAN-DOMISILI") {
+		t.Fatalf("DisplayName = %q, want to contain SURAT-KETERANGAN-DOMISILI", repository.insertInput.DisplayName)
+	}
+}
+
+func TestUploadDokumenPendukungRejectsWhenNeitherSlotNorCustomNameGiven(t *testing.T) {
+	repository := &repositoryStub{regency: regencyInfo{ID: "regency-1", Name: "Wajo", DocumentCode: "WJO"}}
+	storage := &storageStub{}
+	resolver := &programContextResolverStub{
+		context: programs.StorageContext{ProgramID: "program-1", ProgramType: programs.ProgramFarmer, ZoneName: "Zona 1", RegencyID: "regency-1", RegencyName: "Wajo"},
+	}
+	service := NewService(repository, storage, resolver)
+	pdf := []byte("%PDF-1.4\n%fake pdf content for test\n")
+	_, err := service.Upload(context.Background(), auth.Principal{}, UploadInput{
+		ActivityType: "dokumen_pendukung", ProgramID: "program-1", RegencyID: "regency-1",
+		Source: "gallery", OriginalFilename: "scan.pdf", Data: bytes.NewReader(pdf), DeclaredSize: int64(len(pdf)),
+	}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if !errors.Is(err, ErrDocumentNameRequired) {
+		t.Fatalf("err = %v, want ErrDocumentNameRequired", err)
+	}
+}
+
+func TestUploadOtherActivityTypeStillRejectsPDF(t *testing.T) {
+	repository := &repositoryStub{regency: regencyInfo{ID: "regency-1", Name: "Wajo", DocumentCode: "WJO"}}
+	storage := &storageStub{}
+	resolver := &programContextResolverStub{
+		context: programs.StorageContext{ProgramID: "program-1", ProgramType: programs.ProgramFarmer, ZoneName: "Zona 1", RegencyID: "regency-1", RegencyName: "Wajo"},
+	}
+	service := NewService(repository, storage, resolver)
+	pdf := []byte("%PDF-1.4\n%fake pdf content for test\n")
+	_, err := service.Upload(context.Background(), auth.Principal{}, UploadInput{
+		ProgramID: "program-1", RegencyID: "regency-1", ActivityType: "rakor", Source: "gallery",
+		OriginalFilename: "scan.pdf", Data: bytes.NewReader(pdf), DeclaredSize: int64(len(pdf)),
+	}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if !errors.Is(err, ErrMediaTypeInvalid) {
+		t.Fatalf("err = %v, want ErrMediaTypeInvalid", err)
 	}
 }
 
