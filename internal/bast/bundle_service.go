@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -53,6 +54,12 @@ func (s *BundleService) PreviewBundle(ctx context.Context, request BundleRequest
 	documents, _, _, err := s.prepareDocuments(ctx, auth.Principal{}, request, scope, auth.ClientMeta{}, false)
 	if err != nil {
 		return BundlePreview{}, err
+	}
+	if request.SlotID != "" {
+		documents = slices.DeleteFunc(documents, func(d RecipientDocument) bool { return d.DistributionSlotID != request.SlotID })
+		if len(documents) == 0 {
+			return BundlePreview{}, ErrNotFound
+		}
 	}
 	rendered, checksum, err := s.render(ctx, request.ProgramID, request.RegencyID, request.LocalDate, documents)
 	if err != nil {
@@ -130,6 +137,7 @@ func normalizedBundleRequest(request BundleRequest) BundleRequest {
 	request.ProgramID = strings.TrimSpace(request.ProgramID)
 	request.RegencyID = strings.TrimSpace(request.RegencyID)
 	request.LocalDate = strings.TrimSpace(request.LocalDate)
+	request.SlotID = strings.TrimSpace(request.SlotID)
 	return request
 }
 

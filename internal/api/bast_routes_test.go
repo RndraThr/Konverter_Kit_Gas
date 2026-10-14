@@ -83,6 +83,25 @@ func TestBASTIndividualPreviewStreamsPDFWithIndonesianFilename(t *testing.T) {
 	}
 }
 
+func TestBASTIndividualSlotPreviewIsOpenToDistributionOfficers(t *testing.T) {
+	secret := []byte("01234567890123456789012345678901")
+	officer := &fakeAuthService{principal: auth.Principal{UserID: "officer"}, allowedPermissions: map[string]bool{"distribution.view": true}}
+	service := &fakeBASTService{preview: bast.BundlePreview{PDF: []byte("%PDF-slot"), Filename: "BA.pdf", RecipientCount: 1}}
+	slot := authenticatedRequest(http.MethodPost, "/api/v1/bast/individual/bundles/preview", `{"program_id":"p","regency_id":"r","local_date":"2024-12-10","slot_id":"slot-1"}`, secret)
+	slotRec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: officer, BAST: service, SessionSecret: secret}).ServeHTTP(slotRec, slot)
+	if slotRec.Code != http.StatusOK || slotRec.Body.String() != "%PDF-slot" || service.request.SlotID != "slot-1" {
+		t.Fatalf("status=%d request=%+v body=%s", slotRec.Code, service.request, slotRec.Body.String())
+	}
+	// The whole day (all recipients) still needs BA access.
+	day := authenticatedRequest(http.MethodPost, "/api/v1/bast/individual/bundles/preview", `{"program_id":"p","regency_id":"r","local_date":"2024-12-10"}`, secret)
+	dayRec := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: officer, BAST: service, SessionSecret: secret}).ServeHTTP(dayRec, day)
+	if dayRec.Code != http.StatusForbidden {
+		t.Fatalf("day preview status=%d", dayRec.Code)
+	}
+}
+
 func TestBASTIndividualFinalizeAndContent(t *testing.T) {
 	secret := []byte("01234567890123456789012345678901")
 	manager := &fakeAuthService{principal: auth.Principal{UserID: "user"}, allowedPermissions: map[string]bool{"bast.manage": true, "bast.view": true}}
