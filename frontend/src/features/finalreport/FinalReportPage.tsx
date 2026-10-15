@@ -13,12 +13,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Checkbox } from '../../components/ui/checkbox';
 import type { DataResponse } from '../programs/types';
 import type { ActivityMediaPage, ProgramOption, ProgramZone } from '../activities/types';
-import { SLIDE_KEYS, SLIDE_KEY_LABELS, SLIDE_KEY_ACTIVITY_TYPES, type FinalReportSettings, type FinalReportPhotoPick, type FinalReportDocument } from './types';
+import { SLIDE_KEYS, SLIDE_KEY_LABELS, SLIDE_KEY_ACTIVITY_TYPES, SLIDE_KEY_MAX_PICKS, type FinalReportSettings, type FinalReportPhotoPick, type FinalReportDocument } from './types';
 
 const FinalReportPresent = lazy(() => import('./FinalReportPresent'));
 
 // Empty/NaN input becomes 0 and negatives are clamped; the backend rejects negatives with 400.
 const toCount = (value: string) => Math.max(0, Number(value) || 0);
+
+type SettingsDraft = Omit<FinalReportSettings, 'program_id' | 'regency_id'>;
+const emptyDraft: SettingsDraft = { leader_count: 0, admin_count: 0, technician_count: 0, helper_count: 0, machine_manufacturer_name: '', delivery_hose_date: '', delivery_machine_group_date: '', delivery_gas_cylinder_date: '' };
+const draftFrom = (current: FinalReportSettings): SettingsDraft => ({ leader_count: current.leader_count, admin_count: current.admin_count, technician_count: current.technician_count, helper_count: current.helper_count, machine_manufacturer_name: current.machine_manufacturer_name, delivery_hose_date: current.delivery_hose_date, delivery_machine_group_date: current.delivery_machine_group_date, delivery_gas_cylinder_date: current.delivery_gas_cylinder_date });
+const sameDraft = (a: SettingsDraft, b: SettingsDraft) => (Object.keys(emptyDraft) as (keyof SettingsDraft)[]).every((key) => a[key] === b[key]);
+
+// Only JPEG/PNG still images can be placed in the PPTX's .jpg slots.
+const isPickableImage = (item: { media_type: string; mime_type: string }) => item.media_type === 'image' && (item.mime_type === 'image/jpeg' || item.mime_type === 'image/png');
 
 export function FinalReportPage({ programId, regencyId }: { programId: string; regencyId: string }) {
   const canManage = useCan('final_report.manage');
@@ -29,10 +37,10 @@ export function FinalReportPage({ programId, regencyId }: { programId: string; r
     queryKey: ['final-report', 'settings', programId, regencyId],
     queryFn: () => apiRequest<DataResponse<FinalReportSettings>>(`/api/v1/final-report/settings?program_id=${encodeURIComponent(programId)}&regency_id=${encodeURIComponent(regencyId)}`),
   });
-  const [draft, setDraft] = useState({ leader_count: 0, admin_count: 0, technician_count: 0, helper_count: 0, machine_manufacturer_name: '', delivery_hose_date: '', delivery_machine_group_date: '', delivery_gas_cylinder_date: '' });
+  const [draft, setDraft] = useState<SettingsDraft>(emptyDraft);
   useEffect(() => {
     const current = settingsQuery.data?.data;
-    if (current) setDraft({ leader_count: current.leader_count, admin_count: current.admin_count, technician_count: current.technician_count, helper_count: current.helper_count, machine_manufacturer_name: current.machine_manufacturer_name, delivery_hose_date: current.delivery_hose_date, delivery_machine_group_date: current.delivery_machine_group_date, delivery_gas_cylinder_date: current.delivery_gas_cylinder_date });
+    if (current) setDraft(draftFrom(current));
   }, [settingsQuery.data]);
 
   const saveSettings = useMutation({
@@ -45,6 +53,11 @@ export function FinalReportPage({ programId, regencyId }: { programId: string; r
     queryKey: ['final-report', 'documents', programId, regencyId],
     queryFn: () => apiRequest<DataResponse<FinalReportDocument[]>>(`/api/v1/final-report/documents?program_id=${encodeURIComponent(programId)}&regency_id=${encodeURIComponent(regencyId)}`),
   });
+  // Generate reads the saved settings server-side, so it must not run while
+  // the form shows edits that are not saved yet.
+  const savedSettings = settingsQuery.data?.data;
+  const settingsDirty = savedSettings !== undefined && !sameDraft(draft, draftFrom(savedSettings));
+  const settingsBusy = settingsDirty || saveSettings.isPending || settingsQuery.isFetching;
   const generate = useMutation({
     mutationFn: () => apiRequest<DataResponse<FinalReportDocument>>('/api/v1/final-report/generate', { method: 'POST', body: JSON.stringify({ program_id: programId, regency_id: regencyId }) }),
     onSuccess: () => { void client.invalidateQueries({ queryKey: ['final-report', 'documents', programId, regencyId] }); toast.success('PPTX berhasil dibuat.'); },
@@ -54,6 +67,9 @@ export function FinalReportPage({ programId, regencyId }: { programId: string; r
   return <div className="space-y-6">
     {canManage && <section className="space-y-3 rounded-lg border p-4">
       <h2 className="text-sm font-semibold">Susunan Tim & Rincian Pengiriman</h2>
+      {settingsQuery.isError
+        ? <DataState kind="error" title="Pengaturan belum dapat dimuat" description="Periksa koneksi, lalu coba lagi." action={{ label: 'Coba lagi', onClick: () => void settingsQuery.refetch() }} />
+        : <>
       <div className="grid gap-3 sm:grid-cols-4">
         <FormField label="Leader" name="leader_count" type="number" min={0} value={String(draft.leader_count)} onChange={(e) => setDraft((d) => ({ ...d, leader_count: toCount(e.target.value) }))} />
         <FormField label="Administrasi" name="admin_count" type="number" min={0} value={String(draft.admin_count)} onChange={(e) => setDraft((d) => ({ ...d, admin_count: toCount(e.target.value) }))} />
@@ -66,22 +82,30 @@ export function FinalReportPage({ programId, regencyId }: { programId: string; r
         <FormField label="Tanggal Kirim Mesin/Konkit/Oli/dll" name="delivery_machine_group_date" type="date" value={draft.delivery_machine_group_date} onChange={(e) => setDraft((d) => ({ ...d, delivery_machine_group_date: e.target.value }))} />
         <FormField label="Tanggal Kirim Tabung Gas" name="delivery_gas_cylinder_date" type="date" value={draft.delivery_gas_cylinder_date} onChange={(e) => setDraft((d) => ({ ...d, delivery_gas_cylinder_date: e.target.value }))} />
       </div>
-      <Button type="button" onClick={() => saveSettings.mutate()} disabled={saveSettings.isPending}>{saveSettings.isPending ? 'Menyimpan...' : 'Simpan Pengaturan'}</Button>
+      <Button type="button" onClick={() => saveSettings.mutate()} disabled={saveSettings.isPending || settingsQuery.isPending}>{saveSettings.isPending ? 'Menyimpan...' : 'Simpan Pengaturan'}</Button>
+        </>}
     </section>}
 
     {SLIDE_KEYS.map((slideKey) => <PhotoPickerSection key={slideKey} programId={programId} regencyId={regencyId} slideKey={slideKey} canManage={canManage} />)}
 
     <section className="flex flex-wrap items-center gap-2">
       <Button type="button" variant="outline" onClick={() => setPresentOpen(true)}>Tampilkan</Button>
-      {canManage && <Button type="button" onClick={() => generate.mutate()} disabled={generate.isPending}>{generate.isPending ? 'Membuat...' : 'Generate PPTX'}</Button>}
+      {canManage && <Button type="button" onClick={() => generate.mutate()} disabled={generate.isPending || !savedSettings || settingsBusy}>{generate.isPending ? 'Membuat...' : 'Generate PPTX'}</Button>}
+      {canManage && (settingsDirty || saveSettings.isPending) && <p className="text-sm text-muted-foreground">Simpan pengaturan terlebih dahulu</p>}
     </section>
 
-    {documentsQuery.data && documentsQuery.data.data.length > 0 && <ul className="space-y-1 text-sm">
-      {documentsQuery.data.data.map((doc) => <li key={doc.id} className="flex items-center justify-between rounded border p-2">
-        <span>v{doc.version} — {doc.filename}</span>
-        <span className="text-muted-foreground">{doc.status === 'active' ? 'Aktif' : 'Lama'}</span>
-      </li>)}
-    </ul>}
+    {documentsQuery.isError
+      ? <DataState kind="error" title="Riwayat versi belum dapat dimuat" description="Periksa koneksi, lalu coba lagi." action={{ label: 'Coba lagi', onClick: () => void documentsQuery.refetch() }} />
+      : documentsQuery.data && documentsQuery.data.data.length > 0 && <ul className="space-y-1 text-sm" aria-label="Riwayat versi Laporan Akhir">
+        {documentsQuery.data.data.map((doc) => <li key={doc.id} className="flex flex-wrap items-center justify-between gap-2 rounded border p-2">
+          <span className="min-w-0 break-words">v{doc.version} — {doc.filename}</span>
+          <span className="flex items-center gap-3">
+            <span className="tabular-nums text-muted-foreground">{new Date(doc.finalized_at).toLocaleString('id-ID')}</span>
+            <span className="text-muted-foreground">{doc.status === 'active' ? 'Aktif' : 'Lama'}</span>
+            <a className="font-medium underline-offset-4 hover:underline" href={`/api/v1/final-report/documents/${encodeURIComponent(doc.id)}/content`} aria-label={`Unduh v${doc.version}`}>Unduh</a>
+          </span>
+        </li>)}
+      </ul>}
 
     {presentOpen && <Suspense fallback={null}>
       <FinalReportPresent programId={programId} regencyId={regencyId} onClose={() => setPresentOpen(false)} />
@@ -92,12 +116,13 @@ export function FinalReportPage({ programId, regencyId }: { programId: string; r
 function PhotoPickerSection({ programId, regencyId, slideKey, canManage }: { programId: string; regencyId: string; slideKey: (typeof SLIDE_KEYS)[number]; canManage: boolean }) {
   const client = useQueryClient();
   const activityTypes = SLIDE_KEY_ACTIVITY_TYPES[slideKey];
+  const maxPicks = SLIDE_KEY_MAX_PICKS[slideKey];
 
   const available = useQuery({
-    queryKey: ['activities', 'media', 'final-report-source', regencyId, slideKey],
+    queryKey: ['activities', 'media', 'final-report-source', programId, regencyId, slideKey],
     queryFn: async () => {
-      const pages = await Promise.all(activityTypes.map((type) => apiRequest<DataResponse<ActivityMediaPage>>(`/api/v1/activities/media?activity_type=${type}&regency_id=${encodeURIComponent(regencyId)}`)));
-      return pages.flatMap((page) => page.data.items);
+      const pages = await Promise.all(activityTypes.map((type) => apiRequest<DataResponse<ActivityMediaPage>>(`/api/v1/activities/media?activity_type=${type}&regency_id=${encodeURIComponent(regencyId)}&program_id=${encodeURIComponent(programId)}&page_size=100`)));
+      return pages.flatMap((page) => page.data.items).filter(isPickableImage);
     },
   });
   const picks = useQuery({
@@ -120,24 +145,38 @@ function PhotoPickerSection({ programId, regencyId, slideKey, canManage }: { pro
     const next = new Set(pickedIDs);
     if (next.has(mediaID)) next.delete(mediaID);
     else {
-      if (next.size >= 6) { toast.error('Maksimal 6 foto per slide.'); return; }
+      if (next.size >= maxPicks) { toast.error(`Maksimal ${maxPicks} foto untuk slide ini.`); return; }
       next.add(mediaID);
     }
     replace.mutate([...next]);
   };
 
+  // Saved picks are always shown, even when they fall outside the fetched
+  // list (older than its first 100 items, or another source), so they can
+  // still be unchecked.
+  const listed = available.data ?? [];
+  const listedIDs = new Set(listed.map((item) => item.id));
+  const savedOnly = (picks.data?.data ?? []).filter((pick) => !listedIDs.has(pick.activity_media_id)).map((pick) => ({ id: pick.activity_media_id, display_name: pick.display_name, content_url: pick.content_url }));
+  const items = [...savedOnly, ...listed.map((item) => ({ id: item.id, display_name: item.display_name, content_url: item.content_url }))];
+
   return <section className="space-y-2 rounded-lg border p-4">
-    <h3 className="text-sm font-semibold">{SLIDE_KEY_LABELS[slideKey]}</h3>
-    {available.isPending
-      ? <p className="text-sm text-muted-foreground">Memuat foto...</p>
-      : (available.data ?? []).length === 0
-        ? <DataState kind="empty" title="Belum ada foto" description="Unggah dokumentasi kegiatan ini terlebih dahulu." />
-        : <ul className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-          {(available.data ?? []).map((item) => <li key={item.id} className="relative">
-            <img src={item.content_url} alt={item.display_name} className="aspect-square w-full rounded border object-cover" />
-            {canManage && <Checkbox className="absolute right-1 top-1 bg-background" checked={pickedIDs.has(item.id)} disabled={locked} onCheckedChange={() => toggle(item.id)} aria-label={`Pilih ${item.display_name}`} />}
-          </li>)}
-        </ul>}
+    <div className="flex flex-wrap items-baseline justify-between gap-2">
+      <h3 className="text-sm font-semibold">{SLIDE_KEY_LABELS[slideKey]}</h3>
+      <span className="text-xs text-muted-foreground">Maksimal {maxPicks} foto</span>
+    </div>
+    {picks.isError && <DataState kind="error" title="Pilihan foto belum dapat dimuat" description="Periksa koneksi, lalu coba lagi." action={{ label: 'Coba lagi', onClick: () => void picks.refetch() }} />}
+    {available.isError
+      ? <DataState kind="error" title="Foto kegiatan belum dapat dimuat" description="Periksa koneksi, lalu coba lagi." action={{ label: 'Coba lagi', onClick: () => void available.refetch() }} />
+      : available.isPending
+        ? <p className="text-sm text-muted-foreground">Memuat foto...</p>
+        : items.length === 0
+          ? <DataState kind="empty" title="Belum ada foto" description="Unggah dokumentasi kegiatan ini terlebih dahulu." />
+          : <ul className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+            {items.map((item) => <li key={item.id} className="relative">
+              <img src={item.content_url} alt={item.display_name} className="aspect-square w-full rounded border object-cover" />
+              {canManage && <Checkbox className="absolute right-1 top-1 bg-background" checked={pickedIDs.has(item.id)} disabled={locked} onCheckedChange={() => toggle(item.id)} aria-label={`Pilih ${item.display_name}`} />}
+            </li>)}
+          </ul>}
   </section>;
 }
 

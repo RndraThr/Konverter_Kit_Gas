@@ -62,3 +62,15 @@ test('shows an error message with retry when the preview fails', async () => {
   expect(await screen.findByText('Gagal memuat tampilan laporan.')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Coba lagi' })).toBeVisible();
 });
+
+test('shows at most the slide\'s slot count of photos (Rapat Koordinasi: 2)', async () => {
+  const pick = (id: string) => ({ id, activity_media_id: id, slide_key: 'rapat_koordinasi', sort_order: 0, display_name: `Foto ${id}`, content_url: `/x/${id}` });
+  vi.mocked(apiRequest).mockResolvedValue({ data: { ...previewData, photo_picks: { rapat_koordinasi: ['a', 'b', 'c'].map(pick) } } });
+  renderPresent();
+  await screen.findByText('KABUPATEN WAJO');
+  for (let i = 0; i < 5; i += 1) fireEvent.keyDown(window, { key: 'ArrowRight' });
+  expect(await screen.findByText('Dokumentasi Rapat Koordinasi')).toBeVisible();
+  expect(screen.getByAltText('Foto a')).toBeVisible();
+  expect(screen.getByAltText('Foto b')).toBeVisible();
+  expect(screen.queryByAltText('Foto c')).not.toBeInTheDocument();
+});

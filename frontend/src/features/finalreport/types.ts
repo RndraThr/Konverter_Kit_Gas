@@ -64,3 +64,10 @@ export const SLIDE_KEY_ACTIVITY_TYPES: Record<SlideKey, string[]> = {
   rapat_koordinasi: ['rakor'],
   sosialisasi: ['ceremony_sosialisasi'],
 };
+// Photo slots per documentation slide in the PPTX template; mirrors the
+// backend's finalreport.MaxPicks (len(slideImageOrder[key])).
+export const SLIDE_KEY_MAX_PICKS: Record<SlideKey, number> = {
+  pengiriman_penerimaan: 3,
+  rapat_koordinasi: 2,
+  sosialisasi: 4,
+};

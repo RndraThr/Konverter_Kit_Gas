@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ChevronLeft, ChevronRight, LoaderCircle, X } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { apiRequest } from '../../lib/api';
-import { SLIDE_KEYS, type FinalReportPreview, type SlideKey } from './types';
+import { SLIDE_KEYS, SLIDE_KEY_MAX_PICKS, type FinalReportPreview, type SlideKey } from './types';
 
 type DataResponse<T> = { data: T };
 
@@ -108,7 +108,7 @@ function buildSlides(data: FinalReportPreview): ReactNode[] {
     </div>,
     ...SLIDE_KEYS.map((key) => {
       const { heading, lines } = docSlide(key, data);
-      const picks = (data.photo_picks[key] ?? []).slice(0, 6);
+      const picks = (data.photo_picks[key] ?? []).slice(0, SLIDE_KEY_MAX_PICKS[key]);
       return <div key={`docs-${key}`} className="w-full max-w-4xl space-y-4">
         <div className="space-y-1 text-center">
           <h2 className="text-xl font-semibold">{heading}</h2>
