@@ -167,3 +167,28 @@ func sanitizeFolderSegment(value string) (string, error) {
 	}
 	return strings.ToUpper(strings.Join(fields, " ")), nil
 }
+
+// BuildFinalReportPath constructs the storage path for a Final Report PPTX:
+// directly inside the regency folder, as a sibling of the 3 category
+// folders, not nested under any of them.
+func BuildFinalReportPath(input FolderPathInput) ([]string, error) {
+	programSegment, err := programTypeSegment(input.ProgramType)
+	if err != nil {
+		return nil, err
+	}
+	zoneSegment, err := sanitizeFolderSegment(input.ZoneName)
+	if err != nil {
+		return nil, err
+	}
+	if zoneSegment == "" {
+		return nil, ErrInvalidFolderPath
+	}
+	regencySegment, err := sanitizeFolderSegment(input.RegencyName)
+	if err != nil {
+		return nil, err
+	}
+	if regencySegment == "" {
+		return nil, ErrInvalidFolderPath
+	}
+	return []string{programSegment, zoneSegment, regencySegment}, nil
+}
