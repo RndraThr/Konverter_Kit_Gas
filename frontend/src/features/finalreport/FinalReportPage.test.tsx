@@ -124,3 +124,33 @@ test('toggle PUT carries slide_key plus existing picks, and blocks a second clic
   expect(puts).toHaveLength(1);
   release();
 });
+
+test('stays locked after the PUT resolves until the picks refetch completes', async () => {
+  const puts: unknown[] = [];
+  let pickGets = 0;
+  let finishRefetch: () => void = () => {};
+  renderPage(['final_report.view', 'final_report.manage'], {
+    rakorItems: ['x', 'a', 'b'].map(media),
+    rakorPicks: ['x'],
+    onRequest: (path, init) => {
+      if (init?.method === 'PUT' && path.includes('photo-picks')) { puts.push(init.body); return { data: [] }; }
+      if (!init?.method && path.includes('/final-report/photo-picks') && path.includes('slide_key=rapat_koordinasi')) {
+        pickGets += 1;
+        if (pickGets === 2) return new Promise((resolve) => { finishRefetch = () => resolve({ data: [{ id: 'p-x', activity_media_id: 'x', slide_key: 'rapat_koordinasi', sort_order: 0, display_name: 'x', content_url: '' }, { id: 'p-a', activity_media_id: 'a', slide_key: 'rapat_koordinasi', sort_order: 1, display_name: 'a', content_url: '' }] }); }) as unknown;
+      }
+      return undefined;
+    },
+  });
+  const a = await screen.findByRole('checkbox', { name: 'Pilih Foto a' });
+  await waitFor(() => expect(a).not.toHaveAttribute('aria-disabled', 'true'));
+  fireEvent.click(a);
+  await waitFor(() => expect(puts).toHaveLength(1));
+  await waitFor(() => expect(pickGets).toBe(2));
+  const b = screen.getByRole('checkbox', { name: 'Pilih Foto b' });
+  expect(b).toHaveAttribute('aria-disabled', 'true');
+  fireEvent.click(b);
+  expect(puts).toHaveLength(1);
+  finishRefetch();
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Pilih Foto b' })).not.toHaveAttribute('aria-disabled', 'true'));
+  expect(screen.getByRole('checkbox', { name: 'Pilih Foto a' })).toBeChecked();
+});

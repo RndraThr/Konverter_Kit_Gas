@@ -114,7 +114,7 @@ function PhotoPickerSection({ programId, regencyId, slideKey, canManage }: { pro
 
   // Block toggles until saved picks are loaded and while a save is in flight,
   // otherwise a click would compute from stale state and overwrite picks.
-  const locked = !picks.isSuccess || replace.isPending;
+  const locked = !picks.isSuccess || picks.isFetching || replace.isPending;
   const toggle = (mediaID: string) => {
     if (locked) return;
     const next = new Set(pickedIDs);
