@@ -9,6 +9,8 @@ import (
 
 // DailyRecapRecipient adalah satu baris Rekap Harian (distribusi selesai).
 type DailyRecapRecipient struct {
+	// RowNumber adalah nomor urut berjalan lintas hari (lihat completedSlotsNumbered).
+	RowNumber        int    `json:"row_number"`
 	SlotNumber       int    `json:"slot_number"`
 	FullName         string `json:"full_name"`
 	FarmerCardNumber string `json:"farmer_card_number"`
@@ -43,6 +45,7 @@ type dailyRecapSignatories struct {
 }
 
 type dailyRecapRecipientSnapshot struct {
+	RowNumber        int    `json:"row_number,omitempty"`
 	SlotNumber       int    `json:"slot_number"`
 	FullName         string `json:"full_name"`
 	FarmerCardNumber string `json:"farmer_card_number"`
@@ -75,7 +78,7 @@ func buildDailyRecapSnapshot(ctx DP3Context, settings ScheduleSettings, logos []
 	rows := make([]dailyRecapRecipientSnapshot, 0, len(recipients))
 	for _, recipient := range recipients {
 		rows = append(rows, dailyRecapRecipientSnapshot{
-			SlotNumber: recipient.SlotNumber, FullName: recipient.FullName,
+			RowNumber: recipient.RowNumber, SlotNumber: recipient.SlotNumber, FullName: recipient.FullName,
 			FarmerCardNumber: recipient.FarmerCardNumber, MachineBrand: recipient.MachineBrand,
 			MachineType: recipient.MachineType, MachineSerial: recipient.MachineSerial,
 			MachinePower: recipient.MachinePower, MachineFuelType: recipient.MachineFuelType,
@@ -172,7 +175,7 @@ func decodeDailyRecapRecipients(raw []dailyRecapRawRecipient) ([]DailyRecapRecip
 	recipients := make([]DailyRecapRecipient, 0, len(raw))
 	for _, row := range raw {
 		recipient := DailyRecapRecipient{
-			SlotNumber: row.SlotNumber, FullName: row.FullName, FarmerCardNumber: row.FarmerCardNumber,
+			RowNumber: row.RowNumber, SlotNumber: row.SlotNumber, FullName: row.FullName, FarmerCardNumber: row.FarmerCardNumber,
 		}
 		if len(row.VerificationSnapshot) > 0 {
 			var envelope struct {
@@ -220,6 +223,7 @@ func machineFromPackageTemplate(raw []byte, code string) (dp3SelectedMachine, bo
 }
 
 type dailyRecapRawRecipient struct {
+	RowNumber            int
 	SlotNumber           int
 	FullName             string
 	FarmerCardNumber     string

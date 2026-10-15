@@ -21,7 +21,9 @@ const dp3Folder = "1. DP3"
 
 type dp3Repository interface {
 	GetDP3Context(context.Context, string, auth.RegencyScope) (DP3Context, error)
-	ListDP3Recipients(context.Context, string, auth.RegencyScope) ([]DP3Recipient, error)
+	ListDP3Recipients(context.Context, string, string, auth.RegencyScope) ([]DP3Recipient, error)
+	ListDailyRecapDates(context.Context, string, auth.RegencyScope) ([]dailyRecapDateRow, error)
+	ListActiveAggregatesForType(context.Context, string, string, auth.RegencyScope) ([]AggregateDocument, error)
 	ListActiveLogos(context.Context, string) ([]LogoSnapshot, error)
 	GetScheduleSettings(context.Context, string, auth.RegencyScope) (ScheduleSettings, error)
 	GetActiveAggregate(context.Context, string, string, string, auth.RegencyScope) (AggregateDocument, error)
@@ -47,7 +49,7 @@ func NewDP3Service(repository dp3Repository, storage media.Storage, location *ti
 
 func (s *DP3Service) Summary(ctx context.Context, scheduleID string, scope auth.RegencyScope) (DP3Summary, error) {
 	scheduleID = strings.TrimSpace(scheduleID)
-	_, recipients, err := s.load(ctx, scheduleID, scope, false)
+	_, recipients, err := s.load(ctx, scheduleID, "", scope, false)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return DP3Summary{}, err
@@ -74,12 +76,60 @@ func (s *DP3Service) Summary(ctx context.Context, scheduleID string, scope auth.
 	return DP3Summary{TotalRecipients: len(recipients), NumberedRecipients: numbered, UnmountedRecipients: unmounted, ValidationStatus: status}, nil
 }
 
-func (s *DP3Service) Recipients(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]DP3Recipient, error) {
+// Recipients mengembalikan penerima DP3 satu hari distribusi (localDate
+// kosong: semua hari), bernomor urut berjalan.
+func (s *DP3Service) Recipients(ctx context.Context, scheduleID, localDate string, scope auth.RegencyScope) ([]DP3Recipient, error) {
 	scheduleID = strings.TrimSpace(scheduleID)
 	if _, err := s.repository.GetDP3Context(ctx, scheduleID, scope); err != nil {
 		return nil, err
 	}
-	return s.repository.ListDP3Recipients(ctx, scheduleID, scope)
+	return s.repository.ListDP3Recipients(ctx, scheduleID, localDate, scope)
+}
+
+// Dates mengembalikan hari distribusi jadwal beserta status dan dokumen DP3
+// aktifnya, seperti Rekap Harian: satu DP3 per hari distribusi.
+func (s *DP3Service) Dates(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]DailyRecapDate, error) {
+	scheduleID = strings.TrimSpace(scheduleID)
+	ctxData, err := s.repository.GetDP3Context(ctx, scheduleID, scope)
+	if err != nil {
+		return nil, err
+	}
+	contextErr := validateDP3Context(ctxData)
+	settings, settingsErr := s.repository.GetScheduleSettings(ctx, scheduleID, scope)
+	if settingsErr != nil {
+		contextErr = settingsErr
+	} else if contextErr == nil {
+		contextErr = validateDP3Settings(settings)
+	}
+	dateRows, err := s.repository.ListDailyRecapDates(ctx, scheduleID, scope)
+	if err != nil {
+		return nil, err
+	}
+	activeDocs, err := s.repository.ListActiveAggregatesForType(ctx, scheduleID, AggregateDocumentDP3, scope)
+	if err != nil {
+		return nil, err
+	}
+	docByDate := map[string]AggregateDocument{}
+	for i := range activeDocs {
+		docByDate[activeDocs[i].DocumentDate] = activeDocs[i]
+	}
+	dates := make([]DailyRecapDate, 0, len(dateRows))
+	for _, row := range dateRows {
+		validationErr := contextErr
+		if validationErr == nil {
+			recipients, recipientsErr := s.repository.ListDP3Recipients(ctx, scheduleID, row.LocalDate, scope)
+			if recipientsErr != nil {
+				return nil, recipientsErr
+			}
+			validationErr = validateDP3Recipients(recipients)
+		}
+		date := DailyRecapDate{LocalDate: row.LocalDate, RecipientCount: row.RecipientCount, ValidationStatus: dp3ValidationStatus(validationErr)}
+		if doc, ok := docByDate[row.LocalDate]; ok {
+			date.Document = &doc
+		}
+		dates = append(dates, date)
+	}
+	return dates, nil
 }
 
 func (s *DP3Service) Preview(ctx context.Context, scheduleID, documentDate string, scope auth.RegencyScope) (AggregatePreview, error) {
@@ -87,7 +137,7 @@ func (s *DP3Service) Preview(ctx context.Context, scheduleID, documentDate strin
 	documentDate = strings.TrimSpace(documentDate)
 	// Preview tidak menuntut pengaturan dan data penerima lengkap; isian kosong
 	// dibiarkan kosong. Finalisasi tetap memvalidasi semuanya.
-	ctxData, recipients, err := s.load(ctx, scheduleID, scope, false)
+	ctxData, recipients, err := s.load(ctx, scheduleID, documentDate, scope, false)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
@@ -119,6 +169,9 @@ func (s *DP3Service) Preview(ctx context.Context, scheduleID, documentDate strin
 	}
 	mergeImages(logoBytes, markImages)
 	mergeImages(logoBytes, wetImages)
+	if err := addRecipientSignatures(ctx, s.repository, logoBytes, dp3SlotIDs(recipients)); err != nil {
+		return AggregatePreview{}, err
+	}
 	rendered, err := RenderDP3(snapshot, logoBytes)
 	if err != nil {
 		return AggregatePreview{}, err
@@ -130,7 +183,7 @@ func (s *DP3Service) Preview(ctx context.Context, scheduleID, documentDate strin
 func (s *DP3Service) Finalize(ctx context.Context, actor auth.Principal, scheduleID, documentDate string, scope auth.RegencyScope, meta auth.ClientMeta) (AggregateDocument, error) {
 	scheduleID = strings.TrimSpace(scheduleID)
 	documentDate = strings.TrimSpace(documentDate)
-	ctxData, recipients, err := s.load(ctx, scheduleID, scope, true)
+	ctxData, recipients, err := s.load(ctx, scheduleID, documentDate, scope, true)
 	if err != nil {
 		return AggregateDocument{}, err
 	}
@@ -172,6 +225,9 @@ func (s *DP3Service) Finalize(ctx context.Context, actor auth.Principal, schedul
 	}
 	mergeImages(logoBytes, markImages)
 	mergeImages(logoBytes, wetImages)
+	if err := addRecipientSignatures(ctx, s.repository, logoBytes, dp3SlotIDs(recipients)); err != nil {
+		return AggregateDocument{}, err
+	}
 	rendered, err := RenderDP3(snapshot, logoBytes)
 	if err != nil {
 		return AggregateDocument{}, err
@@ -247,7 +303,7 @@ func (s *DP3Service) Open(ctx context.Context, id string, scope auth.RegencyScop
 
 // load melakukan validasi konteks + recipients yang dipakai bersama preview/finalize/summary.
 // strict=false hanya mensyaratkan ada penerima (untuk preview).
-func (s *DP3Service) load(ctx context.Context, scheduleID string, scope auth.RegencyScope, strict bool) (DP3Context, []DP3Recipient, error) {
+func (s *DP3Service) load(ctx context.Context, scheduleID, localDate string, scope auth.RegencyScope, strict bool) (DP3Context, []DP3Recipient, error) {
 	if scheduleID == "" {
 		return DP3Context{}, nil, ErrInvalidInput
 	}
@@ -258,7 +314,7 @@ func (s *DP3Service) load(ctx context.Context, scheduleID string, scope auth.Reg
 	if err := validateDP3Context(ctxData); err != nil {
 		return DP3Context{}, nil, err
 	}
-	recipients, err := s.repository.ListDP3Recipients(ctx, scheduleID, scope)
+	recipients, err := s.repository.ListDP3Recipients(ctx, scheduleID, localDate, scope)
 	if err != nil {
 		return DP3Context{}, nil, err
 	}
@@ -271,4 +327,12 @@ func (s *DP3Service) load(ctx context.Context, scheduleID string, scope auth.Reg
 		}
 	}
 	return ctxData, recipients, nil
+}
+
+func dp3SlotIDs(recipients []DP3Recipient) []string {
+	ids := make([]string, 0, len(recipients))
+	for _, recipient := range recipients {
+		ids = append(ids, recipient.SlotID)
+	}
+	return ids
 }

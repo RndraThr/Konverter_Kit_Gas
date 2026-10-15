@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, vi, test, expect } from 'vitest';
@@ -15,7 +16,7 @@ test('combines account identity, profile editing, and password security in one p
   vi.mocked(getBootstrap).mockResolvedValue(account);
   vi.mocked(apiRequest).mockResolvedValue({ data: { full_name: 'Admin Program' } });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(<QueryClientProvider client={client}><ProfilePage /></QueryClientProvider>);
+  render(<MemoryRouter><QueryClientProvider client={client}><ProfilePage /></QueryClientProvider></MemoryRouter>);
   const name = await screen.findByLabelText('Nama lengkap');
   expect(screen.getByRole('heading', { name: 'Profil saya' })).toBeInTheDocument();
   expect(await screen.findByText('Aktif')).toBeInTheDocument();
@@ -36,7 +37,7 @@ test('changes the password independently from profile information', async () => 
   vi.mocked(getBootstrap).mockResolvedValue(account);
   vi.mocked(apiRequest).mockResolvedValue({ data: { message: 'ok' } });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  render(<QueryClientProvider client={client}><ProfilePage /></QueryClientProvider>);
+  render(<MemoryRouter><QueryClientProvider client={client}><ProfilePage /></QueryClientProvider></MemoryRouter>);
 
   await screen.findByDisplayValue('Admin Konkit');
   await userEvent.type(screen.getByLabelText('Password saat ini'), 'Current-password-2026');

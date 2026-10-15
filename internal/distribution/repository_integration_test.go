@@ -756,7 +756,7 @@ func TestReopenCompletedSlotResetsCompletionAndInvalidatesBA(t *testing.T) {
 	var allocationID string
 	must(t, pool.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,actual_recipient_person_id,distribution_number,status,package_snapshot_json) VALUES($1,$2,$3,$3,1,'distributed','{}') RETURNING id::text`, fixture.scheduleID, nominationID, personID).Scan(&allocationID))
 	must(t, func() error {
-		_, err := pool.Exec(ctx, `UPDATE distribution_slots SET allocation_id=$2,recipient_person_id=$3,status='completed',verification_snapshot_json='{"equipment":{"machine_serial":"OLD"}}',distributed_at=now(),completed_at=now() WHERE id=$1`, fixture.distributionSlotID, allocationID, personID)
+		_, err := pool.Exec(ctx, `UPDATE distribution_slots SET allocation_id=$2,recipient_person_id=$3,status='completed',verification_snapshot_json='{"equipment":{"machine_serial":"OLD"}}',distributed_at='2026-10-07T03:00:00Z',completed_at='2026-10-07T03:00:00Z' WHERE id=$1`, fixture.distributionSlotID, allocationID, personID)
 		return err
 	}())
 
@@ -770,12 +770,15 @@ func TestReopenCompletedSlotResetsCompletionAndInvalidatesBA(t *testing.T) {
 	}())
 	var aggregateID string
 	must(t, pool.QueryRow(ctx, `INSERT INTO bast_aggregate_documents(schedule_id,program_id,regency_id,document_type,document_date,filename,recipient_count,page_count,version,status,checksum,snapshot_json) VALUES($1,$2,$3,'dp3','2026-10-07','dp3.pdf',1,1,1,'active',$4,'{}') RETURNING id::text`, fixture.scheduleID, fixture.programID, fixture.regencyID, strings.Repeat("e", 64)).Scan(&aggregateID))
+	// Rekap hari sebelumnya tidak memuat slot ini dan nomornya tidak bergeser.
+	var earlierID string
+	must(t, pool.QueryRow(ctx, `INSERT INTO bast_aggregate_documents(schedule_id,program_id,regency_id,document_type,document_date,filename,recipient_count,page_count,version,status,checksum,snapshot_json) VALUES($1,$2,$3,'daily_recap','2026-10-06','rekap.pdf',1,1,1,'active',$4,'{}') RETURNING id::text`, fixture.scheduleID, fixture.programID, fixture.regencyID, strings.Repeat("f", 64)).Scan(&earlierID))
 
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM bast_daily_bundle_items WHERE bundle_id=$1`, bundleID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM bast_daily_bundles WHERE id=$1`, bundleID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM bast_individual_documents WHERE id=$1`, individualID)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM bast_aggregate_documents WHERE id=$1`, aggregateID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM bast_aggregate_documents WHERE id=ANY($1)`, []string{aggregateID, earlierID})
 		_, _ = pool.Exec(context.Background(), `UPDATE distribution_slots SET allocation_id=NULL,recipient_person_id=NULL,status='open' WHERE id=$1`, fixture.distributionSlotID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM package_allocations WHERE id=$1`, allocationID)
 		_, _ = pool.Exec(context.Background(), `DELETE FROM candidate_nominations WHERE id=$1`, nominationID)
@@ -796,6 +799,11 @@ func TestReopenCompletedSlotResetsCompletionAndInvalidatesBA(t *testing.T) {
 	must(t, pool.QueryRow(ctx, `SELECT status FROM bast_individual_documents WHERE id=$1`, individualID).Scan(&individualStatus))
 	must(t, pool.QueryRow(ctx, `SELECT status FROM bast_daily_bundles WHERE id=$1`, bundleID).Scan(&bundleStatus))
 	must(t, pool.QueryRow(ctx, `SELECT status FROM bast_aggregate_documents WHERE id=$1`, aggregateID).Scan(&aggregateStatus))
+	var earlierStatus string
+	must(t, pool.QueryRow(ctx, `SELECT status FROM bast_aggregate_documents WHERE id=$1`, earlierID).Scan(&earlierStatus))
+	if earlierStatus != "active" {
+		t.Fatalf("earlier daily recap status=%s, want active", earlierStatus)
+	}
 	if allocationStatus != "ready" || snapshot != "{}" || individualStatus != "stale" || bundleStatus != "stale" || aggregateStatus != "stale" {
 		t.Fatalf("allocation=%s snapshot=%s individual=%s bundle=%s aggregate=%s", allocationStatus, snapshot, individualStatus, bundleStatus, aggregateStatus)
 	}

@@ -704,6 +704,28 @@ func TestDistributionSlotsQuotaExceededReturnsConflict(t *testing.T) {
 	}
 }
 
+func TestDistributionSlotCompletePassesThePhoneCompletionTime(t *testing.T) {
+	secret := []byte("01234567890123456789012345678901")
+	service := &fakeDistributionService{completedSlot: distribution.DistributionSlot{ID: "slot-1", ScheduleID: "schedule-1", SlotNumber: 5, Status: "completed"}}
+	operator := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_penyerahan": true}}
+	send := func(query string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/distribution/slots/5/complete?schedule_id=schedule-1"+query, nil)
+		req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+		req.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+		rec := httptest.NewRecorder()
+		NewHandler(Dependencies{Auth: operator, Distribution: service, SessionSecret: secret}).ServeHTTP(rec, req)
+		return rec
+	}
+	rec := send("&completed_at=2026-10-14T09%3A30%3A00%2B07%3A00")
+	want := time.Date(2026, 10, 14, 2, 30, 0, 0, time.UTC)
+	if rec.Code != http.StatusOK || service.completeInput.CompletedAt == nil || !service.completeInput.CompletedAt.Equal(want) {
+		t.Fatalf("status=%d input=%+v body=%s", rec.Code, service.completeInput, rec.Body.String())
+	}
+	if rec := send("&completed_at=kemarin"); rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid time status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func TestDistributionSlotCompleteRequiresPosPenyerahanAndReturnsStableConflicts(t *testing.T) {
 	secret := []byte("01234567890123456789012345678901")
 	service := &fakeDistributionService{completedSlot: distribution.DistributionSlot{ID: "slot-1", ScheduleID: "schedule-1", SlotNumber: 5, Status: "completed"}}

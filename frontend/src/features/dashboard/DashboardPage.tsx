@@ -14,7 +14,8 @@ import { Label } from '../../components/ui/label';
 import { PageHeader } from '../../components/PageHeader';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { apiRequest, type ApiError } from '../../lib/api';
-import { useCan } from '../../lib/permissions';
+import { useCan, usePermissions } from '../../lib/permissions';
+import { GuideStartCard } from '../guide/GuideStartCard';
 import type { ProgramZone } from '../programs/types';
 import { RecipientDialog, type ScheduleOption } from './RecipientDialog';
 import { RecipientMobileCard } from './RecipientMobileCard';
@@ -85,6 +86,7 @@ function EvidenceCell({ slots }: { slots: EvidenceSlot[] }) {
 
 export function DashboardPage() {
   const canManage = useCan('recipients.manage');
+  const permissions = usePermissions();
   const client = useQueryClient();
   const [params, setParams] = useSearchParams();
   const [search, setSearch] = useState(params.get('search') ?? '');
@@ -253,6 +255,7 @@ export function DashboardPage() {
 
   return <div className="space-y-6">
     <PageHeader title="Data Penerima" description="Pusat data penerima bantuan lintas program dan wilayah." actions={canManage ? <Button onClick={openCreate}><Plus />Tambah penerima</Button> : undefined} />
+    <GuideStartCard permissions={permissions} dismissible />
 
     <section aria-label="Statistik penerima" className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
       <Card><CardContent><strong className="text-2xl font-semibold tabular-nums">{stats.data?.data.total ?? '-'}</strong><span className="block text-sm text-muted-foreground">Total hasil</span></CardContent></Card>

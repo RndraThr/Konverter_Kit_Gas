@@ -10,14 +10,14 @@ vi.mock('@/lib/api', () => ({ apiRequest: vi.fn(), apiBlobRequest: vi.fn() }))
 function renderPanel(permissions = ['bast.view', 'bast.manage']) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })
   return render(<QueryClientProvider client={client}><PermissionsProvider permissions={permissions}>
-    <DP3Panel scheduleID="schedule-1" regencyName="Wajo" programType="farmer" defaultDate="2026-10-03" />
+    <DP3Panel scheduleID="schedule-1" regencyName="Wajo" programType="farmer" />
   </PermissionsProvider></QueryClientProvider>)
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(apiRequest).mockImplementation(async (path) => {
-    if (path.includes('/summary')) return { data: { total_recipients: 2, numbered_recipients: 1, unmounted_recipients: 1, validation_status: 'ready' } }
+    if (path.includes('/dates')) return { data: [{ local_date: '2026-10-03', recipient_count: 2, validation_status: 'ready' }] }
     if (path.includes('/documents')) return { data: [] }
     throw new Error(`unexpected ${path}`)
   })
@@ -36,18 +36,18 @@ test('shows the DP3 preview inline as soon as the document is ready, without ope
 
 test('does not fetch a preview while the document is not ready', async () => {
   vi.mocked(apiRequest).mockImplementation(async (path) => {
-    if (path.includes('/summary')) return { data: { total_recipients: 0, numbered_recipients: 0, unmounted_recipients: 0, validation_status: 'no_recipients' } }
+    if (path.includes('/dates')) return { data: [{ local_date: '2026-10-03', recipient_count: 0, validation_status: 'no_recipients' }] }
     if (path.includes('/documents')) return { data: [] }
     throw new Error(`unexpected ${path}`)
   })
   renderPanel()
-  expect(await screen.findByText('Belum ada penerima pada jadwal ini.')).toBeVisible()
+  expect(await screen.findByText('Belum ada penerima pada tanggal ini.')).toBeVisible()
   expect(apiBlobRequest).not.toHaveBeenCalled()
 })
 
 test('shows a stale DP3 as downloadable history and keeps finalization available', async () => {
   vi.mocked(apiRequest).mockImplementation(async (path) => {
-    if (path.includes('/summary')) return { data: { total_recipients: 2, numbered_recipients: 2, unmounted_recipients: 0, validation_status: 'ready' } }
+    if (path.includes('/dates')) return { data: [{ local_date: '2026-10-03', recipient_count: 2, validation_status: 'ready' }] }
     if (path.includes('/documents')) return { data: [{
       id: 'stale-1', schedule_id: 'schedule-1', program_id: 'program-1', regency_id: 'regency-1',
       document_type: 'dp3', document_date: '2026-10-03', filename: 'DP3-lama.pdf',
@@ -62,4 +62,21 @@ test('shows a stale DP3 as downloadable history and keeps finalization available
   expect(await screen.findByText('Perlu dibuat ulang')).toBeVisible()
   expect(screen.getByRole('button', { name: 'Unduh' })).toHaveAttribute('href', '/api/v1/bast/dp3/documents/stale-1/content')
   expect(screen.getByRole('button', { name: 'Finalisasi & sinkronkan' })).toBeEnabled()
+})
+
+test('builds one DP3 per distribution date and sends that date', async () => {
+  vi.mocked(apiRequest).mockImplementation(async (path) => {
+    if (path.includes('/dates')) return { data: [
+      { local_date: '2026-10-04', recipient_count: 11, validation_status: 'ready' },
+      { local_date: '2026-10-03', recipient_count: 10, validation_status: 'ready' },
+    ] }
+    if (path.includes('/documents')) return { data: [] }
+    throw new Error(`unexpected ${path}`)
+  })
+  renderPanel()
+  expect(await screen.findByText('11 penerima')).toBeVisible()
+  expect(screen.getByText('10 penerima')).toBeVisible()
+  await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledWith('/api/v1/bast/dp3/preview', expect.objectContaining({
+    body: JSON.stringify({ schedule_id: 'schedule-1', document_date: '2026-10-04' }),
+  })))
 })

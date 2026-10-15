@@ -127,11 +127,17 @@ func (h *Handler) handleBASTPreview(w http.ResponseWriter, r *http.Request, rc r
 		methodNotAllowed(w, http.MethodPost)
 		return
 	}
-	if !h.authorize(w, r, rc.principal, "bast.view") {
-		return
-	}
 	input, scope, ok := h.decodeBundleRequest(w, r, rc)
 	if !ok {
+		return
+	}
+	// The BA of one slot is also open to distribution officers: it shows
+	// the data of a handover they can already see in Distribusi.
+	if strings.TrimSpace(input.SlotID) != "" {
+		if !h.authorizeAny(w, r, rc.principal, "bast.view", "distribution.view") {
+			return
+		}
+	} else if !h.authorize(w, r, rc.principal, "bast.view") {
 		return
 	}
 	result, err := h.deps.BAST.PreviewBundle(r.Context(), input, scope)

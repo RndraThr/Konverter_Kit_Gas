@@ -18,6 +18,8 @@ import { ReportsPage } from '../features/reports/ReportsPage';
 import { ActivityDocumentationPage } from '../features/activities/ActivityDocumentationPage';
 import SupportingDocumentsRoute from '../features/activities/SupportingDocumentsPage';
 import { BeritaAcaraPage } from '../features/berita-acara/BeritaAcaraPage';
+import { GuidePage } from '../features/guide/GuidePage';
+import { GuideTopicPage } from '../features/guide/GuideTopicPage';
 
 function ProtectedPage({ permission, children }: { permission: string; children: ReactNode }) {
   const bootstrap = useQuery({ queryKey: ['bootstrap'], queryFn: getBootstrap });
@@ -55,6 +57,8 @@ export const dashboardRoutes: RouteObject[] = [{
     { path: 'pengaturan', element: <ProtectedPage permission="settings.view"><SettingsPage /></ProtectedPage> },
     { path: 'kesehatan', element: <ProtectedPage permission="health.view"><HealthPage /></ProtectedPage> },
     { path: 'riwayat', element: <ProtectedPage permission="audit.view"><AuditPage /></ProtectedPage> },
+    { path: 'panduan', element: <GuidePage /> },
+    { path: 'panduan/:slug', element: <GuideTopicPage /> },
     { path: 'profil', element: <ProfilePage /> },
     { path: 'profil/password', element: <Navigate to="/profil" replace /> },
     { path: '*', element: <Navigate to="/profil" replace /> },

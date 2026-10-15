@@ -210,6 +210,24 @@ type ReopenSlotInput struct {
 type CompleteSlotInput struct {
 	ScheduleID string `json:"schedule_id"`
 	SlotNumber int    `json:"slot_number"`
+	// CompletedAt adalah waktu tombol "Selesaikan" ditekan di HP. Penyelesaian
+	// yang dibuat offline lalu terkirim esok hari tetap tercatat di hari
+	// aslinya (lihat effectiveCompletionTime). Kosong berarti saat ini.
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+}
+
+// maxCompletionBackdate membatasi seberapa jauh ke belakang HP boleh
+// mencatat waktu penyelesaian (antrean offline yang tertunda).
+const maxCompletionBackdate = 7 * 24 * time.Hour
+
+// effectiveCompletionTime memakai waktu dari HP bila masuk akal: tidak di
+// masa depan dan tidak lebih lama dari maxCompletionBackdate. Selain itu
+// (jam HP salah) dipakai waktu server.
+func effectiveCompletionTime(claimed *time.Time, now time.Time) time.Time {
+	if claimed == nil || claimed.After(now) || now.Sub(*claimed) > maxCompletionBackdate {
+		return now
+	}
+	return claimed.UTC()
 }
 
 type SetDistributionDateInput struct {
