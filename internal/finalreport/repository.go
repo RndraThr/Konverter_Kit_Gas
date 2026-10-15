@@ -139,3 +139,85 @@ func (r *Repository) ReplacePhotoPicks(ctx context.Context, programID, regencyID
 	}
 	return r.ListPhotoPicks(ctx, programID, regencyID, slideKey, scope)
 }
+
+const documentColumns = `id::text, program_id::text, regency_id::text, version, filename, checksum, storage_key, status, finalized_at`
+
+func (r *Repository) ListDocuments(ctx context.Context, programID, regencyID string, scope auth.RegencyScope) ([]Document, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT `+documentColumns+` FROM final_report_documents
+		WHERE program_id=$1 AND regency_id=$2 AND ($3 OR regency_id::text=ANY($4))
+		ORDER BY version DESC
+	`, programID, regencyID, scope.Unrestricted, scope.RegencyIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list final report documents: %w", err)
+	}
+	defer rows.Close()
+	items := []Document{}
+	for rows.Next() {
+		var d Document
+		if err := rows.Scan(&d.ID, &d.ProgramID, &d.RegencyID, &d.Version, &d.Filename, &d.Checksum, &d.StorageKey, &d.Status, &d.FinalizedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, d)
+	}
+	return items, rows.Err()
+}
+
+// InsertDocumentVersion locks on (programID, regencyID) via an advisory
+// transaction lock — same pattern as bast's ActivateAggregate — so two
+// concurrent "Generate PPTX" clicks produce sequential versions, never a
+// collision. Returns the previous active document's storage_key (empty if
+// this is the first version) so the caller can delete the superseded file
+// from Drive.
+func (r *Repository) InsertDocumentVersion(ctx context.Context, actor auth.Principal, programID, regencyID, filename, checksum, storageKey string, scope auth.RegencyScope) (Document, string, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return Document{}, "", err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, programID+":"+regencyID); err != nil {
+		return Document{}, "", err
+	}
+	if !scope.Unrestricted {
+		allowed := false
+		for _, id := range scope.RegencyIDs {
+			if id == regencyID {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			return Document{}, "", ErrRegencyOutOfScope
+		}
+	}
+
+	var previousKey string
+	err = tx.QueryRow(ctx, `SELECT storage_key FROM final_report_documents WHERE program_id=$1 AND regency_id=$2 AND status='active'`, programID, regencyID).Scan(&previousKey)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return Document{}, "", fmt.Errorf("find previous active document: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE final_report_documents SET status='superseded' WHERE program_id=$1 AND regency_id=$2 AND status='active'`, programID, regencyID); err != nil {
+		return Document{}, "", fmt.Errorf("supersede previous document: %w", err)
+	}
+
+	var version int
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(max(version),0)+1 FROM final_report_documents WHERE program_id=$1 AND regency_id=$2`, programID, regencyID).Scan(&version); err != nil {
+		return Document{}, "", fmt.Errorf("next version: %w", err)
+	}
+
+	var d Document
+	err = tx.QueryRow(ctx, `
+		INSERT INTO final_report_documents (program_id, regency_id, version, filename, checksum, storage_key, status, finalized_by)
+		VALUES ($1::uuid,$2::uuid,$3,$4,$5,$6,'active',NULLIF($7,'')::uuid)
+		RETURNING `+documentColumns,
+		programID, regencyID, version, filename, checksum, storageKey, actor.UserID,
+	).Scan(&d.ID, &d.ProgramID, &d.RegencyID, &d.Version, &d.Filename, &d.Checksum, &d.StorageKey, &d.Status, &d.FinalizedAt)
+	if err != nil {
+		return Document{}, "", fmt.Errorf("insert document version: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Document{}, "", err
+	}
+	return d, previousKey, nil
+}

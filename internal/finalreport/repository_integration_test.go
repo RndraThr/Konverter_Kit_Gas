@@ -155,3 +155,43 @@ func TestListPhotoPicksExcludesSoftDeletedPhoto(t *testing.T) {
 		}
 	}
 }
+
+func TestInsertDocumentVersionIncrementsAndSupersedes(t *testing.T) {
+	pool := testPool(t)
+	repo := NewRepository(pool)
+	ctx := context.Background()
+	actor := auth.Principal{UserID: ""}
+
+	var programID, regencyID string
+	if err := pool.QueryRow(ctx, `SELECT id::text FROM programs LIMIT 1`).Scan(&programID); err != nil {
+		t.Fatalf("fixture program: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT id::text FROM regencies LIMIT 1`).Scan(&regencyID); err != nil {
+		t.Fatalf("fixture regency: %v", err)
+	}
+	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM final_report_documents WHERE program_id=$1::uuid AND regency_id=$2::uuid`, programID, regencyID) })
+
+	first, prevKey, err := repo.InsertDocumentVersion(ctx, actor, programID, regencyID, "LAPORAN AKHIR - A.pptx", "checksum1", "key1", unrestrictedScope())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if first.Version != 1 || prevKey != "" {
+		t.Fatalf("got version=%d prevKey=%q, want version=1 prevKey=\"\"", first.Version, prevKey)
+	}
+
+	second, prevKey, err := repo.InsertDocumentVersion(ctx, actor, programID, regencyID, "LAPORAN AKHIR - A.pptx", "checksum2", "key2", unrestrictedScope())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if second.Version != 2 || prevKey != "key1" {
+		t.Fatalf("got version=%d prevKey=%q, want version=2 prevKey=\"key1\"", second.Version, prevKey)
+	}
+
+	docs, err := repo.ListDocuments(ctx, programID, regencyID, unrestrictedScope())
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(docs) != 2 || docs[0].Status != "active" || docs[1].Status != "superseded" {
+		t.Fatalf("got %+v", docs)
+	}
+}
