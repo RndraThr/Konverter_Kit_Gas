@@ -5,8 +5,13 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/jpeg"
 	"io"
 	"strings"
+	"sync"
 
 	"konkit/internal/finalreport/template"
 )
@@ -34,11 +39,44 @@ var slideImageOrder = map[string][]string{
 	SlideKeySosialisasi:          {"ppt/media/image3.jpg", "ppt/media/image6.jpg", "ppt/media/image16.jpg", "ppt/media/image14.jpg"},
 }
 
-// RenderPPTX opens the master PPTX template as a ZIP archive, replaces every
-// placeholder token in each slide's XML with the matching value from
-// preview, optionally overwrites specific ppt/media/* image files with
-// picked photo bytes (keyed by slide_key, in placeholder order), and
-// returns the re-zipped archive as bytes.
+// placeholderOnlySlots are content-photo slots that have no photo picker in
+// v1 and are therefore always overwritten with the neutral placeholder.
+// slide8 (Dokumentasi Pendistribusian) references image11.jpg, image13.jpg
+// and image7.jpg left-to-right (verified against slide8.xml.rels and the
+// <a:off x=.../> positions in slide8.xml), plus the shared logos.
+var placeholderOnlySlots = map[string][]string{
+	"dokumentasi_pendistribusian": {"ppt/media/image11.jpg", "ppt/media/image13.jpg", "ppt/media/image7.jpg"},
+}
+
+// MaxPicks returns how many photos may be picked for slideKey: exactly the
+// number of photo slots the template has on that slide (0 for unknown keys).
+func MaxPicks(slideKey string) int {
+	return len(slideImageOrder[slideKey])
+}
+
+var (
+	placeholderOnce  sync.Once
+	placeholderBytes []byte
+	placeholderErr   error
+)
+
+// placeholderJPEG returns a 1600x1200 solid light-gray JPEG, generated once
+// in-process. It replaces every content-photo slot that has no picked photo,
+// so no reference-deck photo ever leaks into a generated PPTX.
+func placeholderJPEG() ([]byte, error) {
+	placeholderOnce.Do(func() {
+		img := image.NewRGBA(image.Rect(0, 0, 1600, 1200))
+		draw.Draw(img, img.Bounds(), &image.Uniform{C: color.RGBA{R: 0xE5, G: 0xE7, B: 0xEB, A: 0xFF}}, image.Point{}, draw.Src)
+		var buf bytes.Buffer
+		if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 80}); err != nil {
+			placeholderErr = fmt.Errorf("encode placeholder jpeg: %w", err)
+			return
+		}
+		placeholderBytes = buf.Bytes()
+	})
+	return placeholderBytes, placeholderErr
+}
+
 // xmlEscape escapes a substituted value so it is safe inside an <a:t> element.
 func xmlEscape(s string) string {
 	var b bytes.Buffer
@@ -46,6 +84,12 @@ func xmlEscape(s string) string {
 	return b.String()
 }
 
+// RenderPPTX opens the master PPTX template as a ZIP archive, replaces every
+// placeholder token in each slide's XML with the matching value from
+// preview, overwrites every content-photo slot on slides 5-8 — with the
+// picked photo's JPEG bytes (keyed by slide_key, in slot order) when one is
+// available, otherwise with a neutral placeholder JPEG — and returns the
+// re-zipped archive as bytes. No reference-deck photo survives rendering.
 func RenderPPTX(templateData []byte, preview Preview, photoBytes map[string][][]byte) ([]byte, error) {
 	reader, err := zip.NewReader(bytes.NewReader(templateData), int64(len(templateData)))
 	if err != nil {
@@ -71,13 +115,24 @@ func RenderPPTX(templateData []byte, preview Preview, photoBytes map[string][][]
 		replacements[token] = xmlEscape(value)
 	}
 
+	placeholder, err := placeholderJPEG()
+	if err != nil {
+		return nil, err
+	}
 	imageOverrides := map[string][]byte{}
 	for slideKey, files := range slideImageOrder {
 		pics := photoBytes[slideKey]
 		for i, name := range files {
-			if i < len(pics) {
+			if i < len(pics) && len(pics[i]) > 0 {
 				imageOverrides[name] = pics[i]
+			} else {
+				imageOverrides[name] = placeholder
 			}
+		}
+	}
+	for _, files := range placeholderOnlySlots {
+		for _, name := range files {
+			imageOverrides[name] = placeholder
 		}
 	}
 
