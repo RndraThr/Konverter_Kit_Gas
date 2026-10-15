@@ -69,7 +69,7 @@ func (r *Repository) ListPhotoPicks(ctx context.Context, programID, regencyID, s
 		SELECT p.id::text, p.program_id::text, p.regency_id::text, p.slide_key, p.activity_media_id::text, p.sort_order,
 		       m.display_name, '/api/v1/activities/media/'||m.id::text||'/content', m.storage_key, p.created_at
 		FROM final_report_photo_picks p
-		JOIN activity_media m ON m.id = p.activity_media_id
+		JOIN activity_media m ON m.id = p.activity_media_id AND m.status='active'
 		WHERE p.program_id=$1 AND p.regency_id=$2 AND p.slide_key=$3 AND ($4 OR p.regency_id::text=ANY($5))
 		ORDER BY p.sort_order
 	`, programID, regencyID, slideKey, scope.Unrestricted, scope.RegencyIDs)
