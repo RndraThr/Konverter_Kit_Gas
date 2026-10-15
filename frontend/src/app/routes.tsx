@@ -20,6 +20,7 @@ import SupportingDocumentsRoute from '../features/activities/SupportingDocuments
 import { BeritaAcaraPage } from '../features/berita-acara/BeritaAcaraPage';
 import { GuidePage } from '../features/guide/GuidePage';
 import { GuideTopicPage } from '../features/guide/GuideTopicPage';
+import FinalReportRoute from '../features/finalreport/FinalReportPage';
 
 function ProtectedPage({ permission, children }: { permission: string; children: ReactNode }) {
   const bootstrap = useQuery({ queryKey: ['bootstrap'], queryFn: getBootstrap });
@@ -52,6 +53,7 @@ export const dashboardRoutes: RouteObject[] = [{
     { path: 'dokumen-pendukung', element: <ProtectedPage permission="activities.view"><SupportingDocumentsRoute /></ProtectedPage> },
     { path: 'berita-acara', element: <ProtectedPage permission="bast.view"><BeritaAcaraPage /></ProtectedPage> },
     { path: 'laporan', element: <ProtectedPage permission="distribution.view"><ReportsPage /></ProtectedPage> },
+    { path: 'laporan-akhir', element: <ProtectedPage permission="final_report.view"><FinalReportRoute /></ProtectedPage> },
     { path: 'pengguna', element: <ProtectedPage permission="users.view"><UsersPage /></ProtectedPage> },
     { path: 'role', element: <ProtectedPage permission="roles.view"><RolesPage /></ProtectedPage> },
     { path: 'pengaturan', element: <ProtectedPage permission="settings.view"><SettingsPage /></ProtectedPage> },

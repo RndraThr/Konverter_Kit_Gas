@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Activity, BookOpen, BookOpenCheck, BookOpenText, CalendarClock, CalendarRange, Camera, ChevronDown, FileClock,
   FileCheck2, Files, FileSpreadsheet, FileText, GraduationCap, ListFilter, MapPinned, Menu, PackageOpen, PanelLeftClose, PanelLeftOpen,
-  PartyPopper, Settings, ShieldCheck, Users, UsersRound, X,
+  PartyPopper, Presentation, Settings, ShieldCheck, Users, UsersRound, X,
 } from 'lucide-react';
 import { ReactNode, useEffect, useId, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
@@ -52,6 +52,7 @@ const groups: NavGroup[] = [
   ] },
   { label: 'Laporan', items: [
     { label: 'Laporan', to: '/laporan', permission: 'distribution.view', icon: <FileText /> },
+    { label: 'Laporan Akhir', to: '/laporan-akhir', permission: 'final_report.view', icon: <Presentation /> },
   ] },
   { label: 'Administrasi', items: [
     { label: 'Pengguna', to: '/pengguna', permission: 'users.view', icon: <UsersRound /> },
