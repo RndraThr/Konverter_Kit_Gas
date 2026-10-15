@@ -3,6 +3,7 @@ package finalreport
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/xml"
 	"fmt"
 	"io"
 	"os"
@@ -39,6 +40,13 @@ var slideImageOrder = map[string][]string{
 // preview, optionally overwrites specific ppt/media/* image files with
 // picked photo bytes (keyed by slide_key, in placeholder order), and
 // returns the re-zipped archive as bytes.
+// xmlEscape escapes a substituted value so it is safe inside an <a:t> element.
+func xmlEscape(s string) string {
+	var b bytes.Buffer
+	_ = xml.EscapeText(&b, []byte(s))
+	return b.String()
+}
+
 func RenderPPTX(templatePath string, preview Preview, photoBytes map[string][][]byte) ([]byte, error) {
 	data, err := os.ReadFile(templatePath)
 	if err != nil {
@@ -53,15 +61,19 @@ func RenderPPTX(templatePath string, preview Preview, photoBytes map[string][][]
 		template.TokenRegencyLabel: preview.RegencyLabel, template.TokenFiscalYear: preview.FiscalYear,
 		template.TokenAgricultureOfficeName: preview.AgricultureOfficeName, template.TokenConsultantCompanyName: preview.ConsultantCompanyName,
 		template.TokenMachineManufacturerName: preview.MachineManufacturerName,
-		template.TokenDeliveryHoseDate: preview.DeliveryHoseDate, template.TokenDeliveryMachineGroupDate: preview.DeliveryMachineGroupDate,
+		template.TokenDeliveryHoseDate:        preview.DeliveryHoseDate, template.TokenDeliveryMachineGroupDate: preview.DeliveryMachineGroupDate,
 		template.TokenDeliveryGasCylinderDate: preview.DeliveryGasCylinderDate,
-		template.TokenDeliveryRangeStart: preview.DeliveryRangeStart, template.TokenDeliveryRangeEnd: preview.DeliveryRangeEnd,
+		template.TokenDeliveryRangeStart:      preview.DeliveryRangeStart, template.TokenDeliveryRangeEnd: preview.DeliveryRangeEnd,
 		template.TokenRakordaDate: preview.RakordaDate, template.TokenSosialisasiDate: preview.SosialisasiDate,
 		template.TokenLeaderCount: preview.LeaderCount, template.TokenAdminCount: preview.AdminCount,
 		template.TokenTechnicianCount: preview.TechnicianCount, template.TokenHelperCount: preview.HelperCount,
-		template.TokenHandoverLocation: preview.HandoverLocation,
+		template.TokenHandoverLocation:      preview.HandoverLocation,
 		template.TokenDistributionStartDate: preview.DistributionStartDate, template.TokenDistributionEndDate: preview.DistributionEndDate,
 		template.TokenDistributionTotal: preview.DistributionTotal,
+	}
+
+	for token, value := range replacements {
+		replacements[token] = xmlEscape(value)
 	}
 
 	imageOverrides := map[string][]byte{}
