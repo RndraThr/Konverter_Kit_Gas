@@ -2,6 +2,7 @@ package finalreport
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 
@@ -73,5 +74,37 @@ func TestPutSettingsUpsertsAndRejectsOutOfScopeRegency(t *testing.T) {
 	scoped := auth.RegencyScope{Unrestricted: false, RegencyIDs: []string{"00000000-0000-0000-0000-000000000000"}}
 	if _, err := repo.PutSettings(ctx, actor, Settings{ProgramID: programID, RegencyID: regencyID, LeaderCount: 9}, scoped); err == nil {
 		t.Fatal("expected out-of-scope error, got nil")
+	}
+}
+
+func TestReplacePhotoPicksRejectsPhotoFromAnotherRegency(t *testing.T) {
+	pool := testPool(t)
+	repo := NewRepository(pool)
+	ctx := context.Background()
+
+	var programID, regencyA, regencyB string
+	if err := pool.QueryRow(ctx, `SELECT id::text FROM programs LIMIT 1`).Scan(&programID); err != nil {
+		t.Fatalf("fixture program: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT id::text FROM regencies ORDER BY id LIMIT 1`).Scan(&regencyA); err != nil {
+		t.Fatalf("fixture regency a: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT id::text FROM regencies ORDER BY id OFFSET 1 LIMIT 1`).Scan(&regencyB); err != nil {
+		t.Fatalf("fixture regency b: %v", err)
+	}
+
+	var mediaID string
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO activity_media (regency_id, activity_type, storage_key, display_name, original_filename, media_type, mime_type, byte_size, checksum, source)
+		VALUES ($1::uuid, 'rakor', $2, 'TEST-RAKOR', 'test.jpg', 'image', 'image/jpeg', 100, repeat('a',64), 'gallery')
+		RETURNING id::text
+	`, regencyB, "finalreport-test-"+t.Name()).Scan(&mediaID); err != nil {
+		t.Fatalf("seed activity_media: %v", err)
+	}
+	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM activity_media WHERE id=$1::uuid`, mediaID) })
+
+	_, err := repo.ReplacePhotoPicks(ctx, programID, regencyA, SlideKeyRapatKoordinasi, []string{mediaID}, unrestrictedScope())
+	if !errors.Is(err, ErrPhotoOutOfScope) {
+		t.Fatalf("expected ErrPhotoOutOfScope, got %v", err)
 	}
 }
