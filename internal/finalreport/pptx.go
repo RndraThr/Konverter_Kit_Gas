@@ -6,7 +6,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"konkit/internal/finalreport/template"
@@ -47,12 +46,8 @@ func xmlEscape(s string) string {
 	return b.String()
 }
 
-func RenderPPTX(templatePath string, preview Preview, photoBytes map[string][][]byte) ([]byte, error) {
-	data, err := os.ReadFile(templatePath)
-	if err != nil {
-		return nil, fmt.Errorf("read pptx template: %w", err)
-	}
-	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+func RenderPPTX(templateData []byte, preview Preview, photoBytes map[string][][]byte) ([]byte, error) {
+	reader, err := zip.NewReader(bytes.NewReader(templateData), int64(len(templateData)))
 	if err != nil {
 		return nil, fmt.Errorf("open pptx template as zip: %w", err)
 	}

@@ -24,11 +24,11 @@ type Service struct {
 	repo            *Repository
 	programContexts programContextResolver
 	storage         media.Storage
-	templatePath    string
+	templateData    []byte
 }
 
-func NewService(repo *Repository, programContexts programContextResolver, storage media.Storage, templatePath string) *Service {
-	return &Service{repo: repo, programContexts: programContexts, storage: storage, templatePath: templatePath}
+func NewService(repo *Repository, programContexts programContextResolver, storage media.Storage, templateData []byte) *Service {
+	return &Service{repo: repo, programContexts: programContexts, storage: storage, templateData: templateData}
 }
 
 // NewServiceForTest builds a Service with a nil repository, for tests that
@@ -196,7 +196,7 @@ func (s *Service) Generate(ctx context.Context, actor auth.Principal, programID,
 		}
 	}
 
-	rendered, err := RenderPPTX(s.templatePath, preview, photoBytes)
+	rendered, err := RenderPPTX(s.templateData, preview, photoBytes)
 	if err != nil {
 		return Document{}, fmt.Errorf("render pptx: %w", err)
 	}

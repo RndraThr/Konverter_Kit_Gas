@@ -22,7 +22,7 @@ func TestRenderPPTXSubstitutesEveryToken(t *testing.T) {
 		HandoverLocation: "GUDANG TEST", DistributionStartDate: "1 Februari 2026", DistributionEndDate: "28 Februari 2026", DistributionTotal: "100",
 	}
 
-	output, err := RenderPPTX("template/final_report_template.pptx", preview, nil)
+	output, err := RenderPPTX(template.PPTX, preview, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestRenderPPTXSubstitutesEveryToken(t *testing.T) {
 
 func TestRenderPPTXEscapesXMLSpecialChars(t *testing.T) {
 	preview := Preview{ConsultantCompanyName: "PT A & B <Tbk>", HandoverLocation: "Gudang \"X\" <1>"}
-	output, err := RenderPPTX("template/final_report_template.pptx", preview, nil)
+	output, err := RenderPPTX(template.PPTX, preview, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

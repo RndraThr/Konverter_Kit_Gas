@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"konkit/internal/auth"
+	"konkit/internal/finalreport/template"
 	"konkit/internal/programs"
 )
 
@@ -36,7 +37,7 @@ func TestReplacePhotoPicksRejectsMoreThanSix(t *testing.T) {
 func TestPreviewFillsBlankWhenNoDataExists(t *testing.T) {
 	pool := testPool(t)
 	repo := NewRepository(pool)
-	svc := NewService(repo, stubProgramContexts{}, nil, "")
+	svc := NewService(repo, stubProgramContexts{}, nil, nil)
 	ctx := context.Background()
 
 	var programID string
@@ -85,7 +86,7 @@ func TestGenerateProducesSequentialVersions(t *testing.T) {
 	pool := testPool(t)
 	repo := NewRepository(pool)
 	storage := &fakeStorage{}
-	svc := NewService(repo, stubProgramContexts{ctx: programs.StorageContext{ProgramType: "farmer", ZoneName: "Zona 1", RegencyName: "Kabupaten Test", ProgramID: "p", RegencyID: "r"}}, storage, "template/final_report_template.pptx")
+	svc := NewService(repo, stubProgramContexts{ctx: programs.StorageContext{ProgramType: "farmer", ZoneName: "Zona 1", RegencyName: "Kabupaten Test", ProgramID: "p", RegencyID: "r"}}, storage, template.PPTX)
 	ctx := context.Background()
 
 	var programID, regencyID string
