@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 
+	"konkit/internal/audit"
 	"konkit/internal/auth"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -70,6 +72,7 @@ func (r *Repository) ListPhotoPicks(ctx context.Context, programID, regencyID, s
 		       m.display_name, '/api/v1/activities/media/'||m.id::text||'/content', m.storage_key, p.created_at
 		FROM final_report_photo_picks p
 		JOIN activity_media m ON m.id = p.activity_media_id AND m.status='active'
+		     AND m.media_type='image' AND m.mime_type IN ('image/jpeg','image/png')
 		WHERE p.program_id=$1 AND p.regency_id=$2 AND p.slide_key=$3 AND ($4 OR p.regency_id::text=ANY($5))
 		ORDER BY p.sort_order
 	`, programID, regencyID, slideKey, scope.Unrestricted, scope.RegencyIDs)
@@ -89,8 +92,10 @@ func (r *Repository) ListPhotoPicks(ctx context.Context, programID, regencyID, s
 }
 
 // ReplacePhotoPicks swaps the entire pick list for one slide_key in a single
-// transaction: validates every activity_media_id belongs to regencyID (and is
-// within scope), deletes the old picks, inserts the new ones in order.
+// transaction: validates every activity_media_id is an active JPEG/PNG still
+// image of regencyID and of programID (or of no program — media uploaded
+// before migration 00020), within scope; deletes the old picks, inserts the
+// new ones in order.
 func (r *Repository) ReplacePhotoPicks(ctx context.Context, programID, regencyID, slideKey string, activityMediaIDs []string, scope auth.RegencyScope) ([]PhotoPick, error) {
 	if !validSlideKeys[slideKey] {
 		return nil, ErrSlideKeyInvalid
@@ -102,8 +107,15 @@ func (r *Repository) ReplacePhotoPicks(ctx context.Context, programID, regencyID
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	for _, mediaID := range activityMediaIDs {
-		var belongs bool
-		if err := tx.QueryRow(ctx, `SELECT regency_id=$2::uuid FROM activity_media WHERE id=$1::uuid AND status='active'`, mediaID, regencyID).Scan(&belongs); err != nil {
+		if _, err := uuid.Parse(mediaID); err != nil {
+			return nil, ErrPhotoOutOfScope
+		}
+		var belongs, stillImage bool
+		if err := tx.QueryRow(ctx, `
+			SELECT regency_id=$2::uuid AND (program_id=$3::uuid OR program_id IS NULL),
+			       media_type='image' AND mime_type IN ('image/jpeg','image/png')
+			FROM activity_media WHERE id=$1::uuid AND status='active'
+		`, mediaID, regencyID, programID).Scan(&belongs, &stillImage); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, ErrPhotoOutOfScope
 			}
@@ -111,6 +123,9 @@ func (r *Repository) ReplacePhotoPicks(ctx context.Context, programID, regencyID
 		}
 		if !belongs {
 			return nil, ErrPhotoOutOfScope
+		}
+		if !stillImage {
+			return nil, ErrPhotoTypeInvalid
 		}
 	}
 	if !scope.Unrestricted {
@@ -195,11 +210,14 @@ func (r *Repository) GetPreviewSourceData(ctx context.Context, programID, regenc
 	// Rakorda and Sosialisasi share one table (bast_rakorda_uploads), told
 	// apart by document_kind (migration 00043_bast_sosialisasi.sql) — not
 	// two separate tables.
-	_ = r.pool.QueryRow(ctx, `SELECT to_char(min(event_date),'DD Month YYYY') FROM bast_rakorda_uploads WHERE schedule_id=$1::uuid AND document_kind='rakorda'`, scheduleID).Scan(&data.rakordaDate)
-	_ = r.pool.QueryRow(ctx, `SELECT to_char(min(event_date),'DD Month YYYY') FROM bast_rakorda_uploads WHERE schedule_id=$1::uuid AND document_kind='sosialisasi'`, scheduleID).Scan(&data.sosialisasiDate)
+	// Dates come back as raw ISO YYYY-MM-DD (empty when absent); the service
+	// formats every date the same way (formatIndonesianDate).
+	_ = r.pool.QueryRow(ctx, `SELECT COALESCE(to_char(min(event_date),'YYYY-MM-DD'),'') FROM bast_rakorda_uploads WHERE schedule_id=$1::uuid AND document_kind='rakorda'`, scheduleID).Scan(&data.rakordaDate)
+	_ = r.pool.QueryRow(ctx, `SELECT COALESCE(to_char(min(event_date),'YYYY-MM-DD'),'') FROM bast_rakorda_uploads WHERE schedule_id=$1::uuid AND document_kind='sosialisasi'`, scheduleID).Scan(&data.sosialisasiDate)
 
 	_ = r.pool.QueryRow(ctx, `
-		SELECT to_char(min(completed_at),'DD Month YYYY'), to_char(max(completed_at),'DD Month YYYY'), count(*)
+		SELECT COALESCE(to_char(min(completed_at AT TIME ZONE 'Asia/Jakarta'),'YYYY-MM-DD'),''),
+		       COALESCE(to_char(max(completed_at AT TIME ZONE 'Asia/Jakarta'),'YYYY-MM-DD'),''), count(*)
 		FROM distribution_slots WHERE schedule_id=$1::uuid AND status='completed'
 	`, scheduleID).Scan(&data.distributionStart, &data.distributionEnd, &data.distributionTotal)
 
@@ -229,21 +247,42 @@ func (r *Repository) ListDocuments(ctx context.Context, programID, regencyID str
 	return items, rows.Err()
 }
 
+// GetDocument returns one generated version (active or superseded) when its
+// regency is within scope; unknown, malformed or out-of-scope ids are
+// ErrNotFound so callers cannot probe other regencies' documents.
+func (r *Repository) GetDocument(ctx context.Context, id string, scope auth.RegencyScope) (Document, error) {
+	if _, err := uuid.Parse(id); err != nil {
+		return Document{}, ErrNotFound
+	}
+	var d Document
+	err := r.pool.QueryRow(ctx, `
+		SELECT `+documentColumns+` FROM final_report_documents
+		WHERE id=$1::uuid AND ($2 OR regency_id::text=ANY($3))
+	`, id, scope.Unrestricted, scope.RegencyIDs).Scan(&d.ID, &d.ProgramID, &d.RegencyID, &d.Version, &d.Filename, &d.Checksum, &d.StorageKey, &d.Status, &d.FinalizedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Document{}, ErrNotFound
+	}
+	if err != nil {
+		return Document{}, fmt.Errorf("get final report document: %w", err)
+	}
+	return d, nil
+}
+
 // InsertDocumentVersion locks on (programID, regencyID) via an advisory
 // transaction lock — same pattern as bast's ActivateAggregate — so two
 // concurrent "Generate PPTX" clicks produce sequential versions, never a
-// collision. Returns the previous active document's storage_key (empty if
-// this is the first version) so the caller can delete the superseded file
-// from Drive.
-func (r *Repository) InsertDocumentVersion(ctx context.Context, actor auth.Principal, programID, regencyID, filename, checksum, storageKey string, scope auth.RegencyScope) (Document, string, error) {
+// collision. The previous active version is marked superseded but keeps its
+// storage_key (its file stays downloadable, spec §3.3). The audit event is
+// recorded in the same transaction.
+func (r *Repository) InsertDocumentVersion(ctx context.Context, actor auth.Principal, programID, regencyID, filename, checksum, storageKey string, scope auth.RegencyScope, meta auth.ClientMeta) (Document, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return Document{}, "", err
+		return Document{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, programID+":"+regencyID); err != nil {
-		return Document{}, "", err
+		return Document{}, err
 	}
 	if !scope.Unrestricted {
 		allowed := false
@@ -254,22 +293,17 @@ func (r *Repository) InsertDocumentVersion(ctx context.Context, actor auth.Princ
 			}
 		}
 		if !allowed {
-			return Document{}, "", ErrRegencyOutOfScope
+			return Document{}, ErrRegencyOutOfScope
 		}
 	}
 
-	var previousKey string
-	err = tx.QueryRow(ctx, `SELECT storage_key FROM final_report_documents WHERE program_id=$1 AND regency_id=$2 AND status='active'`, programID, regencyID).Scan(&previousKey)
-	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-		return Document{}, "", fmt.Errorf("find previous active document: %w", err)
-	}
 	if _, err := tx.Exec(ctx, `UPDATE final_report_documents SET status='superseded' WHERE program_id=$1 AND regency_id=$2 AND status='active'`, programID, regencyID); err != nil {
-		return Document{}, "", fmt.Errorf("supersede previous document: %w", err)
+		return Document{}, fmt.Errorf("supersede previous document: %w", err)
 	}
 
 	var version int
 	if err := tx.QueryRow(ctx, `SELECT COALESCE(max(version),0)+1 FROM final_report_documents WHERE program_id=$1 AND regency_id=$2`, programID, regencyID).Scan(&version); err != nil {
-		return Document{}, "", fmt.Errorf("next version: %w", err)
+		return Document{}, fmt.Errorf("next version: %w", err)
 	}
 
 	var d Document
@@ -280,10 +314,17 @@ func (r *Repository) InsertDocumentVersion(ctx context.Context, actor auth.Princ
 		programID, regencyID, version, filename, checksum, storageKey, actor.UserID,
 	).Scan(&d.ID, &d.ProgramID, &d.RegencyID, &d.Version, &d.Filename, &d.Checksum, &d.StorageKey, &d.Status, &d.FinalizedAt)
 	if err != nil {
-		return Document{}, "", fmt.Errorf("insert document version: %w", err)
+		return Document{}, fmt.Errorf("insert document version: %w", err)
+	}
+	if err := audit.Record(ctx, tx, audit.Event{
+		ActorUserID: actor.UserID, Action: "final_report.generated", ResourceType: "final_report_document", ResourceID: d.ID,
+		Metadata:  map[string]any{"program_id": programID, "regency_id": regencyID, "version": version, "checksum": checksum},
+		IPAddress: meta.IPAddress, UserAgent: meta.UserAgent,
+	}); err != nil {
+		return Document{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return Document{}, "", err
+		return Document{}, err
 	}
-	return d, previousKey, nil
+	return d, nil
 }

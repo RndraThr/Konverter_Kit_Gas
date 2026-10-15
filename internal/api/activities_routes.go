@@ -30,7 +30,8 @@ func (h *Handler) handleActivitiesMedia(w http.ResponseWriter, r *http.Request, 
 	}
 	switch r.Method {
 	case http.MethodGet:
-		if !h.authorize(w, r, rc.principal, "activities.view") {
+		// final_report.view: the Laporan Akhir photo picker lists photos (read-only, regency-scoped).
+		if !h.authorizeAny(w, r, rc.principal, "activities.view", "final_report.view") {
 			return
 		}
 		scope, ok := h.regencyScope(w, r, rc.principal)
@@ -105,7 +106,7 @@ func (h *Handler) handleActivityMediaItem(w http.ResponseWriter, r *http.Request
 	}
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) == 2 && parts[1] == "content" && r.Method == http.MethodGet {
-		if !h.authorize(w, r, rc.principal, "activities.view") {
+		if !h.authorizeAny(w, r, rc.principal, "activities.view", "final_report.view") {
 			return
 		}
 		scope, ok := h.regencyScope(w, r, rc.principal)

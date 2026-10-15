@@ -16,6 +16,7 @@ import (
 	"konkit/internal/distribution"
 	"konkit/internal/finalreport"
 	apphealth "konkit/internal/health"
+	"konkit/internal/media"
 	"konkit/internal/profile"
 	"konkit/internal/programs"
 	"konkit/internal/recipients"
@@ -542,10 +543,11 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, programs.ErrZoneProgramMismatch):
 		writeError(w, http.StatusConflict, "zone_program_mismatch", "Zona tidak termasuk dalam program ini")
 	case errors.Is(err, finalreport.ErrProgramRequired), errors.Is(err, finalreport.ErrRegencyRequired), errors.Is(err, finalreport.ErrCountNegative),
-		errors.Is(err, finalreport.ErrSlideKeyInvalid), errors.Is(err, finalreport.ErrTooManyPicks), errors.Is(err, finalreport.ErrPhotoOutOfScope):
+		errors.Is(err, finalreport.ErrSlideKeyInvalid), errors.Is(err, finalreport.ErrTooManyPicks), errors.Is(err, finalreport.ErrPhotoOutOfScope),
+		errors.Is(err, finalreport.ErrDuplicatePick), errors.Is(err, finalreport.ErrPhotoTypeInvalid):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), map[string]string{"request": err.Error()})
-	case errors.Is(err, finalreport.ErrGenerateConflict):
-		writeError(w, http.StatusConflict, "document_conflict", "Dokumen Laporan Akhir telah diubah operator lain; muat ulang data")
+	case errors.Is(err, media.ErrInvalidFolderPath):
+		writeError(w, http.StatusConflict, "folder_path_invalid", "Folder Drive tidak dapat ditentukan: lengkapi jenis program, zona, dan nama kabupaten di Persiapan Program")
 	case errors.Is(err, programs.ErrRegencyOutOfScope), errors.Is(err, finalreport.ErrRegencyOutOfScope):
 		writeError(w, http.StatusForbidden, "regency_out_of_scope", "Kabupaten ini berada di luar akses Anda")
 	case errors.Is(err, bast.ErrZoneNotConfigured):

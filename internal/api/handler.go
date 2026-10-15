@@ -167,6 +167,7 @@ type FinalReportService interface {
 	Preview(context.Context, string, string, auth.RegencyScope) (finalreport.Preview, error)
 	Generate(context.Context, auth.Principal, string, string, auth.RegencyScope, auth.ClientMeta) (finalreport.Document, error)
 	ListDocuments(context.Context, string, string, auth.RegencyScope) ([]finalreport.Document, error)
+	OpenDocument(context.Context, string, auth.RegencyScope) (finalreport.DocumentContent, error)
 }
 
 type BASTBrandingService interface {
@@ -453,6 +454,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleFinalReportGenerate(w, r, rc)
 	case path == "final-report/documents":
 		h.handleFinalReportDocuments(w, r, rc)
+	case strings.HasPrefix(path, "final-report/documents/"):
+		h.handleFinalReportDocumentContent(w, r, rc, strings.TrimPrefix(path, "final-report/documents/"))
 	case path == "activities/supporting-documents/scan":
 		h.handleActivitiesSupportingDocumentsScan(w, r, rc)
 	case path == "bast/overview":

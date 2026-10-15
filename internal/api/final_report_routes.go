@@ -1,6 +1,8 @@
 package api
 
 import (
+	"io"
+	"mime"
 	"net/http"
 	"strings"
 
@@ -179,4 +181,40 @@ func (h *Handler) handleFinalReportDocuments(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	writeData(w, http.StatusOK, docs)
+}
+
+// handleFinalReportDocumentContent streams one generated version (active or
+// superseded) as a PPTX download: GET /final-report/documents/{id}/content.
+func (h *Handler) handleFinalReportDocumentContent(w http.ResponseWriter, r *http.Request, rc requestContext, suffix string) {
+	if h.deps.FinalReport == nil {
+		writeUnavailable(w)
+		return
+	}
+	parts := strings.Split(suffix, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] != "content" {
+		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
+		return
+	}
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if !h.authorize(w, r, rc.principal, "final_report.view") {
+		return
+	}
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	content, err := h.deps.FinalReport.OpenDocument(r.Context(), parts[0], scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	defer content.Reader.Close()
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": content.Filename}))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.Copy(w, content.Reader)
 }
