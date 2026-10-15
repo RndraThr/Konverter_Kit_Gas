@@ -140,6 +140,72 @@ func (r *Repository) ReplacePhotoPicks(ctx context.Context, programID, regencyID
 	return r.ListPhotoPicks(ctx, programID, regencyID, slideKey, scope)
 }
 
+// previewSourceData is the raw (possibly-empty) values pulled live from
+// sibling domains' tables via direct SQL — finalreport never imports the
+// bast/distribution/activities Go packages, the same way bast's own
+// repository reads program_schedules directly instead of importing
+// internal/programs.
+type previewSourceData struct {
+	regencyName, provinceName                                       string
+	fiscalYear                                                      int
+	agricultureOfficeName, consultantCompanyName, consultantDefault string
+	handoverLocation                                                string
+	rakordaDate, sosialisasiDate                                    string
+	distributionStart, distributionEnd                              string
+	distributionTotal                                               int
+}
+
+func (r *Repository) GetPreviewSourceData(ctx context.Context, programID, regencyID string, scope auth.RegencyScope) (previewSourceData, error) {
+	var data previewSourceData
+	err := r.pool.QueryRow(ctx, `
+		SELECT reg.name, reg.province_name, p.fiscal_year
+		FROM regencies reg, programs p
+		WHERE reg.id=$1::uuid AND p.id=$2::uuid AND ($3 OR reg.id::text=ANY($4))
+	`, regencyID, programID, scope.Unrestricted, scope.RegencyIDs).Scan(&data.regencyName, &data.provinceName, &data.fiscalYear)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return previewSourceData{}, ErrNotFound
+	}
+	if err != nil {
+		return previewSourceData{}, fmt.Errorf("get regency/program: %w", err)
+	}
+
+	var scheduleID string
+	err = r.pool.QueryRow(ctx, `
+		SELECT id::text FROM program_schedules
+		WHERE program_id=$1::uuid AND regency_id=$2::uuid
+		ORDER BY (status='active') DESC, start_date DESC LIMIT 1
+	`, programID, regencyID).Scan(&scheduleID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return previewSourceData{}, fmt.Errorf("resolve schedule: %w", err)
+	}
+	if scheduleID == "" {
+		return data, nil // no schedule yet — every remaining field stays blank
+	}
+
+	_ = r.pool.QueryRow(ctx, `
+		SELECT COALESCE(agriculture_office_name,''), COALESCE(consultant_company_name,''), COALESCE(handover_location,'')
+		FROM bast_schedule_settings WHERE schedule_id=$1::uuid
+	`, scheduleID).Scan(&data.agricultureOfficeName, &data.consultantCompanyName, &data.handoverLocation)
+
+	_ = r.pool.QueryRow(ctx, `SELECT value #>> '{}' FROM system_settings WHERE key='organization_name'`).Scan(&data.consultantDefault)
+	if data.consultantCompanyName == "" {
+		data.consultantCompanyName = data.consultantDefault
+	}
+
+	// Rakorda and Sosialisasi share one table (bast_rakorda_uploads), told
+	// apart by document_kind (migration 00043_bast_sosialisasi.sql) — not
+	// two separate tables.
+	_ = r.pool.QueryRow(ctx, `SELECT to_char(min(event_date),'DD Month YYYY') FROM bast_rakorda_uploads WHERE schedule_id=$1::uuid AND document_kind='rakorda'`, scheduleID).Scan(&data.rakordaDate)
+	_ = r.pool.QueryRow(ctx, `SELECT to_char(min(event_date),'DD Month YYYY') FROM bast_rakorda_uploads WHERE schedule_id=$1::uuid AND document_kind='sosialisasi'`, scheduleID).Scan(&data.sosialisasiDate)
+
+	_ = r.pool.QueryRow(ctx, `
+		SELECT to_char(min(completed_at),'DD Month YYYY'), to_char(max(completed_at),'DD Month YYYY'), count(*)
+		FROM distribution_slots WHERE schedule_id=$1::uuid AND status='completed'
+	`, scheduleID).Scan(&data.distributionStart, &data.distributionEnd, &data.distributionTotal)
+
+	return data, nil
+}
+
 const documentColumns = `id::text, program_id::text, regency_id::text, version, filename, checksum, storage_key, status, finalized_at`
 
 func (r *Repository) ListDocuments(ctx context.Context, programID, regencyID string, scope auth.RegencyScope) ([]Document, error) {

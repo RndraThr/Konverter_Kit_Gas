@@ -169,7 +169,9 @@ func TestInsertDocumentVersionIncrementsAndSupersedes(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT id::text FROM regencies LIMIT 1`).Scan(&regencyID); err != nil {
 		t.Fatalf("fixture regency: %v", err)
 	}
-	t.Cleanup(func() { pool.Exec(ctx, `DELETE FROM final_report_documents WHERE program_id=$1::uuid AND regency_id=$2::uuid`, programID, regencyID) })
+	t.Cleanup(func() {
+		pool.Exec(ctx, `DELETE FROM final_report_documents WHERE program_id=$1::uuid AND regency_id=$2::uuid`, programID, regencyID)
+	})
 
 	first, prevKey, err := repo.InsertDocumentVersion(ctx, actor, programID, regencyID, "LAPORAN AKHIR - A.pptx", "checksum1", "key1", unrestrictedScope())
 	if err != nil {
@@ -193,5 +195,29 @@ func TestInsertDocumentVersionIncrementsAndSupersedes(t *testing.T) {
 	}
 	if len(docs) != 2 || docs[0].Status != "active" || docs[1].Status != "superseded" {
 		t.Fatalf("got %+v", docs)
+	}
+}
+
+func TestGetPreviewSourceDataFillsBlanksWhenDataMissing(t *testing.T) {
+	pool := testPool(t)
+	repo := NewRepository(pool)
+	ctx := context.Background()
+
+	var programID, regencyID string
+	if err := pool.QueryRow(ctx, `
+		SELECT ps.program_id::text, ps.regency_id::text FROM program_schedules ps
+		LEFT JOIN bast_schedule_settings bs ON bs.schedule_id = ps.id
+		WHERE bs.handover_location IS NULL OR bs.handover_location = ''
+		LIMIT 1
+	`).Scan(&programID, &regencyID); err != nil {
+		t.Skip("no schedule without handover_location in test DB; skipping blank-field assertion")
+	}
+
+	data, err := repo.GetPreviewSourceData(ctx, programID, regencyID, unrestrictedScope())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if data.handoverLocation != "" {
+		t.Fatalf("expected empty handoverLocation from source data, got %q", data.handoverLocation)
 	}
 }
