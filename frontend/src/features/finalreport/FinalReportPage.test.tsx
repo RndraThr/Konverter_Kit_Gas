@@ -81,3 +81,46 @@ test('clamps cleared/negative team counts to 0 when saving settings', async () =
   expect(body!.leader_count).toBe(0);
   expect(body!.technician_count).toBe(0);
 });
+
+test('checkboxes are disabled and send no PUT while photo-picks is still loading', async () => {
+  const puts: unknown[] = [];
+  renderPage(['final_report.view', 'final_report.manage'], {
+    rakorItems: [media('a')],
+    onRequest: (path, init) => {
+      if (init?.method === 'PUT' && path.includes('photo-picks')) { puts.push(init.body); return { data: [] }; }
+      if (path.includes('/final-report/photo-picks') && path.includes('slide_key=rapat_koordinasi')) return new Promise(() => {}) as unknown;
+      return undefined;
+    },
+  });
+  const box = await screen.findByRole('checkbox', { name: 'Pilih Foto a' });
+  expect(box).toHaveAttribute('aria-disabled', 'true');
+  fireEvent.click(box);
+  expect(puts).toHaveLength(0);
+});
+
+test('toggle PUT carries slide_key plus existing picks, and blocks a second click while in flight', async () => {
+  const puts: Record<string, unknown>[] = [];
+  let release: () => void = () => {};
+  renderPage(['final_report.view', 'final_report.manage'], {
+    rakorItems: ['x', 'y', 'a', 'b'].map(media),
+    rakorPicks: ['x', 'y'],
+    onRequest: (path, init) => {
+      if (init?.method === 'PUT' && path.includes('photo-picks')) {
+        puts.push(JSON.parse(init.body as string));
+        return new Promise((resolve) => { release = () => resolve({ data: [] }); }) as unknown;
+      }
+      return undefined;
+    },
+  });
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Pilih Foto x' })).toBeChecked());
+  const a = screen.getByRole('checkbox', { name: 'Pilih Foto a' });
+  await waitFor(() => expect(a).not.toHaveAttribute('aria-disabled', 'true'));
+  fireEvent.click(a);
+  await waitFor(() => expect(puts).toHaveLength(1));
+  expect(puts[0].slide_key).toBe('rapat_koordinasi');
+  expect([...(puts[0].activity_media_ids as string[])].sort()).toEqual(['a', 'x', 'y']);
+  await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Pilih Foto b' })).toHaveAttribute('aria-disabled', 'true'));
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Pilih Foto b' }));
+  expect(puts).toHaveLength(1);
+  release();
+});

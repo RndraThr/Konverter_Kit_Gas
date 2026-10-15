@@ -112,7 +112,11 @@ function PhotoPickerSection({ programId, regencyId, slideKey, canManage }: { pro
     onError: (error) => toast.error(error instanceof ApiError || error instanceof Error ? error.message : 'Pilihan foto belum dapat disimpan.'),
   });
 
+  // Block toggles until saved picks are loaded and while a save is in flight,
+  // otherwise a click would compute from stale state and overwrite picks.
+  const locked = !picks.isSuccess || replace.isPending;
   const toggle = (mediaID: string) => {
+    if (locked) return;
     const next = new Set(pickedIDs);
     if (next.has(mediaID)) next.delete(mediaID);
     else {
@@ -131,7 +135,7 @@ function PhotoPickerSection({ programId, regencyId, slideKey, canManage }: { pro
         : <ul className="grid grid-cols-3 gap-2 sm:grid-cols-6">
           {(available.data ?? []).map((item) => <li key={item.id} className="relative">
             <img src={item.content_url} alt={item.display_name} className="aspect-square w-full rounded border object-cover" />
-            {canManage && <Checkbox className="absolute right-1 top-1 bg-background" checked={pickedIDs.has(item.id)} onCheckedChange={() => toggle(item.id)} aria-label={`Pilih ${item.display_name}`} />}
+            {canManage && <Checkbox className="absolute right-1 top-1 bg-background" checked={pickedIDs.has(item.id)} disabled={locked} onCheckedChange={() => toggle(item.id)} aria-label={`Pilih ${item.display_name}`} />}
           </li>)}
         </ul>}
   </section>;
