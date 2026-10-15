@@ -18,6 +18,7 @@ import (
 	"konkit/internal/bast"
 	"konkit/internal/dcp3"
 	"konkit/internal/distribution"
+	"konkit/internal/finalreport"
 	apphealth "konkit/internal/health"
 	"konkit/internal/profile"
 	"konkit/internal/programs"
@@ -158,6 +159,16 @@ type BASTService interface {
 	OpenBundle(context.Context, string, auth.RegencyScope) (bast.BundleContent, error)
 }
 
+type FinalReportService interface {
+	GetSettings(context.Context, string, string, auth.RegencyScope) (finalreport.Settings, error)
+	PutSettings(context.Context, auth.Principal, finalreport.Settings, auth.RegencyScope) (finalreport.Settings, error)
+	ListPhotoPicks(context.Context, string, string, string, auth.RegencyScope) ([]finalreport.PhotoPick, error)
+	ReplacePhotoPicks(context.Context, string, string, string, []string, auth.RegencyScope) ([]finalreport.PhotoPick, error)
+	Preview(context.Context, string, string, auth.RegencyScope) (finalreport.Preview, error)
+	Generate(context.Context, auth.Principal, string, string, auth.RegencyScope, auth.ClientMeta) (finalreport.Document, error)
+	ListDocuments(context.Context, string, string, auth.RegencyScope) ([]finalreport.Document, error)
+}
+
 type BASTBrandingService interface {
 	ListBranding(context.Context, string) ([]bast.LogoAsset, error)
 	UploadLogo(context.Context, auth.Principal, bast.LogoUploadInput, auth.ClientMeta) (bast.LogoAsset, error)
@@ -267,6 +278,7 @@ type Dependencies struct {
 	Activities          ActivitiesService
 	BAST                BASTService
 	BASTBranding        BASTBrandingService
+	FinalReport         FinalReportService
 	BASTSettings        BASTScheduleSettingsService
 	BASTSignatory       BASTSignatoryService
 	BASTWetSignature    BASTWetSignatureService
@@ -431,6 +443,16 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleSupportingDocumentSlots(w, r, rc)
 	case strings.HasPrefix(path, "activities/supporting-documents/slots/"):
 		h.handleSupportingDocumentSlotItem(w, r, rc, strings.TrimPrefix(path, "activities/supporting-documents/slots/"))
+	case path == "final-report/settings":
+		h.handleFinalReportSettings(w, r, rc)
+	case path == "final-report/photo-picks":
+		h.handleFinalReportPhotoPicks(w, r, rc)
+	case path == "final-report/preview":
+		h.handleFinalReportPreview(w, r, rc)
+	case path == "final-report/generate":
+		h.handleFinalReportGenerate(w, r, rc)
+	case path == "final-report/documents":
+		h.handleFinalReportDocuments(w, r, rc)
 	case path == "activities/supporting-documents/scan":
 		h.handleActivitiesSupportingDocumentsScan(w, r, rc)
 	case path == "bast/overview":

@@ -21,6 +21,8 @@ import (
 	"konkit/internal/database"
 	"konkit/internal/dcp3"
 	"konkit/internal/distribution"
+	"konkit/internal/finalreport"
+	finalreporttemplate "konkit/internal/finalreport/template"
 	"konkit/internal/health"
 	"konkit/internal/media"
 	"konkit/internal/profile"
@@ -77,6 +79,8 @@ func run(ctx context.Context, cfg config.Config) error {
 		return fmt.Errorf("load application timezone: %w", err)
 	}
 	bastRepository := bast.NewRepository(pool)
+	finalReportRepository := finalreport.NewRepository(pool)
+	finalReportService := finalreport.NewService(finalReportRepository, programService, mediaStorage, finalreporttemplate.PPTX)
 	bastService := bast.NewBundleService(bastRepository, mediaStorage, applicationLocation)
 	bastBrandingService := bast.NewBrandingService(bastRepository, mediaStorage)
 	bastScheduleSettingsService := bast.NewScheduleSettingsService(bastRepository)
@@ -98,6 +102,7 @@ func run(ctx context.Context, cfg config.Config) error {
 
 	apiHandler := apihttp.NewHandler(apihttp.Dependencies{
 		Auth:           authService,
+		FinalReport:    finalReportService,
 		Profile:        profile.NewService(profile.NewRepository(pool)),
 		Administration: administration.NewService(administration.NewRepository(pool)),
 		Settings:       settings.NewService(settings.NewRepository(pool)),

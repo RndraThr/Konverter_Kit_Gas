@@ -14,6 +14,7 @@ import (
 	"konkit/internal/bast"
 	"konkit/internal/dcp3"
 	"konkit/internal/distribution"
+	"konkit/internal/finalreport"
 	apphealth "konkit/internal/health"
 	"konkit/internal/profile"
 	"konkit/internal/programs"
@@ -524,7 +525,7 @@ func writeUnavailable(w http.ResponseWriter) {
 
 func writeServiceError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, profile.ErrNotFound), errors.Is(err, administration.ErrNotFound), errors.Is(err, programs.ErrNotFound), errors.Is(err, dcp3.ErrPreviewNotFound), errors.Is(err, distribution.ErrSlotNotFound), errors.Is(err, distribution.ErrCandidateNotFound), errors.Is(err, distribution.ErrMediaNotFound), errors.Is(err, reports.ErrScheduleNotFound), errors.Is(err, recipients.ErrNotFound), errors.Is(err, recipients.ErrScheduleNotFound), errors.Is(err, activities.ErrNotFound), errors.Is(err, activities.ErrRegencyNotFound), errors.Is(err, activities.ErrSlotNotFound), errors.Is(err, bast.ErrNotFound):
+	case errors.Is(err, profile.ErrNotFound), errors.Is(err, administration.ErrNotFound), errors.Is(err, programs.ErrNotFound), errors.Is(err, dcp3.ErrPreviewNotFound), errors.Is(err, distribution.ErrSlotNotFound), errors.Is(err, distribution.ErrCandidateNotFound), errors.Is(err, distribution.ErrMediaNotFound), errors.Is(err, reports.ErrScheduleNotFound), errors.Is(err, recipients.ErrNotFound), errors.Is(err, recipients.ErrScheduleNotFound), errors.Is(err, activities.ErrNotFound), errors.Is(err, activities.ErrRegencyNotFound), errors.Is(err, activities.ErrSlotNotFound), errors.Is(err, bast.ErrNotFound), errors.Is(err, finalreport.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "Data tidak ditemukan")
 	case errors.Is(err, profile.ErrIdentityInUse), errors.Is(err, administration.ErrIdentityInUse):
 		writeFieldError(w, http.StatusConflict, "conflict", "Data sudah digunakan", map[string]string{"username": err.Error(), "email": err.Error()})
@@ -540,7 +541,12 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "zone_placeholder_immutable", "Zona placeholder tidak dapat diubah")
 	case errors.Is(err, programs.ErrZoneProgramMismatch):
 		writeError(w, http.StatusConflict, "zone_program_mismatch", "Zona tidak termasuk dalam program ini")
-	case errors.Is(err, programs.ErrRegencyOutOfScope):
+	case errors.Is(err, finalreport.ErrProgramRequired), errors.Is(err, finalreport.ErrRegencyRequired), errors.Is(err, finalreport.ErrCountNegative),
+		errors.Is(err, finalreport.ErrSlideKeyInvalid), errors.Is(err, finalreport.ErrTooManyPicks), errors.Is(err, finalreport.ErrPhotoOutOfScope):
+		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), map[string]string{"request": err.Error()})
+	case errors.Is(err, finalreport.ErrGenerateConflict):
+		writeError(w, http.StatusConflict, "document_conflict", "Dokumen Laporan Akhir telah diubah operator lain; muat ulang data")
+	case errors.Is(err, programs.ErrRegencyOutOfScope), errors.Is(err, finalreport.ErrRegencyOutOfScope):
 		writeError(w, http.StatusForbidden, "regency_out_of_scope", "Kabupaten ini berada di luar akses Anda")
 	case errors.Is(err, bast.ErrZoneNotConfigured):
 		writeError(w, http.StatusConflict, "zone_not_configured", "Kabupaten belum dikonfigurasi ke zona")
