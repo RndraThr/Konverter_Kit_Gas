@@ -1,12 +1,18 @@
 package finalreport
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"io"
 	"sort"
 	"strconv"
 	"strings"
 
 	"konkit/internal/auth"
+	"konkit/internal/media"
 	"konkit/internal/programs"
 )
 
@@ -17,10 +23,12 @@ type programContextResolver interface {
 type Service struct {
 	repo            *Repository
 	programContexts programContextResolver
+	storage         media.Storage
+	templatePath    string
 }
 
-func NewService(repo *Repository, programContexts programContextResolver) *Service {
-	return &Service{repo: repo, programContexts: programContexts}
+func NewService(repo *Repository, programContexts programContextResolver, storage media.Storage, templatePath string) *Service {
+	return &Service{repo: repo, programContexts: programContexts, storage: storage, templatePath: templatePath}
 }
 
 // NewServiceForTest builds a Service with a nil repository, for tests that
@@ -153,4 +161,74 @@ func earliestLatest(dates ...string) (string, string) {
 	}
 	sort.Strings(nonEmpty)
 	return nonEmpty[0], nonEmpty[len(nonEmpty)-1]
+}
+
+// newStorageKey returns a fresh, media-valid key per generation so a new
+// version never overwrites (or, on failure cleanup, deletes) the file that the
+// still-active previous version points at.
+func newStorageKey() (string, error) {
+	value := make([]byte, 16)
+	if _, err := io.ReadFull(rand.Reader, value); err != nil {
+		return "", fmt.Errorf("generate storage key: %w", err)
+	}
+	return "finalreport-" + hex.EncodeToString(value), nil
+}
+
+func (s *Service) Generate(ctx context.Context, actor auth.Principal, programID, regencyID string, scope auth.RegencyScope, meta auth.ClientMeta) (Document, error) {
+	preview, err := s.Preview(ctx, programID, regencyID, scope)
+	if err != nil {
+		return Document{}, err
+	}
+
+	photoBytes := map[string][][]byte{}
+	for slideKey, picks := range preview.PhotoPicks {
+		for _, pick := range picks {
+			reader, err := s.storage.Open(ctx, pick.StorageKey)
+			if err != nil {
+				continue // an unreachable pick is skipped, not fatal
+			}
+			data, err := io.ReadAll(reader)
+			reader.Close()
+			if err != nil {
+				continue
+			}
+			photoBytes[slideKey] = append(photoBytes[slideKey], data)
+		}
+	}
+
+	rendered, err := RenderPPTX(s.templatePath, preview, photoBytes)
+	if err != nil {
+		return Document{}, fmt.Errorf("render pptx: %w", err)
+	}
+
+	storageContext, err := s.programContexts.ResolveStorageContext(ctx, programID, regencyID, scope)
+	if err != nil {
+		return Document{}, fmt.Errorf("resolve storage context: %w", err)
+	}
+	folderPath, err := media.BuildFinalReportPath(media.FolderPathInput{
+		ProgramType: string(storageContext.ProgramType), ZoneName: storageContext.ZoneName, RegencyName: storageContext.RegencyName,
+	})
+	if err != nil {
+		return Document{}, fmt.Errorf("build folder path: %w", err)
+	}
+	filename := fmt.Sprintf("LAPORAN AKHIR - %s %s.pptx", strings.ToUpper(string(storageContext.ProgramType)), strings.ToUpper(storageContext.RegencyName))
+
+	key, err := newStorageKey()
+	if err != nil {
+		return Document{}, err
+	}
+	storageKey, _, checksum, err := media.PutNamed(ctx, s.storage, key, filename, folderPath, bytes.NewReader(rendered))
+	if err != nil {
+		return Document{}, fmt.Errorf("upload pptx: %w", err)
+	}
+
+	doc, previousKey, err := s.repo.InsertDocumentVersion(ctx, actor, programID, regencyID, filename, checksum, storageKey, scope)
+	if err != nil {
+		_ = s.storage.Delete(context.Background(), storageKey) // unique key: never touches a live row's file
+		return Document{}, fmt.Errorf("insert document version: %w", err)
+	}
+	if previousKey != "" && previousKey != storageKey {
+		_ = s.storage.Delete(context.Background(), previousKey) // best-effort
+	}
+	return doc, nil
 }
