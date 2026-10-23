@@ -27,6 +27,13 @@ func (r *Repository) CreatePreview(ctx context.Context, actor auth.Principal, sc
 	defer func() { _ = tx.Rollback(ctx) }()
 	var batchID string
 	headerEnvelope, _ := json.Marshal(map[string]any{"headers": workbook.Headers})
+	// Membaca ulang file yang sama (kembali ke langkah unggah, atau pratinjau
+	// sebelumnya ditinggalkan) mengganti draf lamanya. File yang sudah
+	// diimpor tetap ditolak lewat UNIQUE (schedule_id, file_checksum). Bila
+	// jadwal di luar cakupan, transaksi dibatalkan dan draf tidak terhapus.
+	if _, err := tx.Exec(ctx, `DELETE FROM dcp3_import_batches WHERE schedule_id=$1 AND file_checksum=$2 AND status='draft'`, scheduleID, checksum); err != nil {
+		return ImportPreview{}, fmt.Errorf("replace DCP3 draft preview: %w", err)
+	}
 	err = tx.QueryRow(ctx, `
 		INSERT INTO dcp3_import_batches(schedule_id,original_filename,file_checksum,sheet_name,mapping_json,total_rows)
 		SELECT s.id,$2,$3,$4,$5,$6 FROM program_schedules s WHERE s.id=$1 AND ($7 OR s.regency_id::text = ANY($8))
