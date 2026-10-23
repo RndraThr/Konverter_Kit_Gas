@@ -96,3 +96,79 @@ func TestReverseRespectsRateLimit(t *testing.T) {
 		t.Fatalf("gap=%s", gap)
 	}
 }
+
+func TestReverseDeduplicatesConcurrentRequests(t *testing.T) {
+	var mu sync.Mutex
+	hits := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		hits++
+		mu.Unlock()
+		time.Sleep(100 * time.Millisecond)
+		_, _ = w.Write([]byte(`{"address":{"road":"Jl. A"}}`))
+	}))
+	defer server.Close()
+	r := NewReverser(server.URL, server.Client(), testAgent)
+	results := make([]string, 5)
+	var wg sync.WaitGroup
+	for i := range results {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results[i] = r.Reverse(context.Background(), -4.5, 120.5)
+		}()
+	}
+	wg.Wait()
+	for i, got := range results {
+		if got != "Jl. A" {
+			t.Fatalf("result %d = %q", i, got)
+		}
+	}
+	if hits != 1 {
+		t.Fatalf("hits=%d", hits)
+	}
+}
+
+func TestReverseCancelledWhileQueuedReturnsPromptly(t *testing.T) {
+	var mu sync.Mutex
+	hits := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		hits++
+		mu.Unlock()
+		_, _ = w.Write([]byte(`{"address":{"road":"Jl. A"}}`))
+	}))
+	defer server.Close()
+	r := NewReverser(server.URL, server.Client(), testAgent)
+	r.Reverse(context.Background(), 1, 2) // occupies the current slot; the next waits ~1 s
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan string, 1)
+	go func() { done <- r.Reverse(ctx, 3, 4) }()
+	time.Sleep(100 * time.Millisecond)
+	cancelled := time.Now()
+	cancel()
+	select {
+	case got := <-done:
+		if got != "" || time.Since(cancelled) > 100*time.Millisecond {
+			t.Fatalf("got %q after %s", got, time.Since(cancelled))
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("cancelled caller did not return promptly")
+	}
+	if hits != 1 {
+		t.Fatalf("cancelled caller reached upstream: hits=%d", hits)
+	}
+}
+
+func TestReverseReturnsEmptyOnUpstreamTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(300 * time.Millisecond)
+		_, _ = w.Write([]byte(`{"address":{"road":"Jl. A"}}`))
+	}))
+	defer server.Close()
+	got := NewReverser(server.URL, &http.Client{Timeout: 50 * time.Millisecond}, testAgent).Reverse(context.Background(), 1, 2)
+	if got != "" {
+		t.Fatalf("got %q", got)
+	}
+}

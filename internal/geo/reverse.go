@@ -30,8 +30,17 @@ type Reverser struct {
 	cacheMu sync.Mutex
 	cache   map[string]string
 
-	limitMu  sync.Mutex
-	lastCall time.Time
+	limitMu sync.Mutex
+	next    time.Time // earliest start of the next upstream call
+
+	flightMu sync.Mutex
+	inflight map[string]*flight
+}
+
+// flight is one in-progress upstream lookup shared by concurrent callers.
+type flight struct {
+	done   chan struct{}
+	result string
 }
 
 // NewReverser builds a Reverser. A nil client gets a 5 second timeout.
@@ -39,7 +48,7 @@ func NewReverser(baseURL string, client *http.Client, userAgent string) *Reverse
 	if client == nil {
 		client = &http.Client{Timeout: clientTimeout}
 	}
-	return &Reverser{baseURL: strings.TrimRight(baseURL, "/"), client: client, userAgent: userAgent, cache: map[string]string{}}
+	return &Reverser{baseURL: strings.TrimRight(baseURL, "/"), client: client, userAgent: userAgent, cache: map[string]string{}, inflight: map[string]*flight{}}
 }
 
 // Reverse returns the address for the coordinate, or "" on any upstream failure.
@@ -51,34 +60,59 @@ func (r *Reverser) Reverse(ctx context.Context, lat, lng float64) string {
 	if ok {
 		return cached
 	}
-	address := r.fetch(ctx, lat, lng)
-	if address == "" {
-		return ""
-	}
-	r.cacheMu.Lock()
-	if len(r.cache) >= cacheLimit {
-		r.cache = map[string]string{}
-	}
-	r.cache[key] = address
-	r.cacheMu.Unlock()
-	return address
-}
-
-// wait enforces the minimum gap between upstream calls (Nominatim policy).
-func (r *Reverser) wait(ctx context.Context) bool {
-	r.limitMu.Lock()
-	defer r.limitMu.Unlock()
-	if delay := minCallGap - time.Since(r.lastCall); delay > 0 {
-		timer := time.NewTimer(delay)
-		defer timer.Stop()
+	r.flightMu.Lock()
+	if call, ok := r.inflight[key]; ok {
+		r.flightMu.Unlock()
 		select {
-		case <-timer.C:
+		case <-call.done:
+			return call.result
 		case <-ctx.Done():
-			return false
+			return ""
 		}
 	}
-	r.lastCall = time.Now()
-	return true
+	call := &flight{done: make(chan struct{})}
+	r.inflight[key] = call
+	r.flightMu.Unlock()
+
+	call.result = r.fetch(ctx, lat, lng)
+	if call.result != "" {
+		r.cacheMu.Lock()
+		if len(r.cache) >= cacheLimit {
+			r.cache = map[string]string{}
+		}
+		r.cache[key] = call.result
+		r.cacheMu.Unlock()
+	}
+	r.flightMu.Lock()
+	delete(r.inflight, key)
+	r.flightMu.Unlock()
+	close(call.done)
+	return call.result
+}
+
+// wait reserves the next upstream slot (>= 1 s after the previous one) under a
+// short lock, then sleeps outside it so a cancelled caller leaves promptly.
+func (r *Reverser) wait(ctx context.Context) bool {
+	r.limitMu.Lock()
+	now := time.Now()
+	slot := r.next
+	if slot.Before(now) {
+		slot = now
+	}
+	r.next = slot.Add(minCallGap)
+	r.limitMu.Unlock()
+	delay := slot.Sub(now)
+	if delay <= 0 {
+		return ctx.Err() == nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 func (r *Reverser) fetch(ctx context.Context, lat, lng float64) string {
