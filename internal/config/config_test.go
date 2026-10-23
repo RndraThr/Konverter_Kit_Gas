@@ -123,6 +123,9 @@ func TestLoadFromParsesLocalConfiguration(t *testing.T) {
 	if cfg.StoragePath != "./storage" {
 		t.Fatalf("unexpected local storage path: %q", cfg.StoragePath)
 	}
+	if cfg.GeocoderURL != "https://nominatim.openstreetmap.org" {
+		t.Fatalf("unexpected geocoder URL: %q", cfg.GeocoderURL)
+	}
 }
 
 func TestLoadFromRequiresAbsoluteStoragePathOutsideLocal(t *testing.T) {
