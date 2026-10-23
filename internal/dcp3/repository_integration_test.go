@@ -52,10 +52,15 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 	if preview.ProgramType != "farmer" || len(preview.Rows) != 3 || len(preview.Headers) != 8 {
 		t.Fatalf("unexpected preview: %+v", preview)
 	}
-	_, err = service.Preview(ctx, auth.Principal{}, scheduleID, "dcp3-petani-copy.xlsx", bytes.NewReader(workbook), meta, unrestricted, 1)
-	if !errors.Is(err, ErrDuplicateImport) {
-		t.Fatalf("expected duplicate import, got %v", err)
+	// Reading the same file again while it is only a draft replaces the draft.
+	reread, err := service.Preview(ctx, auth.Principal{}, scheduleID, "dcp3-petani-copy.xlsx", bytes.NewReader(workbook), meta, unrestricted, 1)
+	if err != nil {
+		t.Fatalf("re-reading a draft file: %v", err)
 	}
+	if _, err := service.GetPreview(ctx, preview.ID, unrestricted); !errors.Is(err, ErrPreviewNotFound) {
+		t.Fatalf("old draft should be replaced, got %v", err)
+	}
+	preview = reread
 
 	result, err := service.Commit(ctx, auth.Principal{}, preview.ID, Mapping{
 		FullName: "Nama", NIK: "NIK", FarmerCardNumber: "No Kartu Petani",
@@ -66,6 +71,10 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 	}
 	if result.TotalRows != 3 || result.ValidRows != 1 || result.WarningRows != 2 || result.InvalidRows != 0 {
 		t.Fatalf("unexpected import result: %+v", result)
+	}
+	// Once imported, the same file is refused for this schedule.
+	if _, err := service.Preview(ctx, auth.Principal{}, scheduleID, "dcp3-petani-again.xlsx", bytes.NewReader(workbook), meta, unrestricted, 1); !errors.Is(err, ErrDuplicateImport) {
+		t.Fatalf("expected duplicate import after commit, got %v", err)
 	}
 	committedPreview, err := service.GetPreview(ctx, preview.ID, unrestricted)
 	if err != nil {
