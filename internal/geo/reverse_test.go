@@ -131,17 +131,21 @@ func TestReverseDeduplicatesConcurrentRequests(t *testing.T) {
 
 func TestReverseCancelledWhileQueuedReturnsPromptly(t *testing.T) {
 	var mu sync.Mutex
-	hits := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	hits := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		mu.Lock()
-		hits++
+		hits[req.URL.Query().Get("lat")]++
 		mu.Unlock()
 		_, _ = w.Write([]byte(`{"address":{"road":"Jl. A"}}`))
 	}))
 	defer server.Close()
 	r := NewReverser(server.URL, server.Client(), testAgent)
-	r.Reverse(context.Background(), 1, 2) // occupies the current slot; the next waits ~1 s
+	r.Reverse(context.Background(), 1, 2) // occupies the current slot
 
+	// Two more uncached callers queue behind it; the second is cancelled.
+	third := make(chan string, 1)
+	go func() { third <- r.Reverse(context.Background(), 5, 6) }()
+	time.Sleep(50 * time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan string, 1)
 	go func() { done <- r.Reverse(ctx, 3, 4) }()
@@ -156,8 +160,67 @@ func TestReverseCancelledWhileQueuedReturnsPromptly(t *testing.T) {
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("cancelled caller did not return promptly")
 	}
+	if got := <-third; got != "Jl. A" {
+		t.Fatalf("surviving caller got %q", got)
+	}
+	time.Sleep(2 * time.Second) // let the cancelled caller's forfeited slot pass
+	mu.Lock()
+	defer mu.Unlock()
+	if hits["3.000000"] != 0 || hits["5.000000"] != 1 {
+		t.Fatalf("hits=%v", hits)
+	}
+}
+
+func TestReverseLeaderCancelledDoesNotFailFollower(t *testing.T) {
+	var mu sync.Mutex
+	hits := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		mu.Lock()
+		hits++
+		mu.Unlock()
+		time.Sleep(200 * time.Millisecond)
+		_, _ = w.Write([]byte(`{"address":{"road":"Jl. A"}}`))
+	}))
+	defer server.Close()
+	r := NewReverser(server.URL, server.Client(), testAgent)
+	leaderCtx, cancel := context.WithCancel(context.Background())
+	leader := make(chan string, 1)
+	go func() { leader <- r.Reverse(leaderCtx, 7, 8) }()
+	time.Sleep(50 * time.Millisecond)
+	follower := make(chan string, 1)
+	go func() { follower <- r.Reverse(context.Background(), 7, 8) }()
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	if got := <-leader; got != "" {
+		t.Fatalf("leader got %q", got)
+	}
+	if got := <-follower; got != "Jl. A" {
+		t.Fatalf("follower got %q", got)
+	}
 	if hits != 1 {
-		t.Fatalf("cancelled caller reached upstream: hits=%d", hits)
+		t.Fatalf("hits=%d", hits)
+	}
+}
+
+type panicTransport struct{}
+
+func (panicTransport) RoundTrip(*http.Request) (*http.Response, error) { panic("boom") }
+
+func TestReverseReleasesWaitersWhenLookupPanics(t *testing.T) {
+	r := NewReverser("http://example.invalid", &http.Client{Transport: panicTransport{}}, testAgent)
+	for i := 0; i < 2; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		done := make(chan string, 1)
+		go func() { done <- r.Reverse(ctx, 1, 2) }()
+		select {
+		case got := <-done:
+			if got != "" {
+				t.Fatalf("got %q", got)
+			}
+		case <-time.After(2500 * time.Millisecond):
+			t.Fatal("waiter not released after panic")
+		}
+		cancel()
 	}
 }
 

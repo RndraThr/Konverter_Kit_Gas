@@ -18,6 +18,7 @@ const (
 	cacheLimit     = 5000
 	minCallGap     = time.Second
 	clientTimeout  = 5 * time.Second
+	lookupTimeout  = 10 * time.Second // bounds queueing plus the upstream call
 	maxResponseLen = 1 << 20
 )
 
@@ -39,8 +40,10 @@ type Reverser struct {
 
 // flight is one in-progress upstream lookup shared by concurrent callers.
 type flight struct {
-	done   chan struct{}
-	result string
+	done    chan struct{}
+	result  string
+	cancel  context.CancelFunc
+	waiters int // guarded by Reverser.flightMu
 }
 
 // NewReverser builds a Reverser. A nil client gets a 5 second timeout.
@@ -61,19 +64,48 @@ func (r *Reverser) Reverse(ctx context.Context, lat, lng float64) string {
 		return cached
 	}
 	r.flightMu.Lock()
-	if call, ok := r.inflight[key]; ok {
-		r.flightMu.Unlock()
-		select {
-		case <-call.done:
-			return call.result
-		case <-ctx.Done():
-			return ""
-		}
+	call, ok := r.inflight[key]
+	if !ok {
+		// The shared lookup is detached from any single caller's cancellation;
+		// it is abandoned only when every waiting caller has left.
+		flightCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), lookupTimeout)
+		call = &flight{done: make(chan struct{}), cancel: cancel}
+		r.inflight[key] = call
+		go r.run(flightCtx, key, call, lat, lng)
 	}
-	call := &flight{done: make(chan struct{})}
-	r.inflight[key] = call
+	call.waiters++
 	r.flightMu.Unlock()
 
+	select {
+	case <-call.done:
+		return call.result
+	case <-ctx.Done():
+		r.flightMu.Lock()
+		call.waiters--
+		if call.waiters == 0 {
+			// Nobody is left: stop the lookup and let new callers start afresh.
+			if r.inflight[key] == call {
+				delete(r.inflight, key)
+			}
+			call.cancel()
+		}
+		r.flightMu.Unlock()
+		return ""
+	}
+}
+
+// run performs the shared lookup and always releases every waiter.
+func (r *Reverser) run(ctx context.Context, key string, call *flight, lat, lng float64) {
+	defer func() {
+		_ = recover() // a failed lookup yields "" rather than crashing the server
+		r.flightMu.Lock()
+		if r.inflight[key] == call {
+			delete(r.inflight, key)
+		}
+		r.flightMu.Unlock()
+		call.cancel()
+		close(call.done)
+	}()
 	call.result = r.fetch(ctx, lat, lng)
 	if call.result != "" {
 		r.cacheMu.Lock()
@@ -83,11 +115,6 @@ func (r *Reverser) Reverse(ctx context.Context, lat, lng float64) string {
 		r.cache[key] = call.result
 		r.cacheMu.Unlock()
 	}
-	r.flightMu.Lock()
-	delete(r.inflight, key)
-	r.flightMu.Unlock()
-	close(call.done)
-	return call.result
 }
 
 // wait reserves the next upstream slot (>= 1 s after the previous one) under a
