@@ -1,4 +1,4 @@
-import { LINE_HEIGHT, timestampParts, type WatermarkLayout } from './watermarkLayout'
+import { LINE_HEIGHT, timestampMetrics, timestampParts, WATERMARK_REF_SIDE, type WatermarkLayout } from './watermarkLayout'
 import type { WatermarkSettings } from './watermarkSettings'
 
 const FONT_FAMILY = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
@@ -37,29 +37,29 @@ function wrapOne(ctx: CanvasRenderingContext2D, text: string, maxWidth: number):
 }
 
 /**
- * Word-wraps each source line to the timestamp column. `fontSize` and
- * `maxWidth` must be consistent (same photo size), e.g. both from
- * `timestampMetrics`; the result is scale-invariant, so its total length is the
- * `timestampLines` to hand to `layoutWatermark`.
+ * Word-wraps each source line to the timestamp column. Text is always measured
+ * at the reference photo size (390 short side), never at the actual pixel size,
+ * so the preview and the full-size photo break every line at the same place
+ * even though real font metrics are not perfectly linear. Pass the result to
+ * `drawWatermark`; its total row count is the `timestampLines` for
+ * `layoutWatermark`.
  */
-export function wrapWatermarkLines(
-  ctx: CanvasRenderingContext2D,
-  lines: string[],
-  fontSize: number,
-  maxWidth: number,
-  restRatio = 12 / 13,
-): string[][] {
-  return lines.map((text, i) => {
-    ctx.font = fontFor(i === 0 ? fontSize : fontSize * restRatio)
-    return wrapOne(ctx, text, maxWidth)
+export function wrapWatermarkLines(ctx: CanvasRenderingContext2D, lines: string[], settings: WatermarkSettings): string[][] {
+  const m = timestampMetrics(WATERMARK_REF_SIDE, WATERMARK_REF_SIDE, settings)
+  const previousFont = ctx.font
+  const out = lines.map((text, i) => {
+    ctx.font = fontFor(i === 0 ? m.fontSize : m.fontSize * m.restRatio)
+    return wrapOne(ctx, text, m.textWidth)
   })
+  ctx.font = previousFont
+  return out
 }
 
 /** Draws the logo banner and the timestamp block (accent bar + shadowed text). */
 export function drawWatermark(
   ctx: CanvasRenderingContext2D,
   layout: WatermarkLayout,
-  lines: string[],
+  wrapped: string[][],
   logo: CanvasImageSource | null,
   settings: WatermarkSettings,
 ): void {
@@ -68,7 +68,7 @@ export function drawWatermark(
   }
 
   const rect = layout.timestamp
-  if (!rect || lines.length === 0) return
+  if (!rect || wrapped.length === 0) return
   const p = timestampParts(rect, settings)
   const right = settings.timestampSide === 'right'
   const barX = right ? rect.x + rect.width - p.barWidth : rect.x
@@ -77,9 +77,14 @@ export function drawWatermark(
 
   ctx.save()
   ctx.fillStyle = settings.accentColor
-  ctx.beginPath()
-  ctx.roundRect(barX, rect.y, p.barWidth, rect.height, Math.min(p.barWidth, 4 * unit))
-  ctx.fill()
+  if (typeof ctx.roundRect === 'function') {
+    ctx.beginPath()
+    ctx.roundRect(barX, rect.y, p.barWidth, rect.height, Math.min(p.barWidth, 4 * unit))
+    ctx.fill()
+  } else {
+    // Older browsers (Safari < 16, Firefox < 112) lack roundRect.
+    ctx.fillRect(barX, rect.y, p.barWidth, rect.height)
+  }
 
   ctx.fillStyle = settings.textColor
   ctx.textAlign = right ? 'right' : 'left'
@@ -90,7 +95,7 @@ export function drawWatermark(
   ctx.shadowBlur = 3 * unit
 
   let y = rect.y
-  wrapWatermarkLines(ctx, lines, layout.fontSize, p.textWidth, p.restRatio).forEach((parts, i) => {
+  wrapped.forEach((parts, i) => {
     const size = i === 0 ? layout.fontSize : layout.fontSize * p.restRatio
     ctx.font = fontFor(size)
     for (const part of parts) {

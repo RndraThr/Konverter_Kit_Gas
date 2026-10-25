@@ -14,6 +14,8 @@ export const LINE_HEIGHT = 1.25
 // here is that value divided by 390, times the photo's shorter side, so the
 // preview and the full-size photo get identical proportions.
 const REF = 390
+/** Short side of the reference photo the timestamp text is wrapped at. */
+export const WATERMARK_REF_SIDE = REF
 const LOGO_WIDTH = 382 / REF // screen width minus 4px each side
 const LOGO_TOP = 14 / REF
 const TS_MARGIN_SIDE = 12 / REF
