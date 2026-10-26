@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Camera, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, ImageIcon, ImagePlus, PlayCircle, RefreshCw, Trash2, UploadCloud, Video, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -19,6 +19,9 @@ import { useCan } from '../../lib/permissions';
 import { cn } from '@/lib/utils';
 import { buildPageItems } from './pagination';
 import type { ActivityMedia, ActivityMediaPage, ActivityType, ProgramOption, ProgramZone } from './types';
+import { shrinkGalleryImage } from '../camera/shrinkGalleryImage';
+
+const WatermarkCamera = lazy(() => import('../camera/WatermarkCamera'));
 
 type PendingFile = { file: File; source: 'camera' | 'gallery'; previewURL: string; programID: string; regencyID: string; activityType: ActivityType; progress: number; controller: AbortController | null };
 type ActivityTypeOption = { value: ActivityType; label: string };
@@ -48,6 +51,7 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [pendingDelete, setPendingDelete] = useState<ActivityMedia | null>(null);
   const [fileError, setFileError] = useState('');
+  const [cameraOpen, setCameraOpen] = useState(false);
   const pendingRef = useRef<PendingFile | null>(null);
 
   useEffect(() => { pendingRef.current = pending; }, [pending]);
@@ -108,6 +112,11 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
     upload.reset();
     setPending(selected); upload.mutate(selected);
   };
+  // Gallery photos are shrunk to the watermark quality first; videos and other files go straight through.
+  const chooseGallery = (file: File | undefined) => {
+    if (file && acceptedImageTypes.has(file.type)) void shrinkGalleryImage(file).then((shrunk) => choose(shrunk, 'gallery'));
+    else choose(file, 'gallery');
+  };
 
   const cancelFailedUpload = () => {
     pending?.controller?.abort();
@@ -124,6 +133,7 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
     resetUpload();
     setPending(null);
     setFileError('');
+    setCameraOpen(false);
     setPreviewIndex(null);
     setPendingDelete(null);
   }, [activityType, resetUpload]);
@@ -174,14 +184,14 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
           onDragEnter={(e) => { if (!pending) { e.preventDefault(); setDragging(true); } }}
           onDragOver={(e) => { if (!pending) { e.preventDefault(); setDragging(true); } }}
           onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false); }}
-          onDrop={(e) => { e.preventDefault(); setDragging(false); if (!pending) choose(e.dataTransfer.files?.[0], 'gallery'); }}
+          onDrop={(e) => { e.preventDefault(); setDragging(false); if (!pending) chooseGallery(e.dataTransfer.files?.[0]); }}
         >
           <UploadCloud className="size-5 text-muted-foreground" aria-hidden="true" />
           <span className="text-xs text-muted-foreground">Seret foto atau video ke sini, atau pilih dari bawah</span>
           <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
-            <label className="inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"><Camera className="size-4" aria-hidden="true" /><span className="hidden sm:inline">Ambil Foto</span><span className="sm:hidden">Kamera</span><input className="sr-only" type="file" aria-label="Ambil Foto" accept="image/jpeg,image/png,image/webp" capture="environment" disabled={Boolean(pending)} onChange={(e) => { choose(e.target.files?.[0], 'camera'); e.target.value = ''; }} /></label>
+            <button type="button" aria-label="Ambil Foto" className="inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50" disabled={Boolean(pending)} onClick={() => { setFileError(''); setCameraOpen(true); }}><Camera className="size-4" aria-hidden="true" /><span className="hidden sm:inline">Ambil Foto</span><span className="sm:hidden">Kamera</span></button>
             <label className="inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"><Video className="size-4" aria-hidden="true" /><span className="hidden sm:inline">Rekam Video</span><span className="sm:hidden">Video</span><input className="sr-only" type="file" aria-label="Rekam Video" accept="video/mp4,video/webm,video/quicktime" capture="environment" disabled={Boolean(pending)} onChange={(e) => { choose(e.target.files?.[0], 'camera'); e.target.value = ''; }} /></label>
-            <label className="inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"><ImagePlus className="size-4" aria-hidden="true" /><span className="hidden sm:inline">Pilih dari Galeri</span><span className="sm:hidden">Galeri</span><input className="sr-only" type="file" aria-label="Pilih dari Galeri" accept={acceptedTypes} disabled={Boolean(pending)} onChange={(e) => choose(e.target.files?.[0], 'gallery')} /></label>
+            <label className="inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50"><ImagePlus className="size-4" aria-hidden="true" /><span className="hidden sm:inline">Pilih dari Galeri</span><span className="sm:hidden">Galeri</span><input className="sr-only" type="file" aria-label="Pilih dari Galeri" accept={acceptedTypes} disabled={Boolean(pending)} onChange={(e) => { chooseGallery(e.target.files?.[0]); e.target.value = ''; }} /></label>
           </div>
         </div>}
         {fileError && <p role="alert" className="text-sm text-destructive">{fileError}</p>}
@@ -260,6 +270,8 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
         <Button type="button" size="icon-sm" variant="outline" aria-label="Halaman terakhir" disabled={page >= totalPages} onClick={() => setPage(totalPages)}><ChevronsRight /></Button>
       </nav>}
     </>}
+
+    {cameraOpen && <Suspense fallback={null}><WatermarkCamera title={activeOption.label} programId={programID || undefined} onCapture={(photo) => { setCameraOpen(false); choose(photo.file, 'camera'); }} onClose={() => setCameraOpen(false)} /></Suspense>}
 
     {/* === Preview Dialog === */}
     <MediaPreviewDialog

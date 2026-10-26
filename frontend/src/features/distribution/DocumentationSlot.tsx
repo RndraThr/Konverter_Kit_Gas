@@ -9,8 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { MediaPreviewDialog } from '@/components/MediaPreviewDialog';
 import { cn } from '@/lib/utils';
 import type { CapturedPhoto } from '../camera/types';
-import { resizeImage } from '../camera/imageResize';
-import { loadWatermarkSettings } from '../camera/watermarkSettings';
+import { shrinkGalleryImage } from '../camera/shrinkGalleryImage';
 import { useWatermarkProgram } from '../camera/WatermarkProgramContext';
 
 const WatermarkCamera = lazy(() => import('../camera/WatermarkCamera'));
@@ -38,16 +37,6 @@ const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
 const LOCATION_REQUIRED_CAMERA = 'Slot ini mewajibkan lokasi GPS. Aktifkan izin lokasi lalu ambil ulang foto.';
 const LOCATION_REQUIRED_GALLERY = 'Slot ini mewajibkan foto dari kamera dengan lokasi GPS.';
-
-/** Gallery photos are shrunk to the watermark settings' quality, keeping their name and timestamp. */
-async function shrinkGalleryImage(file: File): Promise<File> {
-  try {
-    const resized = await resizeImage(file, loadWatermarkSettings().photoQuality);
-    return new File([resized], `${file.name.replace(/\.[^.]+$/, '') || 'foto'}.jpg`, { type: 'image/jpeg', lastModified: file.lastModified });
-  } catch {
-    return file; // the browser cannot decode it; upload the original and let the size check decide
-  }
-}
 
 type Props = {
   slot: SlotSummary;
