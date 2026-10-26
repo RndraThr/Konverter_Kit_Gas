@@ -68,7 +68,7 @@ func TestInsertAndListSlotsScopedByRegency(t *testing.T) {
 		t.Fatalf("InsertSlot() error = %v", err)
 	}
 
-	listA, err := repo.ListSlots(ctx, regencyAID, unrestricted)
+	listA, err := repo.ListSlots(ctx, regencyAID, false, unrestricted)
 	if err != nil {
 		t.Fatalf("ListSlots() error = %v", err)
 	}
@@ -76,11 +76,38 @@ func TestInsertAndListSlotsScopedByRegency(t *testing.T) {
 		t.Fatalf("listA = %+v, want exactly one slot named Surat Tugas", listA)
 	}
 
+	// Same name with other case/spacing is refused; a new name goes last;
+	// a deactivated name stays listed for the set-up screens only.
+	if _, err := repo.InsertSlot(ctx, auth.Principal{}, regencyAID, "  surat   TUGAS ", auth.ClientMeta{}, unrestricted); !errors.Is(err, ErrSlotDuplicate) {
+		t.Fatalf("duplicate InsertSlot() err = %v, want ErrSlotDuplicate", err)
+	}
+	second, err := repo.InsertSlot(ctx, auth.Principal{}, regencyAID, "Berita Acara Gudang", auth.ClientMeta{}, unrestricted)
+	if err != nil {
+		t.Fatalf("InsertSlot() error = %v", err)
+	}
+	if second.SortOrder <= listA[0].SortOrder {
+		t.Fatalf("new slot sort_order = %d, want after %d", second.SortOrder, listA[0].SortOrder)
+	}
+	off := false
+	if _, err := repo.PatchSlotRow(ctx, auth.Principal{}, second.ID, nil, &off, auth.ClientMeta{}, unrestricted); err != nil {
+		t.Fatalf("deactivate: %v", err)
+	}
+	if active, _ := repo.ListSlots(ctx, regencyAID, false, unrestricted); len(active) != 1 {
+		t.Fatalf("active slots = %+v, want only Surat Tugas", active)
+	}
+	if all, _ := repo.ListSlots(ctx, regencyAID, true, unrestricted); len(all) != 2 || all[1].IsActive {
+		t.Fatalf("all slots = %+v, want the deactivated one listed last", all)
+	}
+	renameToTaken := "SURAT TUGAS"
+	if _, err := repo.PatchSlotRow(ctx, auth.Principal{}, second.ID, &renameToTaken, nil, auth.ClientMeta{}, unrestricted); !errors.Is(err, ErrSlotDuplicate) {
+		t.Fatalf("rename to taken name err = %v, want ErrSlotDuplicate", err)
+	}
+
 	// Cross-regency IDOR check (security review finding): a caller scoped only to regency A must
 	// not be able to list, create, or patch slots belonging to regency B.
 	scopedToA := auth.RegencyScope{RegencyIDs: []string{regencyAID}}
 
-	listBFromA, err := repo.ListSlots(ctx, regencyBID, scopedToA)
+	listBFromA, err := repo.ListSlots(ctx, regencyBID, false, scopedToA)
 	if err != nil {
 		t.Fatalf("ListSlots() out-of-scope error = %v, want nil (empty list, not an error)", err)
 	}
@@ -98,7 +125,7 @@ func TestInsertAndListSlotsScopedByRegency(t *testing.T) {
 	}
 
 	// Confirm slot B is genuinely untouched by the rejected patch attempt above.
-	listB, err := repo.ListSlots(ctx, regencyBID, unrestricted)
+	listB, err := repo.ListSlots(ctx, regencyBID, false, unrestricted)
 	if err != nil {
 		t.Fatalf("ListSlots() error = %v", err)
 	}

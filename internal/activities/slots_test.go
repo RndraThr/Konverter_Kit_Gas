@@ -15,11 +15,11 @@ type slotRepositoryStub struct {
 	lastScope   auth.RegencyScope
 }
 
-func (r *slotRepositoryStub) ListSlots(_ context.Context, regencyID string, scope auth.RegencyScope) ([]SupportingDocumentSlot, error) {
+func (r *slotRepositoryStub) ListSlots(_ context.Context, regencyID string, includeInactive bool, scope auth.RegencyScope) ([]SupportingDocumentSlot, error) {
 	r.lastScope = scope
 	items := make([]SupportingDocumentSlot, 0)
 	for _, s := range r.slots {
-		if s.RegencyID == regencyID && s.IsActive {
+		if s.RegencyID == regencyID && (includeInactive || s.IsActive) {
 			items = append(items, s)
 		}
 	}
@@ -71,7 +71,7 @@ func TestCreateAndListSlots(t *testing.T) {
 	if created.Name != "Surat Tugas" || created.RegencyID != "regency-1" {
 		t.Fatalf("created = %+v, want name/regency matching input", created)
 	}
-	list, err := service.ListSlots(context.Background(), "regency-1", scope)
+	list, err := service.ListSlots(context.Background(), "regency-1", false, scope)
 	if err != nil {
 		t.Fatalf("ListSlots() error = %v", err)
 	}
@@ -104,7 +104,7 @@ func TestServiceThreadsScopeToRepository(t *testing.T) {
 	service := &Service{slotRepository: repo}
 	restricted := auth.RegencyScope{RegencyIDs: []string{"regency-in-scope"}}
 
-	if _, err := service.ListSlots(context.Background(), "regency-1", restricted); err != nil {
+	if _, err := service.ListSlots(context.Background(), "regency-1", false, restricted); err != nil {
 		t.Fatalf("ListSlots() error = %v", err)
 	}
 	if repo.lastScope.Unrestricted != restricted.Unrestricted || len(repo.lastScope.RegencyIDs) != 1 || repo.lastScope.RegencyIDs[0] != "regency-in-scope" {

@@ -11,20 +11,53 @@ import { apiRequest, ApiError } from '../../lib/api';
 import { Button } from '../../components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../../components/ui/dialog';
 
+type Point = { x: number; y: number };
+type Corners = { topLeftCorner?: Point; topRightCorner?: Point; bottomLeftCorner?: Point; bottomRightCorner?: Point };
+type CvMat = { delete(): void };
 type JScanify = {
   highlightPaper(image: HTMLCanvasElement, options?: { color?: string; thickness?: number }): HTMLCanvasElement;
-  extractPaper(image: HTMLCanvasElement, resultWidth: number, resultHeight: number): HTMLCanvasElement | null;
+  findPaperContour(image: CvMat): CvMat | null;
+  getCornerPoints(contour: CvMat): Corners;
+  extractPaper(image: HTMLCanvasElement, resultWidth: number, resultHeight: number, corners?: Corners): HTMLCanvasElement | null;
 };
 
-const OPENCV_JS_URL = 'https://docs.opencv.org/4.7.0/opencv.js';
-// Pinned against the exact bytes served at OPENCV_JS_URL at the time this was written (verified via
-// `curl -s $OPENCV_JS_URL | openssl dgst -sha384 -binary | openssl base64 -A`) — guards against a CDN
-// compromise silently swapping in different script contents under the same URL.
-const OPENCV_JS_INTEGRITY = 'sha384-7NgX/1nBIFcqsilWilRzcsVBOcPRmtwBvqsFS0QdyP6i356G43SIDx5JKd1aNqtz';
+const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
+
+/**
+ * Finds the paper's corners and its real size in the frame, so the
+ * perspective crop keeps the document's proportions (cropping to the video
+ * frame size squashed an A4 page into 16:9). Null when no paper, or only a
+ * small part of the frame, was found.
+ */
+function paperGeometry(scanner: JScanify, frame: HTMLCanvasElement): { corners: Required<Corners>; width: number; height: number } | null {
+  const cv = (window as unknown as { cv: { imread(canvas: HTMLCanvasElement): CvMat } }).cv;
+  const image = cv.imread(frame);
+  try {
+    const contour = scanner.findPaperContour(image);
+    if (!contour) return null;
+    const corners = scanner.getCornerPoints(contour);
+    contour.delete();
+    const { topLeftCorner: tl, topRightCorner: tr, bottomLeftCorner: bl, bottomRightCorner: br } = corners;
+    if (!tl || !tr || !bl || !br) return null;
+    const width = Math.round(Math.max(distance(tl, tr), distance(bl, br)));
+    const height = Math.round(Math.max(distance(tl, bl), distance(tr, br)));
+    if (width * height < frame.width * frame.height * 0.15) return null;
+    return { corners: { topLeftCorner: tl, topRightCorner: tr, bottomLeftCorner: bl, bottomRightCorner: br }, width, height };
+  } finally {
+    image.delete();
+  }
+}
+
+// OpenCV.js (~9 MB) comes from the jscanify package and is served by our own
+// server as a separate asset, fetched only when a scan opens. Same origin: no
+// CORS or integrity attribute needed. (The earlier docs.opencv.org copy sends
+// no Access-Control-Allow-Origin header, so with crossorigin + integrity the
+// browser always blocked it and every scan failed to start.)
+import openCvUrl from 'opencv-js-asset?url';
 
 declare global {
   interface Window {
-    cv?: { onRuntimeInitialized?: () => void };
+    cv?: { onRuntimeInitialized?: () => void; Mat?: unknown; then?: unknown };
   }
 }
 
@@ -35,33 +68,40 @@ declare global {
 // when a document scan is actually opened, independent of this component's
 // own (already-lazy) chunk.
 let openCvLoad: Promise<void> | undefined;
+
+/** Resolves once the OpenCV runtime is usable (cv.Mat present). */
+function whenOpenCvReady(resolve: () => void, reject: (error: Error) => void) {
+  const cv = window.cv;
+  if (!cv) return reject(new Error('opencv_load_failed'));
+  if (cv.Mat) return resolve();
+  // Some builds expose the module as a thenable; others call
+  // onRuntimeInitialized once the WASM is compiled. Handle both.
+  if (typeof cv.then === 'function') {
+    (cv.then as (done: (module: unknown) => void) => void)((module) => {
+      const ready = module as Window['cv'];
+      if (ready && ready !== cv) window.cv = ready;
+      resolve();
+    });
+    return;
+  }
+  cv.onRuntimeInitialized = () => resolve();
+}
+
 function loadOpenCv(): Promise<void> {
-  // `cv` already present (loaded in a previous scanner session, or stubbed in
-  // tests) — opencv.js's UMD wrapper assigns `window.cv` synchronously, well
-  // before its WASM finishes compiling, but by the time it's reused here that
-  // compile has long since finished, so it is safe to treat presence as ready.
-  if (window.cv) return Promise.resolve();
+  if (window.cv?.Mat) return Promise.resolve();
   if (openCvLoad) return openCvLoad;
-  openCvLoad = new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = OPENCV_JS_URL;
-    script.async = true;
-    script.crossOrigin = 'anonymous';
-    script.integrity = OPENCV_JS_INTEGRITY;
-    script.addEventListener('error', () => {
-      // Clear the cache so the NEXT call to loadOpenCv() (e.g. from the user's "Coba
-      // lagi" retry) re-attempts the CDN fetch instead of replaying this same
-      // already-rejected promise forever (spec §10 requires retry to actually work).
+  openCvLoad = new Promise<void>((resolve, reject) => {
+    const fail = () => {
+      // Cleared so "Coba lagi" really retries instead of replaying this failure.
       openCvLoad = undefined;
       reject(new Error('opencv_load_failed'));
-    });
-    script.addEventListener('load', () => {
-      if (window.cv) window.cv.onRuntimeInitialized = () => resolve();
-      else {
-        openCvLoad = undefined;
-        reject(new Error('opencv_load_failed'));
-      }
-    });
+    };
+    if (window.cv) return whenOpenCvReady(resolve, fail);
+    const script = document.createElement('script');
+    script.src = openCvUrl;
+    script.async = true;
+    script.addEventListener('error', fail);
+    script.addEventListener('load', () => whenOpenCvReady(resolve, fail));
     document.head.appendChild(script);
   });
   return openCvLoad;
@@ -83,6 +123,9 @@ export default function DocumentScanner({ programId, regencyId, slotId, customNa
   const nextPageId = useRef(0);
   const [starting, setStarting] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // A failed capture (no paper found) is shown under the camera, which keeps
+  // running; only camera/engine failures replace the view with a retry.
+  const [captureError, setCaptureError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
@@ -93,7 +136,9 @@ export default function DocumentScanner({ programId, regencyId, slotId, customNa
     let cancelled = false;
     Promise.all([
       loadOpenCv().catch(() => { throw new Error('opencv'); }),
-      navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } })
+      // Full HD when the camera has it: small text on a document is not
+      // readable at the browser's default 640x480.
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } })
         .catch(() => { throw new Error('camera'); }),
     ])
       .then(([, activeStream]) => {
@@ -163,16 +208,17 @@ export default function DocumentScanner({ programId, regencyId, slotId, customNa
     raw.getContext('2d')?.drawImage(video, 0, 0);
     let cropped: HTMLCanvasElement | null;
     try {
-      cropped = scannerRef.current.extractPaper(raw, raw.width, raw.height);
+      const paper = paperGeometry(scannerRef.current, raw);
+      cropped = paper ? scannerRef.current.extractPaper(raw, paper.width, paper.height, paper.corners) : null;
     } catch {
       setError('Deteksi dokumen gagal dimuat. Periksa koneksi internet, lalu coba lagi.');
       return;
     }
-    // extractPaper returns null when no paper contour was found in the frame.
     if (!cropped) {
-      setError('Tepi dokumen tidak terdeteksi. Posisikan dokumen di tengah bidikan, lalu coba lagi.');
+      setCaptureError('Tepi dokumen tidak terdeteksi. Letakkan dokumen utuh di atas alas yang kontras, lalu ambil lagi.');
       return;
     }
+    setCaptureError(null);
     const finished = enhance(cropped);
     finished.toBlob((blob) => {
       if (!blob) return;
@@ -223,6 +269,7 @@ export default function DocumentScanner({ programId, regencyId, slotId, customNa
           <canvas ref={overlayRef} className="pointer-events-none absolute inset-0 h-full w-full" />
           {starting && <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-white"><LoaderCircle className="size-6 animate-spin" aria-hidden="true" /></div>}
         </div>
+        {captureError && <p className="text-sm text-destructive" role="alert">{captureError}</p>}
         <p className="text-sm text-muted-foreground">{pages.length} halaman terkumpul.</p>
         {pages.length > 0 && <ul className="flex flex-wrap gap-2">
           {pages.map((page, index) => <li key={page.id} className="relative">

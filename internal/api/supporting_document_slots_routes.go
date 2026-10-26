@@ -24,7 +24,10 @@ func (h *Handler) handleSupportingDocumentSlots(w http.ResponseWriter, r *http.R
 		if !ok {
 			return
 		}
-		items, err := h.deps.Activities.ListSlots(r.Context(), regencyID, scope)
+		// include_inactive=true: set-up screens, where deactivated names stay
+		// listed so they can be switched back on.
+		includeInactive := r.URL.Query().Get("include_inactive") == "true"
+		items, err := h.deps.Activities.ListSlots(r.Context(), regencyID, includeInactive, scope)
 		if err != nil {
 			writeServiceError(w, err)
 			return
