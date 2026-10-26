@@ -63,7 +63,7 @@ func (s *BrandingService) UploadLogo(ctx context.Context, actor auth.Principal, 
 		_ = s.storage.Delete(context.Background(), storageKey)
 		return LogoAsset{}, err
 	}
-	if oldKey != "" && oldKey != storageKey {
+	if oldKey != "" && oldKey != storageKey && !isBuiltinLogoKey(oldKey) {
 		_ = s.storage.Delete(context.Background(), oldKey)
 	}
 	return logo, nil
@@ -79,9 +79,6 @@ func (s *BrandingService) PatchLogo(ctx context.Context, actor auth.Principal, i
 
 // OpenLogo streams a stored logo for preview.
 func (s *BrandingService) OpenLogo(ctx context.Context, programID, logoID string) (LogoContent, error) {
-	if s.storage == nil {
-		return LogoContent{}, ErrNotFound
-	}
 	logo, err := s.repository.GetLogo(ctx, strings.TrimSpace(programID), strings.TrimSpace(logoID))
 	if err != nil {
 		return LogoContent{}, err
