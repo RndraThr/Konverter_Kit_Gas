@@ -30,6 +30,7 @@ func TestScheduleSettingsSaveWithEmptyLocations(t *testing.T) {
 	mustQuery(`INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status) VALUES($1,$2,$3,$4,'Jadwal','2026-09-01','2026-09-30','active') RETURNING id::text`, []any{programID, regencyID, packageID, documentationID}, &scheduleID)
 	t.Cleanup(func() {
 		background := context.Background()
+		_, _ = pool.Exec(background, `DELETE FROM program_schedules WHERE id=$1`, scheduleID)
 		_, _ = pool.Exec(background, `DELETE FROM programs WHERE id=$1`, programID)
 		_, _ = pool.Exec(background, `DELETE FROM package_template_versions WHERE id=$1`, packageID)
 		_, _ = pool.Exec(background, `DELETE FROM documentation_template_versions WHERE id=$1`, documentationID)
