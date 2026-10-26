@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Clock3, Mail, UserRound } from 'lucide-react';
+import { Camera, Clock3, Mail, UserRound } from 'lucide-react';
 import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Alert, AlertDescription } from '../../components/ui/alert';
 import { Badge } from '../../components/ui/badge';
-import { Button } from '../../components/ui/button';
+import { Button, buttonVariants } from '../../components/ui/button';
 import { Card, CardContent, CardHeader } from '../../components/ui/card';
 import { PageHeader } from '../../components/PageHeader';
 import { FormField } from '../../components/FormField';
@@ -67,6 +68,19 @@ export function ProfilePage() {
         </section>
 
         <ChangePasswordForm />
+      </CardContent>
+    </Card>
+
+    <Card className="shadow-none">
+      <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-muted" aria-hidden="true"><Camera className="size-5" /></span>
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold">Kamera watermark</h2>
+            <p className="text-sm text-muted-foreground">Logo, waktu, lokasi, backdate, dan kualitas foto dokumentasi di perangkat ini.</p>
+          </div>
+        </div>
+        <Link to="/pengaturan-watermark" className={buttonVariants({ variant: 'outline', className: 'self-start sm:self-auto' })}>Atur kamera watermark</Link>
       </CardContent>
     </Card>
   </div>;

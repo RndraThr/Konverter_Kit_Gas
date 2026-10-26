@@ -1,4 +1,4 @@
-import { LINE_HEIGHT, timestampMetrics, timestampParts, WATERMARK_REF_SIDE, type WatermarkLayout } from './watermarkLayout'
+import { layoutWatermark, LINE_HEIGHT, timestampMetrics, timestampParts, WATERMARK_REF_SIDE, type WatermarkLayout } from './watermarkLayout'
 import type { WatermarkSettings } from './watermarkSettings'
 
 const FONT_FAMILY = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
@@ -105,4 +105,24 @@ export function drawWatermark(
     y += p.lineGap
   })
   ctx.restore()
+}
+
+/**
+ * Wraps, lays out and draws the watermark on a `width`×`height` region. The camera preview, the
+ * captured photo and the settings preview all go through this, so they always agree.
+ */
+export function paintWatermark(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  settings: WatermarkSettings,
+  lines: string[],
+  logo: HTMLImageElement | null,
+): WatermarkLayout {
+  const wrapped = wrapWatermarkLines(ctx, lines, settings)
+  const timestampLines = wrapped.reduce((total, rows) => total + rows.length, 0)
+  const logoAspect = logo && logo.naturalWidth > 0 && logo.naturalHeight > 0 ? logo.naturalWidth / logo.naturalHeight : 0
+  const layout = layoutWatermark({ width, height, settings, logoAspect, timestampLines })
+  drawWatermark(ctx, layout, wrapped, logo, settings)
+  return layout
 }

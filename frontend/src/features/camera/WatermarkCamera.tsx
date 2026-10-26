@@ -10,8 +10,8 @@ import { AddressTracker, formatCoordinates, getFix, type Fix } from './location'
 import type { CapturedPhoto } from './types'
 import { useWatermarkLogo } from './useWatermarkLogo'
 import { createWatermarkGestures, type ElementKey } from './watermarkGestures'
-import { coverCrop, layoutWatermark, watermarkLines, type Rect, type WatermarkLayout } from './watermarkLayout'
-import { drawWatermark, wrapWatermarkLines } from './watermarkRender'
+import { coverCrop, watermarkLines, type Rect, type WatermarkLayout } from './watermarkLayout'
+import { paintWatermark } from './watermarkRender'
 import { loadWatermarkSettings, saveWatermarkSettings, type ElementPlacement, type WatermarkSettings } from './watermarkSettings'
 
 const RESOLUTION = { width: { ideal: 1920 }, height: { ideal: 1080 } }
@@ -30,26 +30,6 @@ function videoConstraints(deviceId: string | undefined): MediaStreamConstraints 
 
 function stopStream(stream: MediaStream | null) {
   stream?.getTracks().forEach((track) => track.stop())
-}
-
-function logoAspect(logo: HTMLImageElement | null): number {
-  return logo && logo.naturalWidth > 0 && logo.naturalHeight > 0 ? logo.naturalWidth / logo.naturalHeight : 0
-}
-
-/** Lays out and draws the watermark on a `width`×`height` canvas region; the preview and the photo share this. */
-function paintWatermark(
-  ctx: CanvasRenderingContext2D,
-  width: number,
-  height: number,
-  settings: WatermarkSettings,
-  lines: string[],
-  logo: HTMLImageElement | null,
-): WatermarkLayout {
-  const wrapped = wrapWatermarkLines(ctx, lines, settings)
-  const timestampLines = wrapped.reduce((total, rows) => total + rows.length, 0)
-  const layout = layoutWatermark({ width, height, settings, logoAspect: logoAspect(logo), timestampLines })
-  drawWatermark(ctx, layout, wrapped, logo, settings)
-  return layout
 }
 
 function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number): Promise<Blob> {
