@@ -182,3 +182,25 @@ func TestBuildFolderPathPreservesParenthesesAndSpacesInCategory(t *testing.T) {
 		t.Fatalf("category segment = %q, want %q", got[len(got)-1], "BERITA ACARA (BA)")
 	}
 }
+
+func TestBuildFinalReportPathOmitsCategory(t *testing.T) {
+	path, err := BuildFinalReportPath(FolderPathInput{ProgramType: "farmer", ZoneName: "Zona 1", RegencyName: "Kabupaten Wajo"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"PETANI", "ZONA 1", "KABUPATEN WAJO"}
+	if len(path) != len(want) {
+		t.Fatalf("got %v, want %v", path, want)
+	}
+	for i := range want {
+		if path[i] != want[i] {
+			t.Fatalf("got %v, want %v", path, want)
+		}
+	}
+}
+
+func TestBuildFinalReportPathRejectsInvalidSegment(t *testing.T) {
+	if _, err := BuildFinalReportPath(FolderPathInput{ProgramType: "farmer", ZoneName: "Zona/1", RegencyName: "Kabupaten Wajo"}); !errors.Is(err, ErrInvalidFolderPath) {
+		t.Fatalf("expected ErrInvalidFolderPath, got %v", err)
+	}
+}

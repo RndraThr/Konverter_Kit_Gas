@@ -84,7 +84,8 @@ func (h *Handler) handleRegencies(w http.ResponseWriter, r *http.Request, rc req
 
 func (h *Handler) handlePrograms(w http.ResponseWriter, r *http.Request, rc requestContext, id string) {
 	if r.Method == http.MethodGet && id == "" {
-		if !h.authorizeAny(w, r, rc.principal, "programs.view", "recipients.view", "distribution.view") {
+		// final_report.view: the Laporan Akhir page's program picker.
+		if !h.authorizeAny(w, r, rc.principal, "programs.view", "recipients.view", "distribution.view", "final_report.view") {
 			return
 		}
 		result, err := h.deps.Programs.ListPrograms(r.Context())
@@ -252,7 +253,8 @@ func (h *Handler) handleProgramNested(w http.ResponseWriter, r *http.Request, rc
 
 func (h *Handler) handleProgramZones(w http.ResponseWriter, r *http.Request, rc requestContext, programID, zoneID string) {
 	if r.Method == http.MethodGet && zoneID == "" {
-		if !h.authorize(w, r, rc.principal, "programs.view") {
+		// final_report.view: the Laporan Akhir page's kabupaten picker (still regency-scoped).
+		if !h.authorizeAny(w, r, rc.principal, "programs.view", "final_report.view") {
 			return
 		}
 		scope, ok := h.regencyScope(w, r, rc.principal)
