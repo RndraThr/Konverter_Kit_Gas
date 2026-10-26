@@ -31,12 +31,21 @@ export type WatermarkSettings = {
   logoScale: number
   /** PNG data URL */
   customLogo: string | null
+  /**
+   * Chosen logos per program id, in the order they are drawn: tender logo ids and/or
+   * BUILTIN_LOGO_ID. A program without an entry uses its first visible tender logo.
+   */
+  tenderLogos: Record<string, string[]>
   logoPlacement: ElementPlacement
   timestampPlacement: ElementPlacement
   /** YYYY-MM-DD */
   backdate: string | null
   photoQuality: PhotoQuality
 }
+
+/** Selection id of the built-in KSM + ERGAS banner among the tender logos. */
+export const BUILTIN_LOGO_ID = 'bawaan'
+const MAX_SELECTED_LOGOS = 12
 
 export const MIN_LOGO_SCALE = 0.5
 export const MAX_LOGO_SCALE = 1.0
@@ -50,6 +59,7 @@ export const DEFAULT_WATERMARK_SETTINGS: WatermarkSettings = {
   textScale: 1,
   logoScale: 1,
   customLogo: null,
+  tenderLogos: {},
   logoPlacement: null,
   timestampPlacement: null,
   backdate: null,
@@ -72,6 +82,16 @@ function parsePlacement(v: unknown): ElementPlacement {
   return { x, y, scale }
 }
 
+function parseTenderLogos(v: unknown): Record<string, string[]> {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {}
+  const out: Record<string, string[]> = {}
+  for (const [programId, ids] of Object.entries(v as Record<string, unknown>)) {
+    if (!Array.isArray(ids)) continue
+    out[programId] = [...new Set(ids.filter((id): id is string => typeof id === 'string' && id !== ''))].slice(0, MAX_SELECTED_LOGOS)
+  }
+  return out
+}
+
 function sanitize(raw: unknown): WatermarkSettings {
   const d = DEFAULT_WATERMARK_SETTINGS
   if (!raw || typeof raw !== 'object') return { ...d }
@@ -88,6 +108,7 @@ function sanitize(raw: unknown): WatermarkSettings {
         ? Math.min(MAX_LOGO_SCALE, Math.max(MIN_LOGO_SCALE, r.logoScale))
         : d.logoScale,
     customLogo: typeof r.customLogo === 'string' && r.customLogo.startsWith('data:image/') ? r.customLogo : null,
+    tenderLogos: parseTenderLogos(r.tenderLogos),
     logoPlacement: parsePlacement(r.logoPlacement),
     timestampPlacement: parsePlacement(r.timestampPlacement),
     backdate: typeof r.backdate === 'string' && DATE.test(r.backdate) ? r.backdate : null,

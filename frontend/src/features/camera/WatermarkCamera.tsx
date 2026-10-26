@@ -76,7 +76,7 @@ export default function WatermarkCamera({ title, programId, onCapture, onClose }
   const [settingsOpen, setSettingsOpen] = useState(false)
   const layoutRef = useRef<WatermarkLayout | null>(null)
 
-  const logo = useWatermarkLogo(programId, settings.customLogo)
+  const logo = useWatermarkLogo(programId, settings.customLogo, programId ? settings.tenderLogos[programId] : undefined)
   const tracker = useMemo(() => new AddressTracker(), [])
 
   // Camera stream: (re)started for the chosen device, on retry, and after leaving the review screen.
@@ -289,7 +289,7 @@ export default function WatermarkCamera({ title, programId, onCapture, onClose }
           <Button type="button" size="sm" onClick={() => setSettingsOpen(false)}><Check aria-hidden="true" />Selesai</Button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          <WatermarkSettingsForm settings={settings} onChange={(next) => updateSettings(next, false)} />
+          <WatermarkSettingsForm settings={settings} programId={programId} onChange={(next) => updateSettings(next, false)} />
         </div>
       </aside>}
 

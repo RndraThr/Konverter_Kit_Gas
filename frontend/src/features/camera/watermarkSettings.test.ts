@@ -24,6 +24,7 @@ describe('watermarkSettings', () => {
       textScale: 1,
       logoScale: 1,
       customLogo: null,
+      tenderLogos: {},
       logoPlacement: null,
       timestampPlacement: null,
       backdate: null,

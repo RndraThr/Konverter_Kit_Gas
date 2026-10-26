@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
-import { ImagePlus, RotateCcw } from 'lucide-react'
+import { Check, ImagePlus, RotateCcw } from 'lucide-react'
+import builtInPreviewUrl from '@/assets/watermark/logo-ksm.png'
 import { PageHeader } from '@/components/PageHeader'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
@@ -10,10 +11,11 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { downscaleLogo } from './imageResize'
-import { useWatermarkLogo } from './useWatermarkLogo'
+import { effectiveLogoSelection, useTenderLogos, useWatermarkLogo } from './useWatermarkLogo'
 import { watermarkLines } from './watermarkLayout'
 import { paintWatermark } from './watermarkRender'
 import {
+  BUILTIN_LOGO_ID,
   loadWatermarkSettings,
   MAX_LOGO_SCALE,
   MIN_LOGO_SCALE,
@@ -92,6 +94,53 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   </section>
 }
 
+/** Multi-select of the program's tender logos (plus the built-in banner); chosen logos are drawn side by side in list order. */
+function TenderLogoPicker({ programId, selection, overridden, onChange }: {
+  programId: string
+  selection: string[] | undefined
+  overridden: boolean
+  onChange: (ids: string[]) => void
+}) {
+  const logos = useTenderLogos(programId)
+  const options = [
+    { id: BUILTIN_LOGO_ID, label: 'Logo bawaan (KSM + ERGAS)', url: builtInPreviewUrl },
+    ...(logos.data ?? []).map((logo) => ({ id: logo.id, label: logo.original_filename, url: logo.content_url })),
+  ]
+  const selected = effectiveLogoSelection(selection, logos.data)
+  const toggle = (id: string) => {
+    const next = selected.includes(id) ? selected.filter((value) => value !== id) : [...selected, id]
+    onChange(options.map((option) => option.id).filter((value) => next.includes(value)))
+  }
+
+  return <div className="grid gap-1.5">
+    <span className="text-sm font-medium">Logo tender</span>
+    {logos.isPending
+      ? <p className="text-xs text-muted-foreground">Memuat logo tender...</p>
+      : <div role="group" aria-label="Logo tender" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {options.map((option) => {
+          const on = selected.includes(option.id)
+          return <button
+            key={option.id}
+            type="button"
+            aria-pressed={on}
+            aria-label={option.label}
+            title={option.label}
+            onClick={() => toggle(option.id)}
+            className={cn('relative grid gap-1 rounded-lg border-2 p-2 text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50', on ? 'border-primary bg-primary/5' : 'border-border')}
+          >
+            {on && <Check className="absolute top-1 right-1 size-4 rounded-full bg-primary p-0.5 text-primary-foreground" aria-hidden="true" />}
+            <img src={option.url} alt="" className="h-12 w-full rounded bg-muted object-contain" />
+            <span className="truncate text-xs">{option.label}</span>
+          </button>
+        })}
+      </div>}
+    {logos.isError ? <p className="text-xs text-destructive">Logo tender belum dapat dimuat; logo bawaan tetap bisa dipakai.</p> : null}
+    <p className="text-xs text-muted-foreground">
+      {overridden ? 'Logo kustom sedang dipakai dan menggantikan pilihan ini.' : selected.length === 0 ? 'Tidak ada yang dipilih; logo bawaan dipakai.' : 'Logo terpilih dipasang berjajar sesuai urutan di atas.'}
+    </p>
+  </div>
+}
+
 function WatermarkPreview({ settings }: { settings: WatermarkSettings }) {
   const [canvas, setCanvas] = useState<HTMLCanvasElement | null>(null)
   const [now, setNow] = useState(() => new Date())
@@ -143,7 +192,12 @@ export function WatermarkSettingsPage() {
  * The watermark controls. Every change is saved to this device before `onChange` reports it, so the
  * settings page and the in-camera panel stay in sync with what the next photo will use.
  */
-export function WatermarkSettingsForm({ settings, onChange }: { settings: WatermarkSettings; onChange: (next: WatermarkSettings) => void }) {
+export function WatermarkSettingsForm({ settings, programId, onChange }: {
+  settings: WatermarkSettings
+  /** The program whose tender logos can be chosen; without it the logo list is not shown. */
+  programId?: string
+  onChange: (next: WatermarkSettings) => void
+}) {
   const [saveFailed, setSaveFailed] = useState(false)
   const [logoError, setLogoError] = useState<string | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
@@ -209,6 +263,14 @@ export function WatermarkSettingsForm({ settings, onChange }: { settings: Waterm
           <span className="w-12 text-sm tabular-nums text-muted-foreground">{Math.round(settings.logoScale * 100)}%</span>
         </div>
       </div>
+      {programId
+        ? <TenderLogoPicker
+          programId={programId}
+          selection={settings.tenderLogos[programId]}
+          overridden={Boolean(settings.customLogo)}
+          onChange={(ids) => update({ tenderLogos: { ...settingsRef.current.tenderLogos, [programId]: ids } })}
+        />
+        : <p className="text-xs text-muted-foreground">Logo tender dari Persiapan dipilih lewat tombol pengaturan di kamera, sesuai program jadwalnya.</p>}
       <div className="grid gap-1.5">
         <span className="text-sm font-medium">Logo kustom</span>
         <div className="flex flex-wrap gap-2">
@@ -216,7 +278,7 @@ export function WatermarkSettingsForm({ settings, onChange }: { settings: Waterm
             <ImagePlus aria-hidden="true" />Pilih gambar
             <input type="file" accept="image/*" className="sr-only" onChange={(event) => { void pickLogo(event) }} />
           </label>
-          <Button type="button" size="sm" variant="outline" disabled={!settings.customLogo} onClick={() => update({ customLogo: null })}>Kembalikan logo bawaan</Button>
+          <Button type="button" size="sm" variant="outline" disabled={!settings.customLogo} onClick={() => update({ customLogo: null })}>Hapus logo kustom</Button>
         </div>
         <p className="text-xs text-muted-foreground">{settings.customLogo ? 'Memakai logo kustom.' : 'Memakai logo tender program, atau logo bawaan bila belum ada.'}</p>
         {logoError ? <p className="text-xs text-destructive" role="alert">{logoError}</p> : null}

@@ -1,12 +1,15 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { useState } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, expect, test, vi } from 'vitest'
-import { WatermarkSettingsPage } from './WatermarkSettingsPage'
+import { WatermarkSettingsForm, WatermarkSettingsPage } from './WatermarkSettingsPage'
 import { DEFAULT_WATERMARK_SETTINGS } from './watermarkSettings'
 
 const { downscaleLogo } = vi.hoisted(() => ({ downscaleLogo: vi.fn() }))
 vi.mock('./imageResize', () => ({ downscaleLogo }))
+const { apiRequest } = vi.hoisted(() => ({ apiRequest: vi.fn() }))
+vi.mock('@/lib/api', () => ({ apiRequest }))
 
 const KEY = 'konkit.watermark.v1'
 const stored = () => JSON.parse(localStorage.getItem(KEY) ?? 'null')
@@ -15,6 +18,7 @@ beforeEach(() => {
   vi.restoreAllMocks()
   localStorage.clear()
   downscaleLogo.mockReset()
+  apiRequest.mockReset()
   vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
 })
 
@@ -70,7 +74,7 @@ test('a picked custom logo is downscaled and stored; it can be reverted', async 
   fireEvent.change(screen.getByLabelText('Pilih gambar'), { target: { files: [file] } })
   await waitFor(() => expect(stored()?.customLogo).toBe('data:image/png;base64,AAA'))
   expect(downscaleLogo).toHaveBeenCalledWith(file)
-  fireEvent.click(screen.getByRole('button', { name: 'Kembalikan logo bawaan' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Hapus logo kustom' }))
   expect(stored().customLogo).toBeNull()
 })
 
@@ -97,4 +101,37 @@ test('warns when the device refuses to store the settings', () => {
   renderPage()
   fireEvent.click(screen.getByRole('checkbox', { name: 'Tampilkan logo' }))
   expect(screen.getByRole('alert')).toHaveTextContent('Pengaturan tidak dapat disimpan di perangkat ini.')
+})
+
+test('picks several tender logos from Persiapan for the program', async () => {
+  apiRequest.mockResolvedValue({ data: [
+    { id: 'l2', sort_order: 1, is_visible: true, original_filename: 'pemda.png' },
+    { id: 'l1', sort_order: 0, is_visible: false, original_filename: 'kementerian.png' },
+  ] })
+  const onChange = vi.fn()
+  function Harness() {
+    const [settings, setSettings] = useState(DEFAULT_WATERMARK_SETTINGS)
+    return <WatermarkSettingsForm settings={settings} programId="p1" onChange={(next) => { onChange(next); setSettings(next) }} />
+  }
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}><Harness /></QueryClientProvider>)
+
+  const group = await screen.findByRole('group', { name: 'Logo tender' })
+  expect(apiRequest).toHaveBeenCalledWith('/api/v1/bast/branding?program_id=p1')
+  // Default: the first visible tender logo.
+  expect(within(group).getByRole('button', { name: 'pemda.png' })).toHaveAttribute('aria-pressed', 'true')
+  expect(within(group).getByRole('button', { name: 'kementerian.png' })).toHaveAttribute('aria-pressed', 'false')
+
+  fireEvent.click(within(group).getByRole('button', { name: 'Logo bawaan (KSM + ERGAS)' }))
+  fireEvent.click(within(group).getByRole('button', { name: 'kementerian.png' }))
+
+  // Kept in list order: built-in, then tender logos by sort order.
+  expect(stored().tenderLogos).toEqual({ p1: ['bawaan', 'l1', 'l2'] })
+  expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ tenderLogos: { p1: ['bawaan', 'l1', 'l2'] } }))
+})
+
+test('the settings page explains that tender logos are chosen in the camera', () => {
+  renderPage()
+  expect(screen.getByText(/Logo tender dari Persiapan dipilih lewat tombol pengaturan di kamera/)).toBeInTheDocument()
+  expect(apiRequest).not.toHaveBeenCalled()
 })
