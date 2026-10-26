@@ -7,27 +7,16 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { apiRequest } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
-import type { DataResponse } from '../programs/types';
+import { brandingLogosQueryKey, fetchBrandingLogos } from './brandingLogos';
 import type { BaLogo } from './types';
-
-type BrandingLogoResponse = Omit<BaLogo, 'content_url'>;
-
-function contentURL(programID: string, logoID: string) {
-  return `/api/v1/bast/branding/logos/${logoID}/content?program_id=${encodeURIComponent(programID)}`;
-}
 
 export function LogoTenderPanel({ programID }: { programID: string }) {
   const canManage = useCan('programs.manage');
   const queryClient = useQueryClient();
-  const queryKey = ['bast', 'branding', programID];
+  const queryKey = brandingLogosQueryKey(programID);
   const logos = useQuery({
     queryKey,
-    queryFn: async () => {
-      const response = await apiRequest<DataResponse<BrandingLogoResponse[]>>(`/api/v1/bast/branding?program_id=${encodeURIComponent(programID)}`);
-      return (response.data ?? [])
-        .map((logo): BaLogo => ({ ...logo, content_url: contentURL(programID, logo.id) }))
-        .sort((left, right) => left.sort_order - right.sort_order || left.id.localeCompare(right.id));
-    },
+    queryFn: () => fetchBrandingLogos(programID),
     enabled: Boolean(programID),
   });
   const refresh = () => queryClient.invalidateQueries({ queryKey });

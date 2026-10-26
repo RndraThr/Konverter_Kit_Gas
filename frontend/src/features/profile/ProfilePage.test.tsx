@@ -33,6 +33,13 @@ test('combines account identity, profile editing, and password security in one p
   expect(apiRequest).toHaveBeenCalledWith('/api/v1/me', expect.objectContaining({ method: 'PATCH' }));
 });
 
+test('links to the watermark camera settings', async () => {
+  vi.mocked(getBootstrap).mockResolvedValue(account);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(<MemoryRouter><QueryClientProvider client={client}><ProfilePage /></QueryClientProvider></MemoryRouter>);
+  expect(await screen.findByRole('link', { name: 'Atur kamera watermark' })).toHaveAttribute('href', '/pengaturan-watermark');
+});
+
 test('changes the password independently from profile information', async () => {
   vi.mocked(getBootstrap).mockResolvedValue(account);
   vi.mocked(apiRequest).mockResolvedValue({ data: { message: 'ok' } });

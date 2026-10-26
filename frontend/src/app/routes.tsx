@@ -6,6 +6,7 @@ import { getBootstrap } from '../lib/api';
 import { DashboardPage } from '../features/dashboard/DashboardPage';
 import { DistributionMapPage } from '../features/dashboard/DistributionMapPage';
 import { ProfilePage } from '../features/profile/ProfilePage';
+import { WatermarkSettingsPage } from '../features/camera/WatermarkSettingsPage';
 import { UsersPage } from '../features/users/UsersPage';
 import { RolesPage } from '../features/roles/RolesPage';
 import { SettingsPage } from '../features/settings/SettingsPage';
@@ -64,6 +65,7 @@ export const dashboardRoutes: RouteObject[] = [{
     { path: 'panduan/presentasi', element: <PresentationPage /> },
     { path: 'panduan/:slug', element: <GuideTopicPage /> },
     { path: 'profil', element: <ProfilePage /> },
+    { path: 'pengaturan-watermark', element: <WatermarkSettingsPage /> },
     { path: 'profil/password', element: <Navigate to="/profil" replace /> },
     { path: '*', element: <Navigate to="/profil" replace /> },
   ],

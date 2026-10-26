@@ -23,6 +23,7 @@ import (
 	"konkit/internal/distribution"
 	"konkit/internal/finalreport"
 	finalreporttemplate "konkit/internal/finalreport/template"
+	"konkit/internal/geo"
 	"konkit/internal/health"
 	"konkit/internal/media"
 	"konkit/internal/profile"
@@ -103,6 +104,7 @@ func run(ctx context.Context, cfg config.Config) error {
 	apiHandler := apihttp.NewHandler(apihttp.Dependencies{
 		Auth:           authService,
 		FinalReport:    finalReportService,
+		Geo:            geo.NewReverser(cfg.GeocoderURL, &http.Client{Timeout: 5 * time.Second}, "Konkit/1.0 (Konverter Kit Gas; PT Kian Santang Muliatama Tbk)"),
 		Profile:        profile.NewService(profile.NewRepository(pool)),
 		Administration: administration.NewService(administration.NewRepository(pool)),
 		Settings:       settings.NewService(settings.NewRepository(pool)),

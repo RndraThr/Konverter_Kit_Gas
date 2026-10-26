@@ -263,7 +263,7 @@ test('saves equipment and allows document media management', async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Simpan data peralatan' }));
 
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/slots/7/equipment?schedule_id=schedule-1', expect.objectContaining({ method: 'PATCH' })));
-  expect(screen.getByLabelText('Buka kamera')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Buka kamera' })).toBeVisible();
 });
 
 test('offers barcode scanning for the supported serial numbers while equipment is editable', () => {
@@ -325,9 +325,9 @@ test('locks completed document POS until revision succeeds and refreshes automat
   vi.mocked(apiRequest).mockResolvedValue({ data: { ...completed, status: 'linked', needs_recompletion: true, reopened_stage: 'dokumen' } });
   renderSection(completed);
 
-  expect(screen.queryByLabelText('Buka kamera')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Buka kamera' })).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Buka revisi POS Dokumen' }));
   await userEvent.type(screen.getByLabelText('Alasan revisi'), 'Perbaiki dokumen');
   await userEvent.click(screen.getByRole('button', { name: 'Buka revisi' }));
-  expect(await screen.findByLabelText('Buka kamera')).toBeVisible();
+  expect(await screen.findByRole('button', { name: 'Buka kamera' })).toBeVisible();
 });

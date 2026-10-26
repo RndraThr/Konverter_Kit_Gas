@@ -1,6 +1,6 @@
 import { Camera, CheckCircle2, CircleAlert, ImagePlus, RefreshCw, Trash2, UploadCloud, Video, X } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { apiRequest } from '../../lib/api';
 import { uploadRequest } from '../../lib/upload';
 import type { DataResponse, MediaFile, MediaStorageState, SlotSummary } from './types';
@@ -8,23 +8,35 @@ import styles from './Distribution.module.css';
 import { Badge } from '@/components/ui/badge';
 import { MediaPreviewDialog } from '@/components/MediaPreviewDialog';
 import { cn } from '@/lib/utils';
+import type { CapturedPhoto } from '../camera/types';
+import { shrinkGalleryImage } from '../camera/shrinkGalleryImage';
+import { useWatermarkProgram } from '../camera/WatermarkProgramContext';
+
+const WatermarkCamera = lazy(() => import('../camera/WatermarkCamera'));
 
 type QueuedFile = {
   id: string;
   file: File;
   source: 'camera' | 'gallery';
+  /** Real capture time sent as captured_at (camera: shutter time; gallery: file.lastModified). */
+  capturedAt: Date;
+  latitude: number | null;
+  longitude: number | null;
   previewURL: string;
   status: 'queued' | 'uploading' | 'error';
   progress: number;
   controller: AbortController | null;
   errorMessage?: string;
 };
+type Incoming = Pick<QueuedFile, 'file' | 'source' | 'capturedAt' | 'latitude' | 'longitude'>;
 const acceptedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const acceptedVideoTypes = new Set(['video/mp4', 'video/webm', 'video/quicktime']);
 const imageAccept = 'image/jpeg,image/png,image/webp';
 const videoAccept = 'video/mp4,video/webm,video/quicktime';
 const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 500 * 1024 * 1024;
+const LOCATION_REQUIRED_CAMERA = 'Slot ini mewajibkan lokasi GPS. Aktifkan izin lokasi lalu ambil ulang foto.';
+const LOCATION_REQUIRED_GALLERY = 'Slot ini mewajibkan foto dari kamera dengan lokasi GPS.';
 
 type Props = {
   slot: SlotSummary;
@@ -48,6 +60,8 @@ export function DocumentationSlot({ slot, canManage, canRetryMove = false, onCha
   const [dragging, setDragging] = useState(false);
   const [fileError, setFileError] = useState('');
   const [moveError, setMoveError] = useState('');
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const programId = useWatermarkProgram();
   const processingRef = useRef(false);
   const queueRef = useRef<QueuedFile[]>([]);
   useEffect(() => setFiles(slot.files ?? []), [slot.files]);
@@ -67,7 +81,11 @@ export function DocumentationSlot({ slot, canManage, canRetryMove = false, onCha
       const body = new FormData();
       body.set('source', item.source);
       body.set('file_size', String(item.file.size));
-      body.set('captured_at', new Date(item.file.lastModified || Date.now()).toISOString());
+      body.set('captured_at', item.capturedAt.toISOString());
+      if (item.latitude !== null && item.longitude !== null) {
+        body.set('latitude', String(item.latitude));
+        body.set('longitude', String(item.longitude));
+      }
       body.set('file', item.file);
       return uploadRequest<DataResponse<MediaFile>>(`/api/v1/distribution/slots/${slot.id}/media`, body, {
         signal: controller.signal,
@@ -124,29 +142,63 @@ export function DocumentationSlot({ slot, canManage, canRetryMove = false, onCha
   const remainingCapacity = Math.max(0, maxFiles - files.length - queue.length);
   const canAddMore = canManage && remainingCapacity > 0;
 
-  const chooseMany = (fileList: FileList | null | undefined, source: 'camera' | 'gallery') => {
-    const incoming = Array.from(fileList ?? []);
+  const requireLocation = slot.require_location === true;
+
+  // Validates and queues files. Capacity is read from the ref-backed queue at call time, because
+  // gallery images arrive after an async resize and the render-time value may be stale by then.
+  const enqueue = (incoming: Incoming[]) => {
     if (!incoming.length) return;
-    let remaining = remainingCapacity;
-    const accepted: File[] = [];
-    let rejectedType = false, rejectedCapacity = false, rejectedImageSize = false, rejectedVideoSize = false;
-    for (const file of incoming) {
+    let remaining = Math.max(0, maxFiles - files.length - queueRef.current.length);
+    const capacity = remaining;
+    const accepted: Incoming[] = [];
+    let rejectedType = false, rejectedCapacity = false, rejectedImageSize = false, rejectedVideoSize = false, rejectedLocation = false;
+    for (const item of incoming) {
+      const { file } = item;
       const isImage = acceptedImageTypes.has(file.type);
       const isVideo = acceptedVideoTypes.has(file.type);
       if ((!isImage && !isVideo) || (isImage && !allowsImages) || (isVideo && !allowsVideos)) { rejectedType = true; continue; }
+      if (isImage && requireLocation && item.source === 'gallery') { rejectedLocation = true; continue; }
       if (isImage && file.size > MAX_IMAGE_BYTES) { rejectedImageSize = true; continue; }
       if (isVideo && file.size > MAX_VIDEO_BYTES) { rejectedVideoSize = true; continue; }
       if (remaining <= 0) { rejectedCapacity = true; continue; }
-      accepted.push(file);
+      accepted.push(item);
       remaining -= 1;
     }
-    if (rejectedImageSize) setFileError('Ukuran foto maksimal 25 MiB.');
+    if (rejectedLocation) setFileError(LOCATION_REQUIRED_GALLERY);
+    else if (rejectedImageSize) setFileError('Ukuran foto maksimal 25 MiB.');
     else if (rejectedVideoSize) setFileError('Ukuran video maksimal 500 MiB.');
     else if (rejectedType) setFileError(mediaKind === 'video' ? 'Gunakan video MP4, WebM, atau MOV.' : mediaKind === 'image_video' ? 'Gunakan foto JPEG, PNG, WebP atau video MP4, WebM, MOV.' : 'Gunakan file JPEG, PNG, atau WebP.');
-    else if (rejectedCapacity) setFileError(`Hanya ${remainingCapacity} ${mediaLabel} lagi yang dapat ditambahkan pada slot ini.`);
+    else if (rejectedCapacity) setFileError(`Hanya ${capacity} ${mediaLabel} lagi yang dapat ditambahkan pada slot ini.`);
     else setFileError('');
     if (!accepted.length) return;
-    setQueue((current) => [...current, ...accepted.map((file) => ({ id: crypto.randomUUID(), file, source, previewURL: URL.createObjectURL(file), status: 'queued' as const, progress: 0, controller: null }))]);
+    const queued = accepted.map((item): QueuedFile => ({ ...item, id: crypto.randomUUID(), previewURL: URL.createObjectURL(item.file), status: 'queued', progress: 0, controller: null }));
+    queueRef.current = [...queueRef.current, ...queued];
+    setQueue((current) => [...current, ...queued]);
+  };
+
+  const fromFiles = (list: File[], source: 'camera' | 'gallery'): Incoming[] =>
+    list.map((file) => ({ file, source, capturedAt: new Date(file.lastModified || Date.now()), latitude: null, longitude: null }));
+
+  const chooseMany = (fileList: FileList | null | undefined, source: 'camera' | 'gallery') => {
+    const incoming = Array.from(fileList ?? []);
+    if (!incoming.length) return;
+    // Gallery photos are shrunk before upload (videos untouched); rejected ones are not worth resizing.
+    const shrink = source === 'gallery' && !requireLocation;
+    if (!shrink || !incoming.some((file) => acceptedImageTypes.has(file.type) && allowsImages)) {
+      enqueue(fromFiles(incoming, source));
+      return;
+    }
+    void Promise.all(incoming.map((file) => (acceptedImageTypes.has(file.type) && allowsImages ? shrinkGalleryImage(file) : file)))
+      .then((prepared) => enqueue(fromFiles(prepared, source)));
+  };
+
+  const capturePhoto = (photo: CapturedPhoto) => {
+    setCameraOpen(false);
+    if (requireLocation && (photo.latitude === null || photo.longitude === null)) {
+      setFileError(LOCATION_REQUIRED_CAMERA);
+      return;
+    }
+    enqueue([{ file: photo.file, source: 'camera', capturedAt: photo.capturedAt, latitude: photo.latitude, longitude: photo.longitude }]);
   };
   const retry = (id: string) => setQueue((current) => current.map((item) => item.id === id ? { ...item, status: 'queued' as const, progress: 0, controller: null, errorMessage: undefined } : item));
   const cancelQueued = (id: string) => setQueue((current) => {
@@ -211,7 +263,7 @@ export function DocumentationSlot({ slot, canManage, canRetryMove = false, onCha
 
     {canAddMore && <div className="grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)]">
       {inputSource !== 'gallery' && <div className="flex flex-wrap gap-2">
-        {allowsImages && <label className={cn(styles.captureControl, 'inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted')}><Camera className="size-4" aria-hidden="true" />Buka kamera<input className="sr-only" aria-label="Buka kamera" type="file" accept={imageAccept} capture="environment" onChange={(event) => { chooseMany(event.target.files, 'camera'); event.target.value = ''; }} /></label>}
+        {allowsImages && <button type="button" className={cn(styles.captureControl, 'inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted')} onClick={() => { setFileError(''); setCameraOpen(true); }}><Camera className="size-4" aria-hidden="true" />Buka kamera</button>}
         {allowsVideos && <label className={cn(styles.captureControl, 'inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted')}><Video className="size-4" aria-hidden="true" />Rekam video<input className="sr-only" aria-label="Rekam video" type="file" accept={videoAccept} capture="environment" onChange={(event) => { chooseMany(event.target.files, 'camera'); event.target.value = ''; }} /></label>}
       </div>}
       {inputSource !== 'camera' && <div
@@ -231,6 +283,7 @@ export function DocumentationSlot({ slot, canManage, canRetryMove = false, onCha
     {uploadError && <p role="alert" className="text-sm text-destructive">{uploadError.file.name}: {uploadError.errorMessage ?? 'Foto belum dapat diunggah.'}</p>}
     {fileError && <p role="alert" className="text-sm text-destructive">{fileError}</p>}
     {moveError && <p role="alert" className="text-sm text-destructive">{moveError}</p>}
+    {cameraOpen && <Suspense fallback={null}><WatermarkCamera title={slot.label} programId={programId} onCapture={capturePhoto} onClose={() => setCameraOpen(false)} /></Suspense>}
     <MediaPreviewDialog items={files.map((mediaFile) => ({ id: mediaFile.id, url: mediaFile.content_url, title: mediaFile.original_filename, mediaType: mediaFile.mime_type.startsWith('video/') ? 'video' : 'image' }))} index={previewIndex} onIndexChange={setPreviewIndex} />
   </article>;
 }

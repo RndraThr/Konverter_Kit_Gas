@@ -7,20 +7,37 @@ import { DocumentationSlot } from './DocumentationSlot';
 import styles from './Distribution.module.css';
 import type { MediaFile } from './types';
 import { uploadRequest } from '../../lib/upload';
+import { resizeImage } from '../camera/imageResize';
+import { WatermarkProgramProvider } from '../camera/WatermarkProgramContext';
 
 vi.mock('../../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../../lib/api')>('../../lib/api');
   return { ...actual, apiRequest: vi.fn() };
 });
 vi.mock('../../lib/upload', () => ({ uploadRequest: vi.fn() }));
+vi.mock('../camera/imageResize', () => ({ resizeImage: vi.fn(async (blob: Blob) => new File([blob], 'resized.jpg', { type: 'image/jpeg' })) }));
+const camera = vi.hoisted(() => ({ photo: null as null | { file: File; capturedAt: Date; latitude: number | null; longitude: number | null }, props: null as null | { title: string; programId?: string } }));
+vi.mock('../camera/WatermarkCamera', () => ({
+  default: (props: { title: string; programId?: string; onCapture: (photo: NonNullable<typeof camera.photo>) => void; onClose: () => void }) => {
+    camera.props = props;
+    return <div role="dialog" aria-label={props.title}><button type="button" onClick={() => props.onCapture(camera.photo!)}>Gunakan Foto</button></div>;
+  },
+}));
 
 type TestMediaFile = Omit<MediaFile, 'storage_state'> & { storage_state?: MediaFile['storage_state'] };
 
-function renderSlot(files: TestMediaFile[] = [], required = true, mediaKind: 'image' | 'video' | 'image_video' = 'image', canManage = true, canRetryMove = false) {
+function renderSlot(files: TestMediaFile[] = [], required = true, mediaKind: 'image' | 'video' | 'image_video' = 'image', canManage = true, canRetryMove = false, requireLocation = false) {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
-  return render(<QueryClientProvider client={client}><PermissionsProvider permissions={['documentation.manage']}><DocumentationSlot slot={{
-    id: 'slot-1', code: 'signed_bast', label: 'BAST bertanda tangan', stage: 'penyerahan', status: 'missing', required, min_files: 1, max_files: 2, media_kind: mediaKind, files: files.map((file) => ({ ...file, storage_state: file.storage_state ?? 'final' })),
-  }} canManage={canManage} canRetryMove={canRetryMove} onChanged={vi.fn()} /></PermissionsProvider></QueryClientProvider>);
+  return render(<QueryClientProvider client={client}><PermissionsProvider permissions={['documentation.manage']}><WatermarkProgramProvider programId="program-1"><DocumentationSlot slot={{
+    id: 'slot-1', code: 'signed_bast', label: 'BAST bertanda tangan', stage: 'penyerahan', status: 'missing', required, min_files: 1, max_files: 2, media_kind: mediaKind, require_location: requireLocation, files: files.map((file) => ({ ...file, storage_state: file.storage_state ?? 'final' })),
+  }} canManage={canManage} canRetryMove={canRetryMove} onChanged={vi.fn()} /></WatermarkProgramProvider></PermissionsProvider></QueryClientProvider>);
+}
+
+const capturedAt = new Date('2026-10-23T14:05:09.000Z');
+async function captureWithCamera(latitude: number | null, longitude: number | null) {
+  camera.photo = { file: new File(['jpeg'], 'kamera.jpg', { type: 'image/jpeg' }), capturedAt, latitude, longitude };
+  fireEvent.click(screen.getByRole('button', { name: 'Buka kamera' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Gunakan Foto' }));
 }
 
 beforeEach(() => {
@@ -31,18 +48,16 @@ afterEach(() => {
   vi.clearAllMocks();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  localStorage.clear();
 });
 
 test('offers camera and gallery then uploads an image preview', async () => {
   vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:preview'), revokeObjectURL: vi.fn() });
   renderSlot();
 
-  const camera = screen.getByLabelText('Buka kamera');
   const gallery = screen.getByLabelText('Pilih galeri');
-  expect(camera).toHaveAttribute('capture', 'environment');
   expect(gallery).not.toHaveAttribute('capture');
-  const file = new File(['image'], 'bast.jpg', { type: 'image/jpeg' });
-  fireEvent.change(camera, { target: { files: [file] } });
+  await captureWithCamera(-6.2, 106.8);
 
   expect(screen.getByAltText('Preview BAST bertanda tangan')).toHaveAttribute('src', 'blob:preview');
   expect(await screen.findByText('1 dari 1 foto wajib')).toBeVisible();
@@ -211,16 +226,16 @@ test('caps a multi-file selection at the slot\'s remaining capacity with a clear
 
 test('renders policy-specific camera controls and native capture hints', () => {
   const imageView = renderSlot([], true, 'image');
-  expect(screen.getByLabelText('Buka kamera')).toHaveAttribute('accept', 'image/jpeg,image/png,image/webp');
+  expect(screen.getByRole('button', { name: 'Buka kamera' })).toBeVisible();
   expect(screen.queryByLabelText('Rekam video')).not.toBeInTheDocument();
   imageView.unmount();
   const videoView = renderSlot([], true, 'video');
   expect(screen.getByLabelText('Rekam video')).toHaveAttribute('accept', 'video/mp4,video/webm,video/quicktime');
   expect(screen.getByLabelText('Rekam video')).toHaveAttribute('capture', 'environment');
-  expect(screen.queryByLabelText('Buka kamera')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Buka kamera' })).not.toBeInTheDocument();
   videoView.unmount();
   renderSlot([], true, 'image_video');
-  expect(screen.getByLabelText('Buka kamera')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Buka kamera' })).toBeVisible();
   expect(screen.getByLabelText('Rekam video')).toBeVisible();
 });
 
@@ -261,7 +276,7 @@ test('does not describe an optional slot as mandatory', () => {
 
 test('associates camera and gallery inputs with visible focus controls', () => {
   renderSlot();
-  const cameraControl = screen.getByLabelText('Buka kamera').closest('label');
+  const cameraControl = screen.getByRole('button', { name: 'Buka kamera' });
   const galleryControl = screen.getByLabelText('Pilih galeri').closest('label');
   expect(cameraControl).toHaveClass(styles.captureControl);
   expect(galleryControl).toHaveClass(styles.captureControl);
@@ -319,4 +334,69 @@ test('shows the backend reason when retrying a failed move is rejected', async (
   fireEvent.click(screen.getByRole('button', { name: 'Coba pindahkan lagi failed.jpg' }));
 
   expect(await screen.findByRole('alert')).toHaveTextContent('Tanggal dan penerima belum lengkap');
+});
+
+test('opens the watermark camera and uploads the real capture time and GPS', async () => {
+  vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:preview'), revokeObjectURL: vi.fn() });
+  renderSlot();
+
+  await captureWithCamera(-6.2, 106.8);
+
+  expect(camera.props).toMatchObject({ title: 'BAST bertanda tangan', programId: 'program-1' });
+  await waitFor(() => expect(uploadRequest).toHaveBeenCalledOnce());
+  const body = vi.mocked(uploadRequest).mock.calls[0][1];
+  expect(body.get('source')).toBe('camera');
+  expect(body.get('captured_at')).toBe(capturedAt.toISOString());
+  expect(body.get('latitude')).toBe('-6.2');
+  expect(body.get('longitude')).toBe('106.8');
+});
+
+test('never sends the watermark backdate as captured_at', async () => {
+  vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:preview'), revokeObjectURL: vi.fn() });
+  localStorage.setItem('konkit.watermark.v1', JSON.stringify({ backdate: '2026-10-20' }));
+  renderSlot();
+
+  await captureWithCamera(-6.2, 106.8);
+
+  await waitFor(() => expect(uploadRequest).toHaveBeenCalledOnce());
+  expect(vi.mocked(uploadRequest).mock.calls[0][1].get('captured_at')).toBe(capturedAt.toISOString());
+});
+
+test('uploads a camera photo without coordinates on a slot that does not require location', async () => {
+  vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:preview'), revokeObjectURL: vi.fn() });
+  renderSlot();
+
+  await captureWithCamera(null, null);
+
+  await waitFor(() => expect(uploadRequest).toHaveBeenCalledOnce());
+  const body = vi.mocked(uploadRequest).mock.calls[0][1];
+  expect(body.has('latitude')).toBe(false);
+  expect(body.has('longitude')).toBe(false);
+});
+
+test('blocks camera photos without GPS and gallery photos on a location-required slot', async () => {
+  renderSlot([], true, 'image', true, false, true);
+
+  await captureWithCamera(null, null);
+  expect(await screen.findByRole('alert')).toHaveTextContent('Slot ini mewajibkan lokasi GPS. Aktifkan izin lokasi lalu ambil ulang foto.');
+
+  fireEvent.change(screen.getByLabelText('Pilih galeri'), { target: { files: [new File(['image'], 'galeri.jpg', { type: 'image/jpeg' })] } });
+  expect(await screen.findByRole('alert')).toHaveTextContent('Slot ini mewajibkan foto dari kamera dengan lokasi GPS.');
+  expect(uploadRequest).not.toHaveBeenCalled();
+});
+
+test('resizes gallery photos with the stored quality but leaves videos untouched', async () => {
+  vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:preview'), revokeObjectURL: vi.fn() });
+  localStorage.setItem('konkit.watermark.v1', JSON.stringify({ photoQuality: 'hemat' }));
+  renderSlot([], true, 'image_video');
+  const photo = new File(['image'], 'galeri.png', { type: 'image/png' });
+  const video = new File(['video'], 'rekaman.mp4', { type: 'video/mp4' });
+
+  fireEvent.change(screen.getByLabelText('Pilih galeri'), { target: { files: [photo, video] } });
+
+  await waitFor(() => expect(uploadRequest).toHaveBeenCalledTimes(2));
+  expect(resizeImage).toHaveBeenCalledOnce();
+  expect(resizeImage).toHaveBeenCalledWith(photo, 'hemat');
+  const uploaded = vi.mocked(uploadRequest).mock.calls.map(([, body]) => (body.get('file') as File).name);
+  expect(uploaded).toEqual(['galeri.jpg', 'rekaman.mp4']);
 });

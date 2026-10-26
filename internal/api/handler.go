@@ -264,7 +264,13 @@ type RakordaService interface {
 	Delete(context.Context, auth.Principal, string, auth.RegencyScope, auth.ClientMeta) error
 }
 
+// GeoService resolves coordinates to a display address (empty when unknown).
+type GeoService interface {
+	Reverse(ctx context.Context, lat, lng float64) string
+}
+
 type Dependencies struct {
+	Geo                 GeoService
 	Auth                AuthService
 	Profile             ProfileService
 	Administration      AdministrationService
@@ -368,6 +374,8 @@ func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request) (requestC
 func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requestContext) {
 	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/"), "/")
 	switch {
+	case path == "geo/reverse":
+		h.handleGeoReverse(w, r, rc)
 	case path == "realtime":
 		h.handleRealtime(w, r, rc)
 	case path == "me":
