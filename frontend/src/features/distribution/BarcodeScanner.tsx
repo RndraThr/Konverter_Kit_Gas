@@ -24,8 +24,59 @@ const decodeHints = new Map<DecodeHintType, unknown>([
 // A single camera frame can decode to the wrong value under motion blur, glare, or a
 // partially-framed code — and those misreads are random, so they never repeat identically.
 // Requiring the same text from several consecutive decodes accepts only a value the scanner
-// keeps agreeing on, which eliminates the occasional wrong serial number.
-const REQUIRED_MATCHES = 3;
+// keeps agreeing on, which eliminates the occasional wrong serial number. Formats with a
+// mandatory check character already reject a damaged read inside the decoder, so they need
+// one fewer confirming frame than formats whose check is optional (Code 39/93, Codabar, ITF).
+const STRONG_MATCHES = 2;
+const WEAK_MATCHES = 3;
+const STRONG_ZXING_FORMATS = new Set<BarcodeFormat>([
+  BarcodeFormat.CODE_128, BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A, BarcodeFormat.UPC_E,
+]);
+
+// Browsers default getUserMedia to roughly 640x480, where a thin serial barcode only resolves
+// from very close — too close to fit the frame or focus. The native detector reads Full HD
+// cheaply; the JavaScript decoder's cost grows with every pixel, so it gets 720p instead.
+const NATIVE_RESOLUTION = { width: 1920, height: 1080 };
+const ZXING_RESOLUTION = { width: 1280, height: 720 };
+
+function videoConstraints(deviceId: string | undefined, resolution: { width: number; height: number }): MediaTrackConstraints {
+  return {
+    ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } }),
+    width: { ideal: resolution.width },
+    height: { ideal: resolution.height },
+  };
+}
+
+// Shape Detection API: on Chrome for Android (and ChromeOS) BarcodeDetector runs the operating
+// system's native barcode engine — the same one the mobile app uses — which is far faster than
+// decoding frames in JavaScript. Other browsers lack it and keep the @zxing path.
+type DetectedBarcode = { rawValue: string; format: string; boundingBox: { x: number; y: number; width: number; height: number } };
+type NativeDetector = { detect: (source: HTMLVideoElement) => Promise<DetectedBarcode[]> };
+type NativeDetectorConstructor = { new (options: { formats: string[] }): NativeDetector; getSupportedFormats: () => Promise<string[]> };
+const NATIVE_LINEAR_FORMATS = ['code_128', 'code_39', 'code_93', 'codabar', 'itf', 'ean_13', 'ean_8', 'upc_a', 'upc_e'];
+const STRONG_NATIVE_FORMATS = new Set(['code_128', 'ean_13', 'ean_8', 'upc_a', 'upc_e']);
+const NATIVE_SCAN_INTERVAL_MS = 60;
+
+async function createNativeDetector(): Promise<NativeDetector | null> {
+  const Detector = (globalThis as { BarcodeDetector?: NativeDetectorConstructor }).BarcodeDetector;
+  if (!Detector) return null;
+  try {
+    const supported = await Detector.getSupportedFormats();
+    const formats = NATIVE_LINEAR_FORMATS.filter((format) => supported.includes(format));
+    return formats.length ? new Detector({ formats }) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Only a code whose centre sits in the middle of the frame — where the on-screen guide is — counts,
+// so a neighbouring product barcode at the edge of the picture is never picked up by mistake.
+function insideScanFrame(box: DetectedBarcode['boundingBox'], width: number, height: number): boolean {
+  if (!width || !height) return true;
+  const cx = (box.x + box.width / 2) / width;
+  const cy = (box.y + box.height / 2) / height;
+  return cx >= 0.1 && cx <= 0.9 && cy >= 0.15 && cy <= 0.85;
+}
 
 // Camera barcode scanner, lazy-loaded so @zxing only downloads when a scan is actually started.
 // Prefers a rear camera but falls back to whatever is available (e.g. a laptop's front webcam), lets
@@ -53,41 +104,75 @@ export default function BarcodeScanner({ onResult, onClose }: { onResult: (text:
   useEffect(() => {
     if (!video) return;
     let stopped = false;
-    let controls: { stop: () => void } | undefined;
+    let stopScan: (() => void) | undefined;
     let lastText = '';
     let matches = 0;
     setError(null);
     setStarting(true);
-    // Only accept a value once REQUIRED_MATCHES consecutive decodes agree on it. Empty frames
-    // (no barcode found) arrive with a null result and are ignored without resetting the streak;
-    // a decode that disagrees restarts the count on the new value.
-    const handleResult = (result: { getText: () => string } | null | undefined, _error: unknown, scanControls: { stop: () => void }) => {
-      if (!result || stopped) return;
-      const text = result.getText();
+    // Accept a value once enough consecutive decodes agree on it (STRONG_MATCHES for formats with a
+    // mandatory check character, WEAK_MATCHES otherwise). Empty frames are ignored without resetting
+    // the streak; a decode that disagrees restarts the count on the new value.
+    const accept = (text: string, strong: boolean): boolean => {
+      if (stopped) return true;
       if (text === lastText) { matches += 1; } else { lastText = text; matches = 1; }
-      if (matches < REQUIRED_MATCHES) return;
+      if (matches < (strong ? STRONG_MATCHES : WEAK_MATCHES)) return false;
       stopped = true;
-      scanControls.stop();
+      stopScan?.();
       onResultRef.current(text);
+      return true;
     };
-    const reader = new BrowserMultiFormatReader(decodeHints);
-    const started = deviceId
-      ? reader.decodeFromVideoDevice(deviceId, video, handleResult)
-      : reader.decodeFromConstraints({ video: { facingMode: { ideal: 'environment' } } }, video, handleResult);
-    started
-      .then((activeControls) => {
-        controls = activeControls;
-        if (stopped) { activeControls.stop(); return; }
-        setStarting(false);
-        // Inspect the real track: mirror unless it is explicitly a rear camera (front/unknown -> mirror),
-        // reflect the active device in the selector, and refresh labels now that permission is granted.
-        const settings = (video.srcObject as MediaStream | null)?.getVideoTracks?.()[0]?.getSettings?.();
-        setMirror(settings?.facingMode ? settings.facingMode !== 'environment' : true);
-        if (settings?.deviceId) setActiveDeviceId(settings.deviceId);
-        BrowserMultiFormatReader.listVideoInputDevices().then((list) => { if (!stopped) setDevices(list); }).catch(() => {});
-      })
-      .catch((cause) => { if (!stopped) { setStarting(false); setError(cameraErrorMessage(cause)); } });
-    return () => { stopped = true; controls?.stop(); };
+    const started = (stop: () => void) => {
+      if (stopped) { stop(); return; }
+      stopScan = stop;
+      setStarting(false);
+      // Inspect the real track: mirror unless it is explicitly a rear camera (front/unknown -> mirror),
+      // reflect the active device in the selector, and refresh labels now that permission is granted.
+      const settings = (video.srcObject as MediaStream | null)?.getVideoTracks?.()[0]?.getSettings?.();
+      setMirror(settings?.facingMode ? settings.facingMode !== 'environment' : true);
+      if (settings?.deviceId) setActiveDeviceId(settings.deviceId);
+      BrowserMultiFormatReader.listVideoInputDevices().then((list) => { if (!stopped) setDevices(list); }).catch(() => {});
+    };
+    const fail = (cause: unknown) => { if (!stopped) { setStarting(false); setError(cameraErrorMessage(cause)); } };
+
+    const startNative = async (detector: NativeDetector) => {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints(deviceId, NATIVE_RESOLUTION) });
+      let timer = 0;
+      const release = () => {
+        window.clearTimeout(timer);
+        stream.getTracks().forEach((track) => track.stop());
+        if (video.srcObject === stream) video.srcObject = null;
+      };
+      if (stopped) { release(); return; }
+      video.srcObject = stream;
+      try { await video.play(); } catch { /* autoplay attribute keeps trying */ }
+      const tick = async () => {
+        if (stopped) return;
+        if (video.readyState >= 2) {
+          try {
+            const found = (await detector.detect(video))
+              .find((code) => code.rawValue.trim() && insideScanFrame(code.boundingBox, video.videoWidth, video.videoHeight));
+            if (found && accept(found.rawValue.trim(), STRONG_NATIVE_FORMATS.has(found.format))) return;
+          } catch { /* a frame the detector could not read; try the next one */ }
+        }
+        if (!stopped) timer = window.setTimeout(tick, NATIVE_SCAN_INTERVAL_MS);
+      };
+      started(release);
+      void tick();
+    };
+
+    const startZxing = () => {
+      const reader = new BrowserMultiFormatReader(decodeHints);
+      return reader.decodeFromConstraints({ video: videoConstraints(deviceId, ZXING_RESOLUTION) }, video, (result, _error, scanControls) => {
+        if (!result) return;
+        const format = (result as { getBarcodeFormat?: () => BarcodeFormat }).getBarcodeFormat?.();
+        if (accept(result.getText(), format !== undefined && STRONG_ZXING_FORMATS.has(format))) scanControls.stop();
+      }).then((controls) => started(() => controls.stop()));
+    };
+
+    createNativeDetector()
+      .then((detector) => (detector ? startNative(detector) : startZxing()))
+      .catch(fail);
+    return () => { stopped = true; stopScan?.(); };
   }, [video, deviceId, attempt]);
 
   const selectValue = deviceId ?? activeDeviceId;
