@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { Camera, Check, LoaderCircle, RefreshCw, RotateCcw, Settings, SwitchCamera, X } from 'lucide-react'
-import { Button, buttonVariants } from '@/components/ui/button'
+import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { cameraErrorMessage } from '@/lib/cameraErrors'
 import { cn } from '@/lib/utils'
@@ -13,6 +12,7 @@ import { createWatermarkGestures, type ElementKey } from './watermarkGestures'
 import { coverCrop, watermarkLines, type Rect, type WatermarkLayout } from './watermarkLayout'
 import { paintWatermark } from './watermarkRender'
 import { loadWatermarkSettings, saveWatermarkSettings, type ElementPlacement, type WatermarkSettings } from './watermarkSettings'
+import { WatermarkSettingsForm } from './WatermarkSettingsPage'
 
 const RESOLUTION = { width: { ideal: 1920 }, height: { ideal: 1080 } }
 // GPS is refreshed in the background so the shutter never waits on it.
@@ -73,6 +73,7 @@ export default function WatermarkCamera({ title, programId, onCapture, onClose }
   const [address, setAddress] = useState('')
   const [busy, setBusy] = useState(false)
   const [review, setReview] = useState<Review | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const layoutRef = useRef<WatermarkLayout | null>(null)
 
   const logo = useWatermarkLogo(programId, settings.customLogo)
@@ -275,10 +276,22 @@ export default function WatermarkCamera({ title, programId, onCapture, onClose }
       <div className="flex items-center justify-between gap-2 p-2">
         <Button type="button" variant="ghost" size="icon" className="text-white hover:bg-white/10" aria-label="Tutup kamera" onClick={close}><X aria-hidden="true" /></Button>
         <span className="truncate text-sm font-medium">{title}</span>
-        <Link to="/pengaturan-watermark" aria-label="Pengaturan watermark" onClick={close} className={buttonVariants({ variant: 'ghost', size: 'icon', className: 'text-white hover:bg-white/10' })}>
+        <Button type="button" variant="ghost" size="icon" className="text-white hover:bg-white/10" aria-label="Pengaturan watermark" aria-expanded={settingsOpen} onClick={() => setSettingsOpen((open) => !open)}>
           <Settings aria-hidden="true" />
-        </Link>
+        </Button>
       </div>
+
+      {/* Settings open over the running camera instead of navigating away, so the page behind the
+          camera (selected schedule, slot, queue) is kept; the live overlay shows each change. */}
+      {settingsOpen && <aside aria-label="Pengaturan watermark" className="absolute inset-y-0 right-0 z-10 flex w-full flex-col bg-background text-foreground shadow-xl sm:w-md">
+        <div className="flex items-center justify-between gap-2 border-b p-3">
+          <h2 className="text-base font-semibold">Pengaturan watermark</h2>
+          <Button type="button" size="sm" onClick={() => setSettingsOpen(false)}><Check aria-hidden="true" />Selesai</Button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          <WatermarkSettingsForm settings={settings} onChange={(next) => updateSettings(next, false)} />
+        </div>
+      </aside>}
 
       {review ? <div className="flex min-h-0 flex-1 flex-col">
         <div className="flex min-h-0 flex-1 items-center justify-center">

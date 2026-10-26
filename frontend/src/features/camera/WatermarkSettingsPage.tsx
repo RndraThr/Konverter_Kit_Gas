@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
 import { ImagePlus, RotateCcw } from 'lucide-react'
 import { PageHeader } from '@/components/PageHeader'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -124,14 +124,38 @@ function WatermarkPreview({ settings }: { settings: WatermarkSettings }) {
 /** Per-device watermark settings (stored in this browser), with a live preview. */
 export function WatermarkSettingsPage() {
   const [settings, setSettings] = useState(loadWatermarkSettings)
+
+  return <div className="mx-auto max-w-6xl space-y-6">
+    <PageHeader title="Kamera watermark" description="Atur tampilan watermark pada foto dokumentasi. Pengaturan disimpan di perangkat ini." />
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem]">
+      <Card className="shadow-none">
+        <CardContent><WatermarkSettingsForm settings={settings} onChange={setSettings} /></CardContent>
+      </Card>
+      <div className="grid content-start justify-items-center gap-2">
+        <WatermarkPreview settings={settings} />
+        <p className="text-xs text-muted-foreground">Geser dan ubah ukuran logo atau waktu langsung di layar kamera.</p>
+      </div>
+    </div>
+  </div>
+}
+
+/**
+ * The watermark controls. Every change is saved to this device before `onChange` reports it, so the
+ * settings page and the in-camera panel stay in sync with what the next photo will use.
+ */
+export function WatermarkSettingsForm({ settings, onChange }: { settings: WatermarkSettings; onChange: (next: WatermarkSettings) => void }) {
   const [saveFailed, setSaveFailed] = useState(false)
   const [logoError, setLogoError] = useState<string | null>(null)
   const [confirmReset, setConfirmReset] = useState(false)
+  // The logo picker resolves asynchronously; merge into the latest settings, not the ones it started with.
+  const settingsRef = useRef(settings)
+  settingsRef.current = settings
 
   const update = (patch: Partial<WatermarkSettings>) => {
-    const next = { ...settings, ...patch }
-    setSettings(next)
+    const next = { ...settingsRef.current, ...patch }
+    settingsRef.current = next
     setSaveFailed(!saveWatermarkSettings(next))
+    onChange(next)
   }
 
   const pickLogo = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -147,87 +171,76 @@ export function WatermarkSettingsPage() {
   }
 
   const resetAll = () => {
-    setSettings(resetWatermarkSettings())
+    const next = resetWatermarkSettings()
+    settingsRef.current = next
     setSaveFailed(false)
     setConfirmReset(false)
+    onChange(next)
   }
 
-  return <div className="mx-auto max-w-6xl space-y-6">
-    <PageHeader title="Kamera watermark" description="Atur tampilan watermark pada foto dokumentasi. Pengaturan disimpan di perangkat ini." />
+  return <div className="grid gap-8">
     {saveFailed ? <Alert variant="destructive" role="alert"><AlertDescription>Pengaturan tidak dapat disimpan di perangkat ini.</AlertDescription></Alert> : null}
-
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_24rem]">
-      <Card className="shadow-none">
-        <CardContent className="grid gap-8">
-          <Section title="Tampilan">
-            <label className="flex items-center gap-3 text-sm">
-              <Checkbox checked={settings.showLogo} onCheckedChange={(checked) => update({ showLogo: checked === true })} />
-              Tampilkan logo
-            </label>
-            <label className="flex items-center gap-3 text-sm">
-              <Checkbox checked={settings.showTimestamp} onCheckedChange={(checked) => update({ showTimestamp: checked === true })} />
-              Tampilkan waktu &amp; lokasi
-            </label>
-            <OptionGroup label="Posisi waktu" value={settings.timestampSide} onChange={(timestampSide) => update({ timestampSide })} options={[{ value: 'left', label: 'Kiri' }, { value: 'right', label: 'Kanan' }]} />
-            <ColorGroup label="Warna teks" value={settings.textColor} onChange={(textColor) => update({ textColor })} />
-            <ColorGroup label="Warna aksen" value={settings.accentColor} onChange={(accentColor) => update({ accentColor })} />
-            <OptionGroup label="Ukuran teks" value={settings.textScale} onChange={(textScale) => update({ textScale })} options={TEXT_SIZES} />
-            <div className="grid gap-1.5">
-              <Label htmlFor="watermark-logo-scale">Ukuran logo</Label>
-              <div className="flex items-center gap-3">
-                <input
-                  id="watermark-logo-scale"
-                  type="range"
-                  min={MIN_LOGO_SCALE}
-                  max={MAX_LOGO_SCALE}
-                  step={0.05}
-                  value={settings.logoScale}
-                  onChange={(event) => update({ logoScale: Number(event.target.value) })}
-                  className="w-full max-w-xs accent-primary"
-                />
-                <span className="w-12 text-sm tabular-nums text-muted-foreground">{Math.round(settings.logoScale * 100)}%</span>
-              </div>
-            </div>
-            <div className="grid gap-1.5">
-              <span className="text-sm font-medium">Logo kustom</span>
-              <div className="flex flex-wrap gap-2">
-                <label className={buttonVariants({ variant: 'outline', size: 'sm', className: 'cursor-pointer' })}>
-                  <ImagePlus aria-hidden="true" />Pilih gambar
-                  <input type="file" accept="image/*" className="sr-only" onChange={(event) => { void pickLogo(event) }} />
-                </label>
-                <Button type="button" size="sm" variant="outline" disabled={!settings.customLogo} onClick={() => update({ customLogo: null })}>Kembalikan logo bawaan</Button>
-              </div>
-              <p className="text-xs text-muted-foreground">{settings.customLogo ? 'Memakai logo kustom.' : 'Memakai logo tender program, atau logo bawaan bila belum ada.'}</p>
-              {logoError ? <p className="text-xs text-destructive" role="alert">{logoError}</p> : null}
-            </div>
-          </Section>
-
-          <Section title="Tanggal">
-            <div className="grid gap-1.5">
-              <Label htmlFor="watermark-backdate">Backdate</Label>
-              <div className="flex flex-wrap gap-2">
-                <Input id="watermark-backdate" type="date" className="w-auto" value={settings.backdate ?? ''} onChange={(event) => update({ backdate: event.target.value || null })} />
-                <Button type="button" size="sm" variant="outline" className="h-auto" disabled={!settings.backdate} onClick={() => update({ backdate: null })}>Hapus backdate</Button>
-              </div>
-              <p className="text-xs text-muted-foreground">Hanya tanggal di watermark yang berubah; waktu asli tetap tercatat.</p>
-            </div>
-          </Section>
-
-          <Section title="Foto">
-            <OptionGroup label="Kualitas foto" value={settings.photoQuality} onChange={(photoQuality) => update({ photoQuality })} options={QUALITIES} />
-          </Section>
-
-          <div className="flex flex-wrap gap-2 border-t pt-5">
-            <Button type="button" variant="outline" onClick={() => update({ logoPlacement: null, timestampPlacement: null })}>Kembalikan posisi</Button>
-            <Button type="button" variant="outline" onClick={() => setConfirmReset(true)}><RotateCcw aria-hidden="true" />Bawaan</Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid content-start justify-items-center gap-2">
-        <WatermarkPreview settings={settings} />
-        <p className="text-xs text-muted-foreground">Geser dan ubah ukuran logo atau waktu langsung di layar kamera.</p>
+    <Section title="Tampilan">
+      <label className="flex items-center gap-3 text-sm">
+        <Checkbox checked={settings.showLogo} onCheckedChange={(checked) => update({ showLogo: checked === true })} />
+        Tampilkan logo
+      </label>
+      <label className="flex items-center gap-3 text-sm">
+        <Checkbox checked={settings.showTimestamp} onCheckedChange={(checked) => update({ showTimestamp: checked === true })} />
+        Tampilkan waktu &amp; lokasi
+      </label>
+      <OptionGroup label="Posisi waktu" value={settings.timestampSide} onChange={(timestampSide) => update({ timestampSide })} options={[{ value: 'left', label: 'Kiri' }, { value: 'right', label: 'Kanan' }]} />
+      <ColorGroup label="Warna teks" value={settings.textColor} onChange={(textColor) => update({ textColor })} />
+      <ColorGroup label="Warna aksen" value={settings.accentColor} onChange={(accentColor) => update({ accentColor })} />
+      <OptionGroup label="Ukuran teks" value={settings.textScale} onChange={(textScale) => update({ textScale })} options={TEXT_SIZES} />
+      <div className="grid gap-1.5">
+        <Label htmlFor="watermark-logo-scale">Ukuran logo</Label>
+        <div className="flex items-center gap-3">
+          <input
+            id="watermark-logo-scale"
+            type="range"
+            min={MIN_LOGO_SCALE}
+            max={MAX_LOGO_SCALE}
+            step={0.05}
+            value={settings.logoScale}
+            onChange={(event) => update({ logoScale: Number(event.target.value) })}
+            className="w-full max-w-xs accent-primary"
+          />
+          <span className="w-12 text-sm tabular-nums text-muted-foreground">{Math.round(settings.logoScale * 100)}%</span>
+        </div>
       </div>
+      <div className="grid gap-1.5">
+        <span className="text-sm font-medium">Logo kustom</span>
+        <div className="flex flex-wrap gap-2">
+          <label className={buttonVariants({ variant: 'outline', size: 'sm', className: 'cursor-pointer' })}>
+            <ImagePlus aria-hidden="true" />Pilih gambar
+            <input type="file" accept="image/*" className="sr-only" onChange={(event) => { void pickLogo(event) }} />
+          </label>
+          <Button type="button" size="sm" variant="outline" disabled={!settings.customLogo} onClick={() => update({ customLogo: null })}>Kembalikan logo bawaan</Button>
+        </div>
+        <p className="text-xs text-muted-foreground">{settings.customLogo ? 'Memakai logo kustom.' : 'Memakai logo tender program, atau logo bawaan bila belum ada.'}</p>
+        {logoError ? <p className="text-xs text-destructive" role="alert">{logoError}</p> : null}
+      </div>
+    </Section>
+
+    <Section title="Tanggal">
+      <div className="grid gap-1.5">
+        <Label htmlFor="watermark-backdate">Backdate</Label>
+        <div className="flex flex-wrap gap-2">
+          <Input id="watermark-backdate" type="date" className="w-auto" value={settings.backdate ?? ''} onChange={(event) => update({ backdate: event.target.value || null })} />
+          <Button type="button" size="sm" variant="outline" className="h-auto" disabled={!settings.backdate} onClick={() => update({ backdate: null })}>Hapus backdate</Button>
+        </div>
+        <p className="text-xs text-muted-foreground">Hanya tanggal di watermark yang berubah; waktu asli tetap tercatat.</p>
+      </div>
+    </Section>
+
+    <Section title="Foto">
+      <OptionGroup label="Kualitas foto" value={settings.photoQuality} onChange={(photoQuality) => update({ photoQuality })} options={QUALITIES} />
+    </Section>
+
+    <div className="flex flex-wrap gap-2 border-t pt-5">
+      <Button type="button" variant="outline" onClick={() => update({ logoPlacement: null, timestampPlacement: null })}>Kembalikan posisi</Button>
+      <Button type="button" variant="outline" onClick={() => setConfirmReset(true)}><RotateCcw aria-hidden="true" />Bawaan</Button>
     </div>
 
     <AlertDialog open={confirmReset} onOpenChange={setConfirmReset}>

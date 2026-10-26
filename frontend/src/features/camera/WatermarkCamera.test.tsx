@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import WatermarkCamera from './WatermarkCamera'
@@ -102,7 +102,22 @@ test('opens a full-screen dialog and requests the rear camera at 1080p', async (
   expect(getUserMedia).toHaveBeenCalledWith({
     video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } },
   })
-  expect(screen.getByRole('link', { name: 'Pengaturan watermark' })).toHaveAttribute('href', '/pengaturan-watermark')
+})
+
+test('opens watermark settings inside the camera without closing it', async () => {
+  const { onClose } = renderCamera()
+  await ready()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Pengaturan watermark' }))
+  const panel = screen.getByRole('complementary', { name: 'Pengaturan watermark' })
+  fireEvent.click(within(panel).getByRole('button', { name: 'Besar' }))
+  expect(JSON.parse(localStorage.getItem('konkit.watermark.v1') ?? '{}')).toMatchObject({ textScale: 1.2 })
+  fireEvent.click(within(panel).getByRole('button', { name: 'Selesai' }))
+
+  expect(screen.queryByRole('complementary', { name: 'Pengaturan watermark' })).not.toBeInTheDocument()
+  expect(screen.getByRole('dialog', { name: 'Foto Dokumentasi' })).toBeInTheDocument()
+  expect(onClose).not.toHaveBeenCalled()
+  expect(current.tracks[0].stop).not.toHaveBeenCalled()
 })
 
 test('shutter shows a review; "Gunakan Foto" hands over a JPEG with the fix and capture time', async () => {
