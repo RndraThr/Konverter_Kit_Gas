@@ -44,6 +44,14 @@ go run ./cmd/admin create
 
 Command admin meminta username, email, password, dan konfirmasi password secara interaktif. Password minimal 12 karakter dan tidak ditampilkan di terminal. Migration harus dijalankan setiap ada perubahan schema.
 
+Setelah data dikosongkan untuk tes ulang, isi kembali data Persiapan KONKIT-2026 (program, zona 1/2, penugasan 46 kabupaten, jadwal beserta kuota, dan 4 logo tender bawaan):
+
+```powershell
+go run ./cmd/seed
+```
+
+Seeder hanya menambah baris yang belum ada, jadi aman dijalankan berulang dan tidak menimpa perubahan yang dibuat di Persiapan.
+
 ## Menjalankan Aplikasi
 
 Bangun frontend setelah mengubah React atau CSS:
