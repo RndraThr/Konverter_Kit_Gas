@@ -806,11 +806,11 @@ func (r *Repository) ReopenSlot(ctx context.Context, actor auth.Principal, input
 	if _, err := tx.Exec(ctx, `UPDATE bast_individual_documents SET status='stale' WHERE distribution_slot_id=$1 AND status='final'`, slotID); err != nil {
 		return DistributionSlot{}, fmt.Errorf("invalidate individual BA: %w", err)
 	}
-	// DP3 dan Rekap Harian: hanya hari penyelesaian lama dan sesudahnya
+	// DP3 dan Rekap Harian: hanya Tanggal distribusi slot dan sesudahnya
 	// (nomor urut berikutnya bergeser). Jenis BA lain tetap seluruhnya.
 	if _, err := tx.Exec(ctx, `UPDATE bast_aggregate_documents SET status='stale',updated_at=now()
 		WHERE schedule_id=$1 AND status='active' AND (document_type NOT IN ('dp3','daily_recap') OR document_date >=
-			COALESCE((SELECT (distributed_at AT TIME ZONE 'Asia/Jakarta')::date FROM distribution_slots WHERE id=$2), '-infinity'::date))`, input.ScheduleID, slotID); err != nil {
+			COALESCE((SELECT COALESCE(distribution_date, (distributed_at AT TIME ZONE 'Asia/Jakarta')::date) FROM distribution_slots WHERE id=$2), '-infinity'::date))`, input.ScheduleID, slotID); err != nil {
 		return DistributionSlot{}, fmt.Errorf("invalidate aggregate BA: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `
@@ -1572,11 +1572,20 @@ func (r *Repository) CompleteSlot(ctx context.Context, actor auth.Principal, inp
 	if _, err := tx.Exec(ctx, `UPDATE distribution_slots SET status='completed', verification_snapshot_json=jsonb_set(verification_snapshot_json,'{equipment}',$3::jsonb,true), distributed_at=$4, distributed_by=$2, completed_at=$4, needs_recompletion=false, updated_at=now() WHERE id=$1`, slotID, actor.UserID, string(equipmentPayload), completedAt); err != nil {
 		return DistributionSlot{}, fmt.Errorf("complete distribution slot: %w", err)
 	}
-	// DP3 dan Rekap Harian final pada hari penyelesaian (dan sesudahnya, bila
-	// tercatat mundur dari antrean offline) tidak lagi memuat penerima ini.
+	// BA final yang belum memuat penerima ini perlu dibuat ulang: DP3 dan
+	// Rekap Harian pada Tanggal distribusinya dan sesudahnya (nomor urut
+	// berjalan bergeser), Closing yang merekap seluruh distribusi, dan bundel
+	// BA Perorangan tanggal itu.
 	if _, err := tx.Exec(ctx, `UPDATE bast_aggregate_documents SET status='stale',updated_at=now()
-		WHERE schedule_id=$1 AND status='active' AND document_type IN ('dp3','daily_recap') AND document_date >= ($2::timestamptz AT TIME ZONE 'Asia/Jakarta')::date`, input.ScheduleID, completedAt); err != nil {
-		return DistributionSlot{}, fmt.Errorf("invalidate daily aggregate BA: %w", err)
+		WHERE schedule_id=$1 AND status='active'
+		  AND (document_type IN ('closing_titik_serah','closing_kabupaten') OR (document_type IN ('dp3','daily_recap') AND document_date >= $2::date))`, input.ScheduleID, distributionDate); err != nil {
+		return DistributionSlot{}, fmt.Errorf("invalidate aggregate BA: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE bast_daily_bundles b SET status='stale',updated_at=now()
+		FROM program_schedules ps
+		WHERE ps.id=$1 AND b.program_id=ps.program_id AND b.regency_id=ps.regency_id
+		  AND b.document_type='individual' AND b.status='active' AND b.local_date=$2::date`, input.ScheduleID, distributionDate); err != nil {
+		return DistributionSlot{}, fmt.Errorf("invalidate daily BA bundle: %w", err)
 	}
 
 	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "distribution.slot_completed", ResourceType: "distribution_slot", ResourceID: slotID, Metadata: map[string]any{"allocation_id": allocationID, "person_id": personID}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {

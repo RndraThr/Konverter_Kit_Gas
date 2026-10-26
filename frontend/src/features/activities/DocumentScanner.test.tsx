@@ -11,6 +11,9 @@ vi.mock('../../lib/api');
 vi.mock('jscanify/client', () => ({
   default: class {
     highlightPaper(canvas: HTMLCanvasElement) { return canvas; }
+    // A paper filling most of the 640x480 frame.
+    findPaperContour() { return { delete() {} }; }
+    getCornerPoints() { return { topLeftCorner: { x: 40, y: 20 }, topRightCorner: { x: 600, y: 20 }, bottomLeftCorner: { x: 40, y: 460 }, bottomRightCorner: { x: 600, y: 460 } }; }
     extractPaper(canvas: HTMLCanvasElement) { return canvas; }
   },
 }));
@@ -30,7 +33,7 @@ beforeEach(() => {
   // opencv.js is fetched from a CDN at runtime (see DocumentScanner.tsx); stub
   // `window.cv` as already-loaded so the component doesn't need jsdom to
   // execute an external <script> tag (which it won't).
-  (window as unknown as { cv?: unknown }).cv = {};
+  (window as unknown as { cv?: unknown }).cv = { Mat: class {}, imread: () => ({ delete() {} }) };
   Object.defineProperty(navigator, 'mediaDevices', {
     configurable: true,
     value: { getUserMedia },

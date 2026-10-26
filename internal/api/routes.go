@@ -685,6 +685,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, dcp3.ErrMappingInvalid), errors.Is(err, dcp3.ErrTooManyRows), errors.Is(err, dcp3.ErrTooManyColumns),
 		errors.Is(err, dcp3.ErrWorkbookInvalid):
 		writeFieldError(w, http.StatusBadRequest, "dcp3_invalid", err.Error(), map[string]string{"file": err.Error()})
+	case errors.Is(err, activities.ErrSlotDuplicate):
+		writeFieldError(w, http.StatusConflict, "conflict", "Nama dokumen sudah ada di kabupaten ini", map[string]string{"name": "sudah ada"})
 	case errors.Is(err, activities.ErrActivityTypeInvalid), errors.Is(err, activities.ErrSourceInvalid), errors.Is(err, activities.ErrRegencyRequired),
 		errors.Is(err, activities.ErrSlotInvalid), errors.Is(err, activities.ErrSlotNameRequired), errors.Is(err, activities.ErrDocumentNameRequired),
 		errors.Is(err, activities.ErrScanPagesRequired), errors.Is(err, activities.ErrScanTooManyPages):

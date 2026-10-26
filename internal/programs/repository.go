@@ -64,6 +64,19 @@ func (r *Repository) SaveRegency(ctx context.Context, actor auth.Principal, inpu
 	if err != nil {
 		return Regency{}, fmt.Errorf("save regency: %w", err)
 	}
+	if input.ID == "" {
+		// Same default Dokumen Pendukung names every existing kabupaten got
+		// (migration 00070); without them a new kabupaten starts empty.
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO supporting_document_slots (regency_id, name, sort_order)
+			SELECT $1::uuid, name, sort_order FROM (VALUES
+				('DO Konkit, Oli, Bracket', 1), ('DO Mesin', 2), ('DO Selang Buang', 3), ('DO Selang Hisap', 4),
+				('LO Gas ' || $2, 5), ('SPP Tabung Gas ' || $2, 6), ('Surat Kuasa Pengambilan Gas LPG 3Kg - ' || $2, 7)
+			) AS defaults(name, sort_order)
+		`, id, input.Name); err != nil {
+			return Regency{}, fmt.Errorf("seed supporting document names: %w", err)
+		}
+	}
 	if err := recordSetupAudit(ctx, tx, actor, meta, "regency.saved", "regency", id, map[string]any{"document_code": input.DocumentCode, "name": input.Name}); err != nil {
 		return Regency{}, err
 	}

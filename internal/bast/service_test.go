@@ -98,3 +98,29 @@ func TestListDatesReportsMissingLock(t *testing.T) {
 		t.Fatalf("dates=%+v", dates)
 	}
 }
+
+// BA Perorangan follows the distribution date the officer entered, not the
+// moment Selesaikan was processed: a slot completed late (or completed again
+// after a revision) stays on its distribution day and month.
+func TestIndividualBAUsesDistributionDateNotCompletionTime(t *testing.T) {
+	location, _ := time.LoadLocation("Asia/Jakarta")
+	repository := &repositoryStub{context: readyContext(), lock: LockResult{FinalTotal: 200}, slots: []CompletedSlot{
+		{ID: "7", SlotNumber: 7, DistributionDate: "2024-11-30", DistributedAt: time.Date(2024, 12, 9, 3, 0, 0, 0, time.UTC)},
+		{ID: "8", SlotNumber: 8, DistributionDate: "2024-12-09", DistributedAt: time.Date(2024, 12, 9, 3, 0, 0, 0, time.UTC)},
+	}}
+	service := NewService(repository, location)
+	dates, err := service.ListDates(context.Background(), "program-1", "regency-1", auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dates) != 2 || dates[0].LocalDate != "2024-12-09" || dates[1].LocalDate != "2024-11-30" {
+		t.Fatalf("dates=%+v", dates)
+	}
+	items, err := service.ListRecipients(context.Background(), "program-1", "regency-1", "2024-11-30", auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].SlotNumber != 7 || items[0].DocumentNumber != "007/200/KSM-KKT-WJO/XI/2024" {
+		t.Fatalf("items=%+v", items)
+	}
+}

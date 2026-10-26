@@ -144,7 +144,7 @@ type ActivitiesService interface {
 	Upload(context.Context, auth.Principal, activities.UploadInput, auth.ClientMeta, auth.RegencyScope) (activities.ActivityMedia, error)
 	Delete(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) error
 	OpenContent(context.Context, string, auth.RegencyScope) (activities.MediaContent, error)
-	ListSlots(context.Context, string, auth.RegencyScope) ([]activities.SupportingDocumentSlot, error)
+	ListSlots(context.Context, string, bool, auth.RegencyScope) ([]activities.SupportingDocumentSlot, error)
 	CreateSlot(context.Context, auth.Principal, string, string, auth.ClientMeta, auth.RegencyScope) (activities.SupportingDocumentSlot, error)
 	PatchSlot(context.Context, auth.Principal, string, *string, *bool, auth.ClientMeta, auth.RegencyScope) (activities.SupportingDocumentSlot, error)
 	ScanUpload(context.Context, auth.Principal, activities.ScanUploadInput, auth.ClientMeta, auth.RegencyScope) (activities.ActivityMedia, error)

@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 	"time"
+	"unicode"
 
 	"konkit/internal/auth"
 	"konkit/internal/media"
@@ -210,9 +211,25 @@ func policyFor(activityType string) string {
 	return "image_video"
 }
 
+// sanitizeSlotName turns a document name into a file-name segment: letters
+// and digits kept (upper case), everything else (spaces, commas, slashes,
+// colons...) collapsed into single dashes, so a name never breaks the file
+// name or the Drive folder path.
 func sanitizeSlotName(name string) string {
-	fields := strings.Fields(name)
-	return strings.ToUpper(strings.Join(fields, "-"))
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToUpper(name) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+			dash = false
+			continue
+		}
+		if !dash && b.Len() > 0 {
+			b.WriteByte('-')
+			dash = true
+		}
+	}
+	return strings.TrimRight(b.String(), "-")
 }
 
 // resolveDocumentNameSegment picks the sanitized name segment for a
@@ -222,7 +239,7 @@ func sanitizeSlotName(name string) string {
 // is returned.
 func (s *Service) resolveDocumentNameSegment(ctx context.Context, regencyID, slotID, customName string, scope auth.RegencyScope) (string, error) {
 	if slotID != "" {
-		slots, err := s.ListSlots(ctx, regencyID, scope)
+		slots, err := s.ListSlots(ctx, regencyID, false, scope)
 		if err != nil {
 			return "", err
 		}

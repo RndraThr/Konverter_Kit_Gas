@@ -116,7 +116,7 @@ func (s *Service) ListDates(ctx context.Context, programID, regencyID string, sc
 	}
 	counts := map[string]int{}
 	for _, slot := range slots {
-		counts[slot.DistributedAt.In(s.location).Format("2006-01-02")]++
+		counts[slot.Day(s.location)]++
 	}
 	dates := make([]string, 0, len(counts))
 	for date := range counts {
@@ -169,10 +169,10 @@ func (s *Service) listRecipients(ctx context.Context, programID, regencyID, loca
 	sort.Slice(slots, func(i, j int) bool { return slots[i].SlotNumber < slots[j].SlotNumber })
 	items := []RecipientDocument{}
 	for _, slot := range slots {
-		date := slot.DistributedAt.In(s.location)
-		if date.Format("2006-01-02") != localDate {
+		if slot.Day(s.location) != localDate {
 			continue
 		}
+		date, _ := time.ParseInLocation("2006-01-02", localDate, s.location)
 		number, err := BuildDocumentNumber(NumberInput{SlotNumber: slot.SlotNumber, FinalTotal: finalTotal, DocumentSeries: contextData.DocumentSeries, RegencyCode: contextData.RegencyCode, LocalDate: date})
 		if err != nil {
 			if requireLock {

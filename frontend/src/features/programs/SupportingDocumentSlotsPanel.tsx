@@ -16,8 +16,9 @@ export function SupportingDocumentSlotsPanel({ regencyId }: { regencyId: string 
   const client = useQueryClient();
   const [name, setName] = useState('');
   const slots = useQuery({
-    queryKey: ['supporting-document-slots', regencyId],
-    queryFn: () => apiRequest<DataResponse<SupportingDocumentSlot[]>>(`/api/v1/activities/supporting-documents/slots?regency_id=${encodeURIComponent(regencyId)}`),
+    queryKey: ['supporting-document-slots', regencyId, 'all'],
+    // Deactivated names stay listed here so they can be switched back on.
+    queryFn: () => apiRequest<DataResponse<SupportingDocumentSlot[]>>(`/api/v1/activities/supporting-documents/slots?regency_id=${encodeURIComponent(regencyId)}&include_inactive=true`),
     enabled: Boolean(regencyId),
   });
   const create = useMutation({

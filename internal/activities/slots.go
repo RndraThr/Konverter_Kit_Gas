@@ -15,6 +15,7 @@ import (
 var (
 	ErrSlotNameRequired = errors.New("supporting document slot name is required")
 	ErrSlotNotFound     = errors.New("supporting document slot not found")
+	ErrSlotDuplicate    = errors.New("supporting document name already exists for this regency")
 )
 
 type SupportingDocumentSlot struct {
@@ -28,17 +29,20 @@ type SupportingDocumentSlot struct {
 }
 
 type slotRepository interface {
-	ListSlots(ctx context.Context, regencyID string, scope auth.RegencyScope) ([]SupportingDocumentSlot, error)
+	ListSlots(ctx context.Context, regencyID string, includeInactive bool, scope auth.RegencyScope) ([]SupportingDocumentSlot, error)
 	InsertSlot(ctx context.Context, actor auth.Principal, regencyID, name string, meta auth.ClientMeta, scope auth.RegencyScope) (SupportingDocumentSlot, error)
 	PatchSlotRow(ctx context.Context, actor auth.Principal, id string, name *string, isActive *bool, meta auth.ClientMeta, scope auth.RegencyScope) (SupportingDocumentSlot, error)
 }
 
-func (s *Service) ListSlots(ctx context.Context, regencyID string, scope auth.RegencyScope) ([]SupportingDocumentSlot, error) {
+// ListSlots returns the regency's document names. Uploads only offer the
+// active ones; the set-up screens pass includeInactive so a deactivated
+// name stays listed and can be switched back on.
+func (s *Service) ListSlots(ctx context.Context, regencyID string, includeInactive bool, scope auth.RegencyScope) ([]SupportingDocumentSlot, error) {
 	regencyID = strings.TrimSpace(regencyID)
 	if regencyID == "" {
 		return nil, ErrRegencyRequired
 	}
-	return s.slotRepository.ListSlots(ctx, regencyID, scope)
+	return s.slotRepository.ListSlots(ctx, regencyID, includeInactive, scope)
 }
 
 func (s *Service) CreateSlot(ctx context.Context, actor auth.Principal, regencyID, name string, meta auth.ClientMeta, scope auth.RegencyScope) (SupportingDocumentSlot, error) {
@@ -71,13 +75,13 @@ func (s *Service) PatchSlot(ctx context.Context, actor auth.Principal, id string
 // ListSlots filters by regency scope at the SQL level — like activities.List
 // elsewhere in this package, an out-of-scope regency_id yields an empty
 // list, not an error.
-func (r *Repository) ListSlots(ctx context.Context, regencyID string, scope auth.RegencyScope) ([]SupportingDocumentSlot, error) {
+func (r *Repository) ListSlots(ctx context.Context, regencyID string, includeInactive bool, scope auth.RegencyScope) ([]SupportingDocumentSlot, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT s.id::text, s.regency_id::text, s.name, s.is_active, s.sort_order, s.created_at, s.updated_at
 		FROM supporting_document_slots s
-		WHERE s.regency_id = $1 AND s.is_active AND ($2 OR s.regency_id::text = ANY($3))
+		WHERE s.regency_id = $1 AND ($4 OR s.is_active) AND ($2 OR s.regency_id::text = ANY($3))
 		ORDER BY s.sort_order, s.name
-	`, regencyID, scope.Unrestricted, scope.RegencyIDs)
+	`, regencyID, scope.Unrestricted, scope.RegencyIDs, includeInactive)
 	if err != nil {
 		return nil, err
 	}
@@ -103,10 +107,15 @@ func (r *Repository) InsertSlot(ctx context.Context, actor auth.Principal, regen
 		return SupportingDocumentSlot{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if err := slotNameTaken(ctx, tx, regencyID, name, ""); err != nil {
+		return SupportingDocumentSlot{}, err
+	}
 	var item SupportingDocumentSlot
+	// New names go to the end of the list (after the seeded defaults).
 	err = tx.QueryRow(ctx, `
-		INSERT INTO supporting_document_slots (regency_id, name)
-		SELECT r.id, $2 FROM regencies r
+		INSERT INTO supporting_document_slots (regency_id, name, sort_order)
+		SELECT r.id, $2, COALESCE((SELECT max(sort_order) FROM supporting_document_slots WHERE regency_id = r.id), 0) + 1
+		FROM regencies r
 		WHERE r.id = $1 AND ($3 OR r.id::text = ANY($4))
 		RETURNING id::text, regency_id::text, name, is_active, sort_order, created_at, updated_at
 	`, regencyID, name, scope.Unrestricted, scope.RegencyIDs).Scan(&item.ID, &item.RegencyID, &item.Name, &item.IsActive, &item.SortOrder, &item.CreatedAt, &item.UpdatedAt)
@@ -134,6 +143,14 @@ func (r *Repository) PatchSlotRow(ctx context.Context, actor auth.Principal, id 
 		return SupportingDocumentSlot{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	if name != nil {
+		var regencyID string
+		if err := tx.QueryRow(ctx, `SELECT regency_id::text FROM supporting_document_slots WHERE id::text = $1`, id).Scan(&regencyID); err == nil {
+			if err := slotNameTaken(ctx, tx, regencyID, *name, id); err != nil {
+				return SupportingDocumentSlot{}, err
+			}
+		}
+	}
 	var item SupportingDocumentSlot
 	err = tx.QueryRow(ctx, `
 		UPDATE supporting_document_slots s SET
@@ -156,4 +173,22 @@ func (r *Repository) PatchSlotRow(ctx context.Context, actor auth.Principal, id 
 		return SupportingDocumentSlot{}, err
 	}
 	return item, nil
+}
+
+// slotNameTaken refuses a second document name that differs only in case or
+// spacing from another one of the same regency (exceptID: the slot renamed).
+func slotNameTaken(ctx context.Context, tx pgx.Tx, regencyID, name, exceptID string) error {
+	var taken bool
+	err := tx.QueryRow(ctx, `
+		SELECT EXISTS(SELECT 1 FROM supporting_document_slots
+			WHERE regency_id::text = $1 AND id::text <> $3
+			  AND lower(regexp_replace(btrim(name), '\s+', ' ', 'g')) = lower(regexp_replace(btrim($2), '\s+', ' ', 'g')))
+	`, regencyID, name, exceptID).Scan(&taken)
+	if err != nil {
+		return err
+	}
+	if taken {
+		return ErrSlotDuplicate
+	}
+	return nil
 }
