@@ -39,7 +39,7 @@ test('shows only machine documentation and keeps it manageable for POS Mesin off
   renderSection();
 
   expect(screen.getByText('Foto Mesin')).toBeVisible();
-  expect(screen.getByLabelText('Buka kamera')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Buka kamera' })).toBeVisible();
   expect(screen.queryByLabelText('Tanggal distribusi')).not.toBeInTheDocument();
   expect(screen.queryByText('Merk/Tipe Mesin')).not.toBeInTheDocument();
   expect(screen.getByLabelText('Serial Number Mesin')).toBeVisible();
@@ -67,7 +67,7 @@ test('keeps machine documentation read-only without POS Mesin permission', () =>
   renderSection({}, ['distribution.view']);
 
   expect(screen.getByRole('article', { name: 'Foto Mesin' })).toBeVisible();
-  expect(screen.queryByLabelText('Buka kamera')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Buka kamera' })).not.toBeInTheDocument();
   expect(screen.queryByLabelText('Pilih galeri')).not.toBeInTheDocument();
   expect(screen.getByLabelText('Serial Number Mesin')).toBeDisabled();
   expect(screen.queryByRole('button', { name: 'Scan Serial Number Mesin' })).not.toBeInTheDocument();
@@ -85,7 +85,7 @@ test('keeps completed slots read-only until a machine-stage revision succeeds', 
   vi.mocked(apiRequest).mockResolvedValue({ data: { ...completed, status: 'linked', needs_recompletion: true, reopened_stage: 'mesin' } });
   const { onChanged } = renderSection(completed);
 
-  expect(screen.queryByLabelText('Buka kamera')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Buka kamera' })).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Buka revisi POS Mesin' }));
   await userEvent.type(screen.getByLabelText('Alasan revisi'), 'Foto mesin perlu diperbaiki');
   await userEvent.click(screen.getByRole('button', { name: 'Buka revisi' }));
@@ -94,5 +94,5 @@ test('keeps completed slots read-only until a machine-stage revision succeeds', 
     method: 'POST', body: JSON.stringify({ stage: 'mesin', reason: 'Foto mesin perlu diperbaiki' }),
   }));
   expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ status: 'linked', reopened_stage: 'mesin' }));
-  expect(await screen.findByLabelText('Buka kamera')).toBeVisible();
+  expect(await screen.findByRole('button', { name: 'Buka kamera' })).toBeVisible();
 });

@@ -16,6 +16,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { PackageTemplate } from '../programs/types';
+import { WatermarkProgramProvider } from '../camera/WatermarkProgramContext';
 
 export function DistributionPage() {
   const queryClient = useQueryClient();
@@ -59,7 +60,7 @@ export function DistributionPage() {
         <SelectContent>{schedules.data?.data.filter((schedule) => schedule.status === 'active').map((schedule) => <SelectItem key={schedule.id} value={schedule.id}>{schedule.regency?.name} / {schedule.name}</SelectItem>)}</SelectContent>
       </Select>
     </section>
-    {scheduleID && <div className={styles.workspace}>
+    {scheduleID && <WatermarkProgramProvider programId={selectedSchedule?.program_id}><div className={styles.workspace}>
       <aside className={styles.catalogPanel} aria-label="Katalog nomor bagi">
         <div className={styles.catalogHeader}>
           <div><span className={styles.catalogEyebrow}><LayoutGrid aria-hidden="true" />Katalog</span><strong>Nomor bagi</strong></div>
@@ -91,6 +92,6 @@ export function DistributionPage() {
           <p>Pilih nomor yang sudah tersedia atau buat nomor baru dari katalog di sebelah kiri.</p>
         </div>}
       </section>
-    </div>}
+    </div></WatermarkProgramProvider>}
   </div>;
 }
