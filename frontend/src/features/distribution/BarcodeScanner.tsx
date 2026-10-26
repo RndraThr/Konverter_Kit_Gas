@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { cameraErrorMessage } from '@/lib/cameraErrors';
 
 // The units carry 1D linear barcodes, so restrict decoding to the common linear symbologies
 // and skip 2D formats (QR/DataMatrix/…) entirely — an unrestricted reader occasionally
@@ -75,25 +76,6 @@ function insideScanFrame(box: DetectedBarcode['boundingBox'], width: number, hei
   const cx = (box.x + box.width / 2) / width;
   const cy = (box.y + box.height / 2) / height;
   return cx >= 0.1 && cx <= 0.9 && cy >= 0.15 && cy <= 0.85;
-}
-
-function cameraErrorMessage(error: unknown): string {
-  const name = error instanceof DOMException ? error.name : undefined;
-  switch (name) {
-    case 'NotAllowedError':
-    case 'PermissionDeniedError':
-      return 'Izin kamera ditolak. Aktifkan izin kamera untuk browser ini di pengaturan perangkat, lalu coba lagi.';
-    case 'NotFoundError':
-    case 'DevicesNotFoundError':
-      return 'Kamera tidak ditemukan pada perangkat ini.';
-    case 'NotReadableError':
-    case 'TrackStartError':
-      return 'Kamera sedang dipakai aplikasi lain. Tutup aplikasi lain yang menggunakan kamera, lalu coba lagi.';
-    case 'OverconstrainedError':
-      return 'Kamera tidak mendukung pengaturan yang diminta. Coba pilih kamera lain.';
-    default:
-      return 'Kamera tidak dapat diakses. Beri izin kamera pada browser, lalu coba lagi.';
-  }
 }
 
 // Camera barcode scanner, lazy-loaded so @zxing only downloads when a scan is actually started.

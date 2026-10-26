@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { apiRequest, ApiError } from '../../lib/api';
 import { uploadRequest } from '../../lib/upload';
 import { PermissionsProvider } from '../../lib/permissions';
+import { resizeImage } from '../camera/imageResize';
 import { ActivityDocumentationPage } from './ActivityDocumentationPage';
 import type { ActivityMediaPage } from './types';
 
@@ -13,6 +14,14 @@ vi.mock('../../lib/api', async () => {
   return { ...actual, apiRequest: vi.fn() };
 });
 vi.mock('../../lib/upload', () => ({ uploadRequest: vi.fn() }));
+vi.mock('../camera/imageResize', () => ({ resizeImage: vi.fn(async (blob: Blob) => new File([blob], 'resized.jpg', { type: 'image/jpeg' })) }));
+const camera = vi.hoisted(() => ({ props: null as null | { title: string; programId?: string } }));
+vi.mock('../camera/WatermarkCamera', () => ({
+  default: (props: { title: string; programId?: string; onCapture: (photo: { file: File; capturedAt: Date; latitude: number | null; longitude: number | null }) => void; onClose: () => void }) => {
+    camera.props = props;
+    return <div role="dialog" aria-label={props.title}><button type="button" onClick={() => props.onCapture({ file: new File(['jpeg'], 'kamera.jpg', { type: 'image/jpeg' }), capturedAt: new Date(), latitude: -6.2, longitude: 106.8 })}>Gunakan Foto</button></div>;
+  },
+}));
 
 beforeEach(() => { vi.mocked(uploadRequest).mockReset(); });
 
@@ -41,7 +50,7 @@ function programSetupResponse(path: string) {
   return undefined;
 }
 
-afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.mocked(resizeImage).mockClear(); localStorage.clear(); });
 
 function mockApi(gallery: ActivityMediaPage = { items: [], page: 1, page_size: 24, total: 0 }) {
   vi.mocked(apiRequest).mockImplementation((path: string) => {
@@ -142,10 +151,8 @@ test('hides upload controls without activities.manage', async () => {
 });
 
 test('uploads a photo dropped onto the upload zone', async () => {
-  vi.mocked(uploadRequest).mockImplementation(async (_path, body) => {
-    expect(body.get('source')).toBe('gallery');
-    return { data: { id: 'media-2', display_name: 'WJO-RAKOR-20260916-160000', media_type: 'image', content_url: '/api/v1/activities/media/media-2/content' } as never };
-  });
+  // Kept pending so the preview stays on screen after the async gallery resize.
+  vi.mocked(uploadRequest).mockImplementation(() => new Promise(() => undefined));
   vi.mocked(apiRequest).mockImplementation((path: string, _init?: RequestInit) => {
     const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
     if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
@@ -158,10 +165,11 @@ test('uploads a photo dropped onto the upload zone', async () => {
   fireEvent.drop(await screen.findByLabelText('Unggah dokumentasi Rakor'), { dataTransfer: { files: [file] } });
 
   expect(await screen.findByAltText('Preview unggahan')).toHaveAttribute('src', 'blob:dropped-preview');
+  expect(vi.mocked(uploadRequest).mock.calls[0][1].get('source')).toBe('gallery');
 });
 
 test('uploads a photo via the gallery picker', async () => {
-  vi.mocked(uploadRequest).mockResolvedValue({ data: { id: 'media-2', display_name: 'WJO-RAKOR-20260916-160000', media_type: 'image', content_url: '/api/v1/activities/media/media-2/content' } as never });
+  vi.mocked(uploadRequest).mockImplementation(() => new Promise(() => undefined));
   vi.mocked(apiRequest).mockImplementation((path: string, _init?: RequestInit) => {
     const setup = programSetupResponse(path); if (setup) return Promise.resolve(setup);
     if (path.startsWith('/api/v1/activities/media?')) return Promise.resolve({ data: { items: [], page: 1, page_size: 24, total: 0 } });
@@ -193,6 +201,7 @@ test('renders a video element while a video upload is pending', async () => {
 test('validates media sizes and sends activity metadata before the file', async () => {
   mockApi();
   vi.mocked(uploadRequest).mockResolvedValue({ data: { id: 'media-2' } as never });
+  vi.mocked(resizeImage).mockRejectedValueOnce(new Error('cannot decode')); // an undecodable photo uploads as-is and still faces the size limit
   renderPage(['activities.view', 'activities.manage'], ['/dokumentasi/rakor?regency_id=regency-1']);
   const gallery = await screen.findByLabelText('Pilih dari Galeri');
 
@@ -376,4 +385,44 @@ test('clears a failed upload when navigating to another activity type', async ()
   expect(await screen.findByRole('heading', { name: 'Training 10%' })).toBeVisible();
   expect(screen.queryByText('Coba lagi')).not.toBeInTheDocument();
   expect(screen.queryByAltText('Preview unggahan')).not.toBeInTheDocument();
+});
+
+test('takes a photo with the watermark camera for the selected program', async () => {
+  mockApi();
+  vi.mocked(uploadRequest).mockImplementation(() => new Promise(() => undefined));
+  vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:camera'), revokeObjectURL: vi.fn() });
+  renderPage(['activities.view', 'activities.manage'], ['/dokumentasi/rakor?regency_id=regency-1']);
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Ambil Foto' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Gunakan Foto' }));
+
+  expect(camera.props).toMatchObject({ title: 'Rakor', programId: 'program-1' });
+  await waitFor(() => expect(uploadRequest).toHaveBeenCalledOnce());
+  const body = vi.mocked(uploadRequest).mock.calls[0][1];
+  expect(body.get('source')).toBe('camera');
+  expect(body.has('latitude')).toBe(false);
+  expect(body.has('longitude')).toBe(false);
+  expect(screen.queryByRole('dialog', { name: 'Rakor' })).not.toBeInTheDocument();
+});
+
+test('resizes gallery photos with the stored quality but not videos', async () => {
+  mockApi();
+  vi.mocked(uploadRequest).mockResolvedValue({ data: { id: 'media-2' } as never });
+  vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:preview'), revokeObjectURL: vi.fn() });
+  localStorage.setItem('konkit.watermark.v1', JSON.stringify({ photoQuality: 'tinggi' }));
+  renderPage(['activities.view', 'activities.manage'], ['/dokumentasi/rakor?regency_id=regency-1']);
+  const gallery = await screen.findByLabelText('Pilih dari Galeri');
+
+  const photo = new File(['photo'], 'foto.png', { type: 'image/png' });
+  fireEvent.change(gallery, { target: { files: [photo] } });
+  await waitFor(() => expect(uploadRequest).toHaveBeenCalledOnce());
+  expect(resizeImage).toHaveBeenCalledWith(photo, 'tinggi');
+  expect((vi.mocked(uploadRequest).mock.calls[0][1].get('file') as File).name).toBe('foto.jpg');
+
+  await waitFor(() => expect(gallery).not.toBeDisabled());
+  const video = new File(['video'], 'rakor.mp4', { type: 'video/mp4' });
+  fireEvent.change(gallery, { target: { files: [video] } });
+  await waitFor(() => expect(uploadRequest).toHaveBeenCalledTimes(2));
+  expect(resizeImage).toHaveBeenCalledOnce();
+  expect(vi.mocked(uploadRequest).mock.calls[1][1].get('file')).toBe(video);
 });

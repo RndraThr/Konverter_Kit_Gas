@@ -40,6 +40,7 @@ type Config struct {
 	GDriveOAuthTokenJSON      string
 	GDriveRootFolderID        string
 	MaxConcurrentVideoUploads int
+	GeocoderURL               string
 }
 
 type lookupFunc func(string) (string, bool)
@@ -63,6 +64,7 @@ func loadFrom(lookup lookupFunc) (Config, error) {
 		StoragePath:               valueOrDefault(lookup, "STORAGE_PATH", "./storage"),
 		StorageBackend:            valueOrDefault(lookup, "STORAGE_BACKEND", "local"),
 		MaxConcurrentVideoUploads: 3,
+		GeocoderURL:               valueOrDefault(lookup, "GEOCODER_URL", "https://nominatim.openstreetmap.org"),
 	}
 
 	if cfg.DatabaseURL == "" {

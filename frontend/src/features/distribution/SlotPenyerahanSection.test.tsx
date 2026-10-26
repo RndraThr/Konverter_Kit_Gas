@@ -94,7 +94,7 @@ test('only grants media controls to handover documentation', () => {
   renderSection({ ...linkedSlot, documentation: [machineDoc, penyerahanDoc('missing')] });
 
   expect(screen.getByRole('article', { name: 'Foto serah terima' })).toHaveTextContent('Belum lengkap');
-  expect(screen.getByLabelText('Buka kamera')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Buka kamera' })).toBeVisible();
   expect(screen.queryByRole('article', { name: 'Foto Mesin' })).not.toBeInTheDocument();
 });
 
@@ -104,11 +104,11 @@ test('shows recompletion attention and reopens a completed slot for handover edi
   const { onChanged } = renderSection(completed);
 
   expect(screen.getByText('Perlu diselesaikan ulang')).toBeVisible();
-  expect(screen.queryByLabelText('Buka kamera')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Buka kamera' })).not.toBeInTheDocument();
   await userEvent.click(screen.getByRole('button', { name: 'Buka revisi POS Penyerahan' }));
   await userEvent.type(screen.getByLabelText('Alasan revisi'), 'Perbaiki foto serah terima');
   await userEvent.click(screen.getByRole('button', { name: 'Buka revisi' }));
 
   await waitFor(() => expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ status: 'linked', reopened_stage: 'penyerahan' })));
-  expect(await screen.findByLabelText('Buka kamera')).toBeVisible();
+  expect(await screen.findByRole('button', { name: 'Buka kamera' })).toBeVisible();
 });
