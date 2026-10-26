@@ -55,6 +55,12 @@ func (c *bytesCache) put(key logoKey, data []byte) {
 
 // readStoredLogo membaca satu logo, dari cache bila sudah pernah dibaca.
 func readStoredLogo(ctx context.Context, storage media.Storage, storageKey string) ([]byte, error) {
+	if isBuiltinLogoKey(storageKey) {
+		return builtinLogoBytes(storageKey)
+	}
+	if storage == nil {
+		return nil, ErrNotFound
+	}
 	key := logoKey{storage: storage, key: storageKey}
 	if data, ok := logoCache.get(key); ok {
 		return data, nil
