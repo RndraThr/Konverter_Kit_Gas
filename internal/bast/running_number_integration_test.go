@@ -10,8 +10,9 @@ import (
 )
 
 // DP3 dan Rekap Harian: nomor urut berlanjut lintas hari distribusi (hari
-// kedua mulai setelah nomor terakhir hari pertama), hari mengikuti zona
-// Jakarta, dan keduanya memakai nomor yang sama.
+// kedua mulai setelah nomor terakhir hari pertama), hari mengikuti Tanggal
+// distribusi yang diisi petugas (bukan saat Selesaikan diproses), dan
+// keduanya memakai nomor yang sama.
 func TestDP3AndDailyRecapNumberRowsAcrossDistributionDays(t *testing.T) {
 	pool := bastIntegrationPool(t)
 	ctx := context.Background()
@@ -43,23 +44,25 @@ func TestDP3AndDailyRecapNumberRowsAcrossDistributionDays(t *testing.T) {
 		_, _ = pool.Exec(bg, `DELETE FROM documentation_template_versions WHERE id=$1`, documentationID)
 		_, _ = pool.Exec(bg, `DELETE FROM regencies WHERE id=$1`, regencyID)
 	})
-	// Hari 1 (1 Des WIB): nomor bagi 5 dan 2. Hari 2 (2 Des WIB): nomor bagi 7
-	// (18.00 UTC tanggal 1 = 01.00 WIB tanggal 2) dan 1.
+	// Hari 1 (1 Des): nomor bagi 5 dan 2. Hari 2 (2 Des): nomor bagi 7 dan 1.
+	// Nomor 2 baru diselesaikan 9 Des dan nomor 7 diselesaikan ulang 5 Des
+	// (revisi): keduanya tetap di hari Tanggal distribusinya.
 	for i, slot := range []struct {
 		number int
+		day    string
 		at     time.Time
 	}{
-		{5, time.Date(2024, 12, 1, 3, 0, 0, 0, time.UTC)},
-		{2, time.Date(2024, 12, 1, 4, 0, 0, 0, time.UTC)},
-		{7, time.Date(2024, 12, 1, 18, 0, 0, 0, time.UTC)},
-		{1, time.Date(2024, 12, 2, 5, 0, 0, 0, time.UTC)},
+		{5, "2024-12-01", time.Date(2024, 12, 1, 3, 0, 0, 0, time.UTC)},
+		{2, "2024-12-01", time.Date(2024, 12, 9, 4, 0, 0, 0, time.UTC)},
+		{7, "2024-12-02", time.Date(2024, 12, 5, 18, 0, 0, 0, time.UTC)},
+		{1, "2024-12-02", time.Date(2024, 12, 2, 5, 0, 0, 0, time.UTC)},
 	} {
 		var personID string
 		mustQuery(`INSERT INTO people(full_name,nik,address,village,district,verification_status) VALUES($1,$2,'Jl. Contoh','Desa','Kecamatan','verified') RETURNING id::text`,
 			[]any{fmt.Sprintf("Penerima %d", slot.number), fmt.Sprintf("33%014d", (time.Now().UnixNano()+int64(i))%100000000000000)}, &personID)
 		people = append(people, personID)
-		if _, err := pool.Exec(ctx, `INSERT INTO distribution_slots(schedule_id,slot_number,status,distributed_at,completed_at,recipient_person_id,machine_option_code,machine_serial_number) VALUES($1,$2,'completed',$3,$3,$4,'m-1',$5)`,
-			scheduleID, slot.number, slot.at, personID, fmt.Sprintf("SN-%d", slot.number)); err != nil {
+		if _, err := pool.Exec(ctx, `INSERT INTO distribution_slots(schedule_id,slot_number,status,distribution_date,distributed_at,completed_at,recipient_person_id,machine_option_code,machine_serial_number) VALUES($1,$2,'completed',$3::date,$4,$4,$5,'m-1',$6)`,
+			scheduleID, slot.number, slot.day, slot.at, personID, fmt.Sprintf("SN-%d", slot.number)); err != nil {
 			t.Fatal(err)
 		}
 	}

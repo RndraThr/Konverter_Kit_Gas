@@ -15,7 +15,7 @@ type dailyRecapDateRow struct {
 
 func (r *Repository) ListDailyRecapDates(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]dailyRecapDateRow, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT (ds.distributed_at AT TIME ZONE 'Asia/Jakarta')::date::text AS local_date, count(*)
+		SELECT COALESCE(ds.distribution_date, (ds.distributed_at AT TIME ZONE 'Asia/Jakarta')::date)::text AS local_date, count(*)
 		FROM distribution_slots ds
 		JOIN program_schedules ps ON ps.id = ds.schedule_id
 		WHERE ds.schedule_id=$1 AND ds.status='completed' AND ds.distributed_at IS NOT NULL
@@ -39,13 +39,13 @@ func (r *Repository) ListDailyRecapDates(ctx context.Context, scheduleID string,
 }
 
 // completedSlotsNumbered memberi setiap distribusi selesai satu jadwal nomor
-// urut berjalan lintas hari: urut per hari selesai (zona Jakarta), lalu nomor
-// bagi. Hari kedua melanjutkan nomor terakhir hari pertama. Dipakai bersama
+// urut berjalan lintas hari: urut per Tanggal distribusi yang diisi petugas
+// (bukan saat Selesaikan diproses), lalu nomor bagi. Hari kedua melanjutkan nomor terakhir hari pertama. Dipakai bersama
 // Rekap Harian dan DP3 agar nomor keduanya selalu sama.
 const completedSlotsNumbered = `
 	WITH numbered AS (
-		SELECT ds.id, (ds.distributed_at AT TIME ZONE 'Asia/Jakarta')::date AS local_date,
-		       row_number() OVER (ORDER BY (ds.distributed_at AT TIME ZONE 'Asia/Jakarta')::date, ds.slot_number, ds.id) AS row_number
+		SELECT ds.id, COALESCE(ds.distribution_date, (ds.distributed_at AT TIME ZONE 'Asia/Jakarta')::date) AS local_date,
+		       row_number() OVER (ORDER BY COALESCE(ds.distribution_date, (ds.distributed_at AT TIME ZONE 'Asia/Jakarta')::date), ds.slot_number, ds.id) AS row_number
 		FROM distribution_slots ds
 		WHERE ds.schedule_id=$1 AND ds.status='completed' AND ds.distributed_at IS NOT NULL
 	)`

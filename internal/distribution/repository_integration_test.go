@@ -756,7 +756,7 @@ func TestReopenCompletedSlotResetsCompletionAndInvalidatesBA(t *testing.T) {
 	var allocationID string
 	must(t, pool.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,actual_recipient_person_id,distribution_number,status,package_snapshot_json) VALUES($1,$2,$3,$3,1,'distributed','{}') RETURNING id::text`, fixture.scheduleID, nominationID, personID).Scan(&allocationID))
 	must(t, func() error {
-		_, err := pool.Exec(ctx, `UPDATE distribution_slots SET allocation_id=$2,recipient_person_id=$3,status='completed',verification_snapshot_json='{"equipment":{"machine_serial":"OLD"}}',distributed_at='2026-10-07T03:00:00Z',completed_at='2026-10-07T03:00:00Z' WHERE id=$1`, fixture.distributionSlotID, allocationID, personID)
+		_, err := pool.Exec(ctx, `UPDATE distribution_slots SET allocation_id=$2,recipient_person_id=$3,status='completed',verification_snapshot_json='{"equipment":{"machine_serial":"OLD"}}',distribution_date='2026-10-07',distributed_at='2026-10-07T03:00:00Z',completed_at='2026-10-07T03:00:00Z' WHERE id=$1`, fixture.distributionSlotID, allocationID, personID)
 		return err
 	}())
 

@@ -57,7 +57,7 @@ type TrainingDate struct {
 }
 
 // ListTrainingParticipants mengembalikan penerima yang distribusinya selesai
-// pada tanggal lokal tersebut, berurutan seperti DP3 (nomor bagi).
+// dengan Tanggal distribusi tersebut, berurutan seperti DP3 (nomor bagi).
 func (r *Repository) ListTrainingParticipants(ctx context.Context, scheduleID, localDate string, scope auth.RegencyScope) ([]ActivityParticipant, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT ds.id::text, p.full_name, COALESCE(p.phone_number,''), COALESCE(p.address,''), COALESCE(p.village,''), COALESCE(p.district,''), pr.program_type
@@ -66,7 +66,7 @@ func (r *Repository) ListTrainingParticipants(ctx context.Context, scheduleID, l
 		JOIN programs pr ON pr.id = ps.program_id
 		JOIN people p ON p.id = ds.recipient_person_id
 		WHERE ds.schedule_id=$1 AND ds.status='completed' AND ds.distributed_at IS NOT NULL
-		  AND (ds.distributed_at AT TIME ZONE 'Asia/Jakarta')::date = $2::date
+		  AND COALESCE(ds.distribution_date, (ds.distributed_at AT TIME ZONE 'Asia/Jakarta')::date) = $2::date
 		  AND ($3 OR ps.regency_id::text = ANY($4))
 		ORDER BY ds.slot_number, ds.id
 	`, scheduleID, localDate, scope.Unrestricted, scope.RegencyIDs)

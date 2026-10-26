@@ -226,7 +226,7 @@ func (r *Repository) getIndividualDocument(ctx context.Context, id string) (Indi
 
 func (r *Repository) ListCompletedSlots(ctx context.Context, programID, regencyID string, scope auth.RegencyScope) ([]CompletedSlot, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT ds.id::text,ds.slot_number,ds.distributed_at
+		SELECT ds.id::text,ds.slot_number,ds.distributed_at,COALESCE(ds.distribution_date::text,'')
 		FROM distribution_slots ds JOIN program_schedules ps ON ps.id=ds.schedule_id
 		WHERE ps.program_id=$1 AND ps.regency_id=$2 AND ds.status='completed' AND ds.distributed_at IS NOT NULL
 		AND ($3 OR ps.regency_id::text=ANY($4)) ORDER BY ds.slot_number,ds.id
@@ -238,7 +238,7 @@ func (r *Repository) ListCompletedSlots(ctx context.Context, programID, regencyI
 	items := []CompletedSlot{}
 	for rows.Next() {
 		var item CompletedSlot
-		if err := rows.Scan(&item.ID, &item.SlotNumber, &item.DistributedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.SlotNumber, &item.DistributedAt, &item.DistributionDate); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
