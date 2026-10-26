@@ -17,7 +17,7 @@ type closingRawRow struct {
 // dibatasi satu tanggal) dan mengelompokkannya per (tanggal, varian mesin).
 func (r *Repository) ListClosingRows(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]ClosingRow, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT (ds.distributed_at AT TIME ZONE 'Asia/Jakarta')::date::text AS local_date, ds.verification_snapshot_json
+		SELECT COALESCE(ds.distribution_date, (ds.distributed_at AT TIME ZONE 'Asia/Jakarta')::date)::text AS local_date, ds.verification_snapshot_json
 		FROM distribution_slots ds
 		JOIN program_schedules ps ON ps.id = ds.schedule_id
 		WHERE ds.schedule_id=$1 AND ds.status='completed' AND ds.distributed_at IS NOT NULL

@@ -228,4 +228,16 @@ type CompletedSlot struct {
 	ID            string
 	SlotNumber    int
 	DistributedAt time.Time
+	// DistributionDate adalah Tanggal distribusi yang diisi petugas (YYYY-MM-DD).
+	DistributionDate string
+}
+
+// Day adalah hari BA slot: Tanggal distribusi yang diisi petugas, bukan saat
+// tombol Selesaikan diproses (yang bergeser bila slot direvisi lalu
+// diselesaikan ulang, atau diselesaikan beberapa hari kemudian).
+func (s CompletedSlot) Day(location *time.Location) string {
+	if s.DistributionDate != "" {
+		return s.DistributionDate
+	}
+	return s.DistributedAt.In(location).Format("2006-01-02")
 }

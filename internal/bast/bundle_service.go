@@ -142,8 +142,7 @@ func (s *BundleService) FinalizeBundle(ctx context.Context, actor auth.Principal
 	return activated.Bundle, nil
 }
 
-// completedSlotDate is the local date (bundle day) on which the slot's
-// distribution was completed.
+// completedSlotDate is the bundle day of the slot: its distribution date.
 func (s *BundleService) completedSlotDate(ctx context.Context, request BundleRequest, scope auth.RegencyScope) (string, error) {
 	slots, err := s.repository.ListCompletedSlots(ctx, request.ProgramID, request.RegencyID, scope)
 	if err != nil {
@@ -151,7 +150,7 @@ func (s *BundleService) completedSlotDate(ctx context.Context, request BundleReq
 	}
 	for _, slot := range slots {
 		if slot.ID == request.SlotID {
-			return slot.DistributedAt.In(s.core.location).Format("2006-01-02"), nil
+			return slot.Day(s.core.location), nil
 		}
 	}
 	return "", ErrNotFound
