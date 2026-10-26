@@ -116,6 +116,16 @@ func TestIntegrationRepositoryPersistsProgramSetupAndVersionsPublishedTemplate(t
 		_, _ = pool.Exec(context.Background(), "DELETE FROM regencies WHERE id = $1", regency.ID)
 	})
 
+	// A new kabupaten starts with the default Dokumen Pendukung names.
+	var slotCount int
+	var gasName string
+	if err := pool.QueryRow(ctx, `SELECT count(*), max(name) FILTER (WHERE name LIKE 'LO Gas %') FROM supporting_document_slots WHERE regency_id = $1`, regency.ID).Scan(&slotCount, &gasName); err != nil {
+		t.Fatal(err)
+	}
+	if slotCount != 7 || gasName != "LO Gas "+regency.Name {
+		t.Fatalf("default supporting document names = %d (LO Gas %q)", slotCount, gasName)
+	}
+
 	_, err = service.SaveRegency(ctx, actor, RegencyInput{
 		ProvinceName: "Sulawesi Selatan", Name: "Kabupaten Lain " + suffix,
 		DocumentCode: regencyCode, IsActive: true,

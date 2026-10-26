@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Camera, FileText, LoaderCircle, Trash2, Upload } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -8,6 +8,7 @@ import { PageHeader } from '../../components/PageHeader';
 import { apiRequest, ApiError } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
 import { Button } from '../../components/ui/button';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../../components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../../components/ui/dialog';
 import { FormField } from '../../components/FormField';
 import { Label } from '../../components/ui/label';
@@ -31,15 +32,20 @@ export function SupportingDocumentsPage({ programId, regencyId }: { programId: s
   const [customName, setCustomName] = useState('');
   const [scannerOpen, setScannerOpen] = useState(false);
   const [selectedFileName, setSelectedFileName] = useState('');
+  const [deleting, setDeleting] = useState<ActivityMedia | null>(null);
 
   const slots = useQuery({
     queryKey: ['supporting-document-slots', regencyId],
     queryFn: () => apiRequest<DataResponse<SupportingDocumentSlot[]>>(`/api/v1/activities/supporting-documents/slots?regency_id=${encodeURIComponent(regencyId)}`),
     enabled: !!regencyId,
   });
-  const documents = useQuery({
-    queryKey: ['activities', 'media', 'dokumen_pendukung', regencyId],
-    queryFn: () => apiRequest<DataResponse<ActivityMediaPage>>(`/api/v1/activities/media?activity_type=dokumen_pendukung&regency_id=${encodeURIComponent(regencyId)}`),
+  // Documents of the chosen program only (a kabupaten can run several
+  // programs), 100 per page with "Muat lebih banyak".
+  const documents = useInfiniteQuery({
+    queryKey: ['activities', 'media', 'dokumen_pendukung', regencyId, programId],
+    queryFn: ({ pageParam }) => apiRequest<DataResponse<ActivityMediaPage>>(`/api/v1/activities/media?activity_type=dokumen_pendukung&regency_id=${encodeURIComponent(regencyId)}&program_id=${encodeURIComponent(programId)}&page=${pageParam}&page_size=100`),
+    initialPageParam: 1,
+    getNextPageParam: (last) => (last.data.page * last.data.page_size < last.data.total ? last.data.page + 1 : undefined),
     enabled: !!regencyId,
   });
 
@@ -63,14 +69,16 @@ export function SupportingDocumentsPage({ programId, regencyId }: { programId: s
   });
   const remove = useMutation({
     mutationFn: (id: string) => apiRequest<void>(`/api/v1/activities/media/${id}`, { method: 'DELETE' }),
-    onSuccess: () => { void client.invalidateQueries({ queryKey: ['activities', 'media', 'dokumen_pendukung', regencyId] }); toast.success('Dokumen dihapus.'); },
-    onError: () => toast.error('Dokumen belum dapat dihapus.'),
+    onSuccess: () => { setDeleting(null); void client.invalidateQueries({ queryKey: ['activities', 'media', 'dokumen_pendukung', regencyId] }); toast.success('Dokumen dihapus.'); },
+    onError: (error) => toast.error(error instanceof ApiError ? error.message : 'Dokumen belum dapat dihapus.'),
   });
 
   // Slots that were deactivated by the Admin Kabupaten in Persiapan Program
   // should no longer be offered for new uploads from the gallery.
   const activeSlots = (slots.data?.data ?? []).filter((slot) => slot.is_active);
-  const items = documents.data?.data.items ?? [];
+  const items = documents.data?.pages.flatMap((page) => page.data.items) ?? [];
+  const total = documents.data?.pages[0]?.data.total ?? 0;
+  const uploadedAt = (value: string) => new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 
   return <div className="space-y-4">
     {canManage && <div className="flex flex-wrap items-center gap-2">
@@ -84,12 +92,23 @@ export function SupportingDocumentsPage({ programId, regencyId }: { programId: s
         ? <DataState kind="loading" title="Memuat dokumen pendukung" description="Mengambil data dari kabupaten terpilih." />
         : items.length === 0
           ? <DataState kind="empty" title="Belum ada dokumen pendukung" description={canManage ? 'Unggah atau scan dokumen PDF pertama untuk kabupaten ini.' : 'Belum ada dokumen pendukung yang diunggah.'} />
-          : <ul className="grid gap-2 sm:grid-cols-2">
-        {items.map((item) => <li key={item.id} className="flex items-center justify-between gap-2 rounded-lg border p-3">
-          <a href={item.content_url} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-2 text-sm font-medium"><FileText aria-hidden="true" className="shrink-0" /><span className="truncate">{item.display_name}</span></a>
-          {canManage && <Button type="button" size="icon" variant="ghost" aria-label={`Hapus ${item.display_name}`} onClick={() => remove.mutate(item.id)}><Trash2 aria-hidden="true" /></Button>}
-        </li>)}
-      </ul>}
+          : <div className="space-y-3">
+        <p className="text-sm text-muted-foreground">{total} dokumen</p>
+        <ul className="grid gap-2 sm:grid-cols-2">
+          {items.map((item) => <li key={item.id} className="flex items-center justify-between gap-2 rounded-lg border p-3">
+            <a href={item.content_url} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-2 text-sm"><FileText aria-hidden="true" className="shrink-0 text-primary" /><span className="min-w-0"><span className="block truncate font-medium" title={item.display_name}>{item.display_name}</span><span className="block text-xs text-muted-foreground">{uploadedAt(item.uploaded_at)}</span></span></a>
+            {canManage && <Button type="button" size="icon" variant="ghost" aria-label={`Hapus ${item.display_name}`} onClick={() => setDeleting(item)}><Trash2 aria-hidden="true" /></Button>}
+          </li>)}
+        </ul>
+        {documents.hasNextPage && <Button type="button" variant="outline" disabled={documents.isFetchingNextPage} onClick={() => void documents.fetchNextPage()}>{documents.isFetchingNextPage ? 'Memuat...' : `Muat lebih banyak (${items.length} dari ${total})`}</Button>}
+      </div>}
+
+    <AlertDialog open={deleting !== null} onOpenChange={(open) => { if (!open && !remove.isPending) setDeleting(null); }}>
+      <AlertDialogContent>
+        <AlertDialogHeader><AlertDialogTitle>Hapus dokumen?</AlertDialogTitle><AlertDialogDescription>{deleting?.display_name} akan dihapus dari daftar dan arsip. Tindakan ini tidak dapat dibatalkan.</AlertDialogDescription></AlertDialogHeader>
+        <AlertDialogFooter><AlertDialogCancel disabled={remove.isPending}>Batal</AlertDialogCancel><AlertDialogAction disabled={remove.isPending} onClick={() => { if (deleting) remove.mutate(deleting.id); }}>{remove.isPending ? 'Menghapus...' : 'Hapus dokumen'}</AlertDialogAction></AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
 
     {pickerOpen && <Dialog open onOpenChange={(open) => { if (!open) resetPicker(); }}>
       <DialogContent aria-label="Pilih nama dokumen">

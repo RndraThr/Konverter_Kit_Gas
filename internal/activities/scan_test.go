@@ -163,3 +163,57 @@ func TestScanUploadRejectsNonImagePage(t *testing.T) {
 		t.Fatalf("err = %v, want ErrMediaTypeInvalid", err)
 	}
 }
+
+func fakeJPEG(t *testing.T, width, height int) *bytes.Reader {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, nil); err != nil {
+		t.Fatalf("encode fake jpeg: %v", err)
+	}
+	return bytes.NewReader(buf.Bytes())
+}
+
+// A landscape photo gets a landscape A4 page (fitted, not stretched onto a
+// portrait page); a portrait one keeps the portrait page.
+func TestAssembleScanPDFKeepsPageOrientation(t *testing.T) {
+	pdf, err := assembleScanPDF([]io.Reader{fakeJPEG(t, 140, 100), fakeJPEG(t, 100, 140)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(pdf)
+	if !strings.Contains(text, "/MediaBox [0 0 841.89 595.28]") {
+		t.Fatalf("no landscape page in the PDF")
+	}
+	if !strings.Contains(text, "/MediaBox [0 0 595.28 841.89]") {
+		t.Fatalf("no portrait page in the PDF")
+	}
+}
+
+// A page with F4 proportions gets an F4 page; an odd shape falls back to A4.
+func TestAssembleScanPDFMatchesPaperSize(t *testing.T) {
+	pdf, err := assembleScanPDF([]io.Reader{fakeJPEG(t, 100, 153), fakeJPEG(t, 100, 100)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(pdf)
+	if !strings.Contains(text, "/MediaBox [0 0 609.45 935.43]") {
+		t.Fatalf("no F4 page in the PDF")
+	}
+	if !strings.Contains(text, "/MediaBox [0 0 595.28 841.89]") {
+		t.Fatalf("no A4 fallback page in the PDF")
+	}
+}
+
+func TestSanitizeSlotNameKeepsOnlySafeCharacters(t *testing.T) {
+	for in, want := range map[string]string{
+		"DO Konkit, Oli, Bracket":                    "DO-KONKIT-OLI-BRACKET",
+		"Surat Kuasa Pengambilan Gas LPG 3Kg - Wajo": "SURAT-KUASA-PENGAMBILAN-GAS-LPG-3KG-WAJO",
+		`  BA 1/2: Gudang\Pusat  `:                   "BA-1-2-GUDANG-PUSAT",
+		"Surat Tugas":                                "SURAT-TUGAS",
+	} {
+		if got := sanitizeSlotName(in); got != want {
+			t.Fatalf("sanitizeSlotName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

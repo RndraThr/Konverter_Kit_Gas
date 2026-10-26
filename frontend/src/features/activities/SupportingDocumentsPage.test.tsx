@@ -175,6 +175,10 @@ test('deletes a document from the list', async () => {
   render(<QueryClientProvider client={client}><PermissionsProvider permissions={['activities.view', 'activities.manage']}><MemoryRouter><SupportingDocumentsPage programId="program-1" regencyId="regency-1" /></MemoryRouter></PermissionsProvider></QueryClientProvider>);
 
   fireEvent.click(await screen.findByRole('button', { name: 'Hapus WJO-SK-20260916' }));
+  // Deleting asks first.
+  expect(await screen.findByText('Hapus dokumen?')).toBeVisible();
+  expect(deleted).toBe(false);
+  fireEvent.click(screen.getByRole('button', { name: 'Hapus dokumen' }));
   await waitFor(() => expect(deleted).toBe(true));
   expect(await screen.findByText('Belum ada dokumen pendukung')).toBeVisible();
 });
@@ -192,4 +196,9 @@ test('upload and scan buttons stay enabled when no slots are configured — cust
 
   await userEvent.click(screen.getByRole('tab', { name: 'Nama lain' }));
   expect(screen.getByLabelText('Nama dokumen')).toBeVisible();
+});
+
+test('lists only the chosen program’s documents, 100 per page', async () => {
+  renderPage(['activities.view']);
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith(expect.stringContaining('activity_type=dokumen_pendukung&regency_id=regency-1&program_id=program-1&page=1&page_size=100')));
 });

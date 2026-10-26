@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 
 	"konkit/internal/auth"
 	"konkit/internal/media"
@@ -96,11 +97,28 @@ func (s *Service) ScanUpload(ctx context.Context, actor auth.Principal, input Sc
 	}, folderPath, meta)
 }
 
-// assembleScanPDF validates each page as an allowed image and renders it as
-// a full A4 page in a single combined PDF, returning the assembled bytes.
-func assembleScanPDF(pages []io.Reader) ([]byte, error) {
-	const pageWidthMM, pageHeightMM = 210.0, 297.0
+// scanPaperSizes are the standard papers (portrait, millimetres) a scanned
+// page is matched to by its proportions: A4, F4, Letter, Legal.
+var scanPaperSizes = [][2]float64{{210, 297}, {215, 330}, {216, 279}, {216, 356}}
 
+// scanPaperFor returns the portrait size of the standard paper closest to a
+// width x height page (within 6 % of its proportions), or A4.
+func scanPaperFor(width, height float64) (float64, float64) {
+	ratio := max(width, height) / min(width, height)
+	best, bestError := scanPaperSizes[0], 0.06
+	for _, paper := range scanPaperSizes {
+		target := paper[1] / paper[0]
+		if e := math.Abs(ratio-target) / target; e < bestError {
+			best, bestError = paper, e
+		}
+	}
+	return best[0], best[1]
+}
+
+// assembleScanPDF validates each page as an allowed image and renders it on
+// the standard paper it matches (else A4) in a single combined PDF,
+// returning the assembled bytes.
+func assembleScanPDF(pages []io.Reader) ([]byte, error) {
 	doc := fpdf.New("P", "mm", "A4", "")
 	doc.SetAutoPageBreak(false, 0)
 
@@ -128,13 +146,25 @@ func assembleScanPDF(pages []io.Reader) ([]byte, error) {
 			return nil, ErrFileTooLarge
 		}
 
-		doc.AddPage()
 		imageName := fmt.Sprintf("page-%d", i)
 		info := doc.RegisterImageOptionsReader(imageName, fpdf.ImageOptions{ImageType: imageType, ReadDpi: true}, bytes.NewReader(imageBytes))
-		if doc.Err() || info == nil {
+		if doc.Err() || info == nil || info.Width() <= 0 || info.Height() <= 0 {
 			return nil, fmt.Errorf("register scanned page %d: %w", i, doc.Error())
 		}
-		doc.ImageOptions(imageName, 0, 0, pageWidthMM, pageHeightMM, false, fpdf.ImageOptions{ImageType: imageType}, 0, "")
+		// Keep the page's proportions: the matching paper in the image's
+		// orientation, the image fitted and centred (stretching it to the full
+		// page squashed landscape photos and odd-sized documents).
+		pageWidthMM, pageHeightMM := scanPaperFor(info.Width(), info.Height())
+		pageW, pageH := pageWidthMM, pageHeightMM
+		orientation := "P"
+		if info.Width() > info.Height() {
+			pageW, pageH = pageHeightMM, pageWidthMM
+			orientation = "L"
+		}
+		doc.AddPageFormat(orientation, fpdf.SizeType{Wd: pageWidthMM, Ht: pageHeightMM})
+		scale := min(pageW/info.Width(), pageH/info.Height())
+		drawW, drawH := info.Width()*scale, info.Height()*scale
+		doc.ImageOptions(imageName, (pageW-drawW)/2, (pageH-drawH)/2, drawW, drawH, false, fpdf.ImageOptions{ImageType: imageType}, 0, "")
 	}
 	if doc.Err() {
 		return nil, fmt.Errorf("assemble scanned pdf: %w", doc.Error())

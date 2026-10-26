@@ -26,3 +26,16 @@ test('lists existing slots and submits a new one', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Tambah' }));
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/activities/supporting-documents/slots', expect.objectContaining({ method: 'POST', body: JSON.stringify({ regency_id: 'regency-1', name: 'SK Penetapan' }) })));
 });
+
+test('keeps deactivated names listed so they can be switched back on', async () => {
+  vi.mocked(apiRequest).mockImplementation(((url: string) => {
+    if (url.includes('/slots?regency_id=regency-1&include_inactive=true')) {
+      return Promise.resolve({ data: [{ id: 'slot-1', regency_id: 'regency-1', name: 'DO Mesin', is_active: false }] });
+    }
+    return Promise.resolve({ data: { id: 'slot-1', regency_id: 'regency-1', name: 'DO Mesin', is_active: true } });
+  }) as typeof apiRequest);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  render(<QueryClientProvider client={client}><PermissionsProvider permissions={['programs.manage']}><SupportingDocumentSlotsPanel regencyId="regency-1" /></PermissionsProvider></QueryClientProvider>);
+  await userEvent.click(await screen.findByLabelText('Aktifkan DO Mesin'));
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/activities/supporting-documents/slots/slot-1', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ is_active: true }) })));
+});

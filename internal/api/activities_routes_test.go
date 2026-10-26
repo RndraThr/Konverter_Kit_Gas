@@ -50,7 +50,7 @@ func (f *fakeActivitiesService) OpenContent(_ context.Context, id string, scope 
 	f.seenDeleteID, f.seenRegencyScope = id, scope
 	return f.content, f.contentErr
 }
-func (f *fakeActivitiesService) ListSlots(_ context.Context, regencyID string, _ auth.RegencyScope) ([]activities.SupportingDocumentSlot, error) {
+func (f *fakeActivitiesService) ListSlots(_ context.Context, regencyID string, _ bool, _ auth.RegencyScope) ([]activities.SupportingDocumentSlot, error) {
 	f.listedRegencyID = regencyID
 	return []activities.SupportingDocumentSlot{{ID: "slot-1", RegencyID: regencyID, Name: "Surat Tugas", IsActive: true}}, nil
 }
