@@ -1,4 +1,5 @@
-import { BookOpenText, CircleHelp, Compass, Route } from 'lucide-react';
+import { BookOpenText, CircleHelp, Compass, Presentation, Route } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useState } from 'react';
 import { PageHeader } from '@/components/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -19,7 +20,7 @@ export function GuidePage() {
   const shown = onlyMine ? mine : guideSteps;
 
   return <div className="grid gap-6">
-    <PageHeader eyebrow="Bantuan" title="Panduan Konkit" description="Penjelasan singkat sistem, langkah awal sesuai akses Anda, dan alur kerja dari persiapan program sampai laporan." />
+    <PageHeader eyebrow="Bantuan" title="Panduan Konkit" description="Penjelasan singkat sistem, langkah awal sesuai akses Anda, dan alur kerja dari persiapan program sampai laporan." actions={<Button nativeButton={false} render={<Link to="/panduan/presentasi" />}><Presentation />Presentasi alur</Button>} />
 
     <Card>
       <CardHeader><CardTitle className="flex items-center gap-2 text-base"><Compass className="size-4 text-primary" aria-hidden="true" />{guideIntro.title}</CardTitle></CardHeader>

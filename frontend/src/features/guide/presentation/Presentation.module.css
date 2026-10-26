@@ -1,0 +1,324 @@
+/* Presentasi alur Konkit: panggung 16:9 (1280x720) yang diskalakan agar
+   muat di layar, dengan transisi antar slide dan kontrol di bawah. */
+
+.shell {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  background: radial-gradient(120% 90% at 50% 0%, #1f4a33 0%, #10281c 60%, #0b1d14 100%);
+  color: #fff;
+}
+
+.viewport {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  overflow: hidden;
+  padding: 18px;
+}
+
+.stage {
+  position: relative;
+  width: 1280px;
+  height: 720px;
+  flex: none;
+  overflow: hidden;
+  border-radius: 22px;
+  background: #f6f7f2;
+  color: #17251c;
+  box-shadow: 0 30px 80px rgb(0 0 0 / 0.45), 0 0 0 1px rgb(255 255 255 / 0.06);
+  transform-origin: center center;
+}
+
+.slide {
+  position: absolute;
+  inset: 0;
+  animation: slideIn 520ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.slide[data-direction='back'] {
+  animation-name: slideInBack;
+}
+
+/* Elemen bertanda data-reveal muncul berurutan (var --i). */
+.slide [data-reveal] {
+  animation: reveal 560ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(120ms + var(--i, 0) * 70ms);
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(36px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes slideInBack {
+  from {
+    opacity: 0;
+    transform: translateX(-36px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slide,
+  .slide [data-reveal] {
+    animation: none;
+  }
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 18px 14px;
+}
+
+.progress {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.14);
+  overflow: hidden;
+}
+
+.progressFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #4fad42, #d7b764);
+  transition: width 420ms ease;
+}
+
+.controlButton {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  color: #eef6f0;
+  background: rgb(255 255 255 / 0.08);
+  border: 1px solid rgb(255 255 255 / 0.12);
+  transition: background 160ms ease;
+}
+
+.controlButton:hover:not(:disabled) {
+  background: rgb(255 255 255 / 0.18);
+}
+
+.controlButton:disabled {
+  opacity: 0.35;
+}
+
+.controlButton:focus-visible {
+  outline: 3px solid #d7b764;
+  outline-offset: 2px;
+}
+
+.counter {
+  min-width: 64px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: #cfe3d4;
+}
+
+/* Ikhtisar semua slide (tombol grid / tombol O). */
+.overview {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  overflow: auto;
+  padding: 28px;
+  background: rgb(8 22 15 / 0.92);
+  backdrop-filter: blur(6px);
+}
+
+.overviewGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.thumb {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 14px;
+  text-align: left;
+  color: #eef6f0;
+  background: rgb(255 255 255 / 0.06);
+  border: 1px solid rgb(255 255 255 / 0.1);
+}
+
+.thumb[aria-current='true'] {
+  border-color: #d7b764;
+  background: rgb(215 183 100 / 0.14);
+}
+
+.thumbNumber {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  font-weight: 800;
+  font-size: 13px;
+  background: rgb(255 255 255 / 0.12);
+}
+
+/* ── Isi slide ───────────────────────────────────────────────────────── */
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #2f7d4a;
+}
+
+.title {
+  font-size: 46px;
+  line-height: 1.08;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #173d2b;
+}
+
+.lead {
+  font-size: 20px;
+  line-height: 1.55;
+  color: #435248;
+}
+
+.cover {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+}
+
+.coverShade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, rgb(12 34 23 / 0.94) 0%, rgb(18 52 34 / 0.82) 45%, rgb(18 52 34 / 0.25) 100%);
+}
+
+.glass {
+  border-radius: 16px;
+  background: rgb(255 255 255 / 0.1);
+  border: 1px solid rgb(255 255 255 / 0.18);
+  backdrop-filter: blur(4px);
+}
+
+.card {
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid #dde4da;
+  box-shadow: 0 10px 30px rgb(23 61 43 / 0.07);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.shotFrame {
+  position: relative;
+  border-radius: 14px;
+  /* Marks on the image edge keep their numbers visible. */
+  overflow: visible;
+  border: 1px solid #dde4da;
+  background: #fff;
+  box-shadow: 0 18px 40px rgb(23 61 43 / 0.16);
+}
+
+.mark {
+  position: absolute;
+  border-radius: 8px;
+  border: 2.5px solid #2f7d4a;
+  background: rgb(47 125 74 / 0.1);
+  box-shadow: 0 0 0 3px rgb(255 255 255 / 0.75);
+  animation: markPulse 2.4s ease-in-out infinite;
+}
+
+.markNumber {
+  position: absolute;
+  top: -12px;
+  right: -12px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #fff;
+  background: #2f7d4a;
+  box-shadow: 0 0 0 2px #fff;
+}
+
+@keyframes markPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px rgb(255 255 255 / 0.75);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgb(255 255 255 / 0.75), 0 0 0 9px rgb(47 125 74 / 0.18);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mark {
+    animation: none;
+  }
+}
+
+.phone {
+  width: 236px;
+  height: 470px;
+  border-radius: 36px;
+  padding: 12px;
+  background: #0f2419;
+  box-shadow: 0 24px 60px rgb(0 0 0 / 0.35), inset 0 0 0 2px rgb(255 255 255 / 0.08);
+}
+
+.phoneScreen {
+  height: 100%;
+  border-radius: 26px;
+  overflow: hidden;
+  background: #f6f7f2;
+}
