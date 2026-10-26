@@ -10,7 +10,7 @@ const localEnv = Object.fromEntries(readFileSync(resolve(root, '.env'), 'utf8')
 const testDatabase = localEnv.DATABASE_URL?.replace('/konkit?', '/konkit_test?');
 const fixtureDirectory = resolve(root, '.cache/e2e');
 const storageDirectory = resolve(root, '.cache/e2e-storage');
-const testEnvironment = { ...localEnv, GOCACHE: resolve(root, '.cache/go-build'), APP_ENV: 'test', APP_ADDR: ':8082', APP_BASE_URL: 'http://127.0.0.1:8082', DATABASE_URL: testDatabase ?? '', STORAGE_PATH: storageDirectory, E2E_FIXTURE_DIR: fixtureDirectory };
+const testEnvironment = { ...localEnv, GOCACHE: resolve(root, '.cache/go-build'), APP_ENV: 'test', APP_ADDR: ':8082', APP_BASE_URL: 'http://127.0.0.1:8082', DATABASE_URL: testDatabase ?? '', STORAGE_BACKEND: 'local', STORAGE_PATH: storageDirectory, E2E_FIXTURE_DIR: fixtureDirectory };
 Object.assign(process.env, testEnvironment);
 
 export default defineConfig({

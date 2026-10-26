@@ -69,7 +69,7 @@ func (r *Repository) UpsertScheduleSettings(ctx context.Context, actor auth.Prin
 	var settings ScheduleSettings
 	err = tx.QueryRow(ctx, `
 		INSERT INTO bast_schedule_settings(schedule_id,handover_location,consultant_company_name,agriculture_office_name,agriculture_office_nip,installer_name,supervisor_name,pertamina_rep_name,rakorda_location,rakorda_row_count,sosialisasi_location,sosialisasi_row_count,training_10_location,training_10_row_count,training_100_location,training_100_row_count,servis_1_start,servis_1_end,servis_2_start,servis_2_end)
-		VALUES($1,NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),NULLIF($9,''),$10,$11,$12,$13,$14,$15,$16,NULLIF($17,'')::date,NULLIF($18,'')::date,NULLIF($19,'')::date,NULLIF($20,'')::date)
+		VALUES($1,NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),NULLIF($7,''),NULLIF($8,''),$9,$10,$11,$12,$13,$14,$15,$16,NULLIF($17,'')::date,NULLIF($18,'')::date,NULLIF($19,'')::date,NULLIF($20,'')::date)
 		ON CONFLICT(schedule_id) DO UPDATE SET
 			handover_location=EXCLUDED.handover_location,
 			consultant_company_name=EXCLUDED.consultant_company_name,

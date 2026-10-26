@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -22,6 +23,8 @@ import (
 	"konkit/internal/recipients"
 	"konkit/internal/reports"
 	"konkit/internal/settings"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func (h *Handler) handleMe(w http.ResponseWriter, r *http.Request, rc requestContext) {
@@ -525,7 +528,11 @@ func writeUnavailable(w http.ResponseWriter) {
 }
 
 func writeServiceError(w http.ResponseWriter, err error) {
+	var pgErr *pgconn.PgError
 	switch {
+	case errors.As(err, &pgErr) && pgErr.Code == "22P02":
+		// A malformed id (not a UUID) in the URL or body names no row, the same as an unknown one.
+		writeError(w, http.StatusNotFound, "not_found", "Data tidak ditemukan")
 	case errors.Is(err, profile.ErrNotFound), errors.Is(err, administration.ErrNotFound), errors.Is(err, programs.ErrNotFound), errors.Is(err, dcp3.ErrPreviewNotFound), errors.Is(err, distribution.ErrSlotNotFound), errors.Is(err, distribution.ErrCandidateNotFound), errors.Is(err, distribution.ErrMediaNotFound), errors.Is(err, reports.ErrScheduleNotFound), errors.Is(err, recipients.ErrNotFound), errors.Is(err, recipients.ErrScheduleNotFound), errors.Is(err, activities.ErrNotFound), errors.Is(err, activities.ErrRegencyNotFound), errors.Is(err, activities.ErrSlotNotFound), errors.Is(err, bast.ErrNotFound), errors.Is(err, finalreport.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "Data tidak ditemukan")
 	case errors.Is(err, profile.ErrIdentityInUse), errors.Is(err, administration.ErrIdentityInUse):
@@ -700,6 +707,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, bast.ErrInvalidInput):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), map[string]string{"request": err.Error()})
 	default:
+		// The client only sees a generic message, so the cause must reach the server log.
+		log.Printf("api internal error: %v", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "Terjadi kesalahan pada server")
 	}
 }
