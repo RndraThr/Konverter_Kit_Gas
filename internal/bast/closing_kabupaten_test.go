@@ -157,12 +157,3 @@ func TestGroupClosingKabupatenRowsKeepsFirstAppearanceOrder(t *testing.T) {
 		t.Fatalf("rows=%+v", rows)
 	}
 }
-
-func TestWithClosingKabupatenLocationFillsEveryRow(t *testing.T) {
-	rows := withClosingKabupatenLocation([]ClosingKabupatenRow{{MachineBrand: "SHARK"}, {MachineBrand: "YANMAR"}}, "Lapangan Desa Tempe")
-	for _, row := range rows {
-		if row.Location != "Lapangan Desa Tempe" {
-			t.Fatalf("row location not filled: %+v", row)
-		}
-	}
-}

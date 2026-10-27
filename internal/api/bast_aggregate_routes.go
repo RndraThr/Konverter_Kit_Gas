@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"strings"
 
@@ -502,6 +503,17 @@ func (h *Handler) handleClosingRows(w http.ResponseWriter, r *http.Request, rc r
 type closingDocumentRequest struct {
 	ScheduleID   string `json:"schedule_id"`
 	DocumentDate string `json:"document_date"`
+	// LocationID: titik serah BA Serah Terima (kosong bila jadwal hanya
+	// punya satu lokasi).
+	LocationID string `json:"location_id"`
+}
+
+// withClosingLocation membawa titik serah dari isi permintaan ke konteks.
+func withClosingLocation(r *http.Request, input closingDocumentRequest) context.Context {
+	if strings.TrimSpace(input.LocationID) == "" {
+		return r.Context()
+	}
+	return bast.WithHandoverLocation(r.Context(), input.LocationID)
 }
 
 func decodeClosingDocumentRequest(w http.ResponseWriter, r *http.Request, rc requestContext) (closingDocumentRequest, bool) {
@@ -534,7 +546,7 @@ func (h *Handler) handleClosingPreview(w http.ResponseWriter, r *http.Request, r
 	if !ok {
 		return
 	}
-	result, err := h.deps.ClosingTitikSerah.Preview(r.Context(), input.ScheduleID, input.DocumentDate, scope)
+	result, err := h.deps.ClosingTitikSerah.Preview(withClosingLocation(r, input), input.ScheduleID, input.DocumentDate, scope)
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -558,7 +570,7 @@ func (h *Handler) handleClosingFinalize(w http.ResponseWriter, r *http.Request, 
 	if !ok {
 		return
 	}
-	result, err := h.deps.ClosingTitikSerah.Finalize(r.Context(), rc.principal, input.ScheduleID, input.DocumentDate, scope, clientMeta(r))
+	result, err := h.deps.ClosingTitikSerah.Finalize(withClosingLocation(r, input), rc.principal, input.ScheduleID, input.DocumentDate, scope, clientMeta(r))
 	if err != nil {
 		writeServiceError(w, err)
 		return

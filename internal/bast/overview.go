@@ -38,7 +38,8 @@ type Overview struct {
 }
 
 // overviewAggregates memetakan jenis BA ke document_type pada
-// bast_aggregate_documents (pemeriksaan memakai awalan "pemeriksaan:").
+// bast_aggregate_documents (pemeriksaan memakai awalan "pemeriksaan:", Closing
+// Titik Serah awalan "closing_titik_serah:" per lokasi).
 var overviewAggregates = map[string]string{
 	"dp3":                 "dp3",
 	"daily-recap":         "daily_recap",
@@ -106,7 +107,8 @@ func (r *Repository) Overview(ctx context.Context, scheduleID string, scope auth
 		documentKeys[documentType] = key
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT CASE WHEN document_type LIKE 'pemeriksaan:%' THEN 'pemeriksaan' ELSE document_type END,
+		SELECT CASE WHEN document_type LIKE 'pemeriksaan:%' THEN 'pemeriksaan'
+			WHEN document_type LIKE 'closing_titik_serah:%' THEN 'closing_titik_serah' ELSE document_type END,
 			document_date::text, bool_or(status='active')
 		FROM bast_aggregate_documents
 		WHERE schedule_id::text=$1 AND status IN ('active','stale')
@@ -188,7 +190,7 @@ func (r *Repository) Overview(ctx context.Context, scheduleID string, scope auth
 			rows.Close()
 			return Overview{}, fmt.Errorf("scan overview wet scan: %w", err)
 		}
-		if key, ok := wetTypes[documentKey]; ok {
+		if key, ok := wetTypes[wetBaseKey(documentKey)]; ok {
 			item := entry(key)
 			item.WetScans = append(item.WetScans, date)
 		}

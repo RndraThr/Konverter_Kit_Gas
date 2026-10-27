@@ -89,7 +89,7 @@ type wetSignatureLoader interface {
 // loadWetSignature menentukan status tanda tangan basah satu BA dari isi
 // snapshot-nya, dan mengembalikan gambar pindaian yang masih cocok.
 func loadWetSignature(ctx context.Context, repository any, scheduleID, documentKey, date string, snapshot any) (WetSignature, map[string][]byte, error) {
-	if !wetSignatureDocuments[documentKey] {
+	if !wetSignatureDocuments[wetBaseKey(documentKey)] {
 		return WetSignature{}, nil, nil
 	}
 	if signatureLayoutFrom(ctx) != nil {

@@ -22,7 +22,7 @@ type WetScanMeta struct {
 // ResolveWetSignature mengembalikan apakah mode tanda tangan basah berlaku
 // untuk BA ini (global jadwal atau khusus BA) dan pindaian yang tersimpan.
 func (r *Repository) ResolveWetSignature(ctx context.Context, scheduleID, documentKey, date string) (bool, []byte, string, error) {
-	effective, err := r.effectiveSignatureRules(ctx, scheduleID, documentKey)
+	effective, err := r.effectiveSignatureRules(ctx, scheduleID, wetBaseKey(documentKey))
 	if err != nil || !effective.wet {
 		return false, nil, "", err
 	}

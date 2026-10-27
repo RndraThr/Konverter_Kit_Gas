@@ -15,6 +15,9 @@ type ClosingKabupatenRow struct {
 	MachineBrand string `json:"machine_brand"`
 	MachineType  string `json:"machine_type"`
 	Count        int    `json:"count"`
+	// Final: baris berasal dari BA Serah Terima final lokasinya (bukan data
+	// distribusi berjalan).
+	Final bool `json:"final,omitempty"`
 }
 
 // ClosingKabupatenSnapshot adalah bentuk bast_aggregate_documents.snapshot_json
@@ -76,13 +79,9 @@ func formatClosingKabupatenDocumentNumber(regencyCode, documentDate string, tota
 	return fmt.Sprintf("%0*d/%d/%s/KKT/CK/%s/%d", digitWidth(totalPaket), sequence, totalPaket, strings.ToUpper(strings.TrimSpace(regencyCode)), romanMonth(date.Month()), date.Year())
 }
 
+// validateClosingKabupatenSettings memeriksa penandatangan; kolom Lokasi /
+// Titik Serah diisi dari BA Serah Terima tiap lokasi.
 func validateClosingKabupatenSettings(settings ScheduleSettings) error {
-	// HandoverLocation tetap divalidasi walau tidak dicetak sebagai metadata
-	// dokumen (hanya Kabupaten/Provinsi) — nilainya dipakai mengisi kolom
-	// "Lokasi / Titik Serah" pada setiap baris tabel.
-	if strings.TrimSpace(settings.HandoverLocation) == "" {
-		return ErrHandoverLocationRequired
-	}
 	if strings.TrimSpace(settings.AgricultureOfficeName) == "" || strings.TrimSpace(settings.AgricultureOfficeNIP) == "" || strings.TrimSpace(settings.InstallerName) == "" || strings.TrimSpace(settings.SupervisorName) == "" || strings.TrimSpace(settings.PertaminaRepName) == "" {
 		return ErrSignatoryRequired
 	}

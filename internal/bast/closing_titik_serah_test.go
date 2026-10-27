@@ -34,7 +34,7 @@ func TestFormatClosingDocumentNumberPadsToTotalDigitWidth(t *testing.T) {
 }
 
 func TestFormatClosingFilename(t *testing.T) {
-	got := formatClosingFilename("  Kabupaten   Wajo ", "2026-10-03", 2)
+	got := formatClosingFilename("  Kabupaten   Wajo ", "", "2026-10-03", 2)
 	if got != "CLOSING TITIK SERAH - KABUPATEN WAJO - 2026-10-03 - V2.pdf" {
 		t.Fatalf("filename=%q", got)
 	}

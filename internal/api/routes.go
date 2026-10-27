@@ -580,7 +580,13 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, bast.ErrAggregateNoRecipients):
 		writeError(w, http.StatusConflict, "no_recipients", "Belum ada penerima pada jadwal ini")
 	case errors.Is(err, bast.ErrHandoverLocationRequired):
-		writeError(w, http.StatusConflict, "handover_location_required", "Lokasi/titik serah belum dikonfigurasi")
+		writeError(w, http.StatusConflict, "handover_location_required", "Lokasi/titik serah belum dikonfigurasi atau belum dipilih")
+	case errors.Is(err, bast.ErrHandoverLocationInvalid):
+		writeError(w, http.StatusBadRequest, "handover_location_invalid", "Nama titik serah wajib diisi dan tidak boleh sama")
+	case errors.Is(err, bast.ErrHandoverUnassigned):
+		writeError(w, http.StatusConflict, "handover_unassigned", "Masih ada penerima yang belum punya titik serah")
+	case errors.Is(err, bast.ErrHandoverClosingIncomplete):
+		writeError(w, http.StatusConflict, "handover_closing_incomplete", "BA Serah Terima setiap titik serah harus final terlebih dahulu")
 	case errors.Is(err, bast.ErrServisScheduleRequired):
 		writeError(w, http.StatusConflict, "servis_schedule_required", "Lengkapi tanggal servis ke-1 dan ke-2 sebelum finalisasi")
 	case errors.Is(err, bast.ErrGasElpijiIncomplete):
