@@ -244,6 +244,19 @@ type ItemService interface {
 	SaveScheduleSelection(context.Context, auth.Principal, string, map[string]string, auth.RegencyScope, auth.ClientMeta) (bast.ScheduleItems, error)
 }
 
+type GasElpijiService interface {
+	Summary(context.Context, string, auth.RegencyScope) (bast.GasElpijiSummary, error)
+	Preview(context.Context, bast.GasElpijiInput, auth.RegencyScope) (bast.AggregatePreview, error)
+	Finalize(context.Context, auth.Principal, bast.GasElpijiInput, auth.RegencyScope, auth.ClientMeta) (bast.AggregateDocument, error)
+	MergedPreview(context.Context, string, auth.RegencyScope) (bast.AggregatePreview, error)
+	FinalizeMerged(context.Context, auth.Principal, string, auth.RegencyScope, auth.ClientMeta) (bast.AggregateDocument, error)
+	Documents(context.Context, string, string, auth.RegencyScope) ([]bast.AggregateDocument, error)
+	MergedDocuments(context.Context, string, auth.RegencyScope) ([]bast.AggregateDocument, error)
+	Cancel(context.Context, auth.Principal, string, auth.RegencyScope, auth.ClientMeta) error
+	SaveDraft(context.Context, auth.Principal, bast.GasElpijiInput, auth.RegencyScope) error
+	Open(context.Context, string, auth.RegencyScope) (bast.AggregateContent, error)
+}
+
 type ServisBerkalaService interface {
 	Summary(context.Context, string, auth.RegencyScope) (bast.ServisBerkalaSummary, error)
 	Preview(context.Context, string, string, auth.RegencyScope) (bast.AggregatePreview, error)
@@ -296,6 +309,7 @@ type Dependencies struct {
 	ClosingTitikSerah   ClosingTitikSerahService
 	ClosingKabupaten    ClosingKabupatenService
 	ServisBerkala       ServisBerkalaService
+	GasElpiji           GasElpijiService
 	TKDN                TKDNService
 	Pemeriksaan         PemeriksaanService
 	Items               ItemService
@@ -486,6 +500,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleBASTItems(w, r, rc, strings.TrimPrefix(path, "bast/items/"))
 	case strings.HasPrefix(path, "bast/tkdn/"):
 		h.handleBASTTKDN(w, r, rc, strings.TrimPrefix(path, "bast/tkdn/"))
+	case strings.HasPrefix(path, "bast/gas-elpiji/"):
+		h.handleBASTGasElpiji(w, r, rc, strings.TrimPrefix(path, "bast/gas-elpiji/"))
 	case strings.HasPrefix(path, "bast/servis-berkala/"):
 		h.handleBASTServisBerkala(w, r, rc, strings.TrimPrefix(path, "bast/servis-berkala/"))
 	case strings.HasPrefix(path, "bast/rakorda/"):

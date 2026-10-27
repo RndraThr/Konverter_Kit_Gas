@@ -46,6 +46,7 @@ var overviewAggregates = map[string]string{
 	"closing-kabupaten":   "closing_kabupaten",
 	"servis-berkala":      "servis_berkala",
 	"tkdn":                "tkdn",
+	"gas-elpiji":          "gas_elpiji",
 	"pemeriksaan":         "pemeriksaan",
 }
 
@@ -66,6 +67,7 @@ var overviewWetKeys = map[string]string{
 	"closing-kabupaten":   "closing-kabupaten",
 	"servis-berkala":      "servis-berkala",
 	"tkdn":                "tkdn",
+	"gas-elpiji":          "gas-elpiji",
 }
 
 // Overview mengembalikan status final, perlu dibuat ulang, arsip, dan tanda

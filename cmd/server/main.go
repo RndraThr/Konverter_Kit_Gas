@@ -90,6 +90,7 @@ func run(ctx context.Context, cfg config.Config) error {
 	bastClosingService := bast.NewClosingTitikSerahService(bastRepository, mediaStorage, applicationLocation)
 	bastClosingKabupatenService := bast.NewClosingKabupatenService(bastRepository, mediaStorage, applicationLocation)
 	bastServisBerkalaService := bast.NewServisBerkalaService(bastRepository, mediaStorage, applicationLocation)
+	bastGasElpijiService := bast.NewGasElpijiService(bastRepository, mediaStorage)
 	bastTKDNService := bast.NewTKDNService(bastRepository, mediaStorage)
 	bastPemeriksaanService := bast.NewPemeriksaanService(bastRepository, mediaStorage)
 	bastItemService := bast.NewItemService(bastRepository)
@@ -132,6 +133,7 @@ func run(ctx context.Context, cfg config.Config) error {
 			"ba-pemeriksaan":      bast.PreviewFunc(bastPemeriksaanService.SignaturePreview),
 			"servis-berkala":      bastServisBerkalaService,
 			"tkdn":                bastTKDNService,
+			"gas-elpiji":          bast.PreviewFunc(bastGasElpijiService.SignaturePreview),
 		}),
 		BASTOverview: bastRepository,
 		BASTWetSignature: bast.NewWetSignatureService(bastRepository, map[string]bast.WetPreviewer{
@@ -141,12 +143,14 @@ func run(ctx context.Context, cfg config.Config) error {
 			"closing-kabupaten":   bastClosingKabupatenService,
 			"servis-berkala":      bastServisBerkalaService,
 			"tkdn":                bastTKDNService,
+			"gas-elpiji":          bast.PreviewFunc(bastGasElpijiService.SignaturePreview),
 		}),
 		DP3:               bastDP3Service,
 		DailyRecap:        bastDailyRecapService,
 		ClosingTitikSerah: bastClosingService,
 		ClosingKabupaten:  bastClosingKabupatenService,
 		ServisBerkala:     bastServisBerkalaService,
+		GasElpiji:         bastGasElpijiService,
 		TKDN:              bastTKDNService,
 		Pemeriksaan:       bastPemeriksaanService,
 		Items:             bastItemService,

@@ -139,6 +139,28 @@ export type ServisBerkalaSummary = {
   schedule_ready: boolean;
 };
 
+export type GasElpijiInput = {
+  schedule_id: string;
+  document_date: string;
+  warehouse_location: string;
+  warehouse_address: string;
+  pic: string;
+  cylinder_count: number;
+  remarks: string;
+  receiver_name: string;
+  pertamina_name: string;
+};
+
+export type GasElpijiReceipt = { document: AggregateDocument; input: GasElpijiInput; wet_scanned: boolean };
+
+export type GasElpijiSummary = {
+  receipts: GasElpijiReceipt[];
+  drafts: GasElpijiInput[];
+  total_cylinders: number;
+  merged: AggregateDocument | null;
+  merged_current: boolean;
+};
+
 export type RakordaUpload = {
   id: string;
   schedule_id: string;
@@ -156,7 +178,7 @@ export type AggregateDocument = {
   program_id: string;
   regency_id: string;
   // dp3, daily_recap, closing_titik_serah, closing_kabupaten, servis_berkala,
-  // tkdn, atau pemeriksaan:<kode form>.
+  // tkdn, gas_elpiji, gas_elpiji_gabungan, atau pemeriksaan:<kode form>.
   document_type: string;
   document_date: string;
   filename: string;
