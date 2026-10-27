@@ -56,7 +56,6 @@ func RenderClosingTitikSerah(snapshot ClosingTitikSerahSnapshot, logoBytes map[s
 				{"Provinsi", textnorm.DisplayTitle(snapshot.ProvinceName)},
 			},
 			narrative: closingNarrative(snapshot.DocumentDate, snapshot.FiscalYear),
-			flushLeft: true,
 		})
 		renderClosingTable(pdf, snapshot, logos)
 	}

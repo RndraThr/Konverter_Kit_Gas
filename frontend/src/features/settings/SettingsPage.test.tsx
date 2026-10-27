@@ -23,7 +23,8 @@ function renderPage(permissions = ['settings.view', 'settings.manage']) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(apiRequest).mockImplementation(async (_path, init) => {
+  vi.mocked(apiRequest).mockImplementation(async (path, init) => {
+    if (String(path).startsWith('/api/v1/app/releases')) return { data: [] };
     if (init?.method === 'PATCH') return { data: settings };
     return { data: settings };
   });

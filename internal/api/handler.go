@@ -284,6 +284,7 @@ type GeoService interface {
 
 type Dependencies struct {
 	Geo                 GeoService
+	AppReleases         AppReleaseService
 	Auth                AuthService
 	Profile             ProfileService
 	Administration      AdministrationService
@@ -416,6 +417,12 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handlePermissions(w, r, rc)
 	case path == "system/settings":
 		h.handleSettings(w, r, rc)
+	case path == "app/releases":
+		h.handleAppReleases(w, r, rc)
+	case path == "app/releases/latest":
+		h.handleAppReleaseLatest(w, r, rc)
+	case strings.HasPrefix(path, "app/releases/"):
+		h.handleAppRelease(w, r, rc, strings.TrimPrefix(path, "app/releases/"))
 	case path == "system/health":
 		h.handleSystemHealth(w, r, rc)
 	case path == "system/audit-logs":

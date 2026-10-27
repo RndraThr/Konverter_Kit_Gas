@@ -75,8 +75,9 @@ func RenderTKDN(snapshot TKDNSnapshot, logoBytes map[string][]byte) (RenderedAgg
 	registerSignatoryImages(pdf, logoBytes)
 	registerWetScan(pdf, logoBytes)
 	contentWidth := pageWidthMM - 2*marginMM
-	textLeft := marginMM + activityColumnWidths[0]
-	textWidth := contentWidth - 2*activityColumnWidths[0]
+	// Blok teks selebar tabel, seperti BA lain.
+	textLeft := marginMM
+	textWidth := contentWidth
 
 	// Cetak halaman tanda tangan saja: isi dokumen dilewati.
 	if !snapshot.Wet.PageOnly {

@@ -64,7 +64,7 @@ func RenderDP3(snapshot DP3Snapshot, logoBytes map[string][]byte) (RenderedAggre
 	if !snapshot.Wet.PageOnly {
 		pdf.AddPage()
 		renderFormalHeader(pdf, logos, formalHeader{
-			title: dp3Title, subtitle: dp3Subtitle, fiscal: snapshot.FiscalYear, pageWidth: dp3LandscapeWidthMM, flushLeft: true,
+			title: dp3Title, subtitle: dp3Subtitle, fiscal: snapshot.FiscalYear, pageWidth: dp3LandscapeWidthMM,
 			metadata: []formalMeta{
 				{"Hari / Tanggal", formatIndonesianDate(snapshot.DocumentDate)},
 				{"Lokasi / Titik Serah", textnorm.DisplayTitle(snapshot.HandoverLocation)},

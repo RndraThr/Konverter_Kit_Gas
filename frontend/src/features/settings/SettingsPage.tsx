@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { apiRequest } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
 import { uppercaseBusinessText } from '../../lib/text';
+import { AppReleasesPanel } from './AppReleasesPanel';
 import { formatSettingsPreview } from './settingsPresentation';
 
 type Setting = {
@@ -154,5 +155,6 @@ export function SettingsPage() {
             </div>
           </div>
         </form>}
+    <AppReleasesPanel />
   </div>;
 }

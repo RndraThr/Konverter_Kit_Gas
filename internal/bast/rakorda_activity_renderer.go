@@ -143,10 +143,10 @@ func renderActivityHeader(pdf *fpdf.Fpdf, document activityDocument, snapshot Ra
 	renderActivityProcurementHeading(pdf, contentWidth, snapshot.FiscalYear, activitySubtitlePt)
 	pdf.Ln(3)
 
-	// Blok teks (metadata, pernyataan, "Dihadiri oleh") menjorok sejajar garis
-	// kolom No. tabel di kiri, dengan jarak yang sama dari tepi kanan tabel.
-	textLeft := marginMM + activityColumnWidths[0]
-	textWidth := contentWidth - 2*activityColumnWidths[0]
+	// Blok teks (metadata, pernyataan, "Dihadiri oleh") selebar tabel hadir:
+	// sejajar garis kiri dan kanannya, seperti Closing.
+	textLeft := marginMM
+	textWidth := contentWidth
 	const metadataRowMM, narrativeLineMM, labelWidthMM = 6.0, 5.4, 40.0
 
 	metadata := []struct{ label, value string }{

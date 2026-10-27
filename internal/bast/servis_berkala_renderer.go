@@ -53,8 +53,9 @@ func RenderServisBerkala(snapshot ServisBerkalaSnapshot, logoBytes map[string][]
 	} else {
 		pdf.AddPage()
 		contentWidth := pageWidthMM - 2*marginMM
-		textLeft := marginMM + activityColumnWidths[0]
-		textWidth := contentWidth - 2*activityColumnWidths[0]
+		// Blok teks selebar tabel, seperti BA lain.
+		textLeft := marginMM
+		textWidth := contentWidth
 
 		pdf.SetXY(marginMM, renderRakordaLogoStrip(pdf, logos)+3)
 		pdf.SetFont(activityFont, "BU", activityTitlePt)

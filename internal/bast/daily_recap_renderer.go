@@ -56,7 +56,6 @@ func RenderDailyRecap(snapshot DailyRecapSnapshot, logoBytes map[string][]byte) 
 				{"Lokasi / Titik Serah", textnorm.DisplayTitle(snapshot.HandoverLocation)},
 				{"Konsultan Distribusi", textnorm.DisplayTitle(snapshot.ConsultantCompanyName)},
 			},
-			flushLeft: true,
 		})
 		renderDailyRecapTable(pdf, snapshot, logos)
 		renderDailyRecapGrandTotal(pdf, snapshot, logos)
