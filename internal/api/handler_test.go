@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -23,6 +24,8 @@ import (
 	"konkit/internal/programs"
 	"konkit/internal/recipients"
 	"konkit/internal/reports"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestHealthReturnsJSON(t *testing.T) {
@@ -1076,6 +1079,14 @@ func TestValidationErrorsUseBadRequestAndFieldDetails(t *testing.T) {
 	rec := httptest.NewRecorder()
 	writeServiceError(rec, profile.ErrEmailInvalid)
 	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), `"fields":{"email":`) {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestMalformedIDIsNotFound(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeServiceError(rec, fmt.Errorf("get DCP3 preview: %w", &pgconn.PgError{Code: "22P02"}))
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), `"code":"not_found"`) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }

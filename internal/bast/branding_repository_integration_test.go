@@ -29,6 +29,10 @@ func TestBrandingRepositoryStoresAndOrdersLogos(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM program_ba_logo_assets WHERE program_id=ANY($1)`, []string{programID, otherProgramID})
 		_, _ = pool.Exec(context.Background(), `DELETE FROM programs WHERE id=ANY($1)`, []string{programID, otherProgramID})
 	})
+	// New programs start with the built-in logos (migration 00072); this test covers uploads only.
+	if _, err := pool.Exec(ctx, `DELETE FROM program_ba_logo_assets WHERE program_id=ANY($1)`, []string{programID, otherProgramID}); err != nil {
+		t.Fatal(err)
+	}
 
 	actor := auth.Principal{}
 	meta := auth.ClientMeta{UserAgent: "branding-test"}

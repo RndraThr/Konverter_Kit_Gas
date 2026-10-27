@@ -22,6 +22,9 @@ export default defineConfig(({ command }) => ({
     environment: 'jsdom',
     setupFiles: './src/test/setup.ts',
     include: ['src/**/*.test.{ts,tsx}'],
+    // The signature and NIK-suggestion tests take ~2 s alone but pass the 5 s default when the
+    // whole suite runs in parallel on many cores.
+    testTimeout: 15000,
   },
   build: {
     outDir: '../web/static/app',
