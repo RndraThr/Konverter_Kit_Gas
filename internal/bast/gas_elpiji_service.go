@@ -110,7 +110,9 @@ func (s *GasElpijiService) Finalize(ctx context.Context, actor auth.Principal, i
 		return AggregateDocument{}, err
 	}
 	return s.store(ctx, actor, ctxData, AggregateDocumentGasElpiji, snapshot.DocumentDate, snapshot, rendered, snapshot.CylinderCount, scope, meta,
-		func(version int) string { return formatGasElpijiFilename(ctxData.RegencyName, snapshot.DocumentDate, version) })
+		func(version int) string {
+			return formatGasElpijiFilename(ctxData.RegencyName, snapshot.DocumentDate, version)
+		})
 }
 
 // MergedPreview menggabungkan semua penerimaan aktif menjadi satu PDF.
