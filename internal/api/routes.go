@@ -583,6 +583,10 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "handover_location_required", "Lokasi/titik serah belum dikonfigurasi")
 	case errors.Is(err, bast.ErrServisScheduleRequired):
 		writeError(w, http.StatusConflict, "servis_schedule_required", "Lengkapi tanggal servis ke-1 dan ke-2 sebelum finalisasi")
+	case errors.Is(err, bast.ErrGasElpijiIncomplete):
+		writeError(w, http.StatusConflict, "gas_elpiji_incomplete", "Lengkapi lokasi gudang, alamat, PIC, jumlah tabung, dan nama kedua penanda tangan sebelum finalisasi")
+	case errors.Is(err, bast.ErrGasElpijiNoReceipts):
+		writeError(w, http.StatusConflict, "gas_elpiji_no_receipts", "Belum ada penerimaan LPG yang difinalisasi untuk digabung")
 	case errors.Is(err, bast.ErrTKDNTotalRequired):
 		writeError(w, http.StatusConflict, "tkdn_total_required", "Isi TKDN gabungan sebelum finalisasi")
 	case errors.Is(err, bast.ErrSignatoryImageInvalid):

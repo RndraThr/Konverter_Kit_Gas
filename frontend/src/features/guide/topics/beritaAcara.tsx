@@ -29,6 +29,7 @@ export const beritaAcara: GuideTopic = {
         { name: 'BA Pemeriksaan', meaning: 'BA pemeriksaan barang, satu PDF per jenis barang (form).', example: 'Saat barang diperiksa' },
         { name: 'Servis Berkala', meaning: 'BA servis berkala ke-1 dan ke-2.', example: 'Sesuai jadwal servis' },
         { name: 'TKDN', meaning: 'Rekap % TKDN barang dan TKDN gabungan.', example: 'Akhir program' },
+        { name: 'Gas LPG', meaning: 'BA serah terima tabung gas elpiji per penerimaan, lalu digabung menjadi satu BA.', example: 'Setiap LPG datang' },
       ],
     },
     {
@@ -139,6 +140,21 @@ export const beritaAcara: GuideTopic = {
         { n: 5, text: <>Atur urutan dan pengelompokan baris di <b>Susunan TKDN</b>. Merk dan % TKDN per barang diubah di Template Paket.</>, permissions: ['bast.manage'] },
       ],
       problems: [{ q: 'Finalisasi ditolak?', a: 'TKDN gabungan harus diisi dan disimpan.' }],
+    },
+    {
+      id: 'gas-lpg',
+      title: 'Gas LPG',
+      summary: 'LPG satu kabupaten biasanya datang beberapa kali. Tiap penerimaan dibuat satu BA per tanggal, lalu semua penerimaan digabung menjadi satu BA Gas LPG.',
+      steps: [
+        { n: 1, text: <>Isi tanggal penerimaan, lokasi gudang, alamat, PIC, jumlah tabung, keterangan, serta nama penerima dan petugas PT Pertamina Patra Niaga. Periksa preview di sebelahnya.</>, permissions: ['bast.manage'] },
+        { n: 2, text: <>Klik <ButtonSample icon={<RefreshCw />}>Finalisasi penerimaan</ButtonSample>. Untuk kedatangan berikutnya, ganti tanggal penerimaan lalu ulangi.</>, permissions: ['bast.manage'] },
+        { n: 3, text: <>Setelah semua penerimaan final, klik <ButtonSample icon={<RefreshCw />}>Gabungkan & finalisasi</ButtonSample> di bagian daftar penerimaan. Hasilnya satu PDF berisi semua penerimaan urut tanggal.</>, permissions: ['bast.manage'] },
+        { text: <>Bila ada penerimaan baru atau yang diubah, status gabungan menjadi <b>Perlu digabung ulang</b>; gabungkan lagi agar versinya diperbarui.</> },
+      ],
+      problems: [
+        { q: 'Salah memasukkan tanggal penerimaan?', a: 'Klik Batalkan pada penerimaan itu di daftar, lalu buat ulang pada tanggal yang benar dan gabungkan ulang.' },
+        { q: 'Finalisasi ditolak?', a: 'Semua isian wajib diisi dan jumlah tabung minimal 1; keterangan boleh kosong.' },
+      ],
     },
   ],
 };

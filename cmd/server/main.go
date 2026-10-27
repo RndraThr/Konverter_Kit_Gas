@@ -90,6 +90,7 @@ func run(ctx context.Context, cfg config.Config) error {
 	bastClosingService := bast.NewClosingTitikSerahService(bastRepository, mediaStorage, applicationLocation)
 	bastClosingKabupatenService := bast.NewClosingKabupatenService(bastRepository, mediaStorage, applicationLocation)
 	bastServisBerkalaService := bast.NewServisBerkalaService(bastRepository, mediaStorage, applicationLocation)
+	bastGasElpijiService := bast.NewGasElpijiService(bastRepository, mediaStorage)
 	bastTKDNService := bast.NewTKDNService(bastRepository, mediaStorage)
 	bastPemeriksaanService := bast.NewPemeriksaanService(bastRepository, mediaStorage)
 	bastItemService := bast.NewItemService(bastRepository)
@@ -147,6 +148,7 @@ func run(ctx context.Context, cfg config.Config) error {
 		ClosingTitikSerah: bastClosingService,
 		ClosingKabupaten:  bastClosingKabupatenService,
 		ServisBerkala:     bastServisBerkalaService,
+		GasElpiji:         bastGasElpijiService,
 		TKDN:              bastTKDNService,
 		Pemeriksaan:       bastPemeriksaanService,
 		Items:             bastItemService,

@@ -16,6 +16,7 @@ import { ClosingKabupatenPanel } from './ClosingKabupatenPanel';
 import { ClosingTitikSerahPanel } from './ClosingTitikSerahPanel';
 import { DailyRecapPanel } from './DailyRecapPanel';
 import { DP3Panel } from './DP3Panel';
+import { GasElpijiPanel } from './GasElpijiPanel';
 import { PemeriksaanPanel } from './PemeriksaanPanel';
 import { RakordaPanel } from './RakordaPanel';
 import { ServisBerkalaPanel } from './ServisBerkalaPanel';
@@ -37,6 +38,7 @@ const documentTypes = [
   { value: 'ba-pemeriksaan', label: 'BA Pemeriksaan' },
   { value: 'servis-berkala', label: 'Servis Berkala' },
   { value: 'tkdn', label: 'TKDN' },
+  { value: 'gas-elpiji', label: 'Gas LPG' },
 ] as const;
 
 type DocumentType = (typeof documentTypes)[number];
@@ -156,7 +158,9 @@ export function BeritaAcaraPage() {
                               ? <section aria-label="TKDN"><TKDNPanel scheduleID={selectedSchedule.id} programID={selectedSchedule.program_id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} defaultDate={selectedSchedule.start_date.slice(0, 10)} /></section>
                               : document.value === 'ba-pemeriksaan' && selectedSchedule && programType
                                 ? <section aria-label="BA Pemeriksaan"><PemeriksaanPanel scheduleID={selectedSchedule.id} programID={selectedSchedule.program_id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} defaultDate={selectedSchedule.start_date.slice(0, 10)} /></section>
-                                : <DocumentWorkspace document={document} programType={programType} />}
+                                : document.value === 'gas-elpiji' && selectedSchedule && programType
+                                  ? <section aria-label="BA Gas LPG"><GasElpijiPanel scheduleID={selectedSchedule.id} regencyName={selectedSchedule.regency?.name ?? 'Kabupaten/Kota'} programType={programType} defaultDate={selectedSchedule.start_date.slice(0, 10)} /></section>
+                                  : <DocumentWorkspace document={document} programType={programType} />}
       </TabsContent>)}
     </Tabs>
   </div>;

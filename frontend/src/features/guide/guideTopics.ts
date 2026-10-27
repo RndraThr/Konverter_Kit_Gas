@@ -54,7 +54,7 @@ export function topicForStep(stepId: string) {
  */
 const tabSections: Record<string, Record<string, string>> = {
   'persiapan-program': { regencies: 'kabupaten', programs: 'program', zones: 'zona', templates: 'template-paket', logos: 'logo', schedules: 'jadwal' },
-  'berita-acara': { dp3: 'isian-preview', 'ba-perorangan': 'per-tanggal', 'rekap-harian': 'per-tanggal', 'closing-titik-serah': 'isian-preview', 'closing-kabupaten': 'isian-preview', rakorda: 'daftar-hadir', sosialisasi: 'daftar-hadir', 'training-10': 'daftar-hadir', 'training-100': 'daftar-hadir', 'ba-pemeriksaan': 'pemeriksaan', 'servis-berkala': 'servis', tkdn: 'tkdn' },
+  'berita-acara': { dp3: 'isian-preview', 'ba-perorangan': 'per-tanggal', 'rekap-harian': 'per-tanggal', 'closing-titik-serah': 'isian-preview', 'closing-kabupaten': 'isian-preview', rakorda: 'daftar-hadir', sosialisasi: 'daftar-hadir', 'training-10': 'daftar-hadir', 'training-100': 'daftar-hadir', 'ba-pemeriksaan': 'pemeriksaan', 'servis-berkala': 'servis', tkdn: 'tkdn', 'gas-elpiji': 'gas-lpg' },
 };
 
 export function sectionForTab(slug: string, tab: string | null) {

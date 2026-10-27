@@ -46,6 +46,7 @@ var overviewAggregates = map[string]string{
 	"closing-kabupaten":   "closing_kabupaten",
 	"servis-berkala":      "servis_berkala",
 	"tkdn":                "tkdn",
+	"gas-elpiji":          "gas_elpiji",
 	"pemeriksaan":         "pemeriksaan",
 }
 
