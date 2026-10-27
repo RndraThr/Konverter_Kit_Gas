@@ -67,4 +67,34 @@ func TestIntegrationGasElpijiReceiptsListAndCancel(t *testing.T) {
 	if err != nil || len(items) != 1 || items[0].Document.ID != earlier.ID {
 		t.Fatalf("after cancel items=%+v err=%v", items, err)
 	}
+
+	// Draf isian: simpan, timpa, baca, daftar, lalu hapus.
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM bast_gas_elpiji_drafts WHERE schedule_id=$1`, scheduleID)
+	})
+	draft := GasElpijiInput{ScheduleID: scheduleID, DocumentDate: "2026-12-20", WarehouseLocation: "SPBE", CylinderCount: 5}
+	if err := repository.SaveGasElpijiDraft(ctx, auth.Principal{}, draft); err != nil {
+		t.Fatal(err)
+	}
+	draft.CylinderCount = 7
+	if err := repository.SaveGasElpijiDraft(ctx, auth.Principal{}, draft); err != nil {
+		t.Fatal(err)
+	}
+	got, err := repository.GetGasElpijiDraft(ctx, scheduleID, "2026-12-20")
+	if err != nil || got.CylinderCount != 7 || got.WarehouseLocation != "SPBE" {
+		t.Fatalf("draft=%+v err=%v", got, err)
+	}
+	drafts, err := repository.ListGasElpijiDrafts(ctx, scheduleID)
+	if err != nil || len(drafts) != 1 {
+		t.Fatalf("drafts=%+v err=%v", drafts, err)
+	}
+	if err := repository.DeleteGasElpijiDraft(ctx, scheduleID, "2026-12-20"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.GetGasElpijiDraft(ctx, scheduleID, "2026-12-20"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted draft err=%v", err)
+	}
+	if scan, code, err := repository.GetWetScanImage(ctx, scheduleID, gasElpijiDocumentKey, "2026-12-20"); err != nil || scan != nil || code != "" {
+		t.Fatalf("missing scan=%v code=%q err=%v", scan, code, err)
+	}
 }

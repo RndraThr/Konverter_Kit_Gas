@@ -18,6 +18,10 @@ const (
 	AggregateDocumentGasElpiji       = "gas_elpiji"
 	AggregateDocumentGasElpijiMerged = "gas_elpiji_gabungan"
 
+	// gasElpijiDocumentKey adalah kunci BA ini pada tanda tangan digital,
+	// tanda tangan basah, dan tab UI.
+	gasElpijiDocumentKey = "gas-elpiji"
+
 	gasElpijiMaxCylinders = 1000000
 	gasElpijiMaxText      = 300
 )
@@ -59,9 +63,14 @@ func (input *GasElpijiInput) normalize() error {
 	return nil
 }
 
+// complete memeriksa isian wajib penerimaan. Nama penanda tangan diperiksa
+// pada snapshot, karena nama kosong diisi dari Penandatangan jadwal.
 func (input GasElpijiInput) complete() bool {
-	return input.WarehouseLocation != "" && input.WarehouseAddress != "" && input.PIC != "" &&
-		input.CylinderCount > 0 && input.ReceiverName != "" && input.PertaminaName != ""
+	return input.WarehouseLocation != "" && input.WarehouseAddress != "" && input.PIC != "" && input.CylinderCount > 0
+}
+
+func (s GasElpijiSnapshot) signersComplete() bool {
+	return s.ReceiverName != "" && s.PertaminaName != ""
 }
 
 // GasElpijiSnapshot adalah snapshot_json satu penerimaan.
@@ -79,6 +88,8 @@ type GasElpijiSnapshot struct {
 	ReceiverCompany   string         `json:"receiver_company"`
 	PertaminaName     string         `json:"pertamina_name"`
 	Logos             []LogoSnapshot `json:"logos"`
+	SignatureMarks    SignatureMarks `json:"signature_marks,omitempty"`
+	Wet               WetSignature   `json:"wet_signature,omitempty"`
 }
 
 func (s GasElpijiSnapshot) input(scheduleID string) GasElpijiInput {
@@ -108,12 +119,16 @@ type GasElpijiMergedSnapshot struct {
 type GasElpijiReceipt struct {
 	Document AggregateDocument `json:"document"`
 	Input    GasElpijiInput    `json:"input"`
-	snapshot GasElpijiSnapshot
+	// WetScanned: halaman penerimaan ini memakai pindaian tanda tangan basah.
+	WetScanned bool `json:"wet_scanned"`
+	snapshot   GasElpijiSnapshot
 }
 
 // GasElpijiSummary memberi panel daftar penerimaan dan status gabungan.
 type GasElpijiSummary struct {
-	Receipts       []GasElpijiReceipt `json:"receipts"`
+	Receipts []GasElpijiReceipt `json:"receipts"`
+	// Drafts: isian tersimpan yang belum (atau sesudah) difinalisasi, per tanggal.
+	Drafts         []GasElpijiInput   `json:"drafts"`
 	TotalCylinders int                `json:"total_cylinders"`
 	Merged         *AggregateDocument `json:"merged"`
 	// MergedCurrent: gabungan aktif memuat persis penerimaan aktif saat ini.
@@ -137,9 +152,9 @@ func buildGasElpijiSnapshot(ctx DP3Context, settings ScheduleSettings, logos []L
 		PIC:               input.PIC,
 		CylinderCount:     input.CylinderCount,
 		Remarks:           input.Remarks,
-		ReceiverName:      input.ReceiverName,
+		ReceiverName:      firstNonEmpty(input.ReceiverName, settings.InstallerName),
 		ReceiverCompany:   settings.Consultant(),
-		PertaminaName:     input.PertaminaName,
+		PertaminaName:     firstNonEmpty(input.PertaminaName, settings.PertaminaRepName),
 		Logos:             sortedLogoCopy(logos),
 	}
 }

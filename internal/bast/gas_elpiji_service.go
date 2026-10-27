@@ -30,6 +30,12 @@ type gasElpijiRepository interface {
 	ListAggregates(context.Context, string, string, string, auth.RegencyScope) ([]AggregateDocument, error)
 	ListActiveAggregatesWithSnapshot(context.Context, string, string, auth.RegencyScope) ([]AggregateWithSnapshot, error)
 	RetireAggregate(context.Context, auth.Principal, string, string, auth.RegencyScope, auth.ClientMeta) (AggregateDocument, error)
+	ListGasElpijiDrafts(context.Context, string) ([]GasElpijiInput, error)
+	GetGasElpijiDraft(context.Context, string, string) (GasElpijiInput, error)
+	SaveGasElpijiDraft(context.Context, auth.Principal, GasElpijiInput) error
+	DeleteGasElpijiDraft(context.Context, string, string) error
+	GetWetScanImage(context.Context, string, string, string) ([]byte, string, error)
+	WetSignatureEnabled(context.Context, string, string, auth.RegencyScope) (bool, error)
 }
 
 // GasElpijiService menerbitkan BA Gas Elpiji per penerimaan LPG dan BA
@@ -53,7 +59,11 @@ func (s *GasElpijiService) Summary(ctx context.Context, scheduleID string, scope
 	if err != nil {
 		return GasElpijiSummary{}, err
 	}
-	summary := GasElpijiSummary{Receipts: receipts}
+	drafts, err := s.repository.ListGasElpijiDrafts(ctx, ctxData.ScheduleID)
+	if err != nil {
+		return GasElpijiSummary{}, err
+	}
+	summary := GasElpijiSummary{Receipts: receipts, Drafts: drafts}
 	for _, receipt := range receipts {
 		summary.TotalCylinders += receipt.Input.CylinderCount
 	}
@@ -90,7 +100,11 @@ func (s *GasElpijiService) Preview(ctx context.Context, input GasElpijiInput, sc
 	if err != nil {
 		return AggregatePreview{}, err
 	}
-	rendered, err := s.render(ctx, []GasElpijiSnapshot{snapshot})
+	images, err := s.decorate(ctx, ctxData.ScheduleID, &snapshot)
+	if err != nil {
+		return AggregatePreview{}, err
+	}
+	rendered, err := s.render(ctx, []GasElpijiSnapshot{snapshot}, images)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
@@ -105,14 +119,66 @@ func (s *GasElpijiService) Finalize(ctx context.Context, actor auth.Principal, i
 	if err != nil {
 		return AggregateDocument{}, err
 	}
-	rendered, err := s.render(ctx, []GasElpijiSnapshot{snapshot})
+	images, err := s.decorate(ctx, ctxData.ScheduleID, &snapshot)
 	if err != nil {
 		return AggregateDocument{}, err
 	}
-	return s.store(ctx, actor, ctxData, AggregateDocumentGasElpiji, snapshot.DocumentDate, snapshot, rendered, snapshot.CylinderCount, scope, meta,
+	if snapshot.Wet.Enabled && !snapshot.Wet.Scanned {
+		return AggregateDocument{}, ErrWetSignatureRequired
+	}
+	rendered, err := s.render(ctx, []GasElpijiSnapshot{snapshot}, images)
+	if err != nil {
+		return AggregateDocument{}, err
+	}
+	doc, err := s.store(ctx, actor, ctxData, AggregateDocumentGasElpiji, snapshot.DocumentDate, snapshot, rendered, snapshot.CylinderCount, scope, meta,
 		func(version int) string {
 			return formatGasElpijiFilename(ctxData.RegencyName, snapshot.DocumentDate, version)
 		})
+	if err != nil {
+		return AggregateDocument{}, err
+	}
+	// Isian sudah tersimpan di dokumen; draf tanggal ini tidak diperlukan lagi.
+	_ = s.repository.DeleteGasElpijiDraft(ctx, ctxData.ScheduleID, snapshot.DocumentDate)
+	return doc, nil
+}
+
+// SaveDraft menyimpan isian yang belum difinalisasi agar halaman tanda tangan
+// basah dan editor tanda tangan (yang dirender per jadwal dan tanggal) memakai
+// isian yang sama dengan finalisasi nanti.
+func (s *GasElpijiService) SaveDraft(ctx context.Context, actor auth.Principal, input GasElpijiInput, scope auth.RegencyScope) error {
+	if err := input.normalize(); err != nil {
+		return err
+	}
+	ctxData, err := s.repository.GetDP3Context(ctx, input.ScheduleID, scope)
+	if err != nil {
+		return err
+	}
+	input.ScheduleID = ctxData.ScheduleID
+	return s.repository.SaveGasElpijiDraft(ctx, actor, input)
+}
+
+// SignaturePreview merender BA satu tanggal untuk editor tanda tangan dan
+// halaman tanda tangan basah: dari draf, penerimaan final, atau isian kosong.
+func (s *GasElpijiService) SignaturePreview(ctx context.Context, scheduleID, date string, scope auth.RegencyScope) (AggregatePreview, error) {
+	scheduleID, date = strings.TrimSpace(scheduleID), strings.TrimSpace(date)
+	input, err := s.repository.GetGasElpijiDraft(ctx, scheduleID, date)
+	switch {
+	case errors.Is(err, ErrNotFound):
+		input = GasElpijiInput{}
+		receipts, listErr := s.receipts(ctx, scheduleID, scope)
+		if listErr != nil {
+			return AggregatePreview{}, listErr
+		}
+		for _, receipt := range receipts {
+			if receipt.Document.DocumentDate == date {
+				input = receipt.Input
+			}
+		}
+	case err != nil:
+		return AggregatePreview{}, err
+	}
+	input.ScheduleID, input.DocumentDate = scheduleID, date
+	return s.Preview(ctx, input, scope)
 }
 
 // MergedPreview menggabungkan semua penerimaan aktif menjadi satu PDF.
@@ -121,7 +187,11 @@ func (s *GasElpijiService) MergedPreview(ctx context.Context, scheduleID string,
 	if err != nil {
 		return AggregatePreview{}, err
 	}
-	rendered, err := s.render(ctx, merged.pages())
+	images, err := s.mergedImages(ctx, ctxData.ScheduleID, &merged, false, scope)
+	if err != nil {
+		return AggregatePreview{}, err
+	}
+	rendered, err := s.render(ctx, merged.pages(), images)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
@@ -136,7 +206,11 @@ func (s *GasElpijiService) FinalizeMerged(ctx context.Context, actor auth.Princi
 	if err != nil {
 		return AggregateDocument{}, err
 	}
-	rendered, err := s.render(ctx, merged.pages())
+	images, err := s.mergedImages(ctx, ctxData.ScheduleID, &merged, true, scope)
+	if err != nil {
+		return AggregateDocument{}, err
+	}
+	rendered, err := s.render(ctx, merged.pages(), images)
 	if err != nil {
 		return AggregateDocument{}, err
 	}
@@ -165,6 +239,7 @@ func (s *GasElpijiService) Cancel(ctx context.Context, actor auth.Principal, id 
 	if err != nil {
 		return err
 	}
+	_ = s.repository.DeleteGasElpijiDraft(ctx, doc.ScheduleID, doc.DocumentDate)
 	if doc.StorageKey != "" {
 		if deleteErr := s.storage.Delete(ctx, doc.StorageKey); deleteErr != nil {
 			_ = s.repository.RecordAggregateCleanupFailure(context.Background(), doc.ID, fmt.Sprintf("cleanup cancelled storage key %s: %v", doc.StorageKey, deleteErr))
@@ -199,7 +274,7 @@ func (s *GasElpijiService) receipts(ctx context.Context, scheduleID string, scop
 		if err := json.Unmarshal(row.Snapshot, &snapshot); err != nil {
 			return nil, fmt.Errorf("decode gas elpiji snapshot %s: %w", row.Document.ID, err)
 		}
-		receipts = append(receipts, GasElpijiReceipt{Document: row.Document, Input: snapshot.input(scheduleID), snapshot: snapshot})
+		receipts = append(receipts, GasElpijiReceipt{Document: row.Document, Input: snapshot.input(scheduleID), WetScanned: snapshot.Wet.Scanned, snapshot: snapshot})
 	}
 	return receipts, nil
 }
@@ -229,7 +304,11 @@ func (s *GasElpijiService) snapshot(ctx context.Context, input GasElpijiInput, r
 	if len(logos) == 0 {
 		return GasElpijiSnapshot{}, DP3Context{}, ErrBrandingNotConfigured
 	}
-	return buildGasElpijiSnapshot(ctxData, settings, logos, input), ctxData, nil
+	snapshot := buildGasElpijiSnapshot(ctxData, settings, logos, input)
+	if requireComplete && !snapshot.signersComplete() {
+		return GasElpijiSnapshot{}, DP3Context{}, ErrGasElpijiIncomplete
+	}
+	return snapshot, ctxData, nil
 }
 
 func (s *GasElpijiService) mergedSnapshot(ctx context.Context, scheduleID string, scope auth.RegencyScope) (GasElpijiMergedSnapshot, DP3Context, error) {
@@ -266,16 +345,79 @@ func (m GasElpijiMergedSnapshot) pages() []GasElpijiSnapshot {
 	return pages
 }
 
-func (s *GasElpijiService) render(ctx context.Context, snapshots []GasElpijiSnapshot) (RenderedAggregate, error) {
+func (s *GasElpijiService) render(ctx context.Context, snapshots []GasElpijiSnapshot, images map[string][]byte) (RenderedAggregate, error) {
 	var logos []LogoSnapshot
 	for _, snapshot := range snapshots {
-		logos = append(logos, snapshot.Logos...)
+		if !snapshot.Wet.Scanned {
+			logos = append(logos, snapshot.Logos...)
+		}
 	}
 	logoBytes, err := loadLogoBytes(ctx, s.storage, logos)
 	if err != nil {
 		return RenderedAggregate{}, err
 	}
+	mergeImages(logoBytes, images)
 	return RenderGasElpiji(snapshots, logoBytes)
+}
+
+// decorate melengkapi snapshot satu penerimaan dengan tanda tangan digital dan
+// status tanda tangan basah, lalu mengembalikan gambar yang perlu dirender.
+func (s *GasElpijiService) decorate(ctx context.Context, scheduleID string, snapshot *GasElpijiSnapshot) (map[string][]byte, error) {
+	marks, markImages, err := loadSignatoryMarks(ctx, s.repository, scheduleID, gasElpijiDocumentKey)
+	if err != nil {
+		return nil, err
+	}
+	snapshot.SignatureMarks = marks
+	wet, wetImages, err := loadWetSignature(ctx, s.repository, scheduleID, gasElpijiDocumentKey, snapshot.DocumentDate, *snapshot)
+	if err != nil {
+		return nil, err
+	}
+	snapshot.Wet = wet
+	images := map[string][]byte{}
+	mergeImages(images, markImages)
+	if data, ok := wetImages[wetScanImageKey]; ok {
+		images[gasElpijiScanKey(snapshot.DocumentDate)] = data
+	}
+	return images, nil
+}
+
+// mergedImages mengumpulkan gambar tanda tangan digital dan pindaian setiap
+// penerimaan untuk BA gabungan. strict (finalisasi) menolak bila mode tanda
+// tangan basah aktif tetapi ada penerimaan tanpa pindaian, atau pindaiannya
+// sudah diganti; preview menampilkan halaman buatan sistem untuk penerimaan itu.
+func (s *GasElpijiService) mergedImages(ctx context.Context, scheduleID string, merged *GasElpijiMergedSnapshot, strict bool, scope auth.RegencyScope) (map[string][]byte, error) {
+	_, markImages, err := loadSignatoryMarks(ctx, s.repository, scheduleID, gasElpijiDocumentKey)
+	if err != nil {
+		return nil, err
+	}
+	images := map[string][]byte{}
+	mergeImages(images, markImages)
+	wetEnabled, err := s.repository.WetSignatureEnabled(ctx, scheduleID, gasElpijiDocumentKey, scope)
+	if err != nil {
+		return nil, err
+	}
+	for i := range merged.Receipts {
+		page := &merged.Receipts[i].Snapshot
+		if !page.Wet.Scanned {
+			if wetEnabled && strict {
+				return nil, ErrWetSignatureRequired
+			}
+			continue
+		}
+		scan, code, err := s.repository.GetWetScanImage(ctx, scheduleID, gasElpijiDocumentKey, page.DocumentDate)
+		if err != nil {
+			return nil, err
+		}
+		if len(scan) == 0 || code != page.Wet.Code {
+			if strict {
+				return nil, ErrWetSignatureRequired
+			}
+			page.Wet.Scanned = false
+			continue
+		}
+		images[gasElpijiScanKey(page.DocumentDate)] = scan
+	}
+	return images, nil
 }
 
 // store mengunggah PDF ke folder BA Gas Elpiji lalu mengaktifkannya; isi yang

@@ -29,6 +29,7 @@ var ErrWetSignatureRequired = errors.New("signed signature page scan is required
 var wetSignatureDocuments = map[string]bool{
 	"dp3": true, "rekap-harian": true, "closing-titik-serah": true,
 	"closing-kabupaten": true, "servis-berkala": true, "tkdn": true,
+	"gas-elpiji": true,
 }
 
 const wetScanImageKey = "wetscan"
@@ -117,14 +118,20 @@ func loadWetSignature(ctx context.Context, repository any, scheduleID, documentK
 
 // registerWetScan mendaftarkan PNG halaman pindaian ke PDF bila ada.
 func registerWetScan(pdf *fpdf.Fpdf, images map[string][]byte) {
-	data, ok := images[wetScanImageKey]
+	registerWetScanAs(pdf, images, wetScanImageKey)
+}
+
+// registerWetScanAs mendaftarkan pindaian dengan kunci gambar tertentu (BA
+// gabungan memuat beberapa pindaian, satu per halaman).
+func registerWetScanAs(pdf *fpdf.Fpdf, images map[string][]byte, key string) {
+	data, ok := images[key]
 	if !ok {
 		return
 	}
 	if _, err := png.DecodeConfig(bytes.NewReader(data)); err != nil {
 		return
 	}
-	pdf.RegisterImageOptionsReader(wetScanImageKey, fpdf.ImageOptions{ImageType: "PNG"}, bytes.NewReader(data))
+	pdf.RegisterImageOptionsReader(key, fpdf.ImageOptions{ImageType: "PNG"}, bytes.NewReader(data))
 	if pdf.Err() {
 		pdf.ClearError()
 	}
@@ -133,8 +140,12 @@ func registerWetScan(pdf *fpdf.Fpdf, images map[string][]byte) {
 // drawWetScanPage menambahkan halaman berisi pindaian halaman tanda tangan,
 // diperkecil proporsional agar muat di halaman A4 dengan margin tipis.
 func drawWetScanPage(pdf *fpdf.Fpdf, orientation string) {
+	drawWetScanPageAs(pdf, orientation, wetScanImageKey)
+}
+
+func drawWetScanPageAs(pdf *fpdf.Fpdf, orientation, key string) {
 	pdf.AddPageFormat(orientation, pdf.GetPageSizeStr("A4"))
-	info := pdf.GetImageInfo(wetScanImageKey)
+	info := pdf.GetImageInfo(key)
 	if info == nil || info.Width() <= 0 || info.Height() <= 0 {
 		return
 	}
@@ -145,7 +156,7 @@ func drawWetScanPage(pdf *fpdf.Fpdf, orientation string) {
 	if drawH > boxH {
 		drawH, drawW = boxH, boxH*info.Width()/info.Height()
 	}
-	pdf.ImageOptions(wetScanImageKey, (pageW-drawW)/2, (pageH-drawH)/2, drawW, drawH, false, fpdf.ImageOptions{ImageType: "PNG"}, 0, "")
+	pdf.ImageOptions(key, (pageW-drawW)/2, (pageH-drawH)/2, drawW, drawH, false, fpdf.ImageOptions{ImageType: "PNG"}, 0, "")
 }
 
 // printWetFooter: tulisan kode dokumen di kaki halaman tanda tangan basah.

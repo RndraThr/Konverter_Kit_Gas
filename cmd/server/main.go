@@ -133,6 +133,7 @@ func run(ctx context.Context, cfg config.Config) error {
 			"ba-pemeriksaan":      bast.PreviewFunc(bastPemeriksaanService.SignaturePreview),
 			"servis-berkala":      bastServisBerkalaService,
 			"tkdn":                bastTKDNService,
+			"gas-elpiji":          bast.PreviewFunc(bastGasElpijiService.SignaturePreview),
 		}),
 		BASTOverview: bastRepository,
 		BASTWetSignature: bast.NewWetSignatureService(bastRepository, map[string]bast.WetPreviewer{
@@ -142,6 +143,7 @@ func run(ctx context.Context, cfg config.Config) error {
 			"closing-kabupaten":   bastClosingKabupatenService,
 			"servis-berkala":      bastServisBerkalaService,
 			"tkdn":                bastTKDNService,
+			"gas-elpiji":          bast.PreviewFunc(bastGasElpijiService.SignaturePreview),
 		}),
 		DP3:               bastDP3Service,
 		DailyRecap:        bastDailyRecapService,

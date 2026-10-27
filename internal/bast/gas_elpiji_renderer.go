@@ -45,9 +45,18 @@ func RenderGasElpiji(snapshots []GasElpijiSnapshot, logoBytes map[string][]byte)
 	pdf.SetAuthor("KONKIT", false)
 	registerArial(pdf)
 
+	registerSignatoryImages(pdf, logoBytes)
 	for i, snapshot := range snapshots {
 		if snapshot.DocumentType != AggregateDocumentGasElpiji {
 			return RenderedAggregate{}, ErrInvalidInput
+		}
+		// Satu halaman: bila sudah ditandatangani basah, pindaiannya menggantikan
+		// seluruh halaman.
+		scanKey := gasElpijiScanKey(snapshot.DocumentDate)
+		if snapshot.Wet.Scanned {
+			registerWetScanAs(pdf, logoBytes, scanKey)
+			drawWetScanPageAs(pdf, "P", scanKey)
+			continue
 		}
 		logos, err := registerLogos(pdf, snapshot.Logos, logoBytes, i)
 		if err != nil {
@@ -55,6 +64,7 @@ func RenderGasElpiji(snapshots []GasElpijiSnapshot, logoBytes map[string][]byte)
 		}
 		pdf.AddPage()
 		renderGasElpijiPage(pdf, snapshot, logos)
+		drawWetFooter(pdf, snapshot.Wet, "BA Gas Elpiji", snapshot.DocumentDate)
 	}
 
 	var output bytes.Buffer
@@ -63,6 +73,10 @@ func RenderGasElpiji(snapshots []GasElpijiSnapshot, logoBytes map[string][]byte)
 	}
 	return RenderedAggregate{PDF: output.Bytes(), PageCount: pdf.PageNo()}, nil
 }
+
+// gasElpijiScanKey adalah kunci gambar pindaian tanda tangan basah satu
+// penerimaan (unik per tanggal agar BA gabungan dapat memuat semuanya).
+func gasElpijiScanKey(date string) string { return wetScanImageKey + ":" + date }
 
 func renderGasElpijiPage(pdf *fpdf.Fpdf, snapshot GasElpijiSnapshot, logos []registeredLogo) {
 	contentWidth := pageWidthMM - 2*marginMM
@@ -173,6 +187,8 @@ func renderGasElpijiSignatures(pdf *fpdf.Fpdf, snapshot GasElpijiSnapshot) {
 		pdf.Rect(left, y, width, gasElpijiSignHeadMM, "")
 		pdf.Text(left+(width-pdf.GetStringWidth(header))/2, textBaseline(y, gasElpijiSignHeadMM, activitySignaturePt), header)
 		pdf.Rect(left, y+gasElpijiSignHeadMM, width, gasElpijiSignSpaceMM, "")
+		role := signatureDocuments[gasElpijiDocumentKey][i]
+		drawSignatoryMark(pdf, role, snapshot.SignatureMarks[role], left, y+gasElpijiSignHeadMM, width, gasElpijiSignSpaceMM)
 		nameTop := y + gasElpijiSignHeadMM + gasElpijiSignSpaceMM
 		pdf.Rect(left, nameTop, width, nameHeight, "")
 		for j, text := range names[i] {

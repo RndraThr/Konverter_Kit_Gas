@@ -9,7 +9,7 @@ import (
 )
 
 // handleBASTGasElpiji melayani /api/v1/bast/gas-elpiji/*: penerimaan LPG per
-// tanggal (summary, preview, finalize, documents, cancel) dan BA gabungan
+// tanggal (summary, preview, draft, finalize, documents, cancel) dan BA gabungan
 // (merged/preview, merged/finalize, merged/documents).
 func (h *Handler) handleBASTGasElpiji(w http.ResponseWriter, r *http.Request, rc requestContext, suffix string) {
 	service := h.deps.GasElpiji
@@ -71,6 +71,23 @@ func (h *Handler) handleBASTGasElpiji(w http.ResponseWriter, r *http.Request, rc
 			return
 		}
 		writeData(w, http.StatusOK, result)
+	case "draft":
+		if !h.gasElpijiGuard(w, r, rc, http.MethodPut, "bast.manage") {
+			return
+		}
+		var input bast.GasElpijiInput
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		scope, ok := h.regencyScope(w, r, rc.principal)
+		if !ok {
+			return
+		}
+		if err := service.SaveDraft(r.Context(), rc.principal, input, scope); err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeData(w, http.StatusOK, map[string]bool{"saved": true})
 	case "documents":
 		if !h.gasElpijiGuard(w, r, rc, http.MethodGet, "bast.view") {
 			return

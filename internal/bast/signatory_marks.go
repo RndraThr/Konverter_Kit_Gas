@@ -58,6 +58,7 @@ var signatureDocuments = map[string][]string{
 	"ba-pemeriksaan":      fourSignatories,
 	"servis-berkala":      {SignatoryInstaller, SignatoryAgricultureOffice},
 	"tkdn":                fourSignatories,
+	"gas-elpiji":          {SignatoryInstaller, SignatoryPertamina},
 }
 
 // SignatureRule menentukan apakah tanda tangan dan stempel satu pihak dicetak,

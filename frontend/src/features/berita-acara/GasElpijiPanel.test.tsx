@@ -11,10 +11,14 @@ vi.mock('@/lib/api', () => ({ apiRequest: vi.fn(), apiBlobRequest: vi.fn() }))
 const receipt = {
   document: { id: 'doc-1', schedule_id: 'schedule-1', program_id: 'p', regency_id: 'r', document_type: 'gas_elpiji', document_date: '2026-12-02', filename: 'BA GAS ELPIJI - V1.pdf', recipient_count: 120, page_count: 1, version: 1, status: 'active' as const, checksum: 'a', finalized_at: '2026-12-02T08:00:00Z' },
   input: { schedule_id: 'schedule-1', document_date: '2026-12-02', warehouse_location: 'SPBE Bangka', warehouse_address: 'Jl. Raya Sungailiat', pic: 'Budi', cylinder_count: 120, remarks: 'Baik', receiver_name: 'Dwi', pertamina_name: 'Rina' },
+  wet_scanned: false,
 }
 
-function mockApi(summary: GasElpijiSummary) {
+function mockApi(summary: GasElpijiSummary, wet: { enabled: boolean; scan?: { uploaded_at: string; valid: boolean } } = { enabled: false }) {
   vi.mocked(apiRequest).mockImplementation(async (path) => {
+    if (path.includes('/wet-signature')) return { data: { supported: true, code: 'ABCD1234', ...wet } }
+    if (path.includes('/settings')) return { data: { schedule_id: 'schedule-1', installer_name: 'ANDI PELAKSANA', pertamina_rep_name: 'RINA PERTAMINA' } }
+    if (path.includes('/gas-elpiji/draft')) return { data: { saved: true } }
     if (path.includes('/gas-elpiji/summary')) return { data: summary }
     if (path.includes('/gas-elpiji/documents')) return { data: [] }
     if (path.includes('/gas-elpiji/finalize')) return { data: receipt.document }
@@ -38,7 +42,7 @@ beforeEach(() => {
 })
 
 test('loads a finalized receipt into the form and offers merging', async () => {
-  mockApi({ receipts: [receipt], total_cylinders: 120, merged: null, merged_current: false })
+  mockApi({ receipts: [receipt], drafts: [], total_cylinders: 120, merged: null, merged_current: false })
   renderPanel()
   expect(await screen.findByLabelText(/^Lokasi gudang/)).toHaveValue('SPBE Bangka')
   expect(screen.getByLabelText(/^Jumlah tabung/)).toHaveValue(120)
@@ -51,7 +55,7 @@ test('loads a finalized receipt into the form and offers merging', async () => {
 })
 
 test('a new delivery date keeps the warehouse and names but needs a fresh count', async () => {
-  mockApi({ receipts: [receipt], total_cylinders: 120, merged: { ...receipt.document, id: 'merged-1' }, merged_current: true })
+  mockApi({ receipts: [receipt], drafts: [], total_cylinders: 120, merged: { ...receipt.document, id: 'merged-1' }, merged_current: true })
   renderPanel('2026-12-12')
   expect(await screen.findByLabelText(/^Lokasi gudang/)).toHaveValue('SPBE Bangka')
   expect(screen.getByLabelText(/^Jumlah tabung/)).toHaveValue(null)
@@ -66,4 +70,27 @@ test('a new delivery date keeps the warehouse and names but needs a fresh count'
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/bast/gas-elpiji/finalize', expect.objectContaining({ method: 'POST' })))
   const body = JSON.parse(vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/api/v1/bast/gas-elpiji/finalize')![1]!.body as string)
   expect(body).toMatchObject({ document_date: '2026-12-12', cylinder_count: 80, warehouse_location: 'SPBE Bangka', remarks: '' })
+})
+
+test('wet signature mode saves the draft, blocks finalizing without a scan, and holds the merge', async () => {
+  mockApi({ receipts: [receipt], drafts: [], total_cylinders: 120, merged: null, merged_current: false }, { enabled: true })
+  renderPanel('2026-12-12')
+  expect(await screen.findByText('Tanda tangan basah')).toBeVisible()
+  expect(screen.getByLabelText(/^Nama penerima/)).toHaveAttribute('placeholder', 'ANDI PELAKSANA')
+  expect(screen.getByText(/1 penerimaan belum memakai halaman bertanda tangan basah/)).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Gabungkan & finalisasi' })).toBeDisabled()
+
+  fireEvent.change(screen.getByLabelText(/^Jumlah tabung/), { target: { value: '80' } })
+  expect(screen.getByRole('button', { name: 'Finalisasi penerimaan' })).toBeDisabled()
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/bast/gas-elpiji/draft', expect.objectContaining({ method: 'PUT' })), { timeout: 3000 })
+  const body = JSON.parse(vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/api/v1/bast/gas-elpiji/draft')![1]!.body as string)
+  expect(body).toMatchObject({ document_date: '2026-12-12', cylinder_count: 80 })
+})
+
+test('a saved draft for the date is loaded into the form', async () => {
+  const draft = { ...receipt.input, document_date: '2026-12-20', cylinder_count: 55, warehouse_location: 'Gudang Draf' }
+  mockApi({ receipts: [receipt], drafts: [draft], total_cylinders: 120, merged: null, merged_current: false })
+  renderPanel('2026-12-20')
+  expect(await screen.findByLabelText(/^Lokasi gudang/)).toHaveValue('Gudang Draf')
+  expect(screen.getByLabelText(/^Jumlah tabung/)).toHaveValue(55)
 })

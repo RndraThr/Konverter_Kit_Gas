@@ -29,6 +29,17 @@ func TestGasElpijiInputNormalizeAndComplete(t *testing.T) {
 	if !input.complete() {
 		t.Fatal("expected complete input")
 	}
+	input.ReceiverName, input.PertaminaName = "", ""
+	if !input.complete() {
+		t.Fatal("blank signer names fall back to the schedule signatories")
+	}
+	snapshot := buildGasElpijiSnapshot(DP3Context{}, ScheduleSettings{InstallerName: "ANDI", PertaminaRepName: "  RINA  "}, nil, input)
+	if snapshot.ReceiverName != "ANDI" || snapshot.PertaminaName != "RINA" || !snapshot.signersComplete() {
+		t.Fatalf("fallback names=%q/%q", snapshot.ReceiverName, snapshot.PertaminaName)
+	}
+	if buildGasElpijiSnapshot(DP3Context{}, ScheduleSettings{}, nil, input).signersComplete() {
+		t.Fatal("no names anywhere must be incomplete")
+	}
 	input.CylinderCount = 0
 	if input.complete() {
 		t.Fatal("zero cylinders must be incomplete")
@@ -91,5 +102,44 @@ func TestMergedMatchesTracksReceiptChecksums(t *testing.T) {
 	}
 	if mergedMatches(snapshot, receipts[:1]) {
 		t.Fatal("cancelled receipt must make merged outdated")
+	}
+}
+
+func TestRenderGasElpijiUsesSignaturesAndWetScans(t *testing.T) {
+	logoBytes, err := loadLogoBytes(t.Context(), nil, sampleGasElpijiSnapshot("2026-12-02", 1).Logos)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logoBytes[signatoryImageKey(SignatoryInstaller, SignatoryKindSignature)] = testPNG(t)
+	logoBytes[signatoryImageKey(SignatoryPertamina, SignatoryKindStamp)] = testPNG(t)
+	digital := sampleGasElpijiSnapshot("2026-12-02", 120)
+	digital.SignatureMarks = SignatureMarks{SignatoryInstaller: {Signature: true}, SignatoryPertamina: {Stamp: true}}
+	plain, err := RenderGasElpiji([]GasElpijiSnapshot{sampleGasElpijiSnapshot("2026-12-02", 120)}, logoBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed, err := RenderGasElpiji([]GasElpijiSnapshot{digital}, logoBytes)
+	if err != nil || signed.PageCount != 1 || len(signed.PDF) <= len(plain.PDF) {
+		t.Fatalf("signed page_count=%d size=%d plain=%d err=%v", signed.PageCount, len(signed.PDF), len(plain.PDF), err)
+	}
+
+	// Penerimaan bertanda tangan basah memakai pindaiannya sebagai halaman,
+	// sedangkan penerimaan lain di BA gabungan tetap dirender sistem.
+	scanned := sampleGasElpijiSnapshot("2026-12-12", 80)
+	scanned.Wet = WetSignature{Enabled: true, Code: "ABCD1234", Scanned: true}
+	logoBytes[gasElpijiScanKey("2026-12-12")] = testPNG(t)
+	merged, err := RenderGasElpiji([]GasElpijiSnapshot{digital, scanned}, logoBytes)
+	if err != nil || merged.PageCount != 2 {
+		t.Fatalf("merged page_count=%d err=%v", merged.PageCount, err)
+	}
+	if gasElpijiScanKey("2026-12-12") == gasElpijiScanKey("2026-12-02") {
+		t.Fatal("scan keys must differ per date")
+	}
+}
+
+func TestGasElpijiSignatureParties(t *testing.T) {
+	roles := signatureDocuments[gasElpijiDocumentKey]
+	if len(roles) != 2 || roles[0] != SignatoryInstaller || roles[1] != SignatoryPertamina || !wetSignatureDocuments[gasElpijiDocumentKey] {
+		t.Fatalf("roles=%v wet=%v", roles, wetSignatureDocuments[gasElpijiDocumentKey])
 	}
 }

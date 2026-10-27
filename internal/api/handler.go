@@ -253,6 +253,7 @@ type GasElpijiService interface {
 	Documents(context.Context, string, string, auth.RegencyScope) ([]bast.AggregateDocument, error)
 	MergedDocuments(context.Context, string, auth.RegencyScope) ([]bast.AggregateDocument, error)
 	Cancel(context.Context, auth.Principal, string, auth.RegencyScope, auth.ClientMeta) error
+	SaveDraft(context.Context, auth.Principal, bast.GasElpijiInput, auth.RegencyScope) error
 	Open(context.Context, string, auth.RegencyScope) (bast.AggregateContent, error)
 }
 

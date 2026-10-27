@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, Eye, EyeOff, FileCheck2, Files, Fuel, Pencil, RefreshCw, Trash2 } from 'lucide-react';
+import { Download, Eye, EyeOff, FileCheck2, Files, Fuel, Pencil, RefreshCw, Signature, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { DataState } from '@/components/DataState';
@@ -12,7 +12,10 @@ import { apiBlobRequest, ApiError, apiRequest } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
-import type { AggregateDocument, GasElpijiInput, GasElpijiReceipt, GasElpijiSummary } from './types';
+import { SignatureSettingsPanel } from './SignatureSettingsPanel';
+import type { AggregateDocument, GasElpijiInput, GasElpijiReceipt, GasElpijiSummary, ScheduleSettings } from './types';
+import { useWetSignatureStatus, WetSignatureBar } from './WetSignatureBar';
+import { wetSignatureKey } from './wetScan';
 
 type Props = { scheduleID: string; regencyName: string; programType: ProgramType; defaultDate: string };
 type DataResponse<T> = { data: T };
@@ -30,8 +33,11 @@ const formatDate = (value: string) => new Intl.DateTimeFormat('id-ID', { day: 'n
 const formatCount = (value: number) => new Intl.NumberFormat('id-ID').format(value);
 
 function formFromInput(input: GasElpijiInput): ReceiptForm {
-  return { ...input, cylinder_count: input.cylinder_count > 0 ? String(input.cylinder_count) : '' };
+  const { warehouse_location, warehouse_address, pic, remarks, receiver_name, pertamina_name, cylinder_count } = input;
+  return { warehouse_location, warehouse_address, pic, remarks, receiver_name, pertamina_name, cylinder_count: cylinder_count > 0 ? String(cylinder_count) : '' };
 }
+
+const documentKey = 'gas-elpiji';
 
 // GasElpijiPanel: LPG satu kabupaten biasanya datang beberapa kali. Tiap
 // penerimaan difinalisasi per tanggal, lalu semuanya digabung menjadi satu BA
@@ -43,28 +49,43 @@ export function GasElpijiPanel({ scheduleID, regencyName, programType, defaultDa
   const [form, setForm] = useState<ReceiptForm>(emptyForm);
   const [showMerged, setShowMerged] = useState(false);
   const [cancelTarget, setCancelTarget] = useState<GasElpijiReceipt | null>(null);
+  const [showSignatures, setShowSignatures] = useState(false);
   const loadedKey = useRef('');
+  // edited: pengguna mengubah isian sejak dimuat; hanya isian yang diubah yang
+  // disimpan sebagai draf (bukan isian kosong saat panel baru dimuat).
+  const [edited, setEdited] = useState(false);
 
   const summary = useQuery({
     queryKey: ['bast', 'gas-elpiji', 'summary', scheduleID],
     queryFn: () => apiRequest<DataResponse<GasElpijiSummary>>(`/api/v1/bast/gas-elpiji/summary?schedule_id=${encodeURIComponent(scheduleID)}`),
     enabled: programType === 'farmer',
   });
+  // Nama penanda tangan yang dikosongkan diambil dari Penandatangan jadwal.
+  const scheduleSettings = useQuery({
+    queryKey: ['bast', 'schedule-settings', scheduleID],
+    queryFn: () => apiRequest<DataResponse<ScheduleSettings>>(`/api/v1/bast/schedules/${encodeURIComponent(scheduleID)}/settings`),
+    enabled: programType === 'farmer',
+  });
+  const wetStatus = useWetSignatureStatus(scheduleID, documentKey, documentDate).data?.data;
+  const wetEnabled = Boolean(wetStatus?.enabled);
   const receipts = summary.data?.data.receipts ?? [];
   const current = receipts.find((receipt) => receipt.document.document_date === documentDate);
 
-  // Isi formulir dari penerimaan tanggal terpilih bila sudah final. Tanggal baru
-  // mempertahankan isian sebelumnya (gudang dan nama biasanya sama), kecuali
-  // jumlah dan keterangan yang dikosongkan.
+  // Isi formulir dari draf tanggal terpilih, lalu dari penerimaan final tanggal
+  // itu. Tanggal baru mempertahankan isian sebelumnya (gudang dan nama
+  // biasanya sama), kecuali jumlah dan keterangan yang dikosongkan.
   useEffect(() => {
     if (!summary.data) return;
-    const loaded = summary.data.data.receipts;
+    const { receipts: loaded, drafts = [] } = summary.data.data;
     const match = loaded.find((receipt) => receipt.document.document_date === documentDate);
+    const draft = drafts.find((item) => item.document_date === documentDate);
     const key = `${documentDate}:${match?.document.id ?? ''}`;
     if (loadedKey.current === key) return;
     const first = loadedKey.current === '';
     loadedKey.current = key;
-    if (match) setForm(formFromInput(match.input));
+    const source = draft ?? match?.input;
+    setEdited(false);
+    if (source) setForm(formFromInput(source));
     else if (first && loaded.length > 0) setForm({ ...formFromInput(loaded[loaded.length - 1].input), cylinder_count: '', remarks: '' });
     else setForm((value) => ({ ...value, cylinder_count: '', remarks: '' }));
   }, [summary.data, documentDate]);
@@ -76,6 +97,15 @@ export function GasElpijiPanel({ scheduleID, regencyName, programType, defaultDa
     const timer = setTimeout(() => setPreviewInput(JSON.parse(inputKey) as GasElpijiInput), 600);
     return () => clearTimeout(timer);
   }, [inputKey]);
+
+  // Mode tanda tangan basah: halaman yang dicetak dirender dari isian tersimpan,
+  // jadi isian yang berubah disimpan sebagai draf (setelah jeda mengetik).
+  useEffect(() => {
+    if (!canManage || !wetEnabled || !edited || previewInput.document_date === '' || JSON.stringify(previewInput) !== inputKey) return;
+    apiRequest('/api/v1/bast/gas-elpiji/draft', { method: 'PUT', body: JSON.stringify(previewInput) })
+      .then(() => queryClient.invalidateQueries({ queryKey: wetSignatureKey(scheduleID, documentKey, previewInput.document_date) }))
+      .catch((error) => toast.error(`Draf belum tersimpan: ${errorMessage(error)}`));
+  }, [canManage, wetEnabled, edited, previewInput, inputKey, queryClient, scheduleID]);
 
   const preview = useQuery({
     queryKey: ['bast', 'gas-elpiji', 'preview', previewInput],
@@ -115,11 +145,22 @@ export function GasElpijiPanel({ scheduleID, regencyName, programType, defaultDa
   if (summary.isError) return <DataState kind="error" title="BA Gas Elpiji belum dapat dimuat" description="Periksa konfigurasi program atau koneksi, lalu coba lagi." action={{ label: 'Coba lagi', onClick: () => summary.refetch() }} />;
 
   const { total_cylinders: totalCylinders, merged, merged_current: mergedCurrent } = summary.data.data;
-  const complete = form.warehouse_location.trim() !== '' && form.warehouse_address.trim() !== '' && form.pic.trim() !== '' && input.cylinder_count > 0 && form.receiver_name.trim() !== '' && form.pertamina_name.trim() !== '';
+  const defaults = scheduleSettings.data?.data;
+  const receiverDefault = defaults?.installer_name?.trim() ?? '';
+  const pertaminaDefault = defaults?.pertamina_rep_name?.trim() ?? '';
+  const complete = form.warehouse_location.trim() !== '' && form.warehouse_address.trim() !== '' && form.pic.trim() !== '' && input.cylinder_count > 0
+    && (form.receiver_name.trim() !== '' || receiverDefault !== '') && (form.pertamina_name.trim() !== '' || pertaminaDefault !== '');
+  const wetBlocked = wetEnabled && !wetStatus?.scan?.valid;
+  const unsignedReceipts = wetEnabled ? receipts.filter((receipt) => !receipt.wet_scanned).length : 0;
   const versions = documents.data?.data ?? [];
-  const setField = (key: keyof ReceiptForm) => (event: { target: { value: string } }) => setForm((value) => ({ ...value, [key]: event.target.value }));
+  const setField = (key: keyof ReceiptForm) => (event: { target: { value: string } }) => {
+    setEdited(true);
+    setForm((value) => ({ ...value, [key]: event.target.value }));
+  };
 
   return <div className="grid gap-5">
+    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} date={documentDate} document={documentKey} documentLabel="Gas LPG" />}
+
     <div className="grid gap-5 xl:grid-cols-[24rem_minmax(0,1fr)]">
       <Card className="self-start">
         <CardHeader className="border-b"><CardTitle className="flex items-center gap-2 text-base"><Fuel className="size-4 text-primary" aria-hidden="true" />Penerimaan LPG</CardTitle></CardHeader>
@@ -131,16 +172,22 @@ export function GasElpijiPanel({ scheduleID, regencyName, programType, defaultDa
             <FormField label="Jumlah tabung" name="gas_cylinder_count" type="number" inputMode="numeric" min={1} required value={form.cylinder_count} disabled={!canManage} onChange={setField('cylinder_count')} />
             <FormField label="Keterangan" name="gas_remarks" maxLength={300} value={form.remarks} disabled={!canManage} onChange={setField('remarks')} />
           </div>
-          <FormField label="Nama penerima (PT pelaksana)" name="gas_receiver_name" required maxLength={300} value={form.receiver_name} disabled={!canManage} onChange={setField('receiver_name')} />
-          <FormField label="Nama petugas PT Pertamina Patra Niaga" name="gas_pertamina_name" required maxLength={300} value={form.pertamina_name} disabled={!canManage} onChange={setField('pertamina_name')} />
-          {!complete && <p className="text-xs text-muted-foreground">Lengkapi semua isian bertanda wajib sebelum finalisasi. Keterangan boleh kosong.</p>}
-          {canManage && <Button disabled={!complete || documentDate === '' || finalize.isPending} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi penerimaan'}</Button>}
+          <FormField label="Nama penerima (PT pelaksana)" name="gas_receiver_name" maxLength={300} value={form.receiver_name} disabled={!canManage} onChange={setField('receiver_name')}
+            placeholder={receiverDefault || undefined} hint={receiverDefault ? 'Kosongkan untuk memakai nama Pelaksana di Penandatangan.' : 'Wajib diisi, atau atur nama Pelaksana di Penandatangan.'} />
+          <FormField label="Nama petugas PT Pertamina Patra Niaga" name="gas_pertamina_name" maxLength={300} value={form.pertamina_name} disabled={!canManage} onChange={setField('pertamina_name')}
+            placeholder={pertaminaDefault || undefined} hint={pertaminaDefault ? 'Kosongkan untuk memakai nama Pertamina di Penandatangan.' : 'Wajib diisi, atau atur nama Pertamina di Penandatangan.'} />
+          {!complete && <p className="text-xs text-muted-foreground">Lengkapi lokasi gudang, alamat, PIC, jumlah tabung, dan nama kedua penanda tangan sebelum finalisasi. Keterangan boleh kosong.</p>}
+          <div className="grid gap-2 border-t pt-4">
+            <Button variant="outline" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>
+            {canManage && <Button disabled={!complete || documentDate === '' || finalize.isPending || wetBlocked} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi penerimaan'}</Button>}
+          </div>
         </CardContent>
       </Card>
 
       <Card className="min-w-0">
         <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle className="text-base">BA Gas Elpiji · {documentDate ? formatDate(documentDate) : 'pilih tanggal'}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{regencyName} · disimpan ke 13. GAS ELPIJI</p></div>{current && <Badge variant="outline">Final v{current.document.version}</Badge>}</div></CardHeader>
         <CardContent className="grid gap-4 pt-5">
+          {documentDate !== '' && <WetSignatureBar scheduleID={scheduleID} document={documentKey} date={documentDate} label="BA Gas Elpiji" />}
           {versions.length > 1 && <div className="grid gap-2 rounded-lg border p-3">
             <strong className="text-sm">Riwayat versi tanggal ini</strong>
             {versions.filter((doc) => doc.status !== 'active').map((doc) => <div className="flex items-center justify-between gap-3 text-sm" key={doc.id}><span className="text-muted-foreground">Versi {doc.version} · {formatCount(doc.recipient_count)} tabung</span><Button nativeButton={false} render={<a href={`/api/v1/bast/gas-elpiji/documents/${doc.id}/content`} />} variant="ghost" size="sm"><Download />Unduh</Button></div>)}
@@ -158,7 +205,7 @@ export function GasElpijiPanel({ scheduleID, regencyName, programType, defaultDa
           : <ul className="grid gap-2" aria-label="Penerimaan LPG">
             {receipts.map((receipt) => <li key={receipt.document.id} className="grid gap-2 rounded-lg border p-3 data-active:border-primary sm:grid-cols-[1fr_auto] sm:items-center" data-active={receipt.document.document_date === documentDate || undefined}>
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2"><FileCheck2 className="size-4 text-emerald-600" aria-hidden="true" /><strong className="text-sm">{formatDate(receipt.document.document_date)}</strong><span className="text-sm text-muted-foreground">· {formatCount(receipt.input.cylinder_count)} tabung · v{receipt.document.version}</span></div>
+                <div className="flex flex-wrap items-center gap-2"><FileCheck2 className="size-4 text-emerald-600" aria-hidden="true" /><strong className="text-sm">{formatDate(receipt.document.document_date)}</strong><span className="text-sm text-muted-foreground">· {formatCount(receipt.input.cylinder_count)} tabung · v{receipt.document.version}</span>{receipt.wet_scanned && <Badge variant="secondary">TTD basah</Badge>}</div>
                 <p className="mt-1 truncate text-xs text-muted-foreground">{receipt.input.warehouse_location}</p>
               </div>
               <div className="flex flex-wrap gap-1">
@@ -174,11 +221,12 @@ export function GasElpijiPanel({ scheduleID, regencyName, programType, defaultDa
             <div className="flex flex-wrap items-center gap-2"><strong className="text-sm">BA Gas LPG gabungan</strong>
               {!merged ? <Badge variant="outline">Belum dibuat</Badge> : mergedCurrent ? <Badge>Terbaru</Badge> : <Badge variant="destructive">Perlu digabung ulang</Badge>}</div>
             <p className="mt-1 text-xs text-muted-foreground">{merged ? `${merged.filename} · ${merged.page_count} halaman · ${formatCount(merged.recipient_count)} tabung` : 'Gabungkan setelah semua penerimaan kabupaten ini final.'}</p>
+            {unsignedReceipts > 0 && <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">Mode tanda tangan basah aktif: {unsignedReceipts} penerimaan belum memakai halaman bertanda tangan basah. Unggah pindaiannya lalu finalisasi ulang penerimaan itu sebelum menggabungkan.</p>}
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" disabled={receipts.length === 0} onClick={() => setShowMerged((value) => !value)}>{showMerged ? <EyeOff /> : <Eye />}{showMerged ? 'Tutup preview' : 'Preview gabungan'}</Button>
             {merged && <Button nativeButton={false} render={<a href={`/api/v1/bast/gas-elpiji/documents/${merged.id}/content`} />} variant="outline"><Download />Unduh gabungan</Button>}
-            {canManage && <Button disabled={receipts.length === 0 || mergedCurrent || finalizeMerged.isPending} onClick={() => finalizeMerged.mutate()}><RefreshCw className={finalizeMerged.isPending ? 'animate-spin' : ''} />{finalizeMerged.isPending ? 'Menggabungkan...' : 'Gabungkan & finalisasi'}</Button>}
+            {canManage && <Button disabled={receipts.length === 0 || mergedCurrent || unsignedReceipts > 0 || finalizeMerged.isPending} onClick={() => finalizeMerged.mutate()}><RefreshCw className={finalizeMerged.isPending ? 'animate-spin' : ''} />{finalizeMerged.isPending ? 'Menggabungkan...' : 'Gabungkan & finalisasi'}</Button>}
           </div>
         </div>
         {showMerged && receipts.length > 0 && <PdfPreview blob={mergedPreview.data} isPending={mergedPreview.isPending} isError={mergedPreview.isError} label="BA Gas LPG gabungan" />}

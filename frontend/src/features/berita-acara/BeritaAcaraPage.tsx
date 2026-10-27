@@ -120,7 +120,7 @@ export function BeritaAcaraPage() {
     {schedules.isError && <DataState kind="error" title="Jadwal berita acara belum dapat dimuat" description="Periksa koneksi atau hak akses, lalu coba kembali." action={{ label: 'Coba lagi', onClick: () => schedules.refetch() }} />}
 
     <Tabs value={activeTab} onValueChange={(value) => updateParam('tab', value)}>
-      {/* Ponsel: pilihan dokumen berupa dropdown; layar md ke atas: tab mengisi lebar penuh dan turun baris bila perlu. */}
+      {/* Ponsel: pilihan dokumen berupa dropdown; layar md ke atas: tab tersusun dalam grid sama lebar (5 kolom, 7 di layar lebar) agar barisnya seimbang. */}
       <div className="grid gap-1.5 pb-2 md:hidden">
         <Label id="ba-document-type-label">Jenis berita acara</Label>
         <Select value={activeTab} onValueChange={(value) => value && updateParam('tab', value)}>
@@ -129,8 +129,8 @@ export function BeritaAcaraPage() {
         </Select>
       </div>
       <div className="hidden pb-2 md:block" role="presentation">
-        <TabsList activateOnFocus variant="line" className="h-auto w-full flex-wrap justify-start gap-y-1 group-data-horizontal/tabs:h-auto" aria-label="Jenis berita acara">
-          {documentTypes.map((document) => <TabsTrigger className="h-auto min-h-11 flex-auto px-3" key={document.value} value={document.value}>{document.label}</TabsTrigger>)}
+        <TabsList activateOnFocus variant="line" className="grid h-auto w-full grid-cols-5 gap-x-1 gap-y-1 group-data-horizontal/tabs:h-auto xl:grid-cols-7" aria-label="Jenis berita acara">
+          {documentTypes.map((document) => <TabsTrigger className="h-auto min-h-11 w-full px-2" key={document.value} value={document.value}>{document.label}</TabsTrigger>)}
         </TabsList>
       </div>
       {documentTypes.map((document) => <TabsContent className="pt-3" key={document.value} value={document.value}>

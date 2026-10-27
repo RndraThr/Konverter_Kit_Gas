@@ -151,10 +151,11 @@ export type GasElpijiInput = {
   pertamina_name: string;
 };
 
-export type GasElpijiReceipt = { document: AggregateDocument; input: GasElpijiInput };
+export type GasElpijiReceipt = { document: AggregateDocument; input: GasElpijiInput; wet_scanned: boolean };
 
 export type GasElpijiSummary = {
   receipts: GasElpijiReceipt[];
+  drafts: GasElpijiInput[];
   total_cylinders: number;
   merged: AggregateDocument | null;
   merged_current: boolean;

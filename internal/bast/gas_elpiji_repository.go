@@ -2,6 +2,7 @@ package bast
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -62,4 +63,79 @@ func (r *Repository) RetireAggregate(ctx context.Context, actor auth.Principal, 
 		return AggregateDocument{}, err
 	}
 	return doc, nil
+}
+
+// ListGasElpijiDrafts mengembalikan draf isian penerimaan satu jadwal.
+func (r *Repository) ListGasElpijiDrafts(ctx context.Context, scheduleID string) ([]GasElpijiInput, error) {
+	rows, err := r.pool.Query(ctx, `SELECT input_json::text FROM bast_gas_elpiji_drafts WHERE schedule_id::text=$1 ORDER BY document_date`, scheduleID)
+	if err != nil {
+		return nil, fmt.Errorf("list gas elpiji drafts: %w", err)
+	}
+	defer rows.Close()
+	drafts := []GasElpijiInput{}
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return nil, fmt.Errorf("scan gas elpiji draft: %w", err)
+		}
+		var input GasElpijiInput
+		if err := json.Unmarshal([]byte(raw), &input); err != nil {
+			return nil, fmt.Errorf("decode gas elpiji draft: %w", err)
+		}
+		drafts = append(drafts, input)
+	}
+	return drafts, rows.Err()
+}
+
+// GetGasElpijiDraft mengembalikan draf satu tanggal; ErrNotFound bila tidak ada.
+func (r *Repository) GetGasElpijiDraft(ctx context.Context, scheduleID, documentDate string) (GasElpijiInput, error) {
+	var raw string
+	err := r.pool.QueryRow(ctx, `SELECT input_json::text FROM bast_gas_elpiji_drafts WHERE schedule_id::text=$1 AND document_date=$2::date`, scheduleID, documentDate).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return GasElpijiInput{}, ErrNotFound
+	}
+	if err != nil {
+		return GasElpijiInput{}, fmt.Errorf("get gas elpiji draft: %w", err)
+	}
+	var input GasElpijiInput
+	if err := json.Unmarshal([]byte(raw), &input); err != nil {
+		return GasElpijiInput{}, fmt.Errorf("decode gas elpiji draft: %w", err)
+	}
+	return input, nil
+}
+
+func (r *Repository) SaveGasElpijiDraft(ctx context.Context, actor auth.Principal, input GasElpijiInput) error {
+	raw, err := json.Marshal(input)
+	if err != nil {
+		return err
+	}
+	_, err = r.pool.Exec(ctx, `INSERT INTO bast_gas_elpiji_drafts(schedule_id,document_date,input_json,updated_by) VALUES($1,$2::date,$3::jsonb,NULLIF($4,'')::uuid)
+		ON CONFLICT (schedule_id,document_date) DO UPDATE SET input_json=EXCLUDED.input_json,updated_by=EXCLUDED.updated_by,updated_at=now()`, input.ScheduleID, input.DocumentDate, string(raw), actor.UserID)
+	if err != nil {
+		return fmt.Errorf("save gas elpiji draft: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) DeleteGasElpijiDraft(ctx context.Context, scheduleID, documentDate string) error {
+	if _, err := r.pool.Exec(ctx, `DELETE FROM bast_gas_elpiji_drafts WHERE schedule_id::text=$1 AND document_date=$2::date`, scheduleID, documentDate); err != nil {
+		return fmt.Errorf("delete gas elpiji draft: %w", err)
+	}
+	return nil
+}
+
+// GetWetScanImage mengembalikan pindaian tanda tangan basah satu tanggal
+// beserta kode isinya, tanpa memeriksa apakah mode basah masih aktif (BA
+// gabungan memakai pindaian penerimaan yang sudah final).
+func (r *Repository) GetWetScanImage(ctx context.Context, scheduleID, documentKey, date string) ([]byte, string, error) {
+	var image []byte
+	var code string
+	err := r.pool.QueryRow(ctx, `SELECT image_png, content_code FROM bast_wet_signature_scans WHERE schedule_id::text=$1 AND document_key=$2 AND document_date=$3::date`, scheduleID, documentKey, date).Scan(&image, &code)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, "", nil
+	}
+	if err != nil {
+		return nil, "", fmt.Errorf("get wet scan image: %w", err)
+	}
+	return image, code, nil
 }
