@@ -67,18 +67,9 @@ type formalHeader struct {
 	fiscal    int
 	metadata  []formalMeta
 	narrative []textSegment
-	// flushLeft menaruh keterangan dan paragraf sejajar garis paling kiri
-	// tabel (Closing, Rekap Harian); tanpa ini blok teks menjorok sejajar
-	// garis kolom No. seperti Sosialisasi dan RAKORDA.
-	flushLeft bool
 	// pageWidth lebar halaman; 0 berarti A4 tegak. DP3 memakai A4 mendatar.
 	pageWidth float64
 }
-
-// formalTextLeft dan formalTextWidth: blok teks menjorok sejajar garis kolom
-// No. tabel di kiri, dengan jarak yang sama dari tepi kanan, seperti Sosialisasi.
-func formalTextLeft() float64  { return marginMM + activityColumnWidths[0] }
-func formalTextWidth() float64 { return pageWidthMM - 2*marginMM - 2*activityColumnWidths[0] }
 
 func renderFormalHeader(pdf *fpdf.Fpdf, logos []registeredLogo, header formalHeader) {
 	width := header.pageWidth
@@ -104,10 +95,9 @@ func renderFormalHeader(pdf *fpdf.Fpdf, logos []registeredLogo, header formalHea
 	}
 	y += formalMetadataGap
 
-	textLeft, textWidth := formalTextLeft(), formalTextWidth()
-	if header.flushLeft {
-		textLeft, textWidth = marginMM, contentWidth
-	}
+	// Keterangan dan paragraf selebar tabel: sejajar garis kiri dan kanannya
+	// (sama di semua BA).
+	textLeft, textWidth := marginMM, contentWidth
 	pdf.SetFont(activityFont, "", activityTextPt)
 	for _, item := range header.metadata {
 		baseline := textBaseline(y, formalMetaRowMM, activityTextPt)

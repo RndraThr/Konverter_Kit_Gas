@@ -36,6 +36,19 @@ func TestHubDeliversOnlyWithinRegencyScope(t *testing.T) {
 	}
 }
 
+// A new app release reaches every phone, whatever regencies it sees.
+func TestHubDeliversAppReleaseToEveryone(t *testing.T) {
+	hub := NewHub()
+	scoped := hub.Subscribe(auth.RegencyScope{RegencyIDs: []string{"wonogiri"}})
+	none := hub.Subscribe(auth.RegencyScope{})
+	hub.Publish(Event{Kind: "app_release"})
+	for _, s := range []*Subscriber{scoped, none} {
+		if e, ok := receive(t, s); !ok || e.Kind != "app_release" {
+			t.Fatalf("got %+v ok=%v", e, ok)
+		}
+	}
+}
+
 func TestHubUnsubscribeClosesChannel(t *testing.T) {
 	hub := NewHub()
 	s := hub.Subscribe(auth.RegencyScope{Unrestricted: true})

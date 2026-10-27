@@ -91,3 +91,87 @@ func TestIntegrationTriggerReachesSubscribers(t *testing.T) {
 	case <-time.After(200 * time.Millisecond):
 	}
 }
+
+// Correcting a person's data (address, phone...) signals 'candidates' for
+// the schedules the person is allocated to, so phones pull it right away.
+func TestIntegrationPersonChangeSignalsCandidates(t *testing.T) {
+	pool, databaseURL := realtimeIntegrationPool(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var regencyID, programID, packageTemplateID, docTemplateID, scheduleID string
+	must(pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan','Realtime Person','RTP',true) ON CONFLICT (document_code) DO UPDATE SET is_active=true RETURNING id::text`).Scan(&regencyID))
+	must(pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES($1,'Program Realtime Person','farmer',2026,'active') RETURNING id::text`, "RTP-"+suffix).Scan(&programID))
+	must(pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES($1,1,'Paket RTP','farmer','{}'::jsonb,'published') RETURNING id::text`, "PKG-RTP-"+suffix).Scan(&packageTemplateID))
+	must(pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES($1,1,'Dok RTP','farmer','published') RETURNING id::text`, "DOC-RTP-"+suffix).Scan(&docTemplateID))
+	must(pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal RTP','2026-01-01','2026-12-31','active','{}'::jsonb) RETURNING id::text`, programID, regencyID, packageTemplateID, docTemplateID).Scan(&scheduleID))
+
+	nik := fmt.Sprintf("%016d", time.Now().UnixNano()%1e16)
+	var personID, nominationID string
+	must(pool.QueryRow(ctx, `INSERT INTO people(full_name,nik) VALUES('Realtime Person',$1) RETURNING id::text`, nik).Scan(&personID))
+	must(pool.QueryRow(ctx, `INSERT INTO candidate_nominations(person_id,program_type,source_snapshot_json,status) VALUES($1,'farmer','{}'::jsonb,'ready') RETURNING id::text`, personID).Scan(&nominationID))
+	_, err := pool.Exec(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,status,package_snapshot_json) VALUES($1,$2,$3,'candidate','{}'::jsonb)`, scheduleID, nominationID, personID)
+	must(err)
+
+	hub := NewHub()
+	mine := hub.Subscribe(auth.RegencyScope{RegencyIDs: []string{regencyID}})
+	go Listen(ctx, databaseURL, hub)
+	time.Sleep(300 * time.Millisecond) // let LISTEN start
+
+	_, err = pool.Exec(ctx, `UPDATE people SET address = 'JL. BARU 1', phone_number = '0812' WHERE id = $1`, personID)
+	must(err)
+	select {
+	case e := <-mine.Events():
+		if e.Kind != "candidates" || e.ScheduleID != scheduleID {
+			t.Fatalf("event = %+v", e)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no realtime event for the person change")
+	}
+}
+
+// Moving a schedule to another package template version signals 'schedules'
+// so phones reload the schedule and its equipment options.
+func TestIntegrationScheduleTemplateChangeSignalsSchedules(t *testing.T) {
+	pool, databaseURL := realtimeIntegrationPool(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var regencyID, programID, templateV1, templateV2, docTemplateID, scheduleID string
+	must(pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan','Realtime Schedule','RTS',true) ON CONFLICT (document_code) DO UPDATE SET is_active=true RETURNING id::text`).Scan(&regencyID))
+	must(pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES($1,'Program Realtime Schedule','farmer',2026,'active') RETURNING id::text`, "RTS-"+suffix).Scan(&programID))
+	must(pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES($1,1,'Paket RTS','farmer','{}'::jsonb,'published') RETURNING id::text`, "PKG-RTS-"+suffix).Scan(&templateV1))
+	must(pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES($1,2,'Paket RTS','farmer','{}'::jsonb,'published') RETURNING id::text`, "PKG-RTS-"+suffix).Scan(&templateV2))
+	must(pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES($1,1,'Dok RTS','farmer','published') RETURNING id::text`, "DOC-RTS-"+suffix).Scan(&docTemplateID))
+	must(pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal RTS','2026-01-01','2026-12-31','active','{}'::jsonb) RETURNING id::text`, programID, regencyID, templateV1, docTemplateID).Scan(&scheduleID))
+
+	hub := NewHub()
+	mine := hub.Subscribe(auth.RegencyScope{RegencyIDs: []string{regencyID}})
+	go Listen(ctx, databaseURL, hub)
+	time.Sleep(300 * time.Millisecond) // let LISTEN start
+
+	_, err := pool.Exec(ctx, `UPDATE program_schedules SET package_template_version_id = $1 WHERE id = $2`, templateV2, scheduleID)
+	must(err)
+	select {
+	case e := <-mine.Events():
+		if e.Kind != "schedules" || e.ScheduleID != scheduleID {
+			t.Fatalf("event = %+v", e)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no realtime event for the template change")
+	}
+}

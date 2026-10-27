@@ -8,12 +8,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"konkit/internal/activities"
 	"konkit/internal/administration"
 	apihttp "konkit/internal/api"
+	"konkit/internal/appreleases"
 	"konkit/internal/audit"
 	"konkit/internal/auth"
 	"konkit/internal/bast"
@@ -98,12 +100,19 @@ func run(ctx context.Context, cfg config.Config) error {
 	bastSosialisasiService := bast.NewSosialisasiService(bastRepository, mediaStorage)
 	bastTraining10Service := bast.NewTraining10Service(bastRepository, mediaStorage)
 	bastTraining100Service := bast.NewTraining100Service(bastRepository, mediaStorage)
+	// Mobile app releases (APK updates outside the Play Store) always stay on
+	// the server's own disk, whatever the media backend.
+	appReleaseStorage, err := media.NewLocalStorage(filepath.Join(cfg.StoragePath, "app-releases"))
+	if err != nil {
+		return err
+	}
 	// Change signals for the mobile app: Postgres NOTIFY -> WebSocket clients.
 	realtimeHub := realtime.NewHub()
 	go realtime.Listen(ctx, cfg.DatabaseURL, realtimeHub)
 
 	apiHandler := apihttp.NewHandler(apihttp.Dependencies{
 		Auth:           authService,
+		AppReleases:    appreleases.NewService(pool, appReleaseStorage),
 		FinalReport:    finalReportService,
 		Geo:            geo.NewReverser(cfg.GeocoderURL, &http.Client{Timeout: 5 * time.Second}, "Konkit/1.0 (Konverter Kit Gas; PT Kian Santang Muliatama Tbk)"),
 		Profile:        profile.NewService(profile.NewRepository(pool)),

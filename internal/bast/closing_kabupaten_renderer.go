@@ -49,7 +49,6 @@ func RenderClosingKabupaten(snapshot ClosingKabupatenSnapshot, logoBytes map[str
 				{"Provinsi", textnorm.DisplayTitle(snapshot.ProvinceName)},
 			},
 			narrative: closingNarrative(snapshot.DocumentDate, snapshot.FiscalYear),
-			flushLeft: true,
 		})
 		renderClosingKabupatenTable(pdf, snapshot, logos)
 	}

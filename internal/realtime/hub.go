@@ -25,7 +25,7 @@ const Channel = "konkit_changes"
 
 // Event is one change signal, as sent to the app.
 type Event struct {
-	// Kind is "slots", "candidates" or "activities".
+	// Kind is "slots", "candidates", "schedules", "activities" or "app_release".
 	Kind       string `json:"t"`
 	ScheduleID string `json:"schedule_id,omitempty"`
 	ProgramID  string `json:"program_id,omitempty"`
@@ -41,8 +41,10 @@ type Subscriber struct {
 // Events delivers signals; it is closed when the subscriber is removed.
 func (s *Subscriber) Events() <-chan Event { return s.events }
 
+// allows: a new app release concerns every phone; other signals only the
+// regencies the account sees.
 func (s *Subscriber) allows(e Event) bool {
-	return s.scope.Unrestricted || slices.Contains(s.scope.RegencyIDs, e.RegencyID)
+	return e.Kind == "app_release" || s.scope.Unrestricted || slices.Contains(s.scope.RegencyIDs, e.RegencyID)
 }
 
 // Hub fans events out to subscribers.

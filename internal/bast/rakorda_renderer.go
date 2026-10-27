@@ -46,7 +46,7 @@ func RenderRakorda(snapshot RakordaSnapshot, logoBytes map[string][]byte) (Rende
 	})
 	pdf.SetFont(activityFont, "", activityTextPt)
 	y := pdf.GetY() - formalNarrativeGap + 1.5
-	pdf.Text(formalTextLeft(), textBaseline(y, formalMetaRowMM, activityTextPt), "Dihadiri oleh :")
+	pdf.Text(marginMM, textBaseline(y, formalMetaRowMM, activityTextPt), "Dihadiri oleh :")
 	pdf.SetXY(marginMM, y+formalMetaRowMM+1.5)
 
 	renderRakordaTableHeader(pdf)
