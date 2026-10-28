@@ -165,6 +165,18 @@ func recipientFilterArgs(filter Filter, scope auth.RegencyScope) []any {
 	}
 }
 
+// RecipientFilterSQL returns the FROM and WHERE clauses of the Data Penerima list together with
+// their positional arguments ($1..$12), so other views (the distribution map) select exactly the
+// rows the list would show. Callers may append conditions to where and add arguments from $13.
+// The FROM exposes pa, ps, prog, r, z, p, dr (the allocation's distribution slot) and evidence.
+func RecipientFilterSQL(filter Filter, scope auth.RegencyScope) (from, where string, args []any) {
+	return recipientFrom, recipientWhere, recipientFilterArgs(filter, scope)
+}
+
+// EvidenceStatusSQL is the per-allocation evidence status expression (not-configured, empty,
+// partial, complete). It is only valid against the FROM returned by RecipientFilterSQL.
+const EvidenceStatusSQL = evidenceStatusSQL
+
 func scanRecipient(row pgx.Row) (Recipient, error) {
 	var item Recipient
 	var evidenceJSON, replacedByJSON, replacesJSON []byte
