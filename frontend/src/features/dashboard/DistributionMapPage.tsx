@@ -39,7 +39,7 @@ import type { BasemapMode, Bounds, ColorMode, PointCollection, PointFeature, Zon
 
 type ScheduleOption = { id: string; name: string };
 type RegencyOption = { id: string; name: string; document_code: string };
-type ProgramOption = { id: string; name: string; program_type: string };
+type ProgramOption = { id: string; name: string; program_type: string; status?: string };
 type Focus = { regencyId?: string; geometry: ZoneGeometry | null; name: string };
 
 const emptyRegions: MapRegion[] = [];
@@ -83,8 +83,15 @@ export function DistributionMapPage() {
   const schedules = useQuery({ queryKey: ['program-setup', 'schedules'], queryFn: () => apiRequest<{ data: ScheduleOption[] }>('/api/v1/program-setup/schedules') });
   const pointsQuery = useMapPoints(filter);
   const config = useMapConfig();
-  const zonesQuery = useZoneBoundaries(programId);
-  const zones = programId ? zonesQuery.data ?? null : null;
+  // Zone colours only mean something within one program. Without a program filter, Zona mode borrows
+  // the first active program (in the programs list order) for its zone polygons only; points and the
+  // aggregate stay unfiltered (Ruling R15).
+  const fallbackProgram = !programId && view.color === 'zone' ? programs.data?.data.find((item) => item.status === 'active') : undefined;
+  const zoneProgramId = programId ?? fallbackProgram?.id;
+  const zonesQuery = useZoneBoundaries(zoneProgramId);
+  const zones = zoneProgramId ? zonesQuery.data ?? null : null;
+  // Zone filter, breadcrumb and focus follow the selected program only, never the fallback.
+  const filterZones = programId ? zones : null;
 
   const regions = aggregate.data?.data.regions ?? emptyRegions;
   const allPoints = pointsQuery.data?.features ?? emptyPoints;
@@ -103,7 +110,7 @@ export function DistributionMapPage() {
   const [show, setShow] = useState({ zones: true, points: true });
   const [focus, setFocus] = useState<Focus | null>(null);
   const boundary = useRegencyBoundary(focus?.regencyId);
-  const zoneFeature = zones?.features.find((zone) => zone.properties.zone_id === zoneId);
+  const zoneFeature = filterZones?.features.find((zone) => zone.properties.zone_id === zoneId);
   const focusGeometry = focus ? boundary.data?.geometry ?? focus.geometry : zoneFeature?.geometry ?? null;
 
   const zoneColors = useMemo(() => zoneColorIndex(zones), [zones]);
@@ -180,10 +187,15 @@ export function DistributionMapPage() {
     }
     if (key === 'zone_id') {
       setFocus(null);
-      const zone = zones?.features.find((item) => item.properties.zone_id === value);
+      const zone = filterZones?.features.find((item) => item.properties.zone_id === value);
       const bounds = zone ? geometryBounds(zone.geometry) : null;
       if (bounds) fit(bounds);
     }
+  };
+  const focusProgramPicker = () => {
+    const picker = document.querySelector<HTMLElement>('[aria-labelledby="map-filter-program"]');
+    picker?.scrollIntoView?.({ block: 'center' });
+    picker?.focus();
   };
   const activeFilterCount = FILTER_KEYS.filter((key) => Boolean(params.get(key))).length;
   const resetFilters = () => {
@@ -213,7 +225,7 @@ export function DistributionMapPage() {
 
   const focusedRegion = focus?.regencyId ? regions.find((item) => item.regency_id === focus.regencyId) : regions.find((item) => item.regency_id === regencyFilter);
   const crumbZoneId = zoneId ?? focusedRegion?.zone_id;
-  const crumbZone = zones?.features.find((zone) => zone.properties.zone_id === crumbZoneId);
+  const crumbZone = filterZones?.features.find((zone) => zone.properties.zone_id === crumbZoneId);
   const crumbZoneName = crumbZone ? (crumbZone.properties.is_placeholder ? PLACEHOLDER_ZONE_LABEL : crumbZone.properties.name) : focusedRegion?.zone_name || undefined;
   const toIndonesia = () => {
     edit((next) => { next.delete('zone_id'); next.delete('regency_id'); });
@@ -296,7 +308,12 @@ export function DistributionMapPage() {
                 {unlocatedCount > 0 && <Button type="button" size="sm" className="min-h-11" variant="outline" onClick={() => setUnlocatedOpen(true)}><MapPinOff aria-hidden="true" />{unlocatedCount} belum ada lokasi</Button>}
               </div>
             </div>
-            {view.color === 'zone' && !programId && <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">Pilih program untuk mewarnai zona.</p>}
+            {view.color === 'zone' && !programId && (fallbackProgram
+              ? <div className="flex flex-wrap items-center gap-x-2 rounded-md bg-muted px-3 py-1 text-sm text-muted-foreground">
+                <p>Zona menurut program: <span className="font-medium text-foreground">{fallbackProgram.name}</span></p>
+                <Button type="button" size="sm" variant="link" className="min-h-11 px-0" onClick={focusProgramPicker}>Pilih program lain</Button>
+              </div>
+              : <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">Pilih program untuk mewarnai zona.</p>)}
           </CardHeader>
           <CardContent className="p-0">
             <div className="relative aspect-video min-h-80 w-full bg-muted/30">
@@ -327,7 +344,7 @@ export function DistributionMapPage() {
           regencies={regencies.data?.data.map((item) => ({ value: item.id, label: `${item.document_code} - ${item.name}` })) ?? []}
           programs={programs.data?.data.map((item) => ({ value: item.id, label: item.name })) ?? []}
           schedules={schedules.data?.data.map((item) => ({ value: item.id, label: item.name })) ?? []}
-          zones={zones?.features.map((zone) => ({ value: zone.properties.zone_id, label: zone.properties.is_placeholder ? PLACEHOLDER_ZONE_LABEL : zone.properties.name })) ?? []}
+          zones={filterZones?.features.map((zone) => ({ value: zone.properties.zone_id, label: zone.properties.is_placeholder ? PLACEHOLDER_ZONE_LABEL : zone.properties.name })) ?? []}
           onChange={setFilter}
           onReset={resetFilters}
           activeCount={activeFilterCount}

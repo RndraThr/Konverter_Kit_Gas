@@ -102,7 +102,16 @@ const points = [
   point({ slot_id: 'slot-3', code: '4', regency_id: 'regency-2', site_id: 'geo:schedule-2:1', stage: 1 }),
 ];
 
-function mockApi(regions: MapRegion[], features: PointFeature[] = points, gate: Promise<void> = Promise.resolve()) {
+type ProgramRow = { id: string; name: string; program_type: string; status: string };
+// List order is the API's (fiscal year desc, name): the draft comes first, so the zone fallback
+// must skip it and take the first active program.
+const defaultPrograms: ProgramRow[] = [
+  { id: 'program-0', name: 'Program Draf 2027', program_type: 'farmer', status: 'draft' },
+  { id: 'program-1', name: 'Program Petani 2026', program_type: 'farmer', status: 'active' },
+  { id: 'program-2', name: 'Program Nelayan 2026', program_type: 'fisher', status: 'active' },
+];
+
+function mockApi(regions: MapRegion[], features: PointFeature[] = points, gate: Promise<void> = Promise.resolve(), programList: ProgramRow[] = defaultPrograms) {
   vi.mocked(apiRequest).mockImplementation((path) => {
     const url = String(path);
     if (url.startsWith('/api/v1/recipients/map')) {
@@ -114,7 +123,7 @@ function mockApi(regions: MapRegion[], features: PointFeature[] = points, gate: 
     if (url.startsWith('/api/v1/distribution/slots/search')) return Promise.resolve({ data: { id: 'slot-1', schedule_id: 'schedule-1', slot_number: 12, status: 'completed', distribution_date: null, full_name: 'Siti Aminah', documentation: [], needs_recompletion: false, created_at: '', updated_at: '' } });
     if (url === '/api/v1/map/config') return Promise.resolve({ data: { style_url: 'https://style.test', satellite_tiles: 'https://sat.test/{z}/{y}/{x}', hybrid_overlay_tiles: [], attribution: 'attr', api_key: '' } });
     if (url === '/api/v1/program-setup/regencies') return Promise.resolve({ data: [{ id: 'regency-1', name: 'Bangka Barat', document_code: 'BBR' }] });
-    if (url === '/api/v1/program-setup/programs') return Promise.resolve({ data: [{ id: 'program-1', name: 'Program Petani 2026', program_type: 'farmer' }] });
+    if (url === '/api/v1/program-setup/programs') return Promise.resolve({ data: programList });
     if (url === '/api/v1/program-setup/schedules') return Promise.resolve({ data: [{ id: 'schedule-1', name: 'Jadwal Tahap 1' }] });
     return Promise.reject(new Error(`Unexpected request: ${url}`));
   });
@@ -200,16 +209,44 @@ test('the milestone filter shows counts per stage and writes the stage selection
   expect(screen.getByRole('button', { name: /Semua titik/ })).toHaveAttribute('aria-pressed', 'false');
 });
 
-test('zone colour mode asks for a program when none is selected', async () => {
+test('zone colour mode without a program colours the zones by the first active program (R15)', async () => {
   mockApi([region()]);
+  renderPage();
+
+  const note = await screen.findByText(/Zona menurut program:/);
+  expect(note).toHaveTextContent('Zona menurut program: Program Petani 2026');
+  await waitFor(() => expect(requested()).toContain('/api/v1/map/zones?program_id=program-1'));
+  // Points and the aggregate are not filtered by the fallback program.
+  expect(requested()).toContain('/api/v1/map/points');
+  expect(requested()).toContain('/api/v1/recipients/map');
+  expect(requested().some((path) => path.includes('program_id') && !path.startsWith('/api/v1/map/zones'))).toBe(false);
+  expect(screen.queryByText('Pilih program untuk mewarnai zona.')).not.toBeInTheDocument();
+
+  // The program picker is one click away.
+  await userEvent.click(screen.getByRole('button', { name: 'Pilih program lain' }));
+  expect(screen.getByRole('combobox', { name: 'Program' })).toHaveFocus();
+
+  await userEvent.click(screen.getByRole('button', { name: 'Diserahkan' }));
+  expect(screen.queryByText(/Zona menurut program:/)).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Diserahkan' })).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('zone colour mode asks for a program when no program is active', async () => {
+  mockApi([region()], points, Promise.resolve(), [{ id: 'program-0', name: 'Program Draf 2027', program_type: 'farmer', status: 'draft' }]);
   renderPage();
 
   expect(await screen.findByText('Pilih program untuk mewarnai zona.')).toBeVisible();
   expect(requested().some((path) => path.startsWith('/api/v1/map/zones'))).toBe(false);
+});
 
-  await userEvent.click(screen.getByRole('button', { name: 'Diserahkan' }));
-  expect(screen.queryByText('Pilih program untuk mewarnai zona.')).not.toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Diserahkan' })).toHaveAttribute('aria-pressed', 'true');
+test('a selected program colours the zones instead of the fallback', async () => {
+  mockApi([region()]);
+  renderPage('/map?program_id=program-2');
+  await screen.findByRole('button', { name: /M3 Diserahkan/ });
+
+  await waitFor(() => expect(requested()).toContain('/api/v1/map/zones?program_id=program-2'));
+  expect(requested()).not.toContain('/api/v1/map/zones?program_id=program-1');
+  expect(screen.queryByText(/Zona menurut program:/)).not.toBeInTheDocument();
 });
 
 test('progress per regency is grouped by zone with subtotals', async () => {
