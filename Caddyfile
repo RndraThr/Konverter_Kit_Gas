@@ -1,3 +1,6 @@
 {$APP_DOMAIN} {
+	# JSON (notably /api/v1/map/points, several MB for a large programme) and the SPA assets travel
+	# compressed; the default matcher only compresses text-like types (JSON, JS, CSS, HTML, SVG).
+	encode zstd gzip
 	reverse_proxy app:8080
 }
