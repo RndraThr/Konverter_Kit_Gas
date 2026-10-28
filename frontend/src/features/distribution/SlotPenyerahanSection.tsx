@@ -29,7 +29,8 @@ export function SlotPenyerahanSection({ slot, onChanged }: { slot: DistributionS
   const hasPendingMove = requiredMedia.some((file) => file.storage_state === 'staging' || file.storage_state === 'moving');
   const missingDocumentation = required.some((item) => item.status !== 'complete');
   const unsigned = !currentSlot.recipient_signed_at;
-  const blocked = missingDocumentation || hasPendingMove || hasFailedMove;
+  const missingLocation = !currentSlot.handover_location_id;
+  const blocked = missingDocumentation || hasPendingMove || hasFailedMove || missingLocation;
 
   const complete = useMutation({
     mutationFn: () => apiRequest<DataResponse<DistributionSlot>>(`/api/v1/distribution/slots/${currentSlot.slot_number}/complete?schedule_id=${encodeURIComponent(currentSlot.schedule_id)}`, { method: 'POST' }),
@@ -57,6 +58,8 @@ export function SlotPenyerahanSection({ slot, onChanged }: { slot: DistributionS
       ? 'Media masih dipindahkan ke folder final. Tunggu hingga proses selesai.'
       : missingDocumentation
         ? 'Lengkapi seluruh bukti wajib sebelum konfirmasi.'
+        : missingLocation
+          ? 'Isi titik serah di POS Dokumen sebelum konfirmasi.'
         : unsigned
           ? 'Semua bukti wajib terpenuhi. Penerima belum tanda tangan digital; kolom tanda tangan di Berita Acara dibiarkan kosong untuk tanda tangan basah.'
           : 'Semua bukti wajib terpenuhi dan penerima sudah tanda tangan.';

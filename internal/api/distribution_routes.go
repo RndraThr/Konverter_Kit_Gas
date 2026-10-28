@@ -271,6 +271,9 @@ func (h *Handler) handleDistributionSlot(w http.ResponseWriter, r *http.Request,
 		case parts[1] == "complete" && r.Method == http.MethodPost:
 			h.handleDistributionSlotComplete(w, r, rc, slotNumber)
 			return
+		case parts[1] == "handover-location" && r.Method == http.MethodPatch:
+			h.handleDistributionHandoverUpdate(w, r, rc, slotNumber)
+			return
 		case parts[1] == "date" && r.Method == http.MethodPatch:
 			h.handleDistributionDateUpdate(w, r, rc, slotNumber)
 			return
@@ -684,6 +687,69 @@ func (h *Handler) handleDistributionMyActivity(w http.ResponseWriter, r *http.Re
 		return
 	}
 	result, err := service.MyActivity(r.Context(), rc.principal, r.URL.Query().Get("schedule_id"), scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
+}
+
+// distributionHandover is the titik serah part of the distribution service
+// (optional so test doubles need not implement it).
+type distributionHandover interface {
+	ListHandoverLocations(context.Context, string, auth.RegencyScope) ([]distribution.HandoverLocation, error)
+	SetHandoverLocation(context.Context, auth.Principal, distribution.SetHandoverLocationInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
+}
+
+// handleDistributionHandoverLocations: GET ?schedule_id= lists the titik serah
+// of the schedule's regency, shared by every officer and schedule there.
+func (h *Handler) handleDistributionHandoverLocations(w http.ResponseWriter, r *http.Request, rc requestContext) {
+	service, ok := h.deps.Distribution.(distributionHandover)
+	if !ok {
+		writeUnavailable(w)
+		return
+	}
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if !h.authorizeAny(w, r, rc.principal, "distribution.pos_dokumen", "bast.view") {
+		return
+	}
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := service.ListHandoverLocations(r.Context(), r.URL.Query().Get("schedule_id"), scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
+}
+
+// handleDistributionHandoverUpdate: PATCH slots/{n}/handover-location
+// {"handover_location_id","handover_location_name"}.
+func (h *Handler) handleDistributionHandoverUpdate(w http.ResponseWriter, r *http.Request, rc requestContext, slotNumber int) {
+	service, ok := h.deps.Distribution.(distributionHandover)
+	if !ok {
+		writeUnavailable(w)
+		return
+	}
+	if !h.authorize(w, r, rc.principal, "distribution.pos_dokumen") {
+		return
+	}
+	var input distribution.SetHandoverLocationInput
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	input.ScheduleID = r.URL.Query().Get("schedule_id")
+	input.SlotNumber = slotNumber
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	result, err := service.SetHandoverLocation(r.Context(), rc.principal, input, clientMeta(r), scope)
 	if err != nil {
 		writeServiceError(w, err)
 		return

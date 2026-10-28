@@ -23,7 +23,7 @@ type DataResponse<T> = { data: T };
 const validationMessage: Record<string, string> = {
   zone_not_configured: 'Kabupaten belum dikonfigurasi ke zona.',
   ba_logo_required: 'Minimal satu logo BA aktif harus dikonfigurasi.',
-  handover_location_required: 'Titik serah belum diatur. Buka "Atur titik serah".',
+  handover_location_required: 'Belum ada penerima dengan titik serah. Titik serah dipilih petugas di POS Dokumen.',
   no_location_recipients: 'Belum ada distribusi selesai pada titik serah ini.',
   signatory_required: 'Penandatangan dokumen belum lengkap.',
   no_recipients: 'Belum ada distribusi selesai pada jadwal ini.',
@@ -53,7 +53,8 @@ export function ClosingTitikSerahPanel({ scheduleID, regencyName, programType, d
     queryFn: () => apiRequest<DataResponse<HandoverView>>(`/api/v1/bast/handover-locations?schedule_id=${encodeURIComponent(scheduleID)}`),
     enabled: programType === 'farmer',
   });
-  const locations = handover.data?.data.locations ?? [];
+  // Lokasi kabupaten yang dipakai penerima jadwal ini.
+  const locations = (handover.data?.data.locations ?? []).filter((item) => item.assigned > 0);
   const location = locations.find((item) => item.id === pickedLocation) ?? locations[0];
   const locationID = location?.id ?? '';
   const locationQuery = `schedule_id=${encodeURIComponent(scheduleID)}&location_id=${encodeURIComponent(locationID)}`;
@@ -102,10 +103,10 @@ export function ClosingTitikSerahPanel({ scheduleID, regencyName, programType, d
   const view = handover.data?.data;
   return <div className="grid gap-5">
     <Card>
-      <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><CardTitle className="text-base">Rekap per titik serah</CardTitle>{canManage && view && <Button variant="outline" size="sm" onClick={() => setEditing((value) => !value)}><Settings2 />{editing ? 'Tutup pengaturan' : 'Atur titik serah'}</Button>}</div></CardHeader>
+      <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><CardTitle className="text-base">Rekap per titik serah</CardTitle>{canManage && view && <Button variant="outline" size="sm" onClick={() => setEditing((value) => !value)}><Settings2 />{editing ? 'Tutup' : 'Rapikan titik serah'}</Button>}</div></CardHeader>
       <CardContent className="grid gap-3 pt-4">
-        {view && view.unassigned > 0 && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">{view.unassigned} penerima selesai distribusi belum ada titik serah. Atur cakupan wilayah atau pindahkan penerima secara manual.</div>}
-        {locations.length === 0 && <p className="text-sm text-muted-foreground">Belum ada titik serah.{canManage ? ' Tambahkan lewat "Atur titik serah".' : ''}</p>}
+        {view && view.unassigned.length > 0 && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">{view.unassigned.length} penerima selesai distribusi belum ada titik serah.{canManage ? ' Isi lewat "Rapikan titik serah".' : ''}</div>}
+        {locations.length === 0 && <p className="text-sm text-muted-foreground">Belum ada penerima dengan titik serah. Petugas memilih titik serah di POS Dokumen.</p>}
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {locations.map((item) => <button type="button" key={item.id} onClick={() => setPickedLocation(item.id)} aria-pressed={item.id === locationID}
             className={`grid gap-1 rounded-lg border p-3 text-left text-sm transition-colors hover:bg-muted/50 ${item.id === locationID ? 'border-primary ring-2 ring-primary/30' : ''}`}>

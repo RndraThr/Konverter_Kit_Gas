@@ -11,15 +11,20 @@ import (
 
 type BASTHandoverService interface {
 	View(context.Context, string, auth.RegencyScope) (bast.HandoverView, error)
-	Save(context.Context, auth.Principal, string, []bast.HandoverLocationInput, auth.RegencyScope, auth.ClientMeta) (bast.HandoverView, error)
-	SetOverride(context.Context, auth.Principal, string, string, string, auth.RegencyScope, auth.ClientMeta) (bast.HandoverView, error)
+	Rename(context.Context, auth.Principal, string, string, string, auth.RegencyScope, auth.ClientMeta) (bast.HandoverView, error)
+	Merge(context.Context, auth.Principal, string, string, string, auth.RegencyScope, auth.ClientMeta) (bast.HandoverView, error)
+	Delete(context.Context, auth.Principal, string, string, auth.RegencyScope, auth.ClientMeta) (bast.HandoverView, error)
+	Assign(context.Context, auth.Principal, string, string, string, auth.RegencyScope, auth.ClientMeta) (bast.HandoverView, error)
 }
 
-// handleBASTHandoverLocations melayani /api/v1/bast/handover-locations:
+// handleBASTHandoverLocations melayani /api/v1/bast/handover-locations
+// (?schedule_id=):
 //
-//	GET  ?schedule_id=  daftar titik serah, penempatan penerima, rekap (bast.view)
-//	PUT                 {"schedule_id","locations":[{"id","name","areas"}]} (bast.manage)
-//	PUT  override       {"schedule_id","slot_id","location_id"} (bast.manage)
+//	GET              rekap per titik serah dan penerima tanpa titik serah (bast.view)
+//	PUT    assign    {"slot_id","location_id"} koreksi titik serah satu penerima (bast.manage)
+//	PATCH  {id}      {"name"} ubah nama (bast.manage)
+//	POST   {id}/merge {"target_id"} gabungkan ke lokasi lain (bast.manage)
+//	DELETE {id}      hapus lokasi tanpa penerima (bast.manage)
 func (h *Handler) handleBASTHandoverLocations(w http.ResponseWriter, r *http.Request, rc requestContext, suffix string) {
 	service := h.deps.BASTHandover
 	if service == nil {
@@ -30,66 +35,64 @@ func (h *Handler) handleBASTHandoverLocations(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	switch suffix {
-	case "":
-		switch r.Method {
-		case http.MethodGet:
-			if !h.authorize(w, r, rc.principal, "bast.view") {
-				return
-			}
-			scheduleID := strings.TrimSpace(r.URL.Query().Get("schedule_id"))
-			if scheduleID == "" {
-				writeFieldError(w, http.StatusBadRequest, "validation_failed", "Jadwal wajib dipilih", map[string]string{"schedule_id": "wajib diisi"})
-				return
-			}
-			view, err := service.View(r.Context(), scheduleID, scope)
-			if err != nil {
-				writeServiceError(w, err)
-				return
-			}
-			writeData(w, http.StatusOK, view)
-		case http.MethodPut:
-			if !h.authorize(w, r, rc.principal, "bast.manage") {
-				return
-			}
-			var input struct {
-				ScheduleID string                       `json:"schedule_id"`
-				Locations  []bast.HandoverLocationInput `json:"locations"`
-			}
-			if !decodeJSON(w, r, &input) {
-				return
-			}
-			view, err := service.Save(r.Context(), rc.principal, input.ScheduleID, input.Locations, scope, clientMeta(r))
-			if err != nil {
-				writeServiceError(w, err)
-				return
-			}
-			writeData(w, http.StatusOK, view)
-		default:
-			methodNotAllowed(w, "GET, PUT")
-		}
-	case "override":
-		if r.Method != http.MethodPut {
-			methodNotAllowed(w, http.MethodPut)
+	scheduleID := strings.TrimSpace(r.URL.Query().Get("schedule_id"))
+	if scheduleID == "" {
+		writeFieldError(w, http.StatusBadRequest, "validation_failed", "Jadwal wajib dipilih", map[string]string{"schedule_id": "wajib diisi"})
+		return
+	}
+	respond := func(view bast.HandoverView, err error) {
+		if err != nil {
+			writeServiceError(w, err)
 			return
 		}
+		writeData(w, http.StatusOK, view)
+	}
+	parts := strings.Split(suffix, "/")
+	switch {
+	case suffix == "" && r.Method == http.MethodGet:
+		if !h.authorize(w, r, rc.principal, "bast.view") {
+			return
+		}
+		respond(service.View(r.Context(), scheduleID, scope))
+	case suffix == "assign" && r.Method == http.MethodPut:
 		if !h.authorize(w, r, rc.principal, "bast.manage") {
 			return
 		}
 		var input struct {
-			ScheduleID string `json:"schedule_id"`
 			SlotID     string `json:"slot_id"`
 			LocationID string `json:"location_id"`
 		}
 		if !decodeJSON(w, r, &input) {
 			return
 		}
-		view, err := service.SetOverride(r.Context(), rc.principal, input.ScheduleID, input.SlotID, input.LocationID, scope, clientMeta(r))
-		if err != nil {
-			writeServiceError(w, err)
+		respond(service.Assign(r.Context(), rc.principal, scheduleID, input.SlotID, input.LocationID, scope, clientMeta(r)))
+	case len(parts) == 1 && parts[0] != "" && r.Method == http.MethodPatch:
+		if !h.authorize(w, r, rc.principal, "bast.manage") {
 			return
 		}
-		writeData(w, http.StatusOK, view)
+		var input struct {
+			Name string `json:"name"`
+		}
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		respond(service.Rename(r.Context(), rc.principal, scheduleID, parts[0], input.Name, scope, clientMeta(r)))
+	case len(parts) == 1 && parts[0] != "" && r.Method == http.MethodDelete:
+		if !h.authorize(w, r, rc.principal, "bast.manage") {
+			return
+		}
+		respond(service.Delete(r.Context(), rc.principal, scheduleID, parts[0], scope, clientMeta(r)))
+	case len(parts) == 2 && parts[1] == "merge" && r.Method == http.MethodPost:
+		if !h.authorize(w, r, rc.principal, "bast.manage") {
+			return
+		}
+		var input struct {
+			TargetID string `json:"target_id"`
+		}
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		respond(service.Merge(r.Context(), rc.principal, scheduleID, parts[0], input.TargetID, scope, clientMeta(r)))
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
 	}

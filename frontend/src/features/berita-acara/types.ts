@@ -231,44 +231,35 @@ export type ClosingKabupatenRow = {
   final?: boolean;
 };
 
-/** Cakupan titik serah; village kosong = seluruh kecamatan. */
-export type HandoverArea = { district: string; village?: string };
-
 export type HandoverStatus = 'final' | 'stale' | 'none' | 'empty';
 
+/** Titik serah kabupaten, direkap untuk satu jadwal. */
 export type HandoverLocationSummary = {
   id: string;
   name: string;
-  areas: HandoverArea[];
-  sort_order: number;
   /** Penerima selesai distribusi. */
   recipients: number;
-  /** Seluruh penerima (termasuk yang belum selesai). */
+  /** Seluruh penerima jadwal ini yang memilih lokasi ini. */
   assigned: number;
   dates: string[];
   status: HandoverStatus;
   document_date?: string;
 };
 
+/** Penerima selesai distribusi tanpa titik serah. */
 export type HandoverRecipient = {
   slot_id: string;
   slot_number: number;
   name: string;
   district: string;
   village: string;
-  location_id?: string;
-  source?: 'override' | 'village' | 'district' | 'single';
-  completed: boolean;
   local_date?: string;
 };
 
 export type HandoverView = {
   schedule_id: string;
   locations: HandoverLocationSummary[];
-  areas: { district: string; village: string; recipients: number }[];
-  recipients: HandoverRecipient[];
-  unassigned: number;
-  unassigned_total: number;
+  unassigned: HandoverRecipient[];
 };
 
 export type DailyRecapRecipient = {

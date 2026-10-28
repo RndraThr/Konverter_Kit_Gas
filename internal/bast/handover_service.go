@@ -2,21 +2,23 @@ package bast
 
 import (
 	"context"
-	"reflect"
 	"strings"
 
 	"konkit/internal/auth"
+	"konkit/internal/textnorm"
 )
 
 type handoverRepository interface {
 	ListHandoverLocations(context.Context, string, auth.RegencyScope) ([]HandoverLocation, error)
 	ListHandoverRecipients(context.Context, string, auth.RegencyScope) ([]handoverRecipient, error)
 	HandoverDocumentStatuses(context.Context, string) (map[string]handoverDocumentStatus, error)
-	SaveHandoverLocations(context.Context, auth.Principal, string, []HandoverLocationInput, auth.RegencyScope, auth.ClientMeta) error
-	SetHandoverOverride(context.Context, auth.Principal, string, string, string, auth.RegencyScope, auth.ClientMeta) error
+	RenameHandoverLocation(context.Context, auth.Principal, string, string, string, auth.RegencyScope, auth.ClientMeta) error
+	MergeHandoverLocations(context.Context, auth.Principal, string, string, string, auth.RegencyScope, auth.ClientMeta) error
+	DeleteHandoverLocation(context.Context, auth.Principal, string, string, auth.RegencyScope, auth.ClientMeta) error
+	AssignHandoverLocation(context.Context, auth.Principal, string, string, string, auth.RegencyScope, auth.ClientMeta) error
 }
 
-// HandoverService mengelola titik serah BA Serah Terima satu jadwal.
+// HandoverService merekap dan merapikan titik serah BA Serah Terima.
 type HandoverService struct {
 	repository handoverRepository
 }
@@ -25,8 +27,7 @@ func NewHandoverService(repository handoverRepository) *HandoverService {
 	return &HandoverService{repository: repository}
 }
 
-// View mengembalikan daftar titik serah, penempatan penerima, dan rekap per
-// lokasi.
+// View mengembalikan rekap per titik serah dan penerima tanpa titik serah.
 func (s *HandoverService) View(ctx context.Context, scheduleID string, scope auth.RegencyScope) (HandoverView, error) {
 	scheduleID = strings.TrimSpace(scheduleID)
 	if scheduleID == "" {
@@ -47,57 +48,49 @@ func (s *HandoverService) View(ctx context.Context, scheduleID string, scope aut
 	return buildHandoverView(scheduleID, locations, recipients, statuses), nil
 }
 
-// Save mengganti daftar titik serah; tanpa perubahan, dokumen final tidak
-// ditandai perlu dibuat ulang.
-func (s *HandoverService) Save(ctx context.Context, actor auth.Principal, scheduleID string, inputs []HandoverLocationInput, scope auth.RegencyScope, meta auth.ClientMeta) (HandoverView, error) {
-	scheduleID = strings.TrimSpace(scheduleID)
-	if scheduleID == "" || len(inputs) == 0 || len(inputs) > 100 {
+// Rename memperbaiki nama titik serah (mis. salah ketik).
+func (s *HandoverService) Rename(ctx context.Context, actor auth.Principal, scheduleID, locationID, name string, scope auth.RegencyScope, meta auth.ClientMeta) (HandoverView, error) {
+	name = textnorm.PlaceName(name)
+	if textnorm.PlaceKey(name) == "" || len(name) > 200 || strings.TrimSpace(locationID) == "" {
 		return HandoverView{}, ErrHandoverLocationInvalid
 	}
-	normalized, err := normalizeHandoverInputs(inputs)
-	if err != nil {
-		return HandoverView{}, err
-	}
-	current, err := s.repository.ListHandoverLocations(ctx, scheduleID, scope)
-	if err != nil {
-		return HandoverView{}, err
-	}
-	if !sameHandoverLocations(current, normalized) {
-		if err := s.repository.SaveHandoverLocations(ctx, actor, scheduleID, normalized, scope, meta); err != nil {
-			return HandoverView{}, err
-		}
-	}
-	return s.View(ctx, scheduleID, scope)
-}
-
-// SetOverride memindahkan satu penerima ke titik serah; locationID kosong
-// mengembalikannya ke pembagian otomatis.
-func (s *HandoverService) SetOverride(ctx context.Context, actor auth.Principal, scheduleID, slotID, locationID string, scope auth.RegencyScope, meta auth.ClientMeta) (HandoverView, error) {
-	scheduleID, slotID, locationID = strings.TrimSpace(scheduleID), strings.TrimSpace(slotID), strings.TrimSpace(locationID)
-	if scheduleID == "" || slotID == "" {
-		return HandoverView{}, ErrInvalidInput
-	}
-	if err := s.repository.SetHandoverOverride(ctx, actor, scheduleID, slotID, locationID, scope, meta); err != nil {
+	if err := s.repository.RenameHandoverLocation(ctx, actor, strings.TrimSpace(scheduleID), strings.TrimSpace(locationID), name, scope, meta); err != nil {
 		return HandoverView{}, err
 	}
 	return s.View(ctx, scheduleID, scope)
 }
 
-func sameHandoverLocations(current []HandoverLocation, inputs []HandoverLocationInput) bool {
-	if len(current) != len(inputs) {
-		return false
+// Merge menggabungkan varian nama ke lokasi yang benar.
+func (s *HandoverService) Merge(ctx context.Context, actor auth.Principal, scheduleID, sourceID, targetID string, scope auth.RegencyScope, meta auth.ClientMeta) (HandoverView, error) {
+	sourceID, targetID = strings.TrimSpace(sourceID), strings.TrimSpace(targetID)
+	if sourceID == "" || targetID == "" {
+		return HandoverView{}, ErrHandoverLocationInvalid
 	}
-	for i, input := range inputs {
-		location := current[i]
-		if input.ID != location.ID || input.Name != location.Name {
-			return false
-		}
-		if len(input.Areas) == 0 && len(location.Areas) == 0 {
-			continue
-		}
-		if !reflect.DeepEqual(input.Areas, location.Areas) {
-			return false
-		}
+	if err := s.repository.MergeHandoverLocations(ctx, actor, strings.TrimSpace(scheduleID), sourceID, targetID, scope, meta); err != nil {
+		return HandoverView{}, err
 	}
-	return true
+	return s.View(ctx, scheduleID, scope)
+}
+
+// Delete menghapus titik serah tanpa penerima.
+func (s *HandoverService) Delete(ctx context.Context, actor auth.Principal, scheduleID, locationID string, scope auth.RegencyScope, meta auth.ClientMeta) (HandoverView, error) {
+	if strings.TrimSpace(locationID) == "" {
+		return HandoverView{}, ErrHandoverLocationInvalid
+	}
+	if err := s.repository.DeleteHandoverLocation(ctx, actor, strings.TrimSpace(scheduleID), strings.TrimSpace(locationID), scope, meta); err != nil {
+		return HandoverView{}, err
+	}
+	return s.View(ctx, scheduleID, scope)
+}
+
+// Assign mengoreksi titik serah satu penerima.
+func (s *HandoverService) Assign(ctx context.Context, actor auth.Principal, scheduleID, slotID, locationID string, scope auth.RegencyScope, meta auth.ClientMeta) (HandoverView, error) {
+	slotID, locationID = strings.TrimSpace(slotID), strings.TrimSpace(locationID)
+	if slotID == "" || locationID == "" {
+		return HandoverView{}, ErrHandoverLocationInvalid
+	}
+	if err := s.repository.AssignHandoverLocation(ctx, actor, strings.TrimSpace(scheduleID), slotID, locationID, scope, meta); err != nil {
+		return HandoverView{}, err
+	}
+	return s.View(ctx, scheduleID, scope)
 }

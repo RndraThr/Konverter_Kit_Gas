@@ -7,15 +7,20 @@ import (
 	"strings"
 )
 
-// Titik serah BA Serah Terima (Closing Titik Serah). Satu jadwal dapat punya
-// beberapa lokasi titik serah. Setiap lokasi mencakup kecamatan/desa
-// penerima; penerima masuk ke lokasi menurut urutan: pindah manual, desa,
-// kecamatan, lalu lokasi tunggal bila jadwal hanya punya satu lokasi.
+// Titik serah BA Serah Terima (Closing Titik Serah). Petugas POS Dokumen
+// mencatat titik serah setiap nomor bagi saat distribusi; daftar lokasinya
+// dipakai bersama satu kabupaten dan tumbuh dari lapangan. Admin merapikan
+// varian nama (ubah nama, gabungkan) dan mengoreksi lokasi satu penerima.
 
 var (
 	ErrHandoverLocationInvalid = errors.New("handover location is invalid")
+	// ErrHandoverLocationDuplicate: nama baru sama dengan lokasi lain di
+	// kabupaten itu (gunakan gabungkan).
+	ErrHandoverLocationDuplicate = errors.New("handover location name already used")
+	// ErrHandoverLocationInUse: lokasi masih dipakai penerima.
+	ErrHandoverLocationInUse = errors.New("handover location still has recipients")
 	// ErrHandoverUnassigned: masih ada penerima selesai distribusi yang
-	// belum masuk ke titik serah mana pun.
+	// belum punya titik serah.
 	ErrHandoverUnassigned = errors.New("recipients without handover location")
 	// ErrHandoverClosingIncomplete: Closing Kabupaten membutuhkan BA Serah
 	// Terima final untuk setiap titik serah yang punya penerima.
@@ -27,14 +32,6 @@ const (
 	closingWetKeyPrefix   = "closing-titik-serah@"
 )
 
-// Asal penempatan penerima ke titik serah.
-const (
-	HandoverByOverride = "override"
-	HandoverByVillage  = "village"
-	HandoverByDistrict = "district"
-	HandoverBySingle   = "single"
-)
-
 // Status BA Serah Terima satu titik serah.
 const (
 	HandoverStatusFinal = "final" // dokumen final aktif
@@ -43,26 +40,10 @@ const (
 	HandoverStatusEmpty = "empty" // belum ada penerima selesai distribusi
 )
 
-// HandoverArea adalah cakupan wilayah satu titik serah; Village kosong berarti
-// seluruh kecamatan.
-type HandoverArea struct {
-	District string `json:"district"`
-	Village  string `json:"village,omitempty"`
-}
-
+// HandoverLocation adalah satu titik serah kabupaten.
 type HandoverLocation struct {
-	ID        string         `json:"id"`
-	Name      string         `json:"name"`
-	Areas     []HandoverArea `json:"areas"`
-	SortOrder int            `json:"sort_order"`
-}
-
-// HandoverLocationInput adalah satu lokasi pada penyimpanan daftar titik
-// serah; ID kosong berarti lokasi baru.
-type HandoverLocationInput struct {
-	ID    string         `json:"id"`
-	Name  string         `json:"name"`
-	Areas []HandoverArea `json:"areas"`
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // handoverRecipient adalah satu nomor bagi berpenerima pada jadwal.
@@ -72,38 +53,28 @@ type handoverRecipient struct {
 	Name       string
 	District   string
 	Village    string
-	Override   string
+	LocationID string
 	Completed  bool
 	LocalDate  string
 	Snapshot   []byte
 }
 
-// HandoverRecipientView adalah penerima pada pengaturan titik serah.
+// HandoverRecipientView adalah penerima selesai distribusi tanpa titik serah
+// (perlu dikoreksi admin).
 type HandoverRecipientView struct {
 	SlotID     string `json:"slot_id"`
 	SlotNumber int    `json:"slot_number"`
 	Name       string `json:"name"`
 	District   string `json:"district"`
 	Village    string `json:"village"`
-	LocationID string `json:"location_id,omitempty"`
-	Source     string `json:"source,omitempty"`
-	Completed  bool   `json:"completed"`
 	LocalDate  string `json:"local_date,omitempty"`
 }
 
-// HandoverAreaOption adalah satu desa penerima jadwal untuk dipilih sebagai
-// cakupan titik serah.
-type HandoverAreaOption struct {
-	District   string `json:"district"`
-	Village    string `json:"village"`
-	Recipients int    `json:"recipients"`
-}
-
-// HandoverLocationSummary adalah rekap satu titik serah.
+// HandoverLocationSummary adalah rekap satu titik serah pada satu jadwal.
 type HandoverLocationSummary struct {
 	HandoverLocation
 	// Recipients: penerima selesai distribusi; Assigned: seluruh penerima
-	// (termasuk yang belum selesai).
+	// jadwal ini yang memilih lokasi ini (termasuk yang belum selesai).
 	Recipients int      `json:"recipients"`
 	Assigned   int      `json:"assigned"`
 	Dates      []string `json:"dates"`
@@ -112,86 +83,35 @@ type HandoverLocationSummary struct {
 	DocumentDate string `json:"document_date,omitempty"`
 }
 
-// HandoverView adalah pengaturan dan rekap titik serah satu jadwal.
+// HandoverView adalah rekap titik serah satu jadwal.
 type HandoverView struct {
 	ScheduleID string                    `json:"schedule_id"`
 	Locations  []HandoverLocationSummary `json:"locations"`
-	Areas      []HandoverAreaOption      `json:"areas"`
-	Recipients []HandoverRecipientView   `json:"recipients"`
 	// Unassigned: penerima selesai distribusi tanpa titik serah.
-	Unassigned      int `json:"unassigned"`
-	UnassignedTotal int `json:"unassigned_total"`
+	Unassigned []HandoverRecipientView `json:"unassigned"`
 }
 
-func normalizeArea(value string) string {
-	return strings.ToUpper(strings.Join(strings.Fields(value), " "))
+// handoverDocumentStatus adalah status BA Serah Terima satu lokasi.
+type handoverDocumentStatus struct {
+	Active     bool
+	ActiveDate string
+	Stale      bool
 }
 
-// assignHandover menentukan titik serah satu penerima.
-func assignHandover(locations []HandoverLocation, recipient handoverRecipient) (string, string) {
-	if recipient.Override != "" {
-		for _, location := range locations {
-			if location.ID == recipient.Override {
-				return location.ID, HandoverByOverride
-			}
+// locationOf mengembalikan titik serah penerima bila lokasinya ada di daftar.
+func locationOf(locations []HandoverLocation, recipient handoverRecipient) string {
+	for _, location := range locations {
+		if location.ID == recipient.LocationID {
+			return location.ID
 		}
 	}
-	district, village := normalizeArea(recipient.District), normalizeArea(recipient.Village)
-	if village != "" {
-		for _, location := range locations {
-			for _, area := range location.Areas {
-				if normalizeArea(area.Village) == village && normalizeArea(area.District) == district {
-					return location.ID, HandoverByVillage
-				}
-			}
-		}
-	}
-	if district != "" {
-		for _, location := range locations {
-			for _, area := range location.Areas {
-				if strings.TrimSpace(area.Village) == "" && normalizeArea(area.District) == district {
-					return location.ID, HandoverByDistrict
-				}
-			}
-		}
-	}
-	if len(locations) == 1 {
-		return locations[0].ID, HandoverBySingle
-	}
-	return "", ""
+	return ""
 }
 
-// normalizeHandoverInputs merapikan nama dan cakupan, menolak nama kosong
-// atau ganda.
-func normalizeHandoverInputs(inputs []HandoverLocationInput) ([]HandoverLocationInput, error) {
-	result := make([]HandoverLocationInput, 0, len(inputs))
-	names := map[string]bool{}
-	for _, input := range inputs {
-		name := strings.Join(strings.Fields(input.Name), " ")
-		key := strings.ToUpper(name)
-		if name == "" || len(name) > 200 || names[key] {
-			return nil, ErrHandoverLocationInvalid
-		}
-		names[key] = true
-		areas := []HandoverArea{}
-		seen := map[HandoverArea]bool{}
-		for _, area := range input.Areas {
-			item := HandoverArea{District: normalizeArea(area.District), Village: normalizeArea(area.Village)}
-			if item.District == "" || seen[item] {
-				continue
-			}
-			seen[item] = true
-			areas = append(areas, item)
-		}
-		result = append(result, HandoverLocationInput{ID: strings.TrimSpace(input.ID), Name: name, Areas: areas})
-	}
-	return result, nil
-}
-
-// buildHandoverView menghitung penempatan, rekap per lokasi, dan pilihan
-// cakupan wilayah.
+// buildHandoverView menghitung rekap per lokasi. Lokasi kabupaten tanpa
+// penerima pada jadwal ini tetap tampil (status empty) agar bisa dirapikan.
 func buildHandoverView(scheduleID string, locations []HandoverLocation, recipients []handoverRecipient, statuses map[string]handoverDocumentStatus) HandoverView {
-	view := HandoverView{ScheduleID: scheduleID, Locations: []HandoverLocationSummary{}, Areas: []HandoverAreaOption{}, Recipients: []HandoverRecipientView{}}
+	view := HandoverView{ScheduleID: scheduleID, Locations: []HandoverLocationSummary{}, Unassigned: []HandoverRecipientView{}}
 	index := map[string]int{}
 	dates := map[string]map[string]bool{}
 	for i, location := range locations {
@@ -199,27 +119,14 @@ func buildHandoverView(scheduleID string, locations []HandoverLocation, recipien
 		dates[location.ID] = map[string]bool{}
 		view.Locations = append(view.Locations, HandoverLocationSummary{HandoverLocation: location, Dates: []string{}, Status: HandoverStatusEmpty})
 	}
-	type areaKey struct{ district, village string }
-	areaOrder := []areaKey{}
-	areaCounts := map[areaKey]int{}
 	for _, recipient := range recipients {
-		locationID, source := assignHandover(locations, recipient)
-		view.Recipients = append(view.Recipients, HandoverRecipientView{
-			SlotID: recipient.SlotID, SlotNumber: recipient.SlotNumber, Name: recipient.Name,
-			District: recipient.District, Village: recipient.Village, LocationID: locationID, Source: source,
-			Completed: recipient.Completed, LocalDate: recipient.LocalDate,
-		})
-		key := areaKey{normalizeArea(recipient.District), normalizeArea(recipient.Village)}
-		if key.district != "" {
-			if _, exists := areaCounts[key]; !exists {
-				areaOrder = append(areaOrder, key)
-			}
-			areaCounts[key]++
-		}
+		locationID := locationOf(locations, recipient)
 		if locationID == "" {
-			view.UnassignedTotal++
 			if recipient.Completed {
-				view.Unassigned++
+				view.Unassigned = append(view.Unassigned, HandoverRecipientView{
+					SlotID: recipient.SlotID, SlotNumber: recipient.SlotNumber, Name: recipient.Name,
+					District: recipient.District, Village: recipient.Village, LocalDate: recipient.LocalDate,
+				})
 			}
 			continue
 		}
@@ -248,23 +155,15 @@ func buildHandoverView(scheduleID string, locations []HandoverLocation, recipien
 			summary.Status = HandoverStatusNone
 		}
 	}
-	sort.SliceStable(areaOrder, func(i, j int) bool {
-		if areaOrder[i].district != areaOrder[j].district {
-			return areaOrder[i].district < areaOrder[j].district
+	// Lokasi berpenerima dulu, lalu menurut nama.
+	sort.SliceStable(view.Locations, func(i, j int) bool {
+		a, b := view.Locations[i], view.Locations[j]
+		if (a.Assigned > 0) != (b.Assigned > 0) {
+			return a.Assigned > 0
 		}
-		return areaOrder[i].village < areaOrder[j].village
+		return strings.ToUpper(a.Name) < strings.ToUpper(b.Name)
 	})
-	for _, key := range areaOrder {
-		view.Areas = append(view.Areas, HandoverAreaOption{District: key.district, Village: key.village, Recipients: areaCounts[key]})
-	}
 	return view
-}
-
-// handoverDocumentStatus adalah status BA Serah Terima satu lokasi.
-type handoverDocumentStatus struct {
-	Active     bool
-	ActiveDate string
-	Stale      bool
 }
 
 func closingDocumentType(locationID string) string {
@@ -298,7 +197,7 @@ func handoverLocationFrom(ctx context.Context) string {
 }
 
 // pickHandoverLocation memilih lokasi dengan ID; ID kosong hanya sah bila
-// jadwal punya tepat satu titik serah.
+// hanya ada satu titik serah.
 func pickHandoverLocation(locations []HandoverLocation, locationID string) (HandoverLocation, error) {
 	locationID = strings.TrimSpace(locationID)
 	if locationID == "" {
@@ -316,13 +215,10 @@ func pickHandoverLocation(locations []HandoverLocation, locationID string) (Hand
 }
 
 // closingRawRowsFor mengambil distribusi selesai milik satu titik serah.
-func closingRawRowsFor(locations []HandoverLocation, recipients []handoverRecipient, locationID string) []closingRawRow {
+func closingRawRowsFor(recipients []handoverRecipient, locationID string) []closingRawRow {
 	raw := []closingRawRow{}
 	for _, recipient := range recipients {
-		if !recipient.Completed {
-			continue
-		}
-		if assigned, _ := assignHandover(locations, recipient); assigned == locationID {
+		if recipient.Completed && recipient.LocationID == locationID {
 			raw = append(raw, closingRawRow{LocalDate: recipient.LocalDate, VerificationSnapshot: recipient.Snapshot})
 		}
 	}
@@ -342,14 +238,16 @@ func closingKabupatenRowsFromHandover(locations []HandoverLocation, recipients [
 		if !recipient.Completed {
 			continue
 		}
-		locationID, _ := assignHandover(locations, recipient)
+		locationID := locationOf(locations, recipient)
 		if locationID == "" && strict {
 			return nil, ErrHandoverUnassigned
 		}
 		completed[locationID]++
 	}
+	ordered := append([]HandoverLocation(nil), locations...)
+	sort.SliceStable(ordered, func(i, j int) bool { return strings.ToUpper(ordered[i].Name) < strings.ToUpper(ordered[j].Name) })
 	rows := []ClosingKabupatenRow{}
-	for _, location := range locations {
+	for _, location := range ordered {
 		count := completed[location.ID]
 		if count == 0 {
 			continue
@@ -360,7 +258,7 @@ func closingKabupatenRowsFromHandover(locations []HandoverLocation, recipients [
 			if strict {
 				return nil, ErrHandoverClosingIncomplete
 			}
-			for _, row := range groupClosingRows(closingRawRowsFor(locations, recipients, location.ID)) {
+			for _, row := range groupClosingRows(closingRawRowsFor(recipients, location.ID)) {
 				rows = appendKabupatenRow(rows, location.Name, row.MachineBrand, row.MachineType, row.Count, false)
 			}
 			continue

@@ -445,6 +445,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleDCP3Import(w, r, rc)
 	case path == "distribution/slots":
 		h.handleDistributionSlots(w, r, rc)
+	case path == "distribution/handover-locations":
+		h.handleDistributionHandoverLocations(w, r, rc)
 	case path == "distribution/candidates":
 		h.handleDistributionCandidates(w, r, rc)
 	case path == "distribution/my-activity":
