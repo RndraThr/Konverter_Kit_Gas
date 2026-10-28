@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type maplibregl from 'maplibre-gl';
+import { withApiKey } from './basemaps';
 import type { MapConfig } from './types';
 
 export const STYLE_LOAD_TIMEOUT_MS = 8000;
@@ -53,7 +54,7 @@ export function MapCanvas({ config, onReady, onStyleError, className }: Props) {
 
       map = new lib.Map({
         container,
-        style: config.style_url,
+        style: withApiKey(config.style_url, config.api_key),
         center: [118, -2.5],
         zoom: 4,
         attributionControl: { compact: true, customAttribution: config.attribution },

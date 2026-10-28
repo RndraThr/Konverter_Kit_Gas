@@ -88,3 +88,9 @@ test('errors after load are ignored; ResizeObserver resizes; unmount removes the
   cleanup();
   expect(map.remove).toHaveBeenCalled();
 });
+
+test('api key is appended to the style url', async () => {
+  render(<MapCanvas config={{ ...config, api_key: 'K' }} onReady={vi.fn()} onStyleError={vi.fn()} />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+  expect(instances[0].options.style).toBe('https://style.test?key=K');
+});
