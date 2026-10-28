@@ -54,6 +54,8 @@ type DP3Recipient struct {
 	MachinePower       string `json:"machine_power"`
 	MachineFuelType    string `json:"machine_fuel_type"`
 	Source             string `json:"source"`
+	// HandoverLocation adalah titik serah yang dipilih di POS Dokumen.
+	HandoverLocation string `json:"handover_location,omitempty"`
 }
 
 func (r DP3Recipient) Mounted() bool { return r.DistributionNumber != nil }
@@ -122,7 +124,7 @@ func buildDP3Snapshot(ctx DP3Context, settings ScheduleSettings, logos []LogoSna
 		DocumentType:          AggregateDocumentDP3,
 		DocumentDate:          documentDate,
 		RegencyName:           ctx.RegencyName,
-		HandoverLocation:      settings.HandoverLocation,
+		HandoverLocation:      recipientLocations(dp3Locations(recipients), settings.HandoverLocation),
 		ConsultantCompanyName: settings.Consultant(),
 		FiscalYear:            ctx.FiscalYear,
 		Logos:                 sortedLogos,
@@ -149,10 +151,17 @@ func validateDP3Context(ctx DP3Context) error {
 	return nil
 }
 
-func validateDP3Settings(settings ScheduleSettings) error {
-	if strings.TrimSpace(settings.HandoverLocation) == "" {
-		return ErrHandoverLocationRequired
+func dp3Locations(recipients []DP3Recipient) []string {
+	names := make([]string, len(recipients))
+	for i, recipient := range recipients {
+		names[i] = recipient.HandoverLocation
 	}
+	return names
+}
+
+// validateDP3Settings memeriksa penandatangan; Lokasi / Titik Serah diambil
+// dari titik serah penerima.
+func validateDP3Settings(settings ScheduleSettings) error {
 	if strings.TrimSpace(settings.AgricultureOfficeName) == "" || strings.TrimSpace(settings.AgricultureOfficeNIP) == "" || strings.TrimSpace(settings.InstallerName) == "" || strings.TrimSpace(settings.SupervisorName) == "" {
 		return ErrSignatoryRequired
 	}
@@ -225,6 +234,7 @@ func resolveDP3Recipients(rows []dp3RawRecipient) ([]DP3Recipient, error) {
 			RowNumber: row.RowNumber, SlotID: row.SlotID,
 			FullName: row.FullName, NIK: row.NIK, Address: row.Address, Village: row.Village,
 			District: row.District, Regency: row.Regency, DistributionNumber: row.DistributionNumber,
+			HandoverLocation: row.HandoverLocation,
 		}
 		if equipment, ok := equipmentFromDP3Verification(row.VerificationSnapshot); ok {
 			recipient.MachineBrand, recipient.MachineType = equipment.MachineBrand, equipment.MachineType
@@ -273,6 +283,7 @@ type dp3RawRecipient struct {
 	DistributionNumber   *int
 	AllocationSnapshot   []byte
 	VerificationSnapshot []byte
+	HandoverLocation     string
 }
 
 type dp3MachineSnapshot struct {

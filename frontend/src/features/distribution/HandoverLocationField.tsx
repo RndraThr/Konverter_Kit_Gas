@@ -64,7 +64,15 @@ function rememberLast(scheduleID: string, name: string) {
  * name close to an existing one asks first. The last choice fills the next
  * slot of the same schedule.
  */
-export function HandoverLocationField({ slot, editable, onSaved }: { slot: DistributionSlot; editable: boolean; onSaved: (slot: DistributionSlot) => void }) {
+export function HandoverLocationField({ slot, editable, correctable = false, onSaved }: {
+  slot: DistributionSlot;
+  /** POS Dokumen before completion: choose or add a location. */
+  editable: boolean;
+  /** BA admin after completion: correct to an existing location of the list. */
+  correctable?: boolean;
+  onSaved: (slot: DistributionSlot) => void;
+}) {
+  const correcting = !editable && correctable && slot.status === 'completed';
   const inputID = useId();
   const listID = useId();
   const locations = useQuery({
@@ -92,25 +100,35 @@ export function HandoverLocationField({ slot, editable, onSaved }: { slot: Distr
       onSaved(data);
     },
   });
+  const correct = useMutation({
+    mutationFn: (choice: HandoverLocation) => apiRequest(
+      `/api/v1/bast/handover-locations/assign?schedule_id=${encodeURIComponent(slot.schedule_id)}`,
+      { method: 'PUT', body: JSON.stringify({ slot_id: slot.id, location_id: choice.id }) },
+    ).then(() => choice),
+    onSuccess: (choice) => onSaved({ ...slot, handover_location_id: choice.id, handover_location_name: choice.name }),
+  });
   const saved = Boolean(slot.handover_location_id) && placeKey(slot.handover_location_name ?? '') === placeKey(name);
   const submit = () => save.mutate(existing ? { id: existing.id, name: existing.name } : { name });
+  const failure = save.error ?? correct.error;
 
   return <section aria-label="Titik serah" className="space-y-3 rounded-lg border p-4">
     <h4 className="flex items-center gap-2 font-medium"><MapPin className="size-4 text-primary" aria-hidden="true" />Titik serah</h4>
     <div className="flex flex-wrap items-end gap-3">
       <div className="grid min-w-52 flex-1 gap-2">
         <Label htmlFor={inputID}>Lokasi penyerahan</Label>
-        <Input id={inputID} list={listID} value={name} disabled={!editable} placeholder="Cari atau ketik lokasi baru" onChange={(event) => { setName(event.target.value); setConfirmedNew(false); }} />
+        <Input id={inputID} list={listID} value={name} disabled={!editable && !correcting} placeholder="Cari atau ketik lokasi baru" onChange={(event) => { setName(event.target.value); setConfirmedNew(false); }} />
         <datalist id={listID}>{items.map((item) => <option key={item.id} value={item.name} />)}</datalist>
       </div>
       {editable && <Button type="button" variant="outline" disabled={placeKey(name) === '' || saved || save.isPending || (Boolean(similar) && !confirmedNew)} onClick={submit}>{existing || saved ? 'Simpan titik serah' : 'Tambah & simpan titik serah'}</Button>}
+      {correcting && <Button type="button" variant="outline" disabled={!existing || saved || correct.isPending} onClick={() => existing && correct.mutate(existing)}>Koreksi titik serah</Button>}
     </div>
+    {correcting && <p className="text-xs text-muted-foreground">Distribusi sudah selesai: koreksi hanya ke titik serah yang ada di daftar. BA Serah Terima final akan ditandai perlu dibuat ulang.</p>}
     {editable && similar && !confirmedNew && <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300/60 bg-amber-50 p-2 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">
       <span>Mungkin maksudnya <strong>{similar.name}</strong>?</span>
       <Button type="button" size="sm" onClick={() => { setName(similar.name); save.mutate({ id: similar.id, name: similar.name }); }}>Pakai {similar.name}</Button>
       <Button type="button" size="sm" variant="ghost" onClick={() => setConfirmedNew(true)}>Bukan, lokasi baru</Button>
     </div>}
     {!slot.handover_location_id && <p className="text-xs text-muted-foreground">Wajib diisi sebelum penyerahan diselesaikan. Daftar lokasi dipakai bersama semua petugas di kabupaten ini.</p>}
-    {save.isError && <p className="text-sm text-destructive">{save.error instanceof Error ? save.error.message : 'Titik serah belum tersimpan.'}</p>}
+    {failure && <p className="text-sm text-destructive">{failure instanceof Error ? failure.message : 'Titik serah belum tersimpan.'}</p>}
   </section>;
 }

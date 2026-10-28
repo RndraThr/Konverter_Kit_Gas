@@ -384,15 +384,39 @@ func wrapWords(pdf *fpdf.Fpdf, text string, width float64) []string {
 	var lines []string
 	current := ""
 	for _, word := range strings.Fields(text) {
-		candidate := strings.TrimSpace(current + " " + word)
+		// Satu "kata" tanpa spasi yang lebih lebar dari sel (nomor kartu, nomor
+		// seri) dipecah per karakter agar tidak keluar dari garis sel.
+		for _, piece := range splitLongWord(pdf, word, width) {
+			candidate := strings.TrimSpace(current + " " + piece)
+			if current != "" && pdf.GetStringWidth(candidate) > width {
+				lines = append(lines, current)
+				current = piece
+				continue
+			}
+			current = candidate
+		}
+	}
+	return append(lines, current)
+}
+
+// splitLongWord memotong kata yang lebih lebar dari width menjadi potongan
+// yang muat; kata yang muat dikembalikan utuh.
+func splitLongWord(pdf *fpdf.Fpdf, word string, width float64) []string {
+	if width <= 0 || pdf.GetStringWidth(word) <= width {
+		return []string{word}
+	}
+	var pieces []string
+	current := ""
+	for _, r := range word {
+		candidate := current + string(r)
 		if current != "" && pdf.GetStringWidth(candidate) > width {
-			lines = append(lines, current)
-			current = word
+			pieces = append(pieces, current)
+			current = string(r)
 			continue
 		}
 		current = candidate
 	}
-	return append(lines, current)
+	return append(pieces, current)
 }
 
 // splitCellLines memecah teks header di "\n" lalu membungkusnya per kata bila

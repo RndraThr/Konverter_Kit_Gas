@@ -56,9 +56,10 @@ func (r *Repository) ListDP3Recipients(ctx context.Context, scheduleID, localDat
 	rows, err := r.pool.Query(ctx, completedSlotsNumbered+`
 		SELECT n.row_number, ds.id::text, ds.slot_number, p.full_name, COALESCE(p.nik,''), COALESCE(p.address,''),
 		       COALESCE(p.village,''), COALESCE(p.district,''), r.name,
-		       pa.package_snapshot_json, ds.verification_snapshot_json, COALESCE(ds.machine_option_code,''), pt.values_json
+		       pa.package_snapshot_json, ds.verification_snapshot_json, COALESCE(ds.machine_option_code,''), pt.values_json, COALESCE(hl.name,'')
 		FROM numbered n
 		JOIN distribution_slots ds ON ds.id = n.id
+		LEFT JOIN bast_handover_locations hl ON hl.id = ds.handover_location_id
 		JOIN program_schedules ps ON ps.id = ds.schedule_id
 		JOIN regencies r ON r.id = ps.regency_id
 		JOIN package_template_versions pt ON pt.id = ps.package_template_version_id
@@ -77,7 +78,7 @@ func (r *Repository) ListDP3Recipients(ctx context.Context, scheduleID, localDat
 		var item dp3RawRecipient
 		var slotNumber int
 		if err := rows.Scan(&item.RowNumber, &item.SlotID, &slotNumber, &item.FullName, &item.NIK, &item.Address, &item.Village, &item.District, &item.Regency,
-			&item.AllocationSnapshot, &item.VerificationSnapshot, &item.MachineOptionCode, &item.PackageTemplate); err != nil {
+			&item.AllocationSnapshot, &item.VerificationSnapshot, &item.MachineOptionCode, &item.PackageTemplate, &item.HandoverLocation); err != nil {
 			return nil, err
 		}
 		item.DistributionNumber = &slotNumber

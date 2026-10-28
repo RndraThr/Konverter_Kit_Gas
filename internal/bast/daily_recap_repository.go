@@ -54,9 +54,10 @@ func (r *Repository) ListDailyRecapRecipients(ctx context.Context, scheduleID, l
 	localDate = strings.TrimSpace(localDate)
 	rows, err := r.pool.Query(ctx, completedSlotsNumbered+`
 		SELECT n.row_number, ds.slot_number, p.full_name, COALESCE(psi.display_value,''), COALESCE(ds.machine_serial_number,''),
-		       COALESCE(ds.machine_option_code,''), ds.verification_snapshot_json, pt.values_json
+		       COALESCE(ds.machine_option_code,''), ds.verification_snapshot_json, pt.values_json, COALESCE(hl.name,'')
 		FROM numbered n
 		JOIN distribution_slots ds ON ds.id = n.id
+		LEFT JOIN bast_handover_locations hl ON hl.id = ds.handover_location_id
 		JOIN program_schedules ps ON ps.id = ds.schedule_id
 		JOIN package_template_versions pt ON pt.id = ps.package_template_version_id
 		JOIN people p ON p.id = ds.recipient_person_id
@@ -72,7 +73,7 @@ func (r *Repository) ListDailyRecapRecipients(ctx context.Context, scheduleID, l
 	raw := []dailyRecapRawRecipient{}
 	for rows.Next() {
 		var item dailyRecapRawRecipient
-		if err := rows.Scan(&item.RowNumber, &item.SlotNumber, &item.FullName, &item.FarmerCardNumber, &item.MachineSerial, &item.MachineOptionCode, &item.VerificationSnapshot, &item.PackageTemplate); err != nil {
+		if err := rows.Scan(&item.RowNumber, &item.SlotNumber, &item.FullName, &item.FarmerCardNumber, &item.MachineSerial, &item.MachineOptionCode, &item.VerificationSnapshot, &item.PackageTemplate, &item.HandoverLocation); err != nil {
 			return nil, err
 		}
 		raw = append(raw, item)

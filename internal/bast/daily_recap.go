@@ -19,6 +19,8 @@ type DailyRecapRecipient struct {
 	MachineSerial    string `json:"machine_serial"`
 	MachinePower     string `json:"machine_power"`
 	MachineFuelType  string `json:"machine_fuel_type"`
+	// HandoverLocation adalah titik serah yang dipilih di POS Dokumen.
+	HandoverLocation string `json:"handover_location,omitempty"`
 }
 
 // DailyRecapVariant adalah ringkasan Grand Total per varian mesin.
@@ -89,7 +91,7 @@ func buildDailyRecapSnapshot(ctx DP3Context, settings ScheduleSettings, logos []
 		DocumentType:          AggregateDocumentDailyRecap,
 		DocumentDate:          documentDate,
 		RegencyName:           ctx.RegencyName,
-		HandoverLocation:      settings.HandoverLocation,
+		HandoverLocation:      recipientLocations(dailyRecapLocations(recipients), settings.HandoverLocation),
 		ConsultantCompanyName: settings.Consultant(),
 		FiscalYear:            ctx.FiscalYear,
 		Logos:                 sortedLogos,
@@ -134,10 +136,9 @@ func groupDailyRecapVariants(recipients []DailyRecapRecipient) []DailyRecapVaria
 	return variants
 }
 
+// validateDailyRecapSettings memeriksa penandatangan; Lokasi / Titik Serah
+// diambil dari titik serah penerima tanggal itu.
 func validateDailyRecapSettings(settings ScheduleSettings) error {
-	if strings.TrimSpace(settings.HandoverLocation) == "" {
-		return ErrHandoverLocationRequired
-	}
 	if strings.TrimSpace(settings.AgricultureOfficeName) == "" || strings.TrimSpace(settings.AgricultureOfficeNIP) == "" || strings.TrimSpace(settings.InstallerName) == "" || strings.TrimSpace(settings.SupervisorName) == "" || strings.TrimSpace(settings.PertaminaRepName) == "" {
 		return ErrSignatoryRequired
 	}
@@ -176,6 +177,7 @@ func decodeDailyRecapRecipients(raw []dailyRecapRawRecipient) ([]DailyRecapRecip
 	for _, row := range raw {
 		recipient := DailyRecapRecipient{
 			RowNumber: row.RowNumber, SlotNumber: row.SlotNumber, FullName: row.FullName, FarmerCardNumber: row.FarmerCardNumber,
+			HandoverLocation: row.HandoverLocation,
 		}
 		if len(row.VerificationSnapshot) > 0 {
 			var envelope struct {
@@ -231,6 +233,36 @@ type dailyRecapRawRecipient struct {
 	MachineOptionCode    string
 	VerificationSnapshot []byte
 	PackageTemplate      []byte
+	HandoverLocation     string
+}
+
+func dailyRecapLocations(recipients []DailyRecapRecipient) []string {
+	names := make([]string, len(recipients))
+	for i, recipient := range recipients {
+		names[i] = recipient.HandoverLocation
+	}
+	return names
+}
+
+// recipientLocations menggabungkan titik serah penerima (urut kemunculan,
+// tanpa duplikat) untuk kolom Lokasi / Titik Serah; tanpa titik serah,
+// lokasi pada pengaturan BA jadwal.
+func recipientLocations(names []string, fallback string) string {
+	seen := map[string]bool{}
+	unique := []string{}
+	for _, name := range names {
+		name = strings.TrimSpace(name)
+		key := strings.ToUpper(name)
+		if name == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		unique = append(unique, name)
+	}
+	if len(unique) == 0 {
+		return fallback
+	}
+	return strings.Join(unique, ", ")
 }
 
 func formatDailyRecapFilename(regencyName, documentDate string, version int) string {

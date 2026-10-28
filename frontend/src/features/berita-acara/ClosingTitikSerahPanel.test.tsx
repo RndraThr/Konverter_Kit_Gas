@@ -53,8 +53,8 @@ beforeEach(() => {
 
 test('shows the closing titik serah preview of the first location inline, without opening a new tab', async () => {
   renderPanel()
-  expect(await screen.findByText('20')).toBeVisible()
   expect(await screen.findByTitle('Preview Closing Titik Serah')).toBeVisible()
+  expect(screen.getAllByText('20').length).toBeGreaterThan(0)
   await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledWith('/api/v1/bast/closing-titik-serah/preview', expect.objectContaining({ method: 'POST', body: expect.stringContaining('"location_id":"loc-a"') })))
   expect(apiRequest).toHaveBeenCalledWith('/api/v1/bast/closing-titik-serah/rows?schedule_id=schedule-1&location_id=loc-a')
   expect(window.open).not.toHaveBeenCalled()
@@ -62,12 +62,13 @@ test('shows the closing titik serah preview of the first location inline, withou
 
 test('summarises every handover location and warns about recipients without one', async () => {
   renderPanel()
-  expect(await screen.findByText('2 penerima selesai distribusi belum ada titik serah. Isi lewat "Rapikan titik serah".')).toBeVisible()
+  expect(await screen.findByText('2 penerima selesai belum ada titik serah.')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Rapikan titik serah' })).toBeVisible()
   // Locations of the regency unused by this schedule stay out of the recap.
   expect(screen.queryByText('Gudang Kabupaten Lain')).toBeNull()
   expect(screen.getByText('Belum dibuat')).toBeVisible()
   expect(screen.getByText('Final')).toBeVisible()
-  expect(screen.getByText('4 penerima selesai dari 6')).toBeVisible()
+  expect(screen.getByText('4 penerima dari 6 · 1 hari')).toBeVisible()
 
   fireEvent.click(screen.getByRole('button', { name: /Lapangan Sabbangparu/ }))
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/bast/closing-titik-serah/rows?schedule_id=schedule-1&location_id=loc-b'))

@@ -117,7 +117,7 @@ export function DailyRecapPanel({ scheduleID, regencyName, programType }: Props)
           <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle>{selected ? formatLocalDate(selected.local_date) : 'Rekap Harian'}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{regencyName} · {selected?.recipient_count ?? 0} penerima.</p></div><Badge variant="outline">Petani</Badge></div></CardHeader>
           <CardContent className="grid gap-4 pt-5">
             <div className="grid gap-3 sm:items-start sm:grid-cols-2">
-              <DocumentInfoFields scheduleID={scheduleID} fields={[{ key: 'handover_location', label: 'Lokasi / Titik Serah' }, { key: 'consultant_company_name', label: 'Konsultan Distribusi' }]} />
+              <DocumentInfoFields scheduleID={scheduleID} fields={[{ key: 'consultant_company_name', label: 'Konsultan Distribusi' }]} />
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
               <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>
