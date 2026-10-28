@@ -1,6 +1,9 @@
 import type { PointFeature } from './types';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+// Timeline days are WIB calendar days, like the dates in the detail panel, whatever the browser's
+// time zone. Asia/Jakarta is UTC+7 all year (no DST), so a fixed offset is exact.
+const WIB_OFFSET_MS = 7 * 60 * 60 * 1000;
 
 /** Milestone a point had reached at `day` (0 = it did not exist yet). `stage_at[i]` is milestone i+1. */
 export function stageAtDay(point: PointFeature, day: Date): number {
@@ -13,15 +16,12 @@ export function stageAtDay(point: PointFeature, day: Date): number {
   return stage;
 }
 
-const startOfDay = (time: number) => {
-  const date = new Date(time);
-  date.setHours(0, 0, 0, 0);
-  return date;
-};
+/** 00:00 WIB of the day `time` falls on. */
+const startOfDay = (time: number) => new Date(Math.floor((time + WIB_OFFSET_MS) / DAY_MS) * DAY_MS - WIB_OFFSET_MS);
 
 export type TimelineRange = { start: Date; days: number };
 
-/** Local calendar days from the earliest to the latest milestone time. */
+/** WIB calendar days from the earliest to the latest milestone time; `start` is 00:00 WIB of the first. */
 export function timelineRange(points: PointFeature[]): TimelineRange | null {
   let min = Infinity;
   let max = -Infinity;
@@ -36,22 +36,22 @@ export function timelineRange(points: PointFeature[]): TimelineRange | null {
   if (!Number.isFinite(min)) return null;
   const start = startOfDay(min);
   const last = startOfDay(max);
-  // Rounding absorbs the 1 h DST shift in zones that have one.
   return { start, days: Math.round((last.getTime() - start.getTime()) / DAY_MS) + 1 };
+}
+
+/** Start (00:00 WIB) of timeline day `index` (0-based) counted from `start`. */
+export function dayStart(start: Date, index: number): Date {
+  return new Date(start.getTime() + index * DAY_MS);
 }
 
 /** Date of timeline day `index` (0-based). */
 export function dayDate(range: TimelineRange, index: number): Date {
-  const date = new Date(range.start);
-  date.setDate(date.getDate() + index);
-  return date;
+  return dayStart(range.start, index);
 }
 
 /** End of timeline day `index`, so every milestone reached that day counts. */
 export function endOfDay(range: TimelineRange, index: number): Date {
-  const date = dayDate(range, index);
-  date.setHours(23, 59, 59, 999);
-  return date;
+  return new Date(dayStart(range.start, index + 1).getTime() - 1);
 }
 
 export type PointFilter = { range?: TimelineRange | null; day?: number | null; stage?: number };

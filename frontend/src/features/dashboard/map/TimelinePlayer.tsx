@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pause, Play } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
+import { dayStart } from './timeline';
 
 export const TIMELINE_STEP_MS = 700;
 
-const dateFormat = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
+const dateFormat = new Intl.DateTimeFormat('id-ID', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Jakarta' });
 
 type Props = {
   start: Date;
@@ -45,8 +46,7 @@ export function TimelinePlayer({ start, days, day, onChange }: Props) {
     setPlaying(true);
   };
 
-  const date = new Date(start);
-  date.setDate(date.getDate() + value);
+  const date = dayStart(start, value);
 
   return <div className="flex flex-wrap items-center gap-3" role="group" aria-label="Timeline milestone">
     <Button type="button" size="icon" variant="outline" className="size-11" aria-label={playing ? 'Jeda timeline' : 'Putar timeline'} onClick={toggle}>
