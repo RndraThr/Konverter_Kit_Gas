@@ -58,8 +58,12 @@ func run(ctx context.Context, cfg config.Config) error {
 	}
 	defer pool.Close()
 
-	// The distribution map is non-critical: a failed boundary import is logged, not fatal.
-	if boundaries, err := geo.EnsureRegencyBoundaries(ctx, pool); err != nil {
+	// The distribution map is non-critical: a failed (or stuck, e.g. behind a lock) boundary import
+	// is logged, not fatal, and may not hold up startup for more than a minute.
+	boundaryCtx, cancelBoundaries := context.WithTimeout(ctx, 60*time.Second)
+	boundaries, err := geo.EnsureRegencyBoundaries(boundaryCtx, pool)
+	cancelBoundaries()
+	if err != nil {
 		log.Printf("regency boundaries: import failed: %v", err)
 	} else {
 		log.Printf("regency boundaries: imported=%d matched=%d unmatched=%d", boundaries.Imported, boundaries.Matched, len(boundaries.Unmatched))
