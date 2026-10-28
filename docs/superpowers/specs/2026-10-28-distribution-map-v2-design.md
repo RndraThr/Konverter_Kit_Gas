@@ -94,7 +94,22 @@ Zona sudah ada: `program_zones` dan `program_regency_assignments` (satu kabupate
 ### 6.1 Infrastruktur
 
 - Image basis data: `postgres:17-alpine` → **`postgis/postgis:17-3.5-alpine`** di `docker-compose.yml` dan service CI (`.github/workflows/ci.yml`). Versi mayor PostgreSQL sama, jadi volume data yang ada tetap terbaca.
-- Deploy produksi: backup (`pg_dump`) → ganti image → jalankan migrasi yang memanggil `CREATE EXTENSION IF NOT EXISTS postgis`. Rollback: kembalikan image lama dan pulihkan backup.
+- Deploy produksi: backup (`pg_dump`) → ganti image → jalankan migrasi yang memanggil `CREATE EXTENSION IF NOT EXISTS postgis`. Langkah lengkap dan rollback: §6.1.1.
+
+### 6.1.1 Runbook deploy dan rollback (migrasi 00080)
+
+Deploy (staging/produksi, `docker compose`):
+
+1. **Backup dulu**: `docker compose exec postgres pg_dump -U "$POSTGRES_USER" -Fc "$POSTGRES_DB" > konkit-pre-00080.dump`, lalu salin file keluar dari server.
+2. **Pastikan aplikasi terhubung sebagai superuser image**: `DATABASE_URL` di `.env.staging` harus memakai `POSTGRES_USER` dari `.env.compose` (image Postgres membuat user itu sebagai superuser). `CREATE EXTENSION postgis` di 00080 butuh hak superuser; dengan user lain migrasi gagal dan server tidak start. Cek: `docker compose exec postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT rolsuper FROM pg_roles WHERE rolname = current_user"` → `t`.
+3. **Ganti image dan naikkan**: `docker-compose.yml` sudah memakai `postgis/postgis:17-3.5-alpine` (mayor 17 sama, volume lama terbaca). Jalankan `docker compose pull postgres && docker compose up -d --build`. Entrypoint app menjalankan `./migrate up` sebelum `./server`, jadi selama migrasi aplikasi belum melayani.
+4. **Perkirakan jeda**: `ALTER TABLE media_files ADD COLUMN geom … GENERATED … STORED` menulis ulang seluruh tabel di bawah `ACCESS EXCLUSIVE`; durasinya sebanding dengan jumlah baris `media_files`. Aplikasi memang mati selama itu, jadi tidak ada request yang tertahan, tetapi jadwalkan di luar jam kerja lapangan.
+5. **Verifikasi**: log app menampilkan `OK 00080_postgis_distribution_map.sql`, impor batas kabupaten selesai, dan `/map` memuat titik.
+
+Rollback (pilih salah satu):
+
+- **Pulihkan backup (disarankan)**: hentikan stack, buat volume baru (atau hapus `postgres-data`), kembalikan image `postgres:17-alpine`, `docker compose up -d postgres`, lalu `pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists konkit-pre-00080.dump`, kemudian naikkan app versi lama.
+- **Turunkan migrasi di tempat**: hentikan app (`docker compose stop app`), lalu dengan image PostGIS masih berjalan jalankan `./migrate down` sampai versi 79 (`docker compose run --rm --entrypoint ./migrate app down` sekali), lalu `DROP EXTENSION postgis;`, baru ganti image kembali ke `postgres:17-alpine`. Urutan ini wajib: selama kolom `media_files.geom` (generated, memanggil fungsi PostGIS di setiap INSERT/UPDATE) atau ekstensinya masih ada, Postgres tanpa PostGIS tidak bisa memuat fungsi tersebut dan setiap upload foto gagal.
 
 ### 6.2 Skema (migrasi baru)
 
