@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
@@ -19,9 +19,12 @@ const fakeMap = vi.hoisted(() => {
   const calls: Array<[string, unknown]> = [];
   const sources = new Set<string>();
   const layers: Array<{ id: string; type: string }> = [];
+  const handlers = new Map<string, Array<() => void>>();
   const map = {
     calls,
-    reset: () => { calls.length = 0; sources.clear(); layers.length = 0; },
+    reset: () => { calls.length = 0; sources.clear(); layers.length = 0; handlers.clear(); },
+    // Fires a map-level event the way resize() does (no originalEvent).
+    emit: (type: string) => { handlers.get(type)?.forEach((fn) => fn()); },
     getStyle: () => ({ layers }),
     isStyleLoaded: () => true,
     getSource: (id: string) => (sources.has(id) ? { setData: () => undefined } : undefined),
@@ -31,7 +34,10 @@ const fakeMap = vi.hoisted(() => {
     setPaintProperty: () => undefined,
     setLayoutProperty: () => undefined,
     setLayerZoomRange: () => undefined,
-    on: () => undefined,
+    // Layer-scoped listeners (on(type, layerId, fn)) are not recorded; only map-level ones.
+    on: (type: string, fn: unknown) => {
+      if (typeof fn === 'function') handlers.set(type, [...(handlers.get(type) ?? []), fn as () => void]);
+    },
     getCenter: () => ({ lng: 118, lat: -2.5 }),
     getZoom: () => 4,
     fitBounds: (bounds: unknown) => { calls.push(['fitBounds', bounds]); },
@@ -85,13 +91,13 @@ const points = [
   point({ slot_id: 'slot-3', code: '4', regency_id: 'regency-2', site_id: 'geo:schedule-2:1', stage: 1 }),
 ];
 
-function mockApi(regions: MapRegion[], features: PointFeature[] = points) {
+function mockApi(regions: MapRegion[], features: PointFeature[] = points, gate: Promise<void> = Promise.resolve()) {
   vi.mocked(apiRequest).mockImplementation((path) => {
     const url = String(path);
     if (url.startsWith('/api/v1/recipients/map')) {
-      return Promise.resolve({ data: { regions, totals: region({ regency_id: '', recipients: 44 }) } });
+      return gate.then(() => ({ data: { regions, totals: region({ regency_id: '', recipients: 44 }) } }));
     }
-    if (url.startsWith('/api/v1/map/points')) return Promise.resolve({ data: { type: 'FeatureCollection', features, meta: { total: 5, located: features.length, unlocated: 5 - features.length, outside: 1 } } });
+    if (url.startsWith('/api/v1/map/points')) return gate.then(() => ({ data: { type: 'FeatureCollection', features, meta: { total: 5, located: features.length, unlocated: 5 - features.length, outside: 1 } } }));
     if (url.startsWith('/api/v1/map/zones')) return Promise.resolve({ data: { type: 'FeatureCollection', features: [] } });
     if (url === '/api/v1/map/config') return Promise.resolve({ data: { style_url: 'https://style.test', satellite_tiles: 'https://sat.test/{z}/{y}/{x}', hybrid_overlay_tiles: [], attribution: 'attr', api_key: '' } });
     if (url === '/api/v1/program-setup/regencies') return Promise.resolve({ data: [{ id: 'regency-1', name: 'Bangka Barat', document_code: 'BBR' }] });
@@ -119,6 +125,31 @@ test('an officer whose scope has no located point yet opens on their own regency
   renderPage();
 
   await waitFor(() => expect(fakeMap.calls.find(([name]) => name === 'fitBounds')?.[1]).toEqual([[107.9, -6.7], [108.5, -6.2]]));
+});
+
+test('a resize moveend before the data arrives does not cancel the opening fit', async () => {
+  let open!: () => void;
+  const gate = new Promise<void>((resolve) => { open = resolve; });
+  mockApi([region({ regency_id: 'indramayu', regency_name: 'KAB. INDRAMAYU' })], [], gate);
+  renderPage();
+
+  await screen.findByTestId('map-canvas');
+  await waitFor(() => expect(fakeMap.calls).toEqual([])); // map ready, nothing to fit yet
+  // MapCanvas's ResizeObserver -> map.resize() fires moveend at the default view.
+  act(() => { fakeMap.emit('moveend'); });
+  open();
+
+  await waitFor(() => expect(fakeMap.calls.find(([name]) => name === 'fitBounds')?.[1]).toEqual([[107.9, -6.7], [108.5, -6.2]]));
+  expect(fakeMap.calls.some(([name]) => name === 'jumpTo')).toBe(false);
+});
+
+test('a shared link position from the URL at mount is used instead of fitting', async () => {
+  mockApi([region(), bangka()]);
+  renderPage('/map?c=108.1,-6.4&z=9');
+  await screen.findByRole('button', { name: /M3 Diserahkan/ });
+
+  await waitFor(() => expect(fakeMap.calls).toContainEqual(['jumpTo', { center: [108.1, -6.4], zoom: 9 }]));
+  expect(fakeMap.calls.some(([name]) => name === 'fitBounds')).toBe(false);
 });
 
 test('selecting a slot number flies to it at zoom 15', async () => {

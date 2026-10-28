@@ -21,16 +21,17 @@ export function MapSearch({ regencies, points, regencyNames, onPick }: Props) {
   const results = useMemo(() => searchMap(text, regencies, points, regencyNames), [text, regencies, points, regencyNames]);
   const expanded = open && results.length > 0;
 
-  const pick = (result: SearchResult) => {
+  const pick = (result: SearchResult | undefined) => {
+    if (!result) return;
     setText(result.label);
     setOpen(false);
     onPick(result);
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'ArrowDown') { event.preventDefault(); setOpen(true); setActive((i) => Math.min(results.length - 1, i + 1)); }
+    if (event.key === 'ArrowDown') { event.preventDefault(); setOpen(true); setActive((i) => Math.max(0, Math.min(results.length - 1, i + 1))); }
     else if (event.key === 'ArrowUp') { event.preventDefault(); setActive((i) => Math.max(0, i - 1)); }
-    else if (event.key === 'Enter' && expanded) { event.preventDefault(); pick(results[Math.min(active, results.length - 1)]); }
+    else if (event.key === 'Enter' && expanded) { event.preventDefault(); pick(results[Math.max(0, Math.min(active, results.length - 1))]); }
     else if (event.key === 'Escape') setOpen(false);
   };
 

@@ -135,19 +135,28 @@ export function DistributionMapPage() {
   const scopeIds = useMemo(() => (regencyFilter ? [regencyFilter] : regions.map((region) => region.regency_id)), [regencyFilter, regions]);
   const homeTarget = () => initialFitTarget(pointsQuery.data ?? emptyCollection, scopeIds, boundsIndex);
   // Opening view: a shared link's position, else the points, else the user's regencies, else Indonesia.
+  // The link position is read once at mount: later c/z values are our own moveend writes and must not
+  // be mistaken for a shared link.
+  const linkCamera = useRef(view.center && view.zoom !== undefined ? { center: view.center, zoom: view.zoom } : null);
   const initialDone = useRef(false);
   useEffect(() => {
     if (initialDone.current) return;
-    if (view.center && view.zoom !== undefined) {
+    const link = linkCamera.current;
+    if (link) {
       initialDone.current = true;
       cameraSeq.current += 1;
-      setCamera({ id: cameraSeq.current, kind: 'jump', center: view.center, zoom: view.zoom });
+      setCamera({ id: cameraSeq.current, kind: 'jump', center: link.center, zoom: link.zoom });
       return;
     }
     if (pointsQuery.isPending || aggregate.isPending || (!asset && !assetError)) return;
     initialDone.current = true;
     fit(initialFitTarget(pointsQuery.data ?? emptyCollection, scopeIds, boundsIndex));
-  }, [view.center, view.zoom, pointsQuery.isPending, pointsQuery.data, aggregate.isPending, asset, assetError, scopeIds, boundsIndex, fit]);
+  }, [pointsQuery.isPending, pointsQuery.data, aggregate.isPending, asset, assetError, scopeIds, boundsIndex, fit]);
+  // Moves before the opening camera is requested (e.g. resize() of the default view) are not written
+  // to the URL, so the default position never overwrites a pending fit or the shared link.
+  const onMove = (center: [number, number], zoom: number) => {
+    if (initialDone.current) update({ center, zoom });
+  };
 
   const focusRegency = (region: MapRegion) => {
     setFocus({ regencyId: region.regency_id, geometry: assetGeometry(asset, region.regency_name), name: region.regency_name });
@@ -243,7 +252,7 @@ export function DistributionMapPage() {
       basemap={view.base}
       layers={layers}
       camera={camera}
-      onMove={(center, zoom) => update({ center, zoom })}
+      onMove={onMove}
       onStyleError={() => setStyleFailed(true)}
       onPoint={selectPoint}
       onSite={selectSite}
