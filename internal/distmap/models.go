@@ -53,6 +53,16 @@ type PointQuery struct {
 	Stage int
 }
 
+// ClientConfig is the basemap configuration handed to the browser (GET /api/v1/map/config), so the
+// tile provider can change without rebuilding the frontend. APIKey is a public client key.
+type ClientConfig struct {
+	StyleURL           string   `json:"style_url"`
+	SatelliteTiles     string   `json:"satellite_tiles"`
+	HybridOverlayTiles []string `json:"hybrid_overlay_tiles"`
+	Attribution        string   `json:"attribution"`
+	APIKey             string   `json:"api_key"`
+}
+
 // UnlocatedSlot is a slot matching the query that has no accepted photo with usable coordinates.
 type UnlocatedSlot struct {
 	SlotID, Code, RegencyID string

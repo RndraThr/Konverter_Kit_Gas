@@ -126,6 +126,26 @@ func TestMapRegionsAggregatesRecipientsEvidenceAndSlotProgress(t *testing.T) {
 		t.Fatalf("farmer region identity=%+v", farmer)
 	}
 
+	// Zone is only reported when a programme is selected (the zone belongs to a programme).
+	if farmer.ZoneID != "" || farmer.ZoneCode != "" {
+		t.Fatalf("no program_id: region must not carry a zone, got %+v", farmer)
+	}
+	zoned, err := repository.MapRegions(ctx, Filter{ProgramID: fixture.programID}, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	zonedByID := map[string]MapRegion{}
+	for _, region := range zoned.Regions {
+		zonedByID[region.RegencyID] = region
+	}
+	if z := zonedByID[fixture.farmerRegencyID]; z.ZoneID != fixture.zoneID || z.ZoneCode != "ZONA-TEST" || z.ZoneName != "Zona Test Penerima" {
+		t.Fatalf("with program_id the region must carry its zone, got %+v", z)
+	}
+	// A regency of the programme without an assignment (quota-only regency) has no zone.
+	if z := zonedByID[fixture.otherRegencyID]; z.ZoneID != "" || z.ZoneCode != "" || z.ZoneName != "" {
+		t.Fatalf("unassigned regency must have an empty zone, got %+v", z)
+	}
+
 	quotaOnly, ok := byID[fixture.otherRegencyID]
 	if !ok {
 		t.Fatalf("quota-only regency missing from map: %+v", data.Regions)

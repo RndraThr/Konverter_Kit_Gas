@@ -11,7 +11,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type Repository struct{ pool *pgxpool.Pool }
+type Repository struct {
+	pool  *pgxpool.Pool
+	zones zoneCache
+}
 
 func NewRepository(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
@@ -27,7 +30,7 @@ WITH allocated AS (
 	-- owns the slot (allocation_id moved to the successor), so each slot appears once.
 	SELECT dr.id AS slot_id, z.id AS zone_id, (` + recipients.EvidenceStatusSQL + `) AS evidence_status
 	` + recipientFrom + recipientWhere + `
-	  AND dr.id IS NOT NULL
+	  AND dr.id IS NOT NULL AND ps.status <> 'cancelled'
 ),
 unallocated AS (
 	-- Open slots have no allocation, so the recipient filter cannot see them. As in the slot
@@ -207,28 +210,36 @@ func (r *Repository) Points(ctx context.Context, q PointQuery, scope auth.Regenc
 	return points, meta, nil
 }
 
-// UnlocatedSlots lists the slots matching the filter and stage that have no usable photo
-// location; the bounding box does not apply because they have no position.
-func (r *Repository) UnlocatedSlots(ctx context.Context, q PointQuery, scope auth.RegencyScope) ([]UnlocatedSlot, error) {
+// UnlocatedLimit caps the rows UnlocatedSlots returns; the total says how many there are in all.
+const UnlocatedLimit = 500
+
+// UnlocatedSlots lists the first UnlocatedLimit slots matching the filter and stage that have no
+// usable photo location, ordered by kabupaten name, schedule and slot number, plus the number of
+// such slots in all. The bounding box does not apply because they have no position.
+func (r *Repository) UnlocatedSlots(ctx context.Context, q PointQuery, scope auth.RegencyScope) ([]UnlocatedSlot, int, error) {
 	from, where, args := slotArgs(q, scope)
 	rows, err := r.pool.Query(ctx, slotsSQL(from, where)+`
-SELECT id::text, slot_number::text, regency_id::text, stage FROM staged
-WHERE geom IS NULL AND ($21 = 0 OR stage = $21)
-ORDER BY schedule_id, slot_number`, append(args, q.Stage)...)
+SELECT st.id::text, st.slot_number::text, st.regency_id::text, st.stage, count(*) OVER ()
+FROM staged st
+JOIN regencies rg ON rg.id = st.regency_id
+WHERE st.geom IS NULL AND ($21 = 0 OR st.stage = $21)
+ORDER BY rg.name, st.regency_id, st.schedule_id, st.slot_number
+LIMIT $22`, append(args, q.Stage, UnlocatedLimit)...)
 	if err != nil {
-		return nil, fmt.Errorf("query unlocated slots: %w", err)
+		return nil, 0, fmt.Errorf("query unlocated slots: %w", err)
 	}
 	defer rows.Close()
 	items := []UnlocatedSlot{}
+	total := 0
 	for rows.Next() {
 		var item UnlocatedSlot
-		if err := rows.Scan(&item.SlotID, &item.Code, &item.RegencyID, &item.Stage); err != nil {
-			return nil, fmt.Errorf("scan unlocated slot: %w", err)
+		if err := rows.Scan(&item.SlotID, &item.Code, &item.RegencyID, &item.Stage, &total); err != nil {
+			return nil, 0, fmt.Errorf("scan unlocated slot: %w", err)
 		}
 		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate unlocated slots: %w", err)
+		return nil, 0, fmt.Errorf("iterate unlocated slots: %w", err)
 	}
-	return items, nil
+	return items, total, nil
 }

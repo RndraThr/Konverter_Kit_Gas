@@ -306,11 +306,11 @@ func TestPointsLocationSource(t *testing.T) {
 		t.Fatalf("unexpected meta %+v", meta)
 	}
 
-	unlocated, err := env.repo.UnlocatedSlots(context.Background(), env.programQuery(), unrestricted)
+	unlocated, unlocatedTotal, err := env.repo.UnlocatedSlots(context.Background(), env.programQuery(), unrestricted)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(unlocated) != 2 || unlocated[0].SlotID != zero || unlocated[1].SlotID != swapped {
+	if unlocatedTotal != 2 || len(unlocated) != 2 || unlocated[0].SlotID != zero || unlocated[1].SlotID != swapped {
 		t.Fatalf("unexpected unlocated slots %+v", unlocated)
 	}
 	// Completed with no required evidence slot: evidence counts as complete, so stage 4.
@@ -419,5 +419,73 @@ func TestPointsSitesAndScope(t *testing.T) {
 	// Site grouping is decided before the stage filter, so the titik serah keeps its outlier.
 	if !delivered[hlFar].SiteOutlier {
 		t.Fatal("stage filter must not change site membership")
+	}
+}
+
+// A slot whose recipient sits in a cancelled schedule is not on the map, whether it is found through
+// the recipient filter (allocated) or as an open slot (unallocated).
+func TestPointsExcludeCancelledSchedules(t *testing.T) {
+	env := newMapEnv(t)
+	live := env.locatedSlot(t, env.fx.ScheduleID, 1, "linked", insideLon, insideLat)
+
+	cancelled := env.schedule(t, env.fx.FarmerRegencyID)
+	allocatedSlot := env.locatedSlot(t, cancelled, 1, "linked", insideLon, insideLat)
+	openSlot := env.slot(t, cancelled, 2, "open")
+	env.exec(t, `UPDATE program_schedules SET status='cancelled' WHERE id=$1`, cancelled)
+
+	got, meta := env.points(t, env.programQuery(), unrestricted)
+	if _, ok := got[allocatedSlot]; ok {
+		t.Fatal("a recipient slot of a cancelled schedule must not be a point")
+	}
+	if _, ok := got[live]; !ok || len(got) != 1 {
+		t.Fatalf("only the live schedule's slot must remain, got %d points", len(got))
+	}
+	if meta.Total != 1 || meta.Unlocated != 0 {
+		t.Fatalf("cancelled schedule slots must not be counted, got %+v", meta)
+	}
+	unlocated, total, err := env.repo.UnlocatedSlots(context.Background(), env.programQuery(), unrestricted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 0 || len(unlocated) != 0 {
+		t.Fatalf("cancelled schedule slots must not be unlocated either (open slot %s), got %+v", openSlot, unlocated)
+	}
+}
+
+// The unlocated list is capped at 500 rows, ordered by kabupaten name then slot number, and reports
+// the uncapped total so the UI can say how many slots have no location.
+func TestUnlocatedSlotsAreCappedAndOrdered(t *testing.T) {
+	env := newMapEnv(t)
+	ctx := context.Background()
+	// A kabupaten whose name sorts before the fixture's "Wajo Recipients Test".
+	early := env.scalar(t, `INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan','Aaa Peta Test','AAP',true) RETURNING id::text`)
+	earlySchedule := env.schedule(t, early)
+	// Runs before the env cleanup, so the schedule goes first, then its kabupaten.
+	t.Cleanup(func() {
+		c := context.Background()
+		_, _ = env.pool.Exec(c, `DELETE FROM distribution_slots WHERE schedule_id=$1`, earlySchedule)
+		_, _ = env.pool.Exec(c, `DELETE FROM program_schedules WHERE id=$1`, earlySchedule)
+		_, _ = env.pool.Exec(c, `DELETE FROM program_regency_assignments WHERE regency_id=$1`, early)
+		_, _ = env.pool.Exec(c, `DELETE FROM regencies WHERE id=$1`, early)
+	})
+	// 505 open slots in the late kabupaten (inserted first, so storage order cannot explain the result),
+	// 3 in the early one.
+	env.exec(t, `INSERT INTO distribution_slots(schedule_id,slot_number,status) SELECT $1, g, 'open' FROM generate_series(1,505) g`, env.fx.ScheduleID)
+	env.exec(t, `INSERT INTO distribution_slots(schedule_id,slot_number,status) SELECT $1, g, 'open' FROM generate_series(1,3) g`, earlySchedule)
+
+	items, total, err := env.repo.UnlocatedSlots(ctx, env.programQuery(), unrestricted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total != 508 || len(items) != 500 {
+		t.Fatalf("want total 508 with 500 rows, got total=%d rows=%d", total, len(items))
+	}
+	for i := 0; i < 3; i++ {
+		if items[i].RegencyID != early || items[i].Code != fmt.Sprint(i+1) {
+			t.Fatalf("row %d must be early kabupaten slot %d, got %+v", i, i+1, items[i])
+		}
+	}
+	if items[3].RegencyID != env.fx.FarmerRegencyID || items[3].Code != "1" || items[499].Code != "497" {
+		t.Fatalf("remaining rows must follow by numeric slot number, got %+v ... %+v", items[3], items[499])
 	}
 }

@@ -3,6 +3,7 @@ package programs
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -84,6 +85,43 @@ func (r *repositoryStub) ResolveStorageContext(_ context.Context, programID stri
 	r.resolveRegencyID = regencyID
 	r.seenScope = scope
 	return StorageContext{ProgramID: programID, RegencyID: regencyID}, nil
+}
+
+func TestZoneAssignmentChangesNotifyTheObserver(t *testing.T) {
+	repository := &repositoryStub{}
+	service := NewService(repository)
+	var changed []string
+	service.OnZoneAssignmentsChanged(func(programID string) { changed = append(changed, programID) })
+	ctx, actor, scope, meta := context.Background(), auth.Principal{}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{}
+
+	if _, err := service.AssignRegency(ctx, actor, RegencyAssignmentInput{ProgramID: "p-assign", RegencyID: "r", ZoneID: "z"}, scope, meta); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.DeleteZone(ctx, actor, "p-delete", "z", meta); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SaveZone(ctx, actor, ZoneInput{ProgramID: "p-zone", Code: "A", Name: "Zona"}, meta); err != nil {
+		t.Fatal(err)
+	}
+	// Saving a schedule can create the programme's placeholder assignment for a new kabupaten.
+	input := ScheduleInput{ProgramID: "p-schedule", RegencyID: "r", PackageTemplateVersionID: "pk", DocumentationTemplateVersionID: "dk", Name: "J", Status: "draft",
+		StartDate: time.Now(), EndDate: time.Now().Add(time.Hour)}
+	if _, err := service.SaveSchedule(ctx, actor, input, scope, meta); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"p-assign", "p-delete", "p-zone", "p-schedule"}
+	if strings.Join(changed, ",") != strings.Join(want, ",") {
+		t.Fatalf("observer calls = %v, want %v", changed, want)
+	}
+
+	// A failed change does not invalidate anything.
+	changed = nil
+	if err := service.DeleteZone(ctx, actor, "", "z", meta); err == nil {
+		t.Fatal("expected invalid input")
+	}
+	if len(changed) != 0 {
+		t.Fatalf("failed change must not notify, got %v", changed)
+	}
 }
 
 func TestSaveRegencyNormalizesDocumentCode(t *testing.T) {

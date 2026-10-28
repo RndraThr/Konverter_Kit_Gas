@@ -140,6 +140,53 @@ func TestLoadFromRequiresAbsoluteStoragePathOutsideLocal(t *testing.T) {
 	}
 }
 
+func TestLoadFromMapConfigDefaults(t *testing.T) {
+	cfg, err := loadFrom(mapLookup(map[string]string{
+		"DATABASE_URL":   "postgres://u:p@localhost/db",
+		"SESSION_SECRET": "01234567890123456789012345678901",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MapStyleURL != "https://tiles.openfreemap.org/styles/liberty" ||
+		cfg.MapSatelliteTiles != "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" ||
+		cfg.MapTileAPIKey != "" {
+		t.Fatalf("unexpected map defaults: %+v", cfg)
+	}
+	if len(cfg.MapHybridOverlayTiles) != 2 ||
+		cfg.MapHybridOverlayTiles[0] != "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}" ||
+		cfg.MapHybridOverlayTiles[1] != "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}" {
+		t.Fatalf("unexpected hybrid overlay defaults: %v", cfg.MapHybridOverlayTiles)
+	}
+	for _, credit := range []string{"OpenStreetMap", "Esri", "geoBoundaries", "CC BY 3.0 IGO"} {
+		if !strings.Contains(cfg.MapAttribution, credit) {
+			t.Fatalf("default attribution must credit %s: %q", credit, cfg.MapAttribution)
+		}
+	}
+}
+
+func TestLoadFromMapConfigOverrides(t *testing.T) {
+	cfg, err := loadFrom(mapLookup(map[string]string{
+		"DATABASE_URL":             "postgres://u:p@localhost/db",
+		"SESSION_SECRET":           "01234567890123456789012345678901",
+		"MAP_STYLE_URL":            "https://api.maptiler.com/maps/streets/style.json",
+		"MAP_SATELLITE_TILES":      "https://sat.example/{z}/{y}/{x}",
+		"MAP_HYBRID_OVERLAY_TILES": " https://a.example/{z}/{y}/{x} , https://b.example/{z}/{y}/{x} ,",
+		"MAP_ATTRIBUTION":          "kustom",
+		"MAP_TILE_API_KEY":         "pk-123",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MapStyleURL != "https://api.maptiler.com/maps/streets/style.json" || cfg.MapSatelliteTiles != "https://sat.example/{z}/{y}/{x}" ||
+		cfg.MapAttribution != "kustom" || cfg.MapTileAPIKey != "pk-123" {
+		t.Fatalf("overrides not applied: %+v", cfg)
+	}
+	if len(cfg.MapHybridOverlayTiles) != 2 || cfg.MapHybridOverlayTiles[0] != "https://a.example/{z}/{y}/{x}" || cfg.MapHybridOverlayTiles[1] != "https://b.example/{z}/{y}/{x}" {
+		t.Fatalf("hybrid overlays must be split on commas and trimmed: %v", cfg.MapHybridOverlayTiles)
+	}
+}
+
 func mapLookup(values map[string]string) lookupFunc {
 	return func(key string) (string, bool) {
 		value, ok := values[key]
