@@ -57,6 +57,16 @@ func run(ctx context.Context, cfg config.Config) error {
 	}
 	defer pool.Close()
 
+	// The distribution map is non-critical: a failed boundary import is logged, not fatal.
+	if boundaries, err := geo.EnsureRegencyBoundaries(ctx, pool); err != nil {
+		log.Printf("regency boundaries: import failed: %v", err)
+	} else {
+		log.Printf("regency boundaries: imported=%d matched=%d unmatched=%d", boundaries.Imported, boundaries.Matched, len(boundaries.Unmatched))
+		if len(boundaries.Unmatched) > 0 {
+			log.Printf("regency boundaries: master regencies without a boundary: %v", boundaries.Unmatched)
+		}
+	}
+
 	repository := auth.NewRepository(pool)
 	authService := auth.NewService(repository, cfg.SessionTTL, cfg.RememberTTL)
 	var mediaStorage media.Storage
