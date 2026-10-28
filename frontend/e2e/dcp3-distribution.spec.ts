@@ -98,7 +98,7 @@ test('DCP3 to completed package distribution', async ({ page }, testInfo) => {
   await chooseOption(dokumen.getByLabel('Merk/Tipe Mesin'), /Shark/i);
   await expect(dokumen.getByRole('textbox', { name: 'Serial Number Mesin', exact: true })).toHaveValue(`MESIN-${project.toUpperCase()}`);
   await chooseOption(dokumen.getByLabel('Merk Konkit/Reducer'), /Ergas/i);
-  await chooseOption(dokumen.getByLabel('Merk/Spesifikasi Selang'), /Triliunhose/i);
+  await chooseOption(dokumen.getByLabel('Selang Hisap & Buang'), /Triliunhose/i);
   await dokumen.getByRole('button', { name: 'Simpan data peralatan' }).click();
 
   const imagePath = resolve(process.cwd(), '..', 'web', 'static', 'images', 'konkit-aceh-recipient.jpg');
