@@ -2,7 +2,7 @@
 
 Versi: 0.1 (draf untuk review)
 Tanggal: 2026-10-28
-Status: Draf
+Status: Terimplementasi
 Terkait: `2026-10-09-distribution-map-design.md` (Lapis A), `2026-10-23-web-watermark-camera-design.md`
 Mockup: artifact "Map Distribusi v2" (desktop interaktif + artboard HP); demo peta asli MapLibre di `scratchpad/mapdemo`.
 
@@ -223,3 +223,16 @@ Heatmap, batas desa/kecamatan, rute petugas, mode offline (tile tersimpan di per
 - Unit Go: normalisasi nama (port dari frontend, kasus sama).
 - Frontend (Vitest): pemetaan stage → warna, state URL, filter milestone, timeline, pergantian basemap tanpa kehilangan lapis (MapLibre di-mock).
 - E2E (Playwright): buka peta, zoom ke zona, klik titik serah, buka bottom sheet di viewport HP.
+
+## Keputusan implementasi
+
+Keputusan yang diambil saat membangun dan berlaku sebagai bagian dari rancangan ini:
+
+- Nomor bagi ditampilkan sebagai nomor slot (`distribution_slots.slot_number`), bukan nomor lain.
+- Zona placeholder digambar abu polos tanpa arsir.
+- Tombol "Buka nomor bagi" tanpa deep link: membuka halaman Pendistribusian, bukan slot tertentu.
+- Mode ringan hanya mewarnai kabupaten (peta SVG lama); titik dan batas zona tidak digambar di sana.
+- Cache zona disimpan per proses (per program dan cakupan), dibatalkan saat penetapan zona berubah.
+- `/map/unlocated` mengembalikan `{items,total}` dengan `items` dibatasi 500.
+- Id situs `geo:` tidak pernah dimasukkan ke URL; hanya `hl:` (titik serah) yang boleh.
+- `api_key` ditambahkan sebagai parameter query `key=` pada URL tile dan style.

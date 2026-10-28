@@ -2,7 +2,7 @@
 
 Versi: 1.0
 Tanggal: 2026-10-09
-Status: Lapis A terimplementasi
+Status: Lapis A terimplementasi; Lapis B dan C digantikan oleh `2026-10-28-distribution-map-v2-design.md` (terimplementasi)
 Terkait: `2026-09-12-data-penerima-master-design.md`, `2026-10-07-staged-distribution-media-design.md`
 
 ## 1. Temuan Awal
@@ -26,9 +26,9 @@ Kesimpulan: peta "titik penerima" tidak dapat dibangun hari ini karena bahannya 
 
 **Lapis A — agregat wilayah (diimplementasikan sekarang).** Memakai tabel yang sudah terisi: `package_allocations`, `distribution_slots`, `documentation_slots`, `media_files`, `program_schedules`. Hanya membutuhkan satu aset batas wilayah. Menjawab sebaran penerima, progres penyaluran, dan kelengkapan bukti per kabupaten.
 
-**Lapis B — titik dokumentasi ber-geotag (belum).** Memerlukan tiga hal lebih dulu: client meminta posisi saat slot mensyaratkan lokasi, `require_location` dinyalakan per template dokumentasi, lalu titik di-plot. Lapis ini juga dapat menurunkan centroid desa dari data lapangan sendiri sehingga tidak membutuhkan geocoding eksternal.
+**Lapis B — titik dokumentasi ber-geotag (digantikan v2, terimplementasi di `2026-10-28-distribution-map-v2-design.md`).** Memerlukan tiga hal lebih dulu: client meminta posisi saat slot mensyaratkan lokasi, `require_location` dinyalakan per template dokumentasi, lalu titik di-plot. Lapis ini juga dapat menurunkan centroid desa dari data lapangan sendiri sehingga tidak membutuhkan geocoding eksternal.
 
-**Lapis C — kronologi (belum).** Pengelompokan titik per tanggal distribusi untuk membaca jalur penyaluran dan jeda antar tahap.
+**Lapis C — kronologi (digantikan v2, terimplementasi di `2026-10-28-distribution-map-v2-design.md`).** Pengelompokan titik per tanggal distribusi untuk membaca jalur penyaluran dan jeda antar tahap.
 
 ## 3. Aset Batas Wilayah
 
