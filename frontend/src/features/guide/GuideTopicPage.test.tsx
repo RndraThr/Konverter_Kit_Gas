@@ -45,3 +45,11 @@ test('every tutorial screenshot exists and every number is explained', () => {
     for (const mark of manifest[spec.id].marks) expect(mark.n, `${spec.id} #${mark.n}`).toBeLessThanOrEqual(spec.legend.length)
   }
 })
+
+test('Laporan topic explains Map Distribusi colours, review marker, titik serah, basemaps, light mode and unlocated points', () => {
+  renderTopic('/panduan/laporan', ['distribution.view'])
+  const peta = screen.getByRole('region', { name: /Map Distribusi$/ })
+  for (const text of ['Terjadwal', 'Penerima tertaut', 'Perlu ditinjau', 'Titik serah', 'Biasa', 'Satelit', 'Hybrid', 'Mode ringan', 'belum ada lokasi']) {
+    expect(within(peta).getAllByText(new RegExp(text)).length).toBeGreaterThan(0)
+  }
+})

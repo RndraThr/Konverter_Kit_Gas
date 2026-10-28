@@ -1,35 +1,41 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { Globe2, MapPinned, Maximize2, X } from 'lucide-react';
+import { Feather, Globe2, MapPinned, Maximize2, MapPinOff } from 'lucide-react';
 import { apiRequest } from '../../lib/api';
 import { PageHeader } from '../../components/PageHeader';
 import { DataState } from '../../components/DataState';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader } from '../../components/ui/card';
 import { loadRegencyAsset } from './mapAsset';
-import { normalizeRegencyName, type RegencyAsset } from './mapRegions';
+import { DistributionMap } from './DistributionMap';
+import { metricByKey, normalizeRegencyName, type RegencyAsset } from './mapRegions';
 import type { MapData, MapRegion } from './types';
 import { MapView, type CameraRequest } from './map/MapView';
 import { MapFilters } from './map/MapFilters';
+import { LightModeNotice } from './map/LightModeNotice';
 import { MapSearch } from './map/MapSearch';
 import { KpiStrip, MilestoneLegend } from './map/MapSummary';
 import { MilestoneFilter } from './map/MilestoneFilter';
+import { PointBottomSheet } from './map/PointBottomSheet';
+import { PointDetailPanel } from './map/PointDetailPanel';
 import { ProgressByZone } from './map/ProgressByZone';
 import { Segmented } from './map/Segmented';
 import { TimelinePlayer } from './map/TimelinePlayer';
+import { UnlocatedDialog } from './map/UnlocatedDialog';
 import { ZoneBreadcrumb } from './map/ZoneBreadcrumb';
 import { DETAIL_PANEL_WIDTH, INDONESIA_BOUNDS, assetRegencyBounds, fitPadding, geometryBounds, initialFitTarget, pointsBounds, regencyBoundsIndex } from './map/fitTargets';
-import { buildRegionFills, groupSites, zoneColorIndex, PLACEHOLDER_ZONE_LABEL } from './map/layerData';
+import { buildRegionFills, buildSites, groupSites, zoneColorIndex, PLACEHOLDER_ZONE_LABEL } from './map/layerData';
 import { progressByZone, stageCounts } from './map/progress';
 import type { SearchResult } from './map/search';
 import { filterPoints, timelineRange } from './map/timeline';
+import { useIsPhone } from './map/useIsPhone';
 import { useMapConfig } from './map/useMapConfig';
 import { FILTER_KEYS, filterQuery, useMapPoints } from './map/useMapPoints';
 import { useMapSelection } from './map/useMapSelection';
 import { useMapUrlState } from './map/useMapUrlState';
 import { useRegencyBoundary, useZoneBoundaries } from './map/useZoneBoundaries';
-import type { BasemapMode, Bounds, ColorMode, MapSelection, PointCollection, PointFeature, ZoneGeometry } from './map/types';
+import type { BasemapMode, Bounds, ColorMode, PointCollection, PointFeature, ZoneGeometry } from './map/types';
 
 type ScheduleOption = { id: string; name: string };
 type RegencyOption = { id: string; name: string; document_code: string };
@@ -48,15 +54,6 @@ function assetGeometry(asset: RegencyAsset | null, name: string): ZoneGeometry |
   const key = normalizeRegencyName(name);
   const feature = asset?.regencies.find((item) => normalizeRegencyName(item.n) === key);
   return feature ? { type: 'MultiPolygon', coordinates: feature.r.map((ring) => [ring]) } : null;
-}
-
-function selectionLabel(selected: MapSelection, points: PointFeature[]): string {
-  if (selected.kind === 'point') {
-    const point = points.find((item) => item.properties.slot_id === selected.slotId);
-    return `Titik terpilih: ${point ? `Nomor bagi ${point.properties.code}` : 'nomor bagi'}`;
-  }
-  const members = points.filter((item) => item.properties.site_id === selected.siteId);
-  return `Titik serah terpilih: ${members[0]?.properties.site_name || `${members.length} titik`}`;
 }
 
 export function DistributionMapPage() {
@@ -122,7 +119,8 @@ export function DistributionMapPage() {
   const { selected, select } = useMapSelection(view, update);
   const [camera, setCamera] = useState<CameraRequest | null>(null);
   const cameraSeq = useRef(0);
-  const panelWidth = selected ? DETAIL_PANEL_WIDTH : 0;
+  const isPhone = useIsPhone();
+  const panelWidth = selected && !isPhone ? DETAIL_PANEL_WIDTH : 0;
   const fit = useCallback((bounds: Bounds) => {
     cameraSeq.current += 1;
     setCamera({ id: cameraSeq.current, kind: 'fit', bounds, padding: fitPadding(window.innerWidth, panelWidth) });
@@ -202,8 +200,11 @@ export function DistributionMapPage() {
   };
   const selectSite = (siteId: string) => {
     select({ kind: 'site', siteId });
-    const members = groupSites(allPoints).get(siteId);
-    if (members?.length) fly(members[0].geometry.coordinates);
+    // Fly to where the site marker is drawn (median of its members), not to members[0], which can be
+    // the >1 km outlier. The marker is built from the visible points, so prefer those members.
+    const members = groupSites(visiblePoints).get(siteId) ?? groupSites(allPoints).get(siteId);
+    const center = members?.length ? buildSites(members).sites.features[0]?.geometry.coordinates ?? members[0].geometry.coordinates : undefined;
+    if (center) fly(center);
   };
   const onSearch = (result: SearchResult) => {
     if (result.kind === 'point') { selectPoint(result.id); return; }
@@ -236,13 +237,32 @@ export function DistributionMapPage() {
 
   const [mapAttempt, setMapAttempt] = useState(0);
   const [styleFailed, setStyleFailed] = useState(false);
+  const [lightMode, setLightMode] = useState(false);
+  const [lightKey, setLightKey] = useState<string | null>(null);
+  const [unlocatedOpen, setUnlocatedOpen] = useState(false);
+  const unlocatedCount = pointsQuery.data?.meta?.unlocated ?? 0;
   const groups = useMemo(() => progressByZone(allPoints, regions, Boolean(programId)), [allPoints, regions, programId]);
   const zoneLegend = view.color === 'zone' && zones ? zones.features.map((zone) => ({ name: zone.properties.is_placeholder ? PLACEHOLDER_ZONE_LABEL : zone.properties.name, color: zoneColors.get(zone.properties.zone_id) ?? '' })) : undefined;
 
+  const leaveLightMode = () => {
+    setLightMode(false);
+    setStyleFailed(false);
+    setMapAttempt((n) => n + 1);
+    if (config.isError) void config.refetch();
+  };
+
   let mapBody;
-  if (config.isError || styleFailed) {
-    // Task 7 replaces this with the light (SVG) map.
-    mapBody = <div className="absolute inset-0 overflow-auto p-6"><DataState kind="error" title="Peta dasar tidak dapat dimuat" description="Periksa koneksi, lalu coba memuat peta kembali." action={{ label: 'Coba lagi', onClick: () => { setStyleFailed(false); setMapAttempt((n) => n + 1); void config.refetch(); } }} /></div>;
+  if (lightMode || config.isError || styleFailed) {
+    // Light mode: the original SVG map (regency fills only), shown by choice or when the basemap style
+    // does not load in time. The progress table below carries the rest of the data.
+    mapBody = <div className="absolute inset-0 flex flex-col bg-background">
+      <LightModeNotice reason={lightMode ? 'manual' : 'failed'} onRetry={leaveLightMode} />
+      <div className="min-h-0 flex-1 overflow-auto p-2">
+        {asset
+          ? <DistributionMap asset={asset} regions={regions} metric={metricByKey('recipients')} selectedKey={lightKey} onSelect={setLightKey} />
+          : <DataState kind={assetError ? 'error' : 'loading'} title={assetError ? 'Batas wilayah tidak dapat dimuat' : 'Memuat peta ringan'} description={assetError ? 'Muat ulang halaman, lalu coba lagi.' : 'Menyiapkan batas kabupaten.'} />}
+      </div>
+    </div>;
   } else if (!config.data) {
     mapBody = <div className="absolute inset-0 p-6"><DataState kind="loading" title="Memuat peta" description="Menyiapkan peta dasar." /></div>;
   } else {
@@ -277,6 +297,8 @@ export function DistributionMapPage() {
               <div role="group" aria-label="Lapisan peta" className="flex gap-1">
                 <Button type="button" size="sm" variant={show.zones ? 'secondary' : 'outline'} aria-pressed={show.zones} onClick={() => setShow((s) => ({ ...s, zones: !s.zones }))}>Batas zona</Button>
                 <Button type="button" size="sm" variant={show.points ? 'secondary' : 'outline'} aria-pressed={show.points} onClick={() => setShow((s) => ({ ...s, points: !s.points }))}>Titik</Button>
+                <Button type="button" size="sm" variant={lightMode ? 'secondary' : 'outline'} aria-pressed={lightMode} onClick={() => (lightMode ? leaveLightMode() : setLightMode(true))}><Feather aria-hidden="true" />Mode ringan</Button>
+                {unlocatedCount > 0 && <Button type="button" size="sm" variant="outline" onClick={() => setUnlocatedOpen(true)}><MapPinOff aria-hidden="true" />{unlocatedCount} belum ada lokasi</Button>}
               </div>
             </div>
             {view.color === 'zone' && !programId && <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">Pilih program untuk mewarnai zona.</p>}
@@ -300,18 +322,11 @@ export function DistributionMapPage() {
       </div>
 
       <div className="space-y-5">
-        {/* Task 7 replaces this card with the detail panel (desktop) / bottom sheet (phone), driven by `selected` and `select`. */}
-        <Card className="gap-0 py-0 shadow-none" aria-label="Detail titik">
-          <CardHeader className="border-b py-4"><div className="flex items-center gap-3"><MapPinned className="size-5 text-primary" aria-hidden="true" /><h2 className="text-base leading-snug font-medium">{selected ? 'Detail titik' : 'Pilih titik di peta'}</h2></div></CardHeader>
-          <CardContent className="space-y-3 py-5 text-sm">
-            {selected
-              ? <>
-                <p className="font-medium">{selectionLabel(selected, allPoints)}</p>
-                <Button type="button" size="sm" variant="outline" onClick={() => select(null)}><X aria-hidden="true" />Tutup pilihan</Button>
-              </>
-              : <p className="text-muted-foreground">Klik titik atau titik serah untuk melihat milestone, bukti foto, dan lokasinya.</p>}
-          </CardContent>
-        </Card>
+        {selected && !isPhone && <PointDetailPanel selected={selected} points={allPoints} regencyNames={regencyNames} onSelect={select} onClose={() => select(null)} />}
+        {!selected && !isPhone && <Card className="gap-0 py-0 shadow-none" aria-label="Detail titik">
+          <CardHeader className="border-b py-4"><div className="flex items-center gap-3"><MapPinned className="size-5 text-primary" aria-hidden="true" /><h2 className="text-base leading-snug font-medium">Pilih titik di peta</h2></div></CardHeader>
+          <CardContent className="py-5 text-sm text-muted-foreground">Klik titik atau titik serah untuk melihat milestone, bukti foto, dan lokasinya.</CardContent>
+        </Card>}
         <MapFilters
           params={params}
           regencies={regencies.data?.data.map((item) => ({ value: item.id, label: `${item.document_code} - ${item.name}` })) ?? []}
@@ -324,6 +339,9 @@ export function DistributionMapPage() {
         />
       </div>
     </section>
+
+    {selected && isPhone && <PointBottomSheet selected={selected} points={allPoints} regencyNames={regencyNames} onSelect={select} onClose={() => select(null)} />}
+    <UnlocatedDialog open={unlocatedOpen} onOpenChange={setUnlocatedOpen} filter={filter} regencyNames={regencyNames} />
 
     {aggregate.isError
       ? <DataState kind="error" title="Agregat wilayah tidak dapat dimuat" description="Muat ulang halaman, lalu coba lagi." />

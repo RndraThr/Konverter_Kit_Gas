@@ -20,9 +20,14 @@ const fakeMap = vi.hoisted(() => {
   const sources = new Set<string>();
   const layers: Array<{ id: string; type: string }> = [];
   const handlers = new Map<string, Array<() => void>>();
+  const layerHandlers = new Map<string, (event: unknown) => void>();
+  const canvas: { onStyleError: () => void } = { onStyleError: () => undefined };
   const map = {
     calls,
-    reset: () => { calls.length = 0; sources.clear(); layers.length = 0; handlers.clear(); },
+    canvas,
+    reset: () => { calls.length = 0; sources.clear(); layers.length = 0; handlers.clear(); layerHandlers.clear(); },
+    // Simulates a click on a konkit layer feature (what bindLayerEvents listens to).
+    clickLayer: (layerId: string, properties: Record<string, unknown>) => { layerHandlers.get(`click:${layerId}`)?.({ features: [{ properties }] }); },
     // Fires a map-level event the way resize() does (no originalEvent).
     emit: (type: string) => { handlers.get(type)?.forEach((fn) => fn()); },
     getStyle: () => ({ layers }),
@@ -34,9 +39,10 @@ const fakeMap = vi.hoisted(() => {
     setPaintProperty: () => undefined,
     setLayoutProperty: () => undefined,
     setLayerZoomRange: () => undefined,
-    // Layer-scoped listeners (on(type, layerId, fn)) are not recorded; only map-level ones.
-    on: (type: string, fn: unknown) => {
-      if (typeof fn === 'function') handlers.set(type, [...(handlers.get(type) ?? []), fn as () => void]);
+    // Map-level listeners go to `handlers`; layer-scoped ones (click on a konkit layer) to `layerHandlers`.
+    on: (type: string, layerOrFn: unknown, fn?: unknown) => {
+      if (typeof layerOrFn === 'function') handlers.set(type, [...(handlers.get(type) ?? []), layerOrFn as () => void]);
+      else if (typeof layerOrFn === 'string' && typeof fn === 'function') layerHandlers.set(`${type}:${layerOrFn}`, fn as (event: unknown) => void);
     },
     getCenter: () => ({ lng: 118, lat: -2.5 }),
     getZoom: () => 4,
@@ -49,7 +55,8 @@ const fakeMap = vi.hoisted(() => {
 vi.mock('./map/MapCanvas', async () => {
   const { useEffect } = await import('react');
   return {
-    MapCanvas: ({ onReady }: { onReady: (map: unknown) => void }) => {
+    MapCanvas: ({ onReady, onStyleError }: { onReady: (map: unknown) => void; onStyleError: () => void }) => {
+      fakeMap.canvas.onStyleError = onStyleError;
       useEffect(() => { onReady(fakeMap); }, [onReady]);
       return <div data-testid="map-canvas" />;
     },
@@ -85,6 +92,10 @@ function point(overrides: Partial<PointProperties>): PointFeature {
   };
 }
 
+function phone(matches: boolean) {
+  vi.stubGlobal('matchMedia', (query: string) => ({ matches, media: query, addEventListener: () => undefined, removeEventListener: () => undefined }));
+}
+
 const points = [
   point({ slot_id: 'slot-1', code: '12', stage: 3, stage_at: ['2026-11-01T03:00:00Z', '2026-11-02T03:00:00Z', '2026-11-03T03:00:00Z'] }),
   point({ slot_id: 'slot-2', code: '13', site_id: 'geo:schedule-1:2', stage: 5, location_status: 'outside', stage_at: ['2026-11-01T03:00:00Z', '2026-11-02T03:00:00Z', '2026-11-03T03:00:00Z', '2026-11-04T03:00:00Z', '2026-11-05T03:00:00Z'] }),
@@ -99,6 +110,8 @@ function mockApi(regions: MapRegion[], features: PointFeature[] = points, gate: 
     }
     if (url.startsWith('/api/v1/map/points')) return gate.then(() => ({ data: { type: 'FeatureCollection', features, meta: { total: 5, located: features.length, unlocated: 5 - features.length, outside: 1 } } }));
     if (url.startsWith('/api/v1/map/zones')) return Promise.resolve({ data: { type: 'FeatureCollection', features: [] } });
+    if (url.startsWith('/api/v1/map/unlocated')) return Promise.resolve({ data: { items: [{ slot_id: 'slot-9', code: '99', regency_id: 'regency-1', stage: 2 }], total: 1 } });
+    if (url.startsWith('/api/v1/distribution/slots/search')) return Promise.resolve({ data: { id: 'slot-1', schedule_id: 'schedule-1', slot_number: 12, status: 'completed', distribution_date: null, full_name: 'Siti Aminah', documentation: [], needs_recompletion: false, created_at: '', updated_at: '' } });
     if (url === '/api/v1/map/config') return Promise.resolve({ data: { style_url: 'https://style.test', satellite_tiles: 'https://sat.test/{z}/{y}/{x}', hybrid_overlay_tiles: [], attribution: 'attr', api_key: '' } });
     if (url === '/api/v1/program-setup/regencies') return Promise.resolve({ data: [{ id: 'regency-1', name: 'Bangka Barat', document_code: 'BBR' }] });
     if (url === '/api/v1/program-setup/programs') return Promise.resolve({ data: [{ id: 'program-1', name: 'Program Petani 2026', program_type: 'farmer' }] });
@@ -118,7 +131,7 @@ beforeEach(() => {
   fakeMap.reset();
   vi.mocked(loadRegencyAsset).mockResolvedValue(testAsset);
 });
-afterEach(() => vi.clearAllMocks());
+afterEach(() => { vi.clearAllMocks(); vi.unstubAllGlobals(); });
 
 test('an officer whose scope has no located point yet opens on their own regency (Review Focus 1)', async () => {
   mockApi([region({ regency_id: 'indramayu', regency_name: 'KAB. INDRAMAYU' })], []);
@@ -228,7 +241,7 @@ test('search finds Indonesian regencies from the boundary asset and slot numbers
   await userEvent.type(search, '12');
   const option = await screen.findByRole('option', { name: /Nomor bagi 12/ });
   await userEvent.click(option);
-  expect(await screen.findByText('Titik terpilih: Nomor bagi 12')).toBeVisible();
+  expect(await screen.findByRole('heading', { name: 'Nomor bagi 12' })).toBeVisible();
 });
 
 test('forwards only filter params to the aggregate and point requests', async () => {
@@ -257,4 +270,92 @@ test('reports an empty progress table when no regency has data', async () => {
   renderPage();
 
   expect(await screen.findByText('Belum ada wilayah dengan data pada filter ini.')).toBeVisible();
+});
+
+const selectedPanel = () => screen.findByRole('region', { name: 'Detail titik' });
+
+test('clicking a point opens the detail panel with milestone dates and the link to the nomor bagi', async () => {
+  mockApi([region(), bangka()]);
+  renderPage();
+  await screen.findByRole('button', { name: /M3 Diserahkan/ });
+
+  act(() => { fakeMap.clickLayer('konkit-dots', { slot_id: 'slot-1' }); });
+  const panel = await selectedPanel();
+  expect(within(panel).getByRole('heading', { name: 'Nomor bagi 12' })).toBeVisible();
+  expect(within(panel).getByRole('list', { name: 'Milestone' })).toHaveTextContent('1 November 2026');
+  expect(within(panel).getByRole('link', { name: 'Buka nomor bagi' })).toBeVisible();
+  expect(await within(panel).findByText('Siti Aminah')).toBeVisible();
+  expect(panel).toHaveAttribute('data-variant', 'panel');
+});
+
+test('a point outside its regency shows Perlu ditinjau in the panel', async () => {
+  mockApi([region(), bangka()]);
+  renderPage('/map?slot=slot-2');
+  const panel = await selectedPanel();
+  expect(within(panel).getByRole('status')).toHaveTextContent('Perlu ditinjau');
+});
+
+test('a handover site lists its slots, and selecting it flies to the marker position, not to members[0]', async () => {
+  const site = (code: string, coordinates: [number, number], extra: Partial<PointProperties> = {}) =>
+    ({ ...point({ slot_id: `s${code}`, code, site_id: 'hl:balai', site_name: 'Balai Desa', ...extra }), geometry: { type: 'Point' as const, coordinates } });
+  // members[0] is the 1 km+ outlier; the marker sits at the median of the four.
+  const members = [site('1', [109, -5], { site_outlier: true }), site('2', [105.5, -2]), site('3', [105.75, -2.25]), site('4', [106, -2.5])];
+  mockApi([region(), bangka()], members);
+  renderPage();
+  await screen.findByRole('group', { name: 'Ringkasan titik' });
+
+  act(() => { fakeMap.clickLayer('konkit-sites', { site_id: 'hl:balai' }); });
+  const panel = await selectedPanel();
+  expect(within(panel).getByRole('heading', { name: 'Balai Desa' })).toBeVisible();
+  expect(within(panel).getAllByRole('listitem')).toHaveLength(4);
+  await waitFor(() => expect(fakeMap.calls).toContainEqual(['flyTo', { center: [105.875, -2.375], zoom: 15 }]));
+});
+
+test('the bottom sheet replaces the side panel below 768 px', async () => {
+  phone(true);
+  mockApi([region(), bangka()]);
+  renderPage('/map?slot=slot-1');
+  const sheet = await selectedPanel();
+  expect(sheet).toHaveAttribute('data-variant', 'sheet');
+  expect(screen.getAllByRole('region', { name: 'Detail titik' })).toHaveLength(1);
+});
+
+test('the "belum ada lokasi" badge opens the list of unlocated numbers', async () => {
+  mockApi([region(), bangka()]);
+  renderPage();
+
+  await userEvent.click(await screen.findByRole('button', { name: '2 belum ada lokasi' }));
+  const dialog = await screen.findByRole('dialog');
+  expect(await within(dialog).findByText('Nomor bagi 99')).toBeVisible();
+  expect(requested()).toContain('/api/v1/map/unlocated');
+});
+
+test('a style failure falls back to the light SVG map with a notice and a way back (Review Focus 4)', async () => {
+  mockApi([region(), bangka()]);
+  renderPage();
+  await screen.findByTestId('map-canvas');
+
+  act(() => { fakeMap.canvas.onStyleError(); });
+  expect(await screen.findByText(/Peta ringan dipakai karena peta dasar gagal dimuat/)).toBeVisible();
+  expect(await screen.findByRole('img', { name: /Peta distribusi berdasarkan/ })).toBeVisible();
+  expect(screen.queryByTestId('map-canvas')).not.toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole('button', { name: 'Coba peta interaktif lagi' }));
+  expect(await screen.findByTestId('map-canvas')).toBeInTheDocument();
+  expect(screen.queryByRole('img', { name: /Peta distribusi berdasarkan/ })).not.toBeInTheDocument();
+});
+
+test('the manual Mode ringan toggle switches to the SVG map and back', async () => {
+  mockApi([region(), bangka()]);
+  renderPage();
+  await screen.findByTestId('map-canvas');
+
+  const toggle = screen.getByRole('button', { name: 'Mode ringan' });
+  await userEvent.click(toggle);
+  expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  expect(await screen.findByRole('img', { name: /Peta distribusi berdasarkan/ })).toBeVisible();
+  expect(screen.queryByTestId('map-canvas')).not.toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole('button', { name: 'Kembali ke peta interaktif' }));
+  expect(await screen.findByTestId('map-canvas')).toBeInTheDocument();
 });
