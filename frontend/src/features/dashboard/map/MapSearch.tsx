@@ -35,7 +35,7 @@ export function MapSearch({ regencies, points, regencyNames, onPick }: Props) {
     else if (event.key === 'Escape') setOpen(false);
   };
 
-  return <div className="relative min-w-0 flex-1 sm:max-w-sm">
+  return <div className="relative w-full min-w-0 flex-1 sm:w-auto sm:max-w-sm">
     <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
     <input
       type="search"

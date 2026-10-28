@@ -9,11 +9,12 @@ type Props<T extends string> = {
 
 /** Single-choice button group; the active option carries aria-pressed. */
 export function Segmented<T extends string>({ label, value, options, onChange }: Props<T>) {
-  return <div role="group" aria-label={label} className="inline-flex flex-wrap gap-1 rounded-lg border bg-muted/40 p-1">
+  return <div role="group" aria-label={label} className="inline-flex max-w-full min-w-0 flex-wrap gap-1 rounded-lg border bg-muted/40 p-1">
     {options.map((option) => <Button
       key={option.value}
       type="button"
       size="sm"
+      className="min-h-11"
       variant={option.value === value ? 'default' : 'ghost'}
       aria-pressed={option.value === value}
       onClick={() => onChange(option.value)}

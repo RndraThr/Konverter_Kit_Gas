@@ -214,3 +214,31 @@ test('a basemap that cannot load falls back to light mode with a notice', async 
   await expect(notice.getByRole('button', { name: 'Coba peta interaktif lagi' })).toBeVisible();
   await expect(page.getByRole('button', { name: /belum ada lokasi/ })).toBeVisible();
 });
+
+test('the map fills its frame with a real height', async ({ page }) => {
+  await openMap(page, await scheduleScope(page));
+  const map = page.locator('div.maplibregl-map');
+  const box = await map.boundingBox();
+  const parentBox = await map.locator('xpath=..').boundingBox();
+  expect(box?.height ?? 0).toBeGreaterThan(200);
+  expect(Math.abs((box?.height ?? 0) - (parentBox?.height ?? -1))).toBeLessThanOrEqual(2);
+});
+
+test('the toolbar fits a 390 px phone without sideways scroll', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openMap(page, await scheduleScope(page));
+  await expect(page.getByRole('button', { name: /belum ada lokasi/ })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  const layers = page.getByRole('group', { name: 'Jenis peta' });
+  const targets = [
+    layers.getByRole('button', { name: 'Satelit', exact: true }),
+    layers.getByRole('button', { name: 'Hybrid', exact: true }),
+    page.getByRole('button', { name: /belum ada lokasi/ }),
+  ];
+  for (const target of targets) {
+    const box = await target.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box?.x ?? -1).toBeGreaterThanOrEqual(0);
+    expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(390);
+  }
+});

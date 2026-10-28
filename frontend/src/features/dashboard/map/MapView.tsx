@@ -52,5 +52,9 @@ export function MapView({ config, basemap, layers, camera, onMove, onStyleError,
     else map.jumpTo({ center: camera.center, zoom: camera.zoom });
   }, [map, camera]);
 
-  return <MapCanvas key={`${config.style_url}|${config.attribution}`} config={config} onReady={onReady} onStyleError={onStyleError} className="absolute inset-0" />;
+  // MapLibre's own stylesheet forces `position: relative` on the element it owns, so the sizing
+  // wrapper is a separate div and the map div just fills it.
+  return <div className="absolute inset-0">
+    <MapCanvas key={`${config.style_url}|${config.attribution}`} config={config} onReady={onReady} onStyleError={onStyleError} className="h-full w-full" />
+  </div>;
 }

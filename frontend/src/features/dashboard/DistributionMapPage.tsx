@@ -301,7 +301,7 @@ export function DistributionMapPage() {
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <ZoneBreadcrumb zoneName={crumbZoneName} regencyName={focus?.name ?? focusedRegion?.regency_name} onIndonesia={toIndonesia} onZone={toZone} />
-              <div role="group" aria-label="Lapisan peta" className="flex gap-1">
+              <div role="group" aria-label="Lapisan peta" className="flex min-w-0 max-w-full flex-wrap gap-1">
                 <Button type="button" size="sm" className="min-h-11" variant={show.zones ? 'secondary' : 'outline'} aria-pressed={show.zones} onClick={() => setShow((s) => ({ ...s, zones: !s.zones }))}>Batas zona</Button>
                 <Button type="button" size="sm" className="min-h-11" variant={show.points ? 'secondary' : 'outline'} aria-pressed={show.points} onClick={() => setShow((s) => ({ ...s, points: !s.points }))}>Titik</Button>
                 <Button type="button" size="sm" className="min-h-11" variant={lightMode ? 'secondary' : 'outline'} aria-pressed={lightMode} onClick={() => (lightMode ? leaveLightMode() : setLightMode(true))}><Feather aria-hidden="true" />Mode ringan</Button>
@@ -309,8 +309,8 @@ export function DistributionMapPage() {
               </div>
             </div>
             {view.color === 'zone' && !programId && (fallbackProgram
-              ? <div className="flex flex-wrap items-center gap-x-2 rounded-md bg-muted px-3 py-1 text-sm text-muted-foreground">
-                <p>Zona menurut program: <span className="font-medium text-foreground">{fallbackProgram.name}</span></p>
+              ? <div className="flex min-w-0 flex-wrap items-center gap-x-2 rounded-md bg-muted px-3 py-1 text-sm text-muted-foreground">
+                <p className="min-w-0 break-words">Zona menurut program:{' '}<span className="font-medium text-foreground">{fallbackProgram.name}</span></p>
                 <Button type="button" size="sm" variant="link" className="min-h-11 px-0" onClick={focusProgramPicker}>Pilih program lain</Button>
               </div>
               : <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">Pilih program untuk mewarnai zona.</p>)}
