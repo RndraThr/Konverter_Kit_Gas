@@ -44,11 +44,6 @@ export function dayStart(start: Date, index: number): Date {
   return new Date(start.getTime() + index * DAY_MS);
 }
 
-/** Date of timeline day `index` (0-based). */
-export function dayDate(range: TimelineRange, index: number): Date {
-  return dayStart(range.start, index);
-}
-
 /** End of timeline day `index`, so every milestone reached that day counts. */
 export function endOfDay(range: TimelineRange, index: number): Date {
   return new Date(dayStart(range.start, index + 1).getTime() - 1);

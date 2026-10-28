@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { afterAll, describe, expect, test, vi } from 'vitest';
 import { TimelinePlayer } from './TimelinePlayer';
-import { dayDate, filterPoints, timelineRange } from './timeline';
+import { dayStart, filterPoints, timelineRange } from './timeline';
 import type { PointFeature } from './types';
 
 // A browser set to UTC. Set before the modules load (vi.hoisted runs ahead of the imports), so
@@ -34,7 +34,7 @@ describe('days follow Asia/Jakarta whatever the browser time zone', () => {
     expect(range.days).toBe(2);
     expect(filterPoints([late, early], { range, day: 0 })).toEqual([late]);
     expect(filterPoints([late, early], { range, day: 1 })).toHaveLength(2);
-    expect(dayDate(range, 1).toISOString()).toBe('2026-11-01T17:00:00.000Z');
+    expect(dayStart(range.start, 1).toISOString()).toBe('2026-11-01T17:00:00.000Z');
   });
 
   test('the player labels days in WIB', () => {
