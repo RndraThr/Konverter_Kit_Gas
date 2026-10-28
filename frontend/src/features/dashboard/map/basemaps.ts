@@ -26,22 +26,33 @@ function ensureRaster(map: maplibregl.Map, id: string, tiles: string, key: strin
 
 // Switches the basemap purely through layer visibility. Layers whose id starts
 // with `konkit-` (our data) are never touched, except our own raster layers.
-// Before the style has loaded the call is deferred to `load`; only the latest
-// requested mode is applied.
+// Maps whose first `load` has fired. After that, applyBasemap applies immediately:
+// isStyleLoaded() flips back to false whenever tiles load, so it cannot gate calls.
+const ready = new WeakSet<maplibregl.Map>();
+// Before the first load the call is deferred; only the latest request is applied.
 const pending = new WeakMap<maplibregl.Map, { mode: BasemapMode; config: MapConfig }>();
 
+export function markStyleReady(map: maplibregl.Map): void {
+  ready.add(map);
+}
+
 export function applyBasemap(map: maplibregl.Map, mode: BasemapMode, config: MapConfig): void {
-  if (!map.isStyleLoaded() || !map.getStyle()) {
-    const waiting = pending.has(map);
-    pending.set(map, { mode, config });
-    if (!waiting) {
-      map.once('load', () => {
-        const latest = pending.get(map);
-        pending.delete(map);
-        if (latest) applyBasemap(map, latest.mode, latest.config);
-      });
+  if (!ready.has(map)) {
+    if (map.getStyle() && map.isStyleLoaded()) {
+      ready.add(map);
+    } else {
+      const waiting = pending.has(map);
+      pending.set(map, { mode, config });
+      if (!waiting) {
+        map.once('load', () => {
+          ready.add(map);
+          const latest = pending.get(map);
+          pending.delete(map);
+          if (latest) applyBasemap(map, latest.mode, latest.config);
+        });
+      }
+      return;
     }
-    return;
   }
   const key = config.api_key;
   ensureRaster(map, IMAGERY_LAYER, config.satellite_tiles, key);

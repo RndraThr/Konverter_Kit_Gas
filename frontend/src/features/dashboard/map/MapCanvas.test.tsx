@@ -26,6 +26,7 @@ vi.mock('maplibre-gl', () => ({
 vi.mock('maplibre-gl/dist/maplibre-gl.css', () => ({}));
 
 import { MapCanvas } from './MapCanvas';
+import { applyBasemap } from './basemaps';
 
 const config: MapConfig = { style_url: 'https://style.test', satellite_tiles: '', hybrid_overlay_tiles: [], attribution: 'a', api_key: '' };
 let roCallback: (() => void) | undefined;
@@ -93,4 +94,22 @@ test('api key is appended to the style url', async () => {
   render(<MapCanvas config={{ ...config, api_key: 'K' }} onReady={vi.fn()} onStyleError={vi.fn()} />);
   await act(async () => { await vi.advanceTimersByTimeAsync(0); });
   expect(instances[0].options.style).toBe('https://style.test?key=K');
+});
+
+test('the load path marks the map ready so applyBasemap works while tiles load', async () => {
+  const vis: Record<string, string> = {};
+  const { map } = await mount();
+  Object.assign(map, {
+    isStyleLoaded: () => false,
+    getStyle: () => ({ layers: [{ id: 'water', type: 'fill' }] }),
+    getLayer: () => undefined,
+    getSource: () => undefined,
+    addSource: () => {},
+    addLayer: () => {},
+    setLayoutProperty: (id: string, _p: string, v: string) => { vis[id] = v; },
+  });
+  act(() => map.emit('load'));
+  applyBasemap(map as never, 'sat', config);
+  expect(vis.water).toBe('none');
+  expect(vis['konkit-img']).toBe('visible');
 });

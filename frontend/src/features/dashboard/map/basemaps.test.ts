@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import type maplibregl from 'maplibre-gl';
-import { applyBasemap, withApiKey } from './basemaps';
+import { applyBasemap, markStyleReady, withApiKey } from './basemaps';
 import type { MapConfig } from './types';
 
 const config: MapConfig = {
@@ -14,12 +14,13 @@ const config: MapConfig = {
 function fakeMap(layerIds: string[], loaded = true) {
   const onceLoad: Array<() => void> = [];
   let isLoaded = loaded;
+  let busy = false;
   const layers = layerIds.map((id) => ({ id, type: 'fill' }));
   const vis: Record<string, string> = {};
   const sources = new Set<string>();
   const added: string[] = [];
   const map = {
-    isStyleLoaded: () => isLoaded,
+    isStyleLoaded: () => isLoaded && !busy,
     once: (_t: string, fn: () => void) => { onceLoad.push(fn); },
     getStyle: () => (isLoaded ? { layers } : undefined),
     getLayer: (id: string) => layers.find((l) => l.id === id),
@@ -37,7 +38,7 @@ function fakeMap(layerIds: string[], loaded = true) {
     setLayoutProperty: (id: string, prop: string, value: string) => { if (prop === 'visibility') vis[id] = value; },
   };
   const fire = () => { isLoaded = true; onceLoad.splice(0).forEach((fn) => fn()); };
-  return { map: map as unknown as maplibregl.Map, vis, added, layers, fire, onceCount: () => onceLoad.length };
+  return { map: map as unknown as maplibregl.Map, vis, added, layers, fire, setBusy: (v: boolean) => { busy = v; }, onceCount: () => onceLoad.length };
 }
 
 const base = ['background', 'water', 'road'];
@@ -113,4 +114,24 @@ test('raster tile URLs get the api key', () => {
   applyBasemap(map, 'hyb', { ...config, api_key: 'K' });
   expect((sources['konkit-img'] as { tiles: string[] }).tiles[0]).toBe('https://sat.test/{z}/{y}/{x}?key=K');
   expect((sources['konkit-hyb-1'] as { tiles: string[] }).tiles[0]).toBe('https://ov.test/b/{z}/{y}/{x}?key=K');
+});
+
+test('after load, a basemap switch applies immediately even while tiles are loading', () => {
+  const { map, vis, fire, setBusy } = fakeMap([...base, 'konkit-dots'], false);
+  applyBasemap(map, 'map', config);
+  fire();
+  setBusy(true); // isStyleLoaded() is false again while tiles load
+  applyBasemap(map, 'sat', config);
+  expect(vis['konkit-img']).toBe('visible');
+  expect(vis.water).toBe('none');
+  applyBasemap(map, 'hyb', config);
+  expect(vis['konkit-hyb-1']).toBe('visible');
+});
+
+test('a map marked ready applies immediately regardless of isStyleLoaded', () => {
+  const { map, vis, setBusy } = fakeMap([...base, 'konkit-dots']);
+  setBusy(true);
+  markStyleReady(map);
+  applyBasemap(map, 'sat', config);
+  expect(vis['konkit-img']).toBe('visible');
 });

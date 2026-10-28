@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type maplibregl from 'maplibre-gl';
-import { withApiKey } from './basemaps';
+import { markStyleReady, withApiKey } from './basemaps';
 import type { MapConfig } from './types';
 
 export const STYLE_LOAD_TIMEOUT_MS = 8000;
@@ -71,6 +71,7 @@ export function MapCanvas({ config, onReady, onStyleError, className }: Props) {
         if (settled || disposed) return;
         settled = true;
         clearTimeout(timer);
+        markStyleReady(created);
         onReadyRef.current(created);
       });
       // Tile/source errors are routine on weak links; only a style-level error
