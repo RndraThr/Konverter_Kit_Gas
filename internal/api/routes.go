@@ -582,7 +582,11 @@ func writeServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, bast.ErrHandoverLocationRequired):
 		writeError(w, http.StatusConflict, "handover_location_required", "Lokasi/titik serah belum dikonfigurasi atau belum dipilih")
 	case errors.Is(err, bast.ErrHandoverLocationInvalid):
-		writeError(w, http.StatusBadRequest, "handover_location_invalid", "Nama titik serah wajib diisi dan tidak boleh sama")
+		writeError(w, http.StatusBadRequest, "handover_location_invalid", "Titik serah tidak valid atau bukan milik kabupaten jadwal ini")
+	case errors.Is(err, bast.ErrHandoverLocationDuplicate):
+		writeError(w, http.StatusConflict, "handover_location_duplicate", "Nama itu sudah dipakai titik serah lain. Gunakan Gabungkan untuk menyatukannya")
+	case errors.Is(err, bast.ErrHandoverLocationInUse):
+		writeError(w, http.StatusConflict, "handover_location_in_use", "Titik serah masih dipakai penerima. Gabungkan ke lokasi lain dulu")
 	case errors.Is(err, bast.ErrHandoverUnassigned):
 		writeError(w, http.StatusConflict, "handover_unassigned", "Masih ada penerima yang belum punya titik serah")
 	case errors.Is(err, bast.ErrHandoverClosingIncomplete):
@@ -655,6 +659,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "slot_quota_exceeded", "Kuota slot untuk jadwal ini sudah tercapai")
 	case errors.Is(err, distribution.ErrSlotNumberTaken):
 		writeError(w, http.StatusConflict, "slot_number_taken", "Nomor bagi ini sudah dibuat")
+	case errors.Is(err, distribution.ErrHandoverLocationRequired):
+		writeError(w, http.StatusBadRequest, "handover_location_required", "Pilih atau isi titik serah")
 	case errors.Is(err, distribution.ErrDistributionDateLocked):
 		writeError(w, http.StatusConflict, "distribution_date_locked", "Tanggal distribusi tidak dapat diubah setelah foto pertama diunggah")
 	case errors.Is(err, distribution.ErrEquipmentLocked):

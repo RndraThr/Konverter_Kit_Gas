@@ -577,12 +577,14 @@ func (r *Repository) getSlotByID(ctx context.Context, id string) (DistributionSl
 		SELECT ds.id::text, ds.schedule_id::text, ds.slot_number, ds.distribution_date::text, ds.status, ds.allocation_id::text,
 			ds.machine_option_code, ds.machine_serial_number, ds.hose_option_code, ds.hose_serial_number, ds.converter_option_code, ds.converter_serial_number,
 			ds.distributed_at, ds.created_at, ds.updated_at, p.full_name, p.nik, psi.normalized_value, p.address, p.village, p.district, p.phone_number,
-			ds.needs_recompletion, ds.reopened_at, ds.reopened_by::text, COALESCE(ds.reopened_stage,''), COALESCE(ds.revision_reason,'')
+			ds.needs_recompletion, ds.reopened_at, ds.reopened_by::text, COALESCE(ds.reopened_stage,''), COALESCE(ds.revision_reason,''),
+			ds.handover_location_id::text, COALESCE(hl.name,'')
 		FROM distribution_slots ds
+		LEFT JOIN bast_handover_locations hl ON hl.id = ds.handover_location_id
 		LEFT JOIN people p ON p.id = ds.recipient_person_id
 		LEFT JOIN LATERAL (SELECT normalized_value FROM person_sector_identifiers WHERE person_id=p.id ORDER BY id LIMIT 1) psi ON true
 		WHERE ds.id=$1
-	`, id).Scan(&slot.ID, &slot.ScheduleID, &slot.SlotNumber, &slot.DistributionDate, &slot.Status, &slot.AllocationID, &machineOption, &machineSerial, &hoseOption, &hoseSerial, &converterOption, &converterSerial, &slot.DistributedAt, &slot.CreatedAt, &slot.UpdatedAt, &fullName, &nik, &sectorIdentifier, &address, &village, &district, &phoneNumber, &slot.NeedsRecompletion, &slot.ReopenedAt, &slot.ReopenedBy, &slot.ReopenedStage, &slot.RevisionReason)
+	`, id).Scan(&slot.ID, &slot.ScheduleID, &slot.SlotNumber, &slot.DistributionDate, &slot.Status, &slot.AllocationID, &machineOption, &machineSerial, &hoseOption, &hoseSerial, &converterOption, &converterSerial, &slot.DistributedAt, &slot.CreatedAt, &slot.UpdatedAt, &fullName, &nik, &sectorIdentifier, &address, &village, &district, &phoneNumber, &slot.NeedsRecompletion, &slot.ReopenedAt, &slot.ReopenedBy, &slot.ReopenedStage, &slot.RevisionReason, &slot.HandoverLocationID, &slot.HandoverLocationName)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return DistributionSlot{}, ErrSlotNotFound
 	}
@@ -1571,6 +1573,9 @@ func (r *Repository) CompleteSlot(ctx context.Context, actor auth.Principal, inp
 	completedAt := effectiveCompletionTime(input.CompletedAt, time.Now())
 	if _, err := tx.Exec(ctx, `UPDATE distribution_slots SET status='completed', verification_snapshot_json=jsonb_set(verification_snapshot_json,'{equipment}',$3::jsonb,true), distributed_at=$4, distributed_by=$2, completed_at=$4, needs_recompletion=false, updated_at=now() WHERE id=$1`, slotID, actor.UserID, string(equipmentPayload), completedAt); err != nil {
 		return DistributionSlot{}, fmt.Errorf("complete distribution slot: %w", err)
+	}
+	if err := defaultHandoverLocation(ctx, tx, slotID); err != nil {
+		return DistributionSlot{}, err
 	}
 	// BA final yang belum memuat penerima ini perlu dibuat ulang: DP3 dan
 	// Rekap Harian pada Tanggal distribusinya dan sesudahnya (nomor urut

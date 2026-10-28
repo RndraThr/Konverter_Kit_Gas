@@ -76,7 +76,7 @@ func (s *ClosingTitikSerahService) locationRows(ctx context.Context, scheduleID 
 	if err != nil {
 		return HandoverLocation{}, nil, err
 	}
-	return location, groupClosingRows(closingRawRowsFor(locations, recipients, location.ID)), nil
+	return location, groupClosingRows(closingRawRowsFor(recipients, location.ID)), nil
 }
 
 func (s *ClosingTitikSerahService) Preview(ctx context.Context, scheduleID, documentDate string, scope auth.RegencyScope) (AggregatePreview, error) {

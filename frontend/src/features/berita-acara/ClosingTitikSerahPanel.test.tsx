@@ -16,13 +16,14 @@ const rows = [
 const handover: HandoverView = {
   schedule_id: 'schedule-1',
   locations: [
-    { id: 'loc-a', name: 'Balai Desa Tempe', areas: [{ district: 'TEMPE' }], sort_order: 0, recipients: 20, assigned: 20, dates: ['2026-10-01', '2026-10-02'], status: 'none' },
-    { id: 'loc-b', name: 'Lapangan Sabbangparu', areas: [{ district: 'SABBANGPARU' }], sort_order: 1, recipients: 4, assigned: 6, dates: ['2026-10-02'], status: 'final', document_date: '2026-10-03' },
+    { id: 'loc-a', name: 'Balai Desa Tempe', recipients: 20, assigned: 20, dates: ['2026-10-01', '2026-10-02'], status: 'none' },
+    { id: 'loc-b', name: 'Lapangan Sabbangparu', recipients: 4, assigned: 6, dates: ['2026-10-02'], status: 'final', document_date: '2026-10-03' },
+    { id: 'loc-c', name: 'Gudang Kabupaten Lain', recipients: 0, assigned: 0, dates: [], status: 'empty' },
   ],
-  areas: [],
-  recipients: [],
-  unassigned: 2,
-  unassigned_total: 2,
+  unassigned: [
+    { slot_id: 's7', slot_number: 7, name: 'Ahmad', district: 'Tempe', village: 'Siengkang' },
+    { slot_id: 's8', slot_number: 8, name: 'Budi', district: 'Tempe', village: 'Siengkang' },
+  ],
 }
 
 function renderPanel(permissions = ['bast.view', 'bast.manage']) {
@@ -61,7 +62,9 @@ test('shows the closing titik serah preview of the first location inline, withou
 
 test('summarises every handover location and warns about recipients without one', async () => {
   renderPanel()
-  expect(await screen.findByText('2 penerima selesai distribusi belum ada titik serah. Atur cakupan wilayah atau pindahkan penerima secara manual.')).toBeVisible()
+  expect(await screen.findByText('2 penerima selesai distribusi belum ada titik serah. Isi lewat "Rapikan titik serah".')).toBeVisible()
+  // Locations of the regency unused by this schedule stay out of the recap.
+  expect(screen.queryByText('Gudang Kabupaten Lain')).toBeNull()
   expect(screen.getByText('Belum dibuat')).toBeVisible()
   expect(screen.getByText('Final')).toBeVisible()
   expect(screen.getByText('4 penerima selesai dari 6')).toBeVisible()

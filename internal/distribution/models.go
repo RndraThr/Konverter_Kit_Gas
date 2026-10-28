@@ -107,6 +107,9 @@ type DistributionSlot struct {
 	ReopenedBy            *string       `json:"reopened_by,omitempty"`
 	ReopenedStage         string        `json:"reopened_stage,omitempty"`
 	RevisionReason        string        `json:"revision_reason,omitempty"`
+	// HandoverLocationID is the titik serah chosen in POS Dokumen.
+	HandoverLocationID   *string `json:"handover_location_id"`
+	HandoverLocationName string  `json:"handover_location_name,omitempty"`
 	// RecipientSignedAt is when the current recipient signed in POS Dokumen;
 	// the image is at /api/v1/distribution/slots/{n}/signature.
 	RecipientSignedAt *time.Time `json:"recipient_signed_at,omitempty"`

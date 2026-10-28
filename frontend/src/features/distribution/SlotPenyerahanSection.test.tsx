@@ -18,6 +18,8 @@ const penyerahanDoc = (status: string, storageState: 'staging' | 'moving' | 'fin
 });
 
 const linkedSlot: DistributionSlot = {
+  handover_location_id: 'loc-1',
+  handover_location_name: 'Balai Desa Tempe',
 	id: 'slot-1', schedule_id: 'schedule-1', slot_number: 7, distribution_date: '2026-10-20', status: 'linked',
   full_name: 'Siti Aminah', nik: '7306014101900001',
   machine_option_code: 'MSN-001', machine_serial_number: 'SN-MSN-1', hose_option_code: 'HSE-001', hose_serial_number: 'SN-HSE-1', converter_serial_number: 'SN-CNV-1',

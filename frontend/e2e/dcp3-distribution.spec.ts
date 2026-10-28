@@ -68,6 +68,10 @@ test('DCP3 to completed package distribution', async ({ page }, testInfo) => {
   const dokumen = page.getByRole('region', { name: 'POS Dokumen' });
   await dokumen.getByLabel('Tanggal distribusi').fill(new Date().toISOString().slice(0, 10));
   await dokumen.getByRole('button', { name: 'Simpan tanggal distribusi' }).click();
+  // Titik serah: shared list of the regency; a new name creates the location.
+  await dokumen.getByLabel('Lokasi penyerahan').fill('Balai Desa E2E');
+  await dokumen.getByRole('button', { name: /simpan titik serah/i }).click();
+  await expect(dokumen.getByText('Wajib diisi sebelum penyerahan diselesaikan.', { exact: false })).toBeHidden();
 
   const recipientNIK = page.getByLabel('NIK Penerima');
   await recipientNIK.fill('9100000000000099');

@@ -18,6 +18,9 @@ export type SlotSummary = {
 export type DistributionSlot = {
 	id: string; schedule_id: string; slot_number: number; status: 'open' | 'linked' | 'completed' | 'cancelled';
 	distribution_date: string | null;
+	/** Titik serah chosen in POS Dokumen. */
+	handover_location_id?: string | null;
+	handover_location_name?: string;
   allocation_id?: string; full_name?: string; nik?: string;
   sector_identifier?: string; address?: string; village?: string; district?: string; phone_number?: string;
   machine_option_code?: string; machine_serial_number?: string;
