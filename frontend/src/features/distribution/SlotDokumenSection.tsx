@@ -46,6 +46,7 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
   const [revisionOpen, setRevisionOpen] = useState(false);
   const [replaceMode, setReplaceMode] = useState(false);
   const editable = canManage && currentSlot.status !== 'completed';
+  const canCorrectHandover = useCan('bast.manage');
 
   const [nik, setNik] = useState('');
   const [candidate, setCandidate] = useState<CandidateMatch | null>(null);
@@ -236,7 +237,7 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
     {canManage && currentSlot.status === 'completed' && <div className="flex justify-end"><Button type="button" variant="outline" onClick={() => setRevisionOpen(true)}><Pencil aria-hidden="true" />Buka revisi POS Dokumen</Button></div>}
 
     <section aria-label="Pengaturan tanggal" className="space-y-3 rounded-lg border p-4"><h4 className="font-medium">Tanggal distribusi</h4><div className="flex flex-wrap items-end gap-3"><div className="grid min-w-52 flex-1 gap-2"><Label htmlFor={`distribution-date-${currentSlot.id}`}>Tanggal distribusi</Label><Input id={`distribution-date-${currentSlot.id}`} type="date" value={date} disabled={!editable} onChange={(event) => setDate(event.target.value)} /></div>{editable && <Button type="button" variant="outline" disabled={!date || dateUpdate.isPending} onClick={() => dateUpdate.mutate()}>Simpan tanggal distribusi</Button>}</div></section>
-    <HandoverLocationField slot={currentSlot} editable={editable} onSaved={publish} />
+    <HandoverLocationField slot={currentSlot} editable={editable} correctable={canCorrectHandover} onSaved={publish} />
 
     <section aria-labelledby={`recipient-heading-${currentSlot.id}`} className="space-y-3 rounded-lg border p-4"><h4 id={`recipient-heading-${currentSlot.id}`} className="font-medium">Penerima</h4>
       {currentSlot.status === 'open' ? (editable ? candidatePicker(false) : <p className="text-sm text-muted-foreground">Menunggu penerima</p>) : <>

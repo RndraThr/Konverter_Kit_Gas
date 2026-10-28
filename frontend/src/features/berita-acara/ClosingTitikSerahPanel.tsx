@@ -8,6 +8,7 @@ import { FormField } from '@/components/FormField';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { apiBlobRequest, ApiError, apiRequest } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
@@ -101,38 +102,43 @@ export function ClosingTitikSerahPanel({ scheduleID, regencyName, programType, d
   const busy = finalize.isPending;
 
   const view = handover.data?.data;
+  const dateRange = (dates: string[]) => dates.length === 0 ? 'Belum ada tanggal distribusi' : dates.length === 1 ? formatLocalDate(dates[0]) : `${formatLocalDate(dates[0])} – ${formatLocalDate(dates[dates.length - 1])}`;
   return <div className="grid gap-5">
-    <Card>
-      <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><CardTitle className="text-base">Rekap per titik serah</CardTitle>{canManage && view && <Button variant="outline" size="sm" onClick={() => setEditing((value) => !value)}><Settings2 />{editing ? 'Tutup' : 'Rapikan titik serah'}</Button>}</div></CardHeader>
-      <CardContent className="grid gap-3 pt-4">
-        {view && view.unassigned.length > 0 && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">{view.unassigned.length} penerima selesai distribusi belum ada titik serah.{canManage ? ' Isi lewat "Rapikan titik serah".' : ''}</div>}
-        {locations.length === 0 && <p className="text-sm text-muted-foreground">Belum ada penerima dengan titik serah. Petugas memilih titik serah di POS Dokumen.</p>}
-        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {locations.map((item) => <button type="button" key={item.id} onClick={() => setPickedLocation(item.id)} aria-pressed={item.id === locationID}
-            className={`grid gap-1 rounded-lg border p-3 text-left text-sm transition-colors hover:bg-muted/50 ${item.id === locationID ? 'border-primary ring-2 ring-primary/30' : ''}`}>
-            <span className="flex items-start justify-between gap-2"><span className="flex items-center gap-2 font-semibold"><MapPin className="size-4 shrink-0 text-primary" aria-hidden="true" />{item.name}</span><Badge className={statusBadge[item.status].className}>{statusBadge[item.status].label}</Badge></span>
-            <span className="text-muted-foreground">{item.recipients} penerima selesai{item.assigned > item.recipients ? ` dari ${item.assigned}` : ''}</span>
-            <span className="text-xs text-muted-foreground">{item.dates.length === 0 ? 'Belum ada tanggal distribusi' : item.dates.length === 1 ? formatLocalDate(item.dates[0]) : `${item.dates.length} hari · ${formatLocalDate(item.dates[0])} – ${formatLocalDate(item.dates[item.dates.length - 1])}`}</span>
-          </button>)}
-        </div>
-      </CardContent>
-    </Card>
-
-    {editing && view && <HandoverLocationsEditor scheduleID={scheduleID} view={view} onClose={() => setEditing(false)} />}
-
     {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} date={documentDate} document="closing-titik-serah" documentLabel="Closing Titik Serah" />}
 
-    <div className="grid gap-4 lg:grid-cols-3">
-      <Card className="lg:col-span-1">
-        <CardHeader><CardTitle className="text-base">Ringkasan</CardTitle></CardHeader>
-        <CardContent className="grid gap-3 text-sm">
-          <div className="flex items-center justify-between rounded-lg border px-3 py-2"><span className="text-muted-foreground">Baris closing harian</span><strong className="tabular-nums">{rowItems.length}</strong></div>
-          <div className="flex items-center justify-between rounded-lg border px-3 py-2"><span className="text-muted-foreground">Total paket (set)</span><strong className="tabular-nums">{grandTotal}</strong></div>
-          {status !== 'ready' && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">{validationMessage[status] ?? status}</div>}
-        </CardContent>
-      </Card>
+    <div className="grid gap-4 lg:grid-cols-[20rem_minmax(0,1fr)] lg:items-start">
+      {/* Sidebar: titik serah of this schedule, then the summary of the chosen one. */}
+      <aside className="grid gap-4" aria-label="Titik serah">
+        <Card>
+          <CardHeader className="border-b"><div className="flex items-center justify-between gap-2"><CardTitle className="text-base">Titik serah</CardTitle><Badge variant="outline">{locations.length} lokasi</Badge></div></CardHeader>
+          <CardContent className="grid gap-2 pt-3">
+            {view && view.unassigned.length > 0 && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-2.5 text-xs text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">{view.unassigned.length} penerima selesai belum ada titik serah.</div>}
+            {locations.length === 0 && <p className="text-sm text-muted-foreground">Belum ada penerima dengan titik serah. Petugas memilih titik serah di POS Dokumen.</p>}
+            <nav className="grid gap-1.5">
+              {locations.map((item) => <button type="button" key={item.id} onClick={() => setPickedLocation(item.id)} aria-pressed={item.id === locationID}
+                className={`grid gap-0.5 rounded-lg border px-3 py-2 text-left text-sm transition-colors hover:bg-muted/50 ${item.id === locationID ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'border-transparent'}`}>
+                <span className="flex items-start justify-between gap-2"><span className="flex min-w-0 items-center gap-2 font-semibold"><MapPin className="size-4 shrink-0 text-primary" aria-hidden="true" /><span className="truncate">{item.name}</span></span><Badge className={`shrink-0 ${statusBadge[item.status].className}`}>{statusBadge[item.status].label}</Badge></span>
+                <span className="pl-6 text-xs text-muted-foreground">{item.recipients} penerima{item.assigned > item.recipients ? ` dari ${item.assigned}` : ''} · {item.dates.length} hari</span>
+              </button>)}
+            </nav>
+            {canManage && view && <Button className="mt-1 justify-start" variant="ghost" size="sm" onClick={() => setEditing(true)}><Settings2 />Rapikan titik serah</Button>}
+          </CardContent>
+        </Card>
 
-      <Card className="lg:col-span-2">
+        <Card>
+          <CardHeader><CardTitle className="text-base">Ringkasan</CardTitle></CardHeader>
+          <CardContent className="grid gap-2 text-sm">
+            {location && <p className="flex items-center gap-2 font-medium"><MapPin className="size-4 text-primary" aria-hidden="true" />{location.name}</p>}
+            <div className="flex items-center justify-between rounded-lg border px-3 py-2"><span className="text-muted-foreground">Penerima selesai</span><strong className="tabular-nums">{location?.recipients ?? 0}</strong></div>
+            <div className="flex items-center justify-between rounded-lg border px-3 py-2"><span className="text-muted-foreground">Total paket (set)</span><strong className="tabular-nums">{grandTotal}</strong></div>
+            <div className="flex items-center justify-between rounded-lg border px-3 py-2"><span className="text-muted-foreground">Baris closing harian</span><strong className="tabular-nums">{rowItems.length}</strong></div>
+            <div className="rounded-lg border px-3 py-2"><span className="block text-muted-foreground">Tanggal distribusi</span><strong className="text-xs">{dateRange(location?.dates ?? [])}</strong></div>
+            {status !== 'ready' && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">{validationMessage[status] ?? status}</div>}
+          </CardContent>
+        </Card>
+      </aside>
+
+      <Card>
         <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><CardTitle className="text-base">BA Serah Terima{location ? ` · ${location.name}` : ''}</CardTitle><Badge variant="outline">Petani</Badge></div></CardHeader>
         <CardContent className="grid gap-4 pt-5">
           <div className="grid gap-3 sm:items-end sm:grid-cols-[12rem_minmax(0,1fr)]">
@@ -171,6 +177,13 @@ export function ClosingTitikSerahPanel({ scheduleID, regencyName, programType, d
         <td className="tabular-nums">{row.count}</td>
       </tr>)}</tbody>
     </DataTable>}
+
+    <Sheet open={editing && Boolean(view)} onOpenChange={setEditing}>
+      <SheetContent side="right" className="w-full overflow-y-auto p-4 data-[side=right]:w-full data-[side=right]:sm:max-w-2xl">
+        <SheetTitle className="sr-only">Rapikan titik serah</SheetTitle>
+        {view && <HandoverLocationsEditor scheduleID={scheduleID} view={view} onClose={() => setEditing(false)} />}
+      </SheetContent>
+    </Sheet>
   </div>;
 }
 
