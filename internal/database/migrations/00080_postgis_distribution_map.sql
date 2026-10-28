@@ -25,13 +25,18 @@ ALTER TABLE media_files ADD COLUMN geom geometry(Point, 4326)
 CREATE INDEX media_files_geom_idx ON media_files USING gist (geom) WHERE geom IS NOT NULL;
 
 ALTER TABLE distribution_slots ADD COLUMN linked_at timestamptz;
-UPDATE distribution_slots SET linked_at = updated_at WHERE status IN ('linked', 'completed');
+-- A slot is linked before it is delivered, and updated_at moves on every later edit, so the
+-- earliest known time is the best estimate. LEAST ignores NULLs.
+UPDATE distribution_slots SET linked_at = LEAST(updated_at, distributed_at, completed_at)
+WHERE status IN ('linked', 'completed');
 
 -- +goose StatementBegin
 CREATE FUNCTION distribution_slots_set_linked_at() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
-    IF NEW.status = 'linked' AND (TG_OP = 'INSERT' OR OLD.status IS DISTINCT FROM 'linked') THEN
+    -- Stamp a fresh link (from open) or a missing value; an explicit INSERT value and the original
+    -- link time of a reopened slot (completed -> linked) are kept.
+    IF NEW.status = 'linked' AND (NEW.linked_at IS NULL OR (TG_OP = 'UPDATE' AND OLD.status = 'open')) THEN
         NEW.linked_at := now();
     END IF;
     RETURN NEW;

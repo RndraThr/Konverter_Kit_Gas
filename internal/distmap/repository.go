@@ -202,6 +202,14 @@ func (r *Repository) Points(ctx context.Context, q PointQuery, scope auth.Regenc
 				p.StageAt = append(p.StageAt, t.UTC())
 			}
 		}
+		// Milestones follow each other, but the fallback times (updated_at, a backfilled linked_at)
+		// can be later than the next milestone; clamp backwards so the timeline never replays a
+		// reached milestone as an earlier stage.
+		for i := len(p.StageAt) - 2; i >= 0; i-- {
+			if p.StageAt[i].After(p.StageAt[i+1]) {
+				p.StageAt[i] = p.StageAt[i+1]
+			}
+		}
 		points = append(points, p)
 	}
 	if err := rows.Err(); err != nil {

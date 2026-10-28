@@ -43,14 +43,19 @@ func TestPostGISDistributionMapMigration(t *testing.T) {
 		CREATE TABLE distribution_slots (
 			id integer PRIMARY KEY,
 			status text NOT NULL DEFAULT 'open',
+			distributed_at timestamptz,
+			completed_at timestamptz,
 			updated_at timestamptz NOT NULL DEFAULT now()
 		);
-		INSERT INTO distribution_slots(id,status,updated_at) VALUES
-			(1,'open','2026-01-01T00:00:00Z'),
-			(2,'linked','2026-01-02T00:00:00Z'),
-			(3,'completed','2026-01-03T00:00:00Z'),
-			(4,'cancelled','2026-01-04T00:00:00Z'),
-			(5,'open','2026-01-05T00:00:00Z');
+		INSERT INTO distribution_slots(id,status,distributed_at,completed_at,updated_at) VALUES
+			(1,'open',NULL,NULL,'2026-01-01T00:00:00Z'),
+			(2,'linked',NULL,NULL,'2026-01-02T00:00:00Z'),
+			(3,'completed',NULL,NULL,'2026-01-03T00:00:00Z'),
+			(4,'cancelled',NULL,NULL,'2026-01-04T00:00:00Z'),
+			(5,'open',NULL,NULL,'2026-01-05T00:00:00Z'),
+			-- Edited after delivery: updated_at is later than the delivery, so it cannot be the link time.
+			(6,'completed','2026-01-03T00:00:00Z','2026-01-04T00:00:00Z','2026-02-01T00:00:00Z'),
+			(7,'completed',NULL,'2026-01-05T00:00:00Z','2026-02-01T00:00:00Z');
 	`); err != nil {
 		t.Fatal(err)
 	}
@@ -106,8 +111,9 @@ func TestPostGISDistributionMapMigration(t *testing.T) {
 		}
 	}
 
-	// Backfill: linked/completed slots take updated_at, others stay empty.
-	for id, want := range map[int]string{1: "", 2: "2026-01-02", 3: "2026-01-03", 4: "", 5: ""} {
+	// Backfill: linked/completed slots take the earliest of updated_at, distributed_at and
+	// completed_at (a slot is linked before it is delivered); others stay empty.
+	for id, want := range map[int]string{1: "", 2: "2026-01-02", 3: "2026-01-03", 4: "", 5: "", 6: "2026-01-03", 7: "2026-01-05"} {
 		var got sql.NullString
 		if err := tx.QueryRow(`SELECT to_char(linked_at AT TIME ZONE 'UTC','YYYY-MM-DD') FROM distribution_slots WHERE id=$1`, id).Scan(&got); err != nil {
 			t.Fatal(err)
@@ -134,5 +140,45 @@ func TestPostGISDistributionMapMigration(t *testing.T) {
 	}
 	if !kept.Valid || !kept.Time.Equal(stamped.Time) {
 		t.Fatalf("linked_at changed on linked->completed: %v -> %v", stamped, kept)
+	}
+
+	// Reopen completed -> linked keeps the original link time.
+	if _, err := tx.Exec(`UPDATE distribution_slots SET linked_at='2025-12-01T00:00:00Z' WHERE id=5`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`UPDATE distribution_slots SET status='linked' WHERE id=5`); err != nil {
+		t.Fatal(err)
+	}
+	assertLinkedAt := func(id int, want string) {
+		t.Helper()
+		var got sql.NullString
+		if err := tx.QueryRow(`SELECT to_char(linked_at AT TIME ZONE 'UTC','YYYY-MM-DD') FROM distribution_slots WHERE id=$1`, id).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got.String != want {
+			t.Fatalf("slot %d linked_at = %q, want %q", id, got.String, want)
+		}
+	}
+	assertLinkedAt(5, "2025-12-01")
+
+	// INSERT as linked: an explicit linked_at is kept, a missing one is stamped.
+	if _, err := tx.Exec(`INSERT INTO distribution_slots(id,status,linked_at) VALUES (8,'linked','2025-11-01T00:00:00Z'),(9,'linked',NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	assertLinkedAt(8, "2025-11-01")
+	var fresh bool
+	if err := tx.QueryRow(`SELECT linked_at IS NOT NULL AND linked_at > now() - interval '1 minute' FROM distribution_slots WHERE id=9`).Scan(&fresh); err != nil || !fresh {
+		t.Fatalf("INSERT as linked without linked_at must be stamped now: %v %v", fresh, err)
+	}
+
+	// open -> linked always stamps, even when an old value is left over from an earlier link.
+	if _, err := tx.Exec(`UPDATE distribution_slots SET status='open', linked_at='2025-10-01T00:00:00Z' WHERE id=8`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`UPDATE distribution_slots SET status='linked' WHERE id=8`); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.QueryRow(`SELECT linked_at > now() - interval '1 minute' FROM distribution_slots WHERE id=8`).Scan(&fresh); err != nil || !fresh {
+		t.Fatalf("open -> linked must restamp linked_at: %v %v", fresh, err)
 	}
 }

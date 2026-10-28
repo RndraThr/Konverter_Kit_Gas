@@ -245,6 +245,30 @@ func TestPointsMilestones(t *testing.T) {
 	}
 }
 
+// A slot edited after delivery has an updated_at (and, from the old backfill, a linked_at) later
+// than its completed_at; the timeline must still never step backwards.
+func TestPointsStageAtIsNonDecreasing(t *testing.T) {
+	env := newMapEnv(t)
+	s := env.fx.ScheduleID
+	edited := env.locatedSlot(t, s, 1, "completed", insideLon, insideLat)
+	env.exec(t, `UPDATE distribution_slots SET completed_at=now()-interval '2 days', distributed_at=NULL,
+		linked_at=now()+interval '1 day', updated_at=now()+interval '1 day' WHERE id=$1`, edited)
+
+	got, _ := env.points(t, env.programQuery(), unrestricted)
+	p, ok := got[edited]
+	if !ok {
+		t.Fatal("edited slot missing")
+	}
+	if p.Stage != 4 || len(p.StageAt) != 4 {
+		t.Fatalf("want stage 4 with 4 timestamps, got %d %v", p.Stage, p.StageAt)
+	}
+	for i := 1; i < len(p.StageAt); i++ {
+		if p.StageAt[i].Before(p.StageAt[i-1]) {
+			t.Fatalf("stage_at must be non-decreasing, got %v", p.StageAt)
+		}
+	}
+}
+
 func TestPointsLocationSource(t *testing.T) {
 	env := newMapEnv(t)
 	s := env.fx.ScheduleID
