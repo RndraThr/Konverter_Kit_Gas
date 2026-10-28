@@ -9,7 +9,7 @@ type Props = {
   onZone: () => void;
 };
 
-const crumbClass = 'inline-flex min-h-9 items-center rounded-md px-1.5 text-sm text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50';
+const crumbClass = 'inline-flex min-h-11 items-center rounded-md px-1.5 text-sm text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50';
 
 /** `Indonesia › Zona › Kabupaten`; the last crumb is the current place. */
 export function ZoneBreadcrumb({ zoneName, regencyName, onIndonesia, onZone }: Props) {

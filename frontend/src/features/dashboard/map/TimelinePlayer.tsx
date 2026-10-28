@@ -56,7 +56,7 @@ export function TimelinePlayer({ start, days, day, onChange }: Props) {
       <div className="flex items-center justify-between gap-2 text-sm">
         <span className="font-medium tabular-nums">{`Hari ke-${value + 1} · ${dateFormat.format(date)}`}</span>
         {day !== null
-          ? <button type="button" className="text-xs text-primary underline-offset-2 hover:underline" onClick={() => { setPlaying(false); onChange(null); }}>Kembali ke terkini</button>
+          ? <button type="button" className="inline-flex min-h-11 items-center px-1 text-xs text-primary underline-offset-2 hover:underline" onClick={() => { setPlaying(false); onChange(null); }}>Kembali ke terkini</button>
           : <span className="text-xs text-muted-foreground">Terkini</span>}
       </div>
       <input

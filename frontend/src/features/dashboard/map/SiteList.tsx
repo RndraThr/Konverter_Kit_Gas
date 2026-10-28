@@ -11,7 +11,7 @@ export function SiteList({ members, onPick }: { members: PointFeature[]; onPick:
       const { slot_id, code, stage } = member.properties;
       const milestone = MILESTONES[Math.min(5, Math.max(1, stage)) - 1];
       return <li key={slot_id}>
-        <button type="button" onClick={() => onPick(slot_id)} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
+        <button type="button" onClick={() => onPick(slot_id)} className="flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none">
           <span aria-hidden="true" className="size-3 shrink-0 rounded-full border" style={{ backgroundColor: milestone.color }} />
           <span className="font-medium">Nomor bagi {code}</span>
           <span className="ml-auto text-xs text-muted-foreground">{milestone.label}</span>

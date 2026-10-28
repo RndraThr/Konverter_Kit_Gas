@@ -25,3 +25,31 @@ test('the bottom sheet shows the same detail and closes', async () => {
   await userEvent.click(within(sheet).getByRole('button', { name: 'Tutup' }));
   expect(onClose).toHaveBeenCalled();
 });
+
+function renderSheet(onClose = vi.fn()) {
+  vi.mocked(apiRequest).mockRejectedValue(new Error('no detail'));
+  return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MemoryRouter><PointBottomSheet selected={{ kind: 'point', slotId: 'slot-1' }} points={[point]} regencyNames={new Map()} onSelect={vi.fn()} onClose={onClose} /></MemoryRouter></QueryClientProvider>);
+}
+
+test('focus lands on the sheet heading when it opens', () => {
+  renderSheet();
+  expect(screen.getByRole('heading', { name: 'Nomor bagi 12' })).toHaveFocus();
+});
+
+test('Escape closes the sheet', async () => {
+  const onClose = vi.fn();
+  renderSheet(onClose);
+  await userEvent.keyboard('{Escape}');
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
+
+test('focus returns to the previously focused element when the sheet closes', () => {
+  const opener = document.createElement('button');
+  document.body.appendChild(opener);
+  opener.focus();
+  const { unmount } = renderSheet();
+  expect(opener).not.toHaveFocus();
+  unmount();
+  expect(opener).toHaveFocus();
+  opener.remove();
+});

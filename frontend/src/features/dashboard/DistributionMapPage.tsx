@@ -295,10 +295,10 @@ export function DistributionMapPage() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <ZoneBreadcrumb zoneName={crumbZoneName} regencyName={focus?.name ?? focusedRegion?.regency_name} onIndonesia={toIndonesia} onZone={toZone} />
               <div role="group" aria-label="Lapisan peta" className="flex gap-1">
-                <Button type="button" size="sm" variant={show.zones ? 'secondary' : 'outline'} aria-pressed={show.zones} onClick={() => setShow((s) => ({ ...s, zones: !s.zones }))}>Batas zona</Button>
-                <Button type="button" size="sm" variant={show.points ? 'secondary' : 'outline'} aria-pressed={show.points} onClick={() => setShow((s) => ({ ...s, points: !s.points }))}>Titik</Button>
-                <Button type="button" size="sm" variant={lightMode ? 'secondary' : 'outline'} aria-pressed={lightMode} onClick={() => (lightMode ? leaveLightMode() : setLightMode(true))}><Feather aria-hidden="true" />Mode ringan</Button>
-                {unlocatedCount > 0 && <Button type="button" size="sm" variant="outline" onClick={() => setUnlocatedOpen(true)}><MapPinOff aria-hidden="true" />{unlocatedCount} belum ada lokasi</Button>}
+                <Button type="button" size="sm" className="min-h-11" variant={show.zones ? 'secondary' : 'outline'} aria-pressed={show.zones} onClick={() => setShow((s) => ({ ...s, zones: !s.zones }))}>Batas zona</Button>
+                <Button type="button" size="sm" className="min-h-11" variant={show.points ? 'secondary' : 'outline'} aria-pressed={show.points} onClick={() => setShow((s) => ({ ...s, points: !s.points }))}>Titik</Button>
+                <Button type="button" size="sm" className="min-h-11" variant={lightMode ? 'secondary' : 'outline'} aria-pressed={lightMode} onClick={() => (lightMode ? leaveLightMode() : setLightMode(true))}><Feather aria-hidden="true" />Mode ringan</Button>
+                {unlocatedCount > 0 && <Button type="button" size="sm" className="min-h-11" variant="outline" onClick={() => setUnlocatedOpen(true)}><MapPinOff aria-hidden="true" />{unlocatedCount} belum ada lokasi</Button>}
               </div>
             </div>
             {view.color === 'zone' && !programId && <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">Pilih program untuk mewarnai zona.</p>}

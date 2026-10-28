@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { cn } from '@/lib/utils';
 import { ExternalLink, MapPinned, Navigation, TriangleAlert, X } from 'lucide-react';
 import { Button, buttonVariants } from '../../../components/ui/button';
 import { directionsUrl, formatStageDate } from './format';
@@ -82,9 +83,9 @@ function PointView({ point, members, regencyNames, onSelect }: { point: PointFea
     <SlotInfo point={point} />
     <p className="text-xs text-muted-foreground tabular-nums">Koordinat {lat.toFixed(6)}, {lon.toFixed(6)}</p>
     <div className="flex flex-wrap gap-2">
-      <Link to={POS_ROUTE} className={buttonVariants({ size: 'sm' })}><ExternalLink aria-hidden="true" />Buka nomor bagi</Link>
-      <a href={directionsUrl(lon, lat)} target="_blank" rel="noreferrer" className={buttonVariants({ size: 'sm', variant: 'outline' })}><Navigation aria-hidden="true" />Arahkan ke lokasi</a>
-      {hasSite && <Button type="button" size="sm" variant="ghost" onClick={() => onSelect({ kind: 'site', siteId: site_id })}>Lihat titik serah</Button>}
+      <Link to={POS_ROUTE} className={cn(buttonVariants({ size: "sm" }), "min-h-11")}><ExternalLink aria-hidden="true" />Buka nomor bagi</Link>
+      <a href={directionsUrl(lon, lat)} target="_blank" rel="noreferrer" className={cn(buttonVariants({ size: "sm", variant: "outline" }), "min-h-11")}><Navigation aria-hidden="true" />Arahkan ke lokasi</a>
+      {hasSite && <Button type="button" size="sm" variant="ghost" className="min-h-11" onClick={() => onSelect({ kind: 'site', siteId: site_id })}>Lihat titik serah</Button>}
     </div>
   </div>;
 }
@@ -96,7 +97,7 @@ export function PointDetailBody({ selected, points, regencyNames, onSelect, onCl
     if (!point) {
       return <div className="space-y-3 text-sm">
         <p>Titik ini tidak ada di hasil filter saat ini.</p>
-        <Button type="button" size="sm" variant="outline" onClick={onClose}>Tutup pilihan</Button>
+        <Button type="button" size="sm" variant="outline" className="min-h-11" onClick={onClose}>Tutup pilihan</Button>
       </div>;
     }
     const members = groupSites(points).get(point.properties.site_id) ?? [point];
@@ -106,7 +107,7 @@ export function PointDetailBody({ selected, points, regencyNames, onSelect, onCl
   if (members.length === 0) {
     return <div className="space-y-3 text-sm">
       <p>Titik serah ini tidak ada di hasil filter saat ini.</p>
-      <Button type="button" size="sm" variant="outline" onClick={onClose}>Tutup pilihan</Button>
+      <Button type="button" size="sm" variant="outline" className="min-h-11" onClick={onClose}>Tutup pilihan</Button>
     </div>;
   }
   const name = members[0].properties.site_name || `${members.length} nomor bagi berdekatan`;
@@ -124,7 +125,7 @@ export function DetailHeader({ onClose }: { onClose: () => void }) {
   return <div className="flex items-center gap-3 border-b px-4 py-3">
     <MapPinned className="size-5 text-primary" aria-hidden="true" />
     <h2 className="text-base leading-snug font-medium">Detail titik</h2>
-    <Button type="button" size="icon-sm" variant="ghost" className="ml-auto" aria-label="Tutup" onClick={onClose}><X aria-hidden="true" /></Button>
+    <Button type="button" size="icon" variant="ghost" className="ml-auto size-11" aria-label="Tutup" onClick={onClose}><X aria-hidden="true" /></Button>
   </div>;
 }
 
