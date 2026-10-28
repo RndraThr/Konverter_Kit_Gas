@@ -319,8 +319,8 @@ export function DistributionMapPage() {
             <div className="relative aspect-video min-h-80 w-full bg-muted/30">
               {mapBody}
               <div className="absolute top-3 left-3 flex flex-col gap-2">
-                <Button type="button" size="sm" variant="secondary" className="shadow-sm" onClick={() => fit(pointsBounds(visiblePoints) ?? homeTarget())}><Maximize2 aria-hidden="true" />Pas ke semua titik</Button>
-                <Button type="button" size="sm" variant="secondary" className="shadow-sm" onClick={() => fit(INDONESIA_BOUNDS)}><Globe2 aria-hidden="true" />Seluruh Indonesia</Button>
+                <Button type="button" size="sm" variant="secondary" className="min-h-11 shadow-sm" onClick={() => fit(pointsBounds(visiblePoints) ?? homeTarget())}><Maximize2 aria-hidden="true" />Pas ke semua titik</Button>
+                <Button type="button" size="sm" variant="secondary" className="min-h-11 shadow-sm" onClick={() => fit(INDONESIA_BOUNDS)}><Globe2 aria-hidden="true" />Seluruh Indonesia</Button>
               </div>
               <div className="absolute bottom-8 left-3"><MilestoneLegend zones={zoneLegend} /></div>
             </div>
