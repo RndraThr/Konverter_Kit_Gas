@@ -39,7 +39,11 @@ function ReviewNote({ point }: { point: PointFeature }) {
 function SlotInfo({ point }: { point: PointFeature }) {
   const detail = useSlotDetail(point.properties.schedule_id, point.properties.code);
   if (detail.isPending) return <p className="text-sm text-muted-foreground">Memuat data penerima…</p>;
-  if (detail.isError) return <p className="text-sm text-muted-foreground">Data penerima tidak dapat dimuat.</p>;
+  if (detail.isError) {
+    // Duck-typed rather than instanceof ApiError, so callers that mock the api module still work.
+    const forbidden = (detail.error as { status?: unknown }).status === 403;
+    return <p className="text-sm text-muted-foreground">{forbidden ? 'Anda tidak punya akses ke data penerima.' : 'Data penerima tidak dapat dimuat.'}</p>;
+  }
   const slot = detail.data;
   const photos = slot.documentation.flatMap((item) => (item.files ?? []).filter((file) => file.mime_type.startsWith('image/')).map((file) => ({ file, label: item.label, stage: item.stage })));
   const machine = [slot.machine_option_code, slot.machine_serial_number && `SN ${slot.machine_serial_number}`].filter(Boolean).join(' · ');

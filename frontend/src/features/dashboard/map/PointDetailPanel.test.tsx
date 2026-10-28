@@ -3,11 +3,11 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, expect, test, vi } from 'vitest';
-import { apiRequest } from '../../../lib/api';
+import { ApiError, apiRequest } from '../../../lib/api';
 import { PointDetailPanel } from './PointDetailPanel';
 import type { PointFeature, PointProperties } from './types';
 
-vi.mock('../../../lib/api', () => ({ apiRequest: vi.fn() }));
+vi.mock('../../../lib/api', async (importOriginal) => ({ ...await importOriginal<typeof import('../../../lib/api')>(), apiRequest: vi.fn() }));
 
 function point(overrides: Partial<PointProperties>, coordinates: [number, number] = [105.5, -2.25]): PointFeature {
   return {
@@ -98,4 +98,20 @@ test('a handover site with 4 slots lists 4 rows and picking one selects that poi
   expect(within(list).getAllByText('Perlu ditinjau')).toHaveLength(1);
   await userEvent.click(within(list).getByRole('button', { name: /Nomor bagi 3/ }));
   expect(onSelect).toHaveBeenCalledWith({ kind: 'point', slotId: 'slot-3' });
+});
+
+test('a 403 on the slot detail says the user has no access to recipient data', async () => {
+  vi.mocked(apiRequest).mockRejectedValue(new ApiError(403, 'forbidden', 'Akses ditolak'));
+  renderWith(<PointDetailPanel selected={{ kind: 'point', slotId: 'slot-1' }} points={[point({})]} regencyNames={names} onSelect={vi.fn()} onClose={vi.fn()} />);
+
+  expect(await screen.findByText('Anda tidak punya akses ke data penerima.')).toBeVisible();
+  expect(screen.queryByText('Data penerima tidak dapat dimuat.')).not.toBeInTheDocument();
+});
+
+test('other slot detail failures keep the generic message', async () => {
+  vi.mocked(apiRequest).mockRejectedValue(new ApiError(500, 'internal', 'Server error'));
+  renderWith(<PointDetailPanel selected={{ kind: 'point', slotId: 'slot-1' }} points={[point({})]} regencyNames={names} onSelect={vi.fn()} onClose={vi.fn()} />);
+
+  expect(await screen.findByText('Data penerima tidak dapat dimuat.')).toBeVisible();
+  expect(screen.queryByText('Anda tidak punya akses ke data penerima.')).not.toBeInTheDocument();
 });
