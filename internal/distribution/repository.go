@@ -1578,7 +1578,7 @@ func (r *Repository) CompleteSlot(ctx context.Context, actor auth.Principal, inp
 	// BA Perorangan tanggal itu.
 	if _, err := tx.Exec(ctx, `UPDATE bast_aggregate_documents SET status='stale',updated_at=now()
 		WHERE schedule_id=$1 AND status='active'
-		  AND (document_type IN ('closing_titik_serah','closing_kabupaten') OR (document_type IN ('dp3','daily_recap') AND document_date >= $2::date))`, input.ScheduleID, distributionDate); err != nil {
+		  AND (document_type LIKE 'closing_titik_serah%' OR document_type='closing_kabupaten' OR (document_type IN ('dp3','daily_recap') AND document_date >= $2::date))`, input.ScheduleID, distributionDate); err != nil {
 		return DistributionSlot{}, fmt.Errorf("invalidate aggregate BA: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `UPDATE bast_daily_bundles b SET status='stale',updated_at=now()

@@ -11,8 +11,11 @@ export type WetSignatureStatus = {
 /** Kunci query memuat 'preview' agar ikut dimuat ulang setiap preview BA berubah. */
 export const wetSignatureKey = (scheduleID: string, document: string, date: string) => ['bast', 'wet-signature', 'preview', scheduleID, document, date];
 
+/** document "closing-titik-serah@<id lokasi>" memilih titik serah BA Serah Terima. */
 export function wetSignaturePath(scheduleID: string, document: string, date: string, suffix = '') {
-  const query = new URLSearchParams({ schedule_id: scheduleID, document, date });
+  const [base, locationID] = document.split('@');
+  const query = new URLSearchParams({ schedule_id: scheduleID, document: base, date });
+  if (locationID) query.set('location_id', locationID);
   return `/api/v1/bast/wet-signature${suffix ? `/${suffix}` : ''}?${query.toString()}`;
 }
 

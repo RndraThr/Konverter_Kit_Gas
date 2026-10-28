@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
-	"konkit/internal/auth"
 )
 
 type closingRawRow struct {
@@ -13,33 +11,13 @@ type closingRawRow struct {
 	VerificationSnapshot []byte
 }
 
-// ListClosingRows mengumpulkan seluruh distribusi selesai pada jadwal (tidak
-// dibatasi satu tanggal) dan mengelompokkannya per (tanggal, varian mesin).
-func (r *Repository) ListClosingRows(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]ClosingRow, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT COALESCE(ds.distribution_date, (ds.distributed_at AT TIME ZONE 'Asia/Jakarta')::date)::text AS local_date, ds.verification_snapshot_json
-		FROM distribution_slots ds
-		JOIN program_schedules ps ON ps.id = ds.schedule_id
-		WHERE ds.schedule_id=$1 AND ds.status='completed' AND ds.distributed_at IS NOT NULL
-		  AND ($2 OR ps.regency_id::text = ANY($3))
-		ORDER BY local_date, ds.id
-	`, scheduleID, scope.Unrestricted, scope.RegencyIDs)
-	if err != nil {
-		return nil, fmt.Errorf("list closing rows: %w", err)
+// StaleClosingKabupaten menandai Closing Kabupaten final perlu dibuat ulang
+// setelah BA Serah Terima suatu titik serah berubah.
+func (r *Repository) StaleClosingKabupaten(ctx context.Context, scheduleID string) error {
+	if _, err := r.pool.Exec(ctx, `UPDATE bast_aggregate_documents SET status='stale',updated_at=now() WHERE schedule_id::text=$1 AND status='active' AND document_type='closing_kabupaten'`, scheduleID); err != nil {
+		return fmt.Errorf("invalidate closing kabupaten: %w", err)
 	}
-	defer rows.Close()
-	raw := []closingRawRow{}
-	for rows.Next() {
-		var item closingRawRow
-		if err := rows.Scan(&item.LocalDate, &item.VerificationSnapshot); err != nil {
-			return nil, err
-		}
-		raw = append(raw, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return groupClosingRows(raw), nil
+	return nil
 }
 
 // groupClosingRows menjaga urutan kemunculan pertama (tanggal, varian) agar

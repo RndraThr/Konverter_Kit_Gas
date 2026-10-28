@@ -21,7 +21,9 @@ const closingKabupatenFolder = "5. CLOSING KABUPATEN"
 
 type closingKabupatenRepository interface {
 	GetDP3Context(context.Context, string, auth.RegencyScope) (DP3Context, error)
-	ListClosingKabupatenRows(context.Context, string, auth.RegencyScope) ([]ClosingKabupatenRow, error)
+	ListHandoverLocations(context.Context, string, auth.RegencyScope) ([]HandoverLocation, error)
+	ListHandoverRecipients(context.Context, string, auth.RegencyScope) ([]handoverRecipient, error)
+	ListActiveClosingSnapshots(context.Context, string) (map[string]ClosingTitikSerahSnapshot, error)
 	ListActiveLogos(context.Context, string) ([]LogoSnapshot, error)
 	GetScheduleSettings(context.Context, string, auth.RegencyScope) (ScheduleSettings, error)
 	GetActiveAggregate(context.Context, string, string, string, auth.RegencyScope) (AggregateDocument, error)
@@ -50,15 +52,27 @@ func (s *ClosingKabupatenService) Rows(ctx context.Context, scheduleID string, s
 	if _, err := s.repository.GetDP3Context(ctx, scheduleID, scope); err != nil {
 		return nil, err
 	}
-	rows, err := s.repository.ListClosingKabupatenRows(ctx, scheduleID, scope)
+	return s.handoverRows(ctx, scheduleID, scope, false)
+}
+
+// handoverRows menyusun baris dari BA Serah Terima final tiap titik serah.
+func (s *ClosingKabupatenService) handoverRows(ctx context.Context, scheduleID string, scope auth.RegencyScope, strict bool) ([]ClosingKabupatenRow, error) {
+	locations, err := s.repository.ListHandoverLocations(ctx, scheduleID, scope)
 	if err != nil {
 		return nil, err
 	}
-	settings, err := s.repository.GetScheduleSettings(ctx, scheduleID, scope)
-	if err == nil {
-		rows = withClosingKabupatenLocation(rows, settings.HandoverLocation)
+	if len(locations) == 0 {
+		return nil, ErrHandoverLocationRequired
 	}
-	return rows, nil
+	recipients, err := s.repository.ListHandoverRecipients(ctx, scheduleID, scope)
+	if err != nil {
+		return nil, err
+	}
+	snapshots, err := s.repository.ListActiveClosingSnapshots(ctx, scheduleID)
+	if err != nil {
+		return nil, err
+	}
+	return closingKabupatenRowsFromHandover(locations, recipients, snapshots, strict)
 }
 
 func (s *ClosingKabupatenService) Preview(ctx context.Context, scheduleID, documentDate string, scope auth.RegencyScope) (AggregatePreview, error) {
@@ -225,11 +239,10 @@ func (s *ClosingKabupatenService) load(ctx context.Context, scheduleID string, s
 			return DP3Context{}, nil, ScheduleSettings{}, err
 		}
 	}
-	rows, err := s.repository.ListClosingKabupatenRows(ctx, scheduleID, scope)
+	rows, err := s.handoverRows(ctx, scheduleID, scope, strict)
 	if err != nil {
 		return DP3Context{}, nil, ScheduleSettings{}, err
 	}
-	rows = withClosingKabupatenLocation(rows, settings.HandoverLocation)
 	if !strict && len(rows) == 0 {
 		return DP3Context{}, nil, ScheduleSettings{}, ErrAggregateNoRecipients
 	}
@@ -239,16 +252,4 @@ func (s *ClosingKabupatenService) load(ctx context.Context, scheduleID string, s
 		}
 	}
 	return ctxData, rows, settings, nil
-}
-
-// withClosingKabupatenLocation mengisi kolom Lokasi/Titik Serah setiap baris
-// dari konfigurasi jadwal, karena sistem saat ini hanya mendukung satu titik
-// serah per jadwal.
-func withClosingKabupatenLocation(rows []ClosingKabupatenRow, location string) []ClosingKabupatenRow {
-	result := make([]ClosingKabupatenRow, len(rows))
-	for i, row := range rows {
-		row.Location = location
-		result[i] = row
-	}
-	return result
 }

@@ -8,8 +8,8 @@ import { ClosingKabupatenPanel } from './ClosingKabupatenPanel'
 vi.mock('@/lib/api', () => ({ apiRequest: vi.fn(), apiBlobRequest: vi.fn() }))
 
 const rows = [
-  { location: 'Lapangan Desa Tempe', machine_brand: 'SHARK', machine_type: 'SPWP 80-30/3"', count: 20 },
-  { location: 'Lapangan Desa Tempe', machine_brand: 'YANMAR', machine_type: 'TF 85', count: 5 },
+  { location: 'Lapangan Desa Tempe', machine_brand: 'SHARK', machine_type: 'SPWP 80-30/3"', count: 20, final: true },
+  { location: 'Lapangan Desa Tempe', machine_brand: 'YANMAR', machine_type: 'TF 85', count: 5, final: true },
 ]
 
 function renderPanel(permissions = ['bast.view', 'bast.manage']) {
@@ -61,4 +61,15 @@ test('keeps a stale closing kabupaten downloadable while allowing finalization a
   expect(await screen.findByText('Perlu dibuat ulang')).toBeVisible()
   expect(screen.getByRole('button', { name: 'Unduh' })).toHaveAttribute('href', '/api/v1/bast/closing-kabupaten/documents/stale-kabupaten/content')
   expect(screen.getByRole('button', { name: 'Finalisasi & sinkronkan' })).toBeEnabled()
+})
+
+test('blocks finalization until every handover location has a final BA Serah Terima', async () => {
+  vi.mocked(apiRequest).mockImplementation(async (path) => {
+    if (path.includes('/rows')) return { data: [...rows, { location: 'Lapangan Sabbangparu', machine_brand: 'SHARK', machine_type: 'SPWP', count: 3 }] }
+    if (path.includes('/documents')) return { data: [] }
+    throw new Error(`unexpected ${path}`)
+  })
+  renderPanel()
+  expect(await screen.findByText(/Belum final: Lapangan Sabbangparu\./)).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Finalisasi & sinkronkan' })).toBeDisabled()
 })

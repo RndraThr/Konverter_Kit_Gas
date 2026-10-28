@@ -99,7 +99,11 @@ func (s *WetSignatureService) Status(ctx context.Context, documentKey, scheduleI
 	if _, code, err := s.Page(ctx, documentKey, scheduleID, date, scope); err == nil {
 		status.Code = code
 	}
-	meta, err := s.repository.GetWetScan(ctx, strings.TrimSpace(scheduleID), documentKey, strings.TrimSpace(date), scope)
+	key, err := s.scanKey(ctx, documentKey, scheduleID, scope)
+	if err != nil {
+		return WetSignatureStatus{}, err
+	}
+	meta, err := s.repository.GetWetScan(ctx, strings.TrimSpace(scheduleID), key, strings.TrimSpace(date), scope)
 	if err != nil {
 		return WetSignatureStatus{}, err
 	}
@@ -123,19 +127,56 @@ func (s *WetSignatureService) Upload(ctx context.Context, actor auth.Principal, 
 	if err != nil {
 		return err
 	}
-	return s.repository.PutWetScan(ctx, actor, strings.TrimSpace(scheduleID), documentKey, strings.TrimSpace(date), code, normalized, scope, meta)
+	key, err := s.scanKey(ctx, documentKey, scheduleID, scope)
+	if err != nil {
+		return err
+	}
+	return s.repository.PutWetScan(ctx, actor, strings.TrimSpace(scheduleID), key, strings.TrimSpace(date), code, normalized, scope, meta)
 }
 
 func (s *WetSignatureService) Delete(ctx context.Context, actor auth.Principal, documentKey, scheduleID, date string, scope auth.RegencyScope, meta auth.ClientMeta) error {
 	if !wetSignatureDocuments[documentKey] || !validWetInput(scheduleID, date) {
 		return ErrInvalidInput
 	}
-	return s.repository.DeleteWetScan(ctx, actor, strings.TrimSpace(scheduleID), documentKey, strings.TrimSpace(date), scope, meta)
+	key, err := s.scanKey(ctx, documentKey, scheduleID, scope)
+	if err != nil {
+		return err
+	}
+	return s.repository.DeleteWetScan(ctx, actor, strings.TrimSpace(scheduleID), key, strings.TrimSpace(date), scope, meta)
 }
 
 func (s *WetSignatureService) Open(ctx context.Context, documentKey, scheduleID, date string, scope auth.RegencyScope) ([]byte, error) {
 	if !wetSignatureDocuments[documentKey] || !validWetInput(scheduleID, date) {
 		return nil, ErrInvalidInput
 	}
-	return s.repository.OpenWetScan(ctx, strings.TrimSpace(scheduleID), documentKey, strings.TrimSpace(date), scope)
+	key, err := s.scanKey(ctx, documentKey, scheduleID, scope)
+	if err != nil {
+		return nil, err
+	}
+	return s.repository.OpenWetScan(ctx, strings.TrimSpace(scheduleID), key, strings.TrimSpace(date), scope)
+}
+
+type handoverLocationLister interface {
+	ListHandoverLocations(context.Context, string, auth.RegencyScope) ([]HandoverLocation, error)
+}
+
+// scanKey adalah kunci penyimpanan pindaian: BA Serah Terima menyimpan satu
+// pindaian per titik serah (lokasi dari konteks).
+func (s *WetSignatureService) scanKey(ctx context.Context, documentKey, scheduleID string, scope auth.RegencyScope) (string, error) {
+	if documentKey != "closing-titik-serah" {
+		return documentKey, nil
+	}
+	lister, ok := s.repository.(handoverLocationLister)
+	if !ok {
+		return documentKey, nil
+	}
+	locations, err := lister.ListHandoverLocations(ctx, strings.TrimSpace(scheduleID), scope)
+	if err != nil {
+		return "", err
+	}
+	location, err := pickHandoverLocation(locations, handoverLocationFrom(ctx))
+	if err != nil {
+		return "", err
+	}
+	return closingWetKey(location.ID), nil
 }

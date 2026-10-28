@@ -21,7 +21,9 @@ const closingFolder = "4. CLOSING TITIK SERAH"
 
 type closingRepository interface {
 	GetDP3Context(context.Context, string, auth.RegencyScope) (DP3Context, error)
-	ListClosingRows(context.Context, string, auth.RegencyScope) ([]ClosingRow, error)
+	ListHandoverLocations(context.Context, string, auth.RegencyScope) ([]HandoverLocation, error)
+	ListHandoverRecipients(context.Context, string, auth.RegencyScope) ([]handoverRecipient, error)
+	StaleClosingKabupaten(context.Context, string) error
 	ListActiveLogos(context.Context, string) ([]LogoSnapshot, error)
 	GetScheduleSettings(context.Context, string, auth.RegencyScope) (ScheduleSettings, error)
 	GetActiveAggregate(context.Context, string, string, string, auth.RegencyScope) (AggregateDocument, error)
@@ -50,13 +52,37 @@ func (s *ClosingTitikSerahService) Rows(ctx context.Context, scheduleID string, 
 	if _, err := s.repository.GetDP3Context(ctx, scheduleID, scope); err != nil {
 		return nil, err
 	}
-	return s.repository.ListClosingRows(ctx, scheduleID, scope)
+	_, rows, err := s.locationRows(ctx, scheduleID, scope)
+	return rows, err
+}
+
+// locationRows mengembalikan titik serah terpilih (dari konteks) dan rekap
+// distribusi selesai milik lokasi itu.
+func (s *ClosingTitikSerahService) locationRows(ctx context.Context, scheduleID string, scope auth.RegencyScope) (HandoverLocation, []ClosingRow, error) {
+	locations, err := s.repository.ListHandoverLocations(ctx, scheduleID, scope)
+	if err != nil {
+		return HandoverLocation{}, nil, err
+	}
+	selected := handoverLocationFrom(ctx)
+	// Tata letak tanda tangan sama untuk semua lokasi: cukup lokasi pertama.
+	if selected == "" && signatureLayoutFrom(ctx) != nil && len(locations) > 0 {
+		selected = locations[0].ID
+	}
+	location, err := pickHandoverLocation(locations, selected)
+	if err != nil {
+		return HandoverLocation{}, nil, err
+	}
+	recipients, err := s.repository.ListHandoverRecipients(ctx, scheduleID, scope)
+	if err != nil {
+		return HandoverLocation{}, nil, err
+	}
+	return location, groupClosingRows(closingRawRowsFor(locations, recipients, location.ID)), nil
 }
 
 func (s *ClosingTitikSerahService) Preview(ctx context.Context, scheduleID, documentDate string, scope auth.RegencyScope) (AggregatePreview, error) {
 	scheduleID = strings.TrimSpace(scheduleID)
 	documentDate = strings.TrimSpace(documentDate)
-	ctxData, rows, settings, err := s.load(ctx, scheduleID, scope, false)
+	ctxData, location, rows, settings, err := s.load(ctx, scheduleID, scope, false)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
@@ -64,13 +90,15 @@ func (s *ClosingTitikSerahService) Preview(ctx context.Context, scheduleID, docu
 	if err != nil {
 		return AggregatePreview{}, err
 	}
-	snapshot := buildClosingTitikSerahSnapshot(ctxData, settings, logos, documentDate, nextVersionOrFirst(ctx, s.repository, scheduleID, AggregateDocumentClosingTitikSerah, documentDate), rows)
+	documentType := closingDocumentType(location.ID)
+	snapshot := buildClosingTitikSerahSnapshot(ctxData, settings, logos, documentDate, nextVersionOrFirst(ctx, s.repository, scheduleID, documentType, documentDate), rows)
+	snapshot.HandoverLocation = location.Name
 	marks, markImages, err := loadSignatoryMarks(ctx, s.repository, ctxData.ScheduleID, "closing-titik-serah")
 	if err != nil {
 		return AggregatePreview{}, err
 	}
 	snapshot.SignatureMarks = marks
-	wet, wetImages, err := loadWetSignature(ctx, s.repository, ctxData.ScheduleID, "closing-titik-serah", documentDate, snapshot)
+	wet, wetImages, err := loadWetSignature(ctx, s.repository, ctxData.ScheduleID, closingWetKey(location.ID), documentDate, snapshot)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
@@ -86,13 +114,13 @@ func (s *ClosingTitikSerahService) Preview(ctx context.Context, scheduleID, docu
 		return AggregatePreview{}, err
 	}
 	hash := sha256.Sum256(rendered.PDF)
-	return AggregatePreview{PDF: rendered.PDF, Filename: formatClosingFilename(ctxData.RegencyName, documentDate, 1), RecipientCount: snapshot.GrandTotal, PageCount: rendered.PageCount, Checksum: hex.EncodeToString(hash[:])}, nil
+	return AggregatePreview{PDF: rendered.PDF, Filename: formatClosingFilename(ctxData.RegencyName, location.Name, documentDate, 1), RecipientCount: snapshot.GrandTotal, PageCount: rendered.PageCount, Checksum: hex.EncodeToString(hash[:])}, nil
 }
 
 func (s *ClosingTitikSerahService) Finalize(ctx context.Context, actor auth.Principal, scheduleID, documentDate string, scope auth.RegencyScope, meta auth.ClientMeta) (AggregateDocument, error) {
 	scheduleID = strings.TrimSpace(scheduleID)
 	documentDate = strings.TrimSpace(documentDate)
-	ctxData, rows, settings, err := s.load(ctx, scheduleID, scope, true)
+	ctxData, location, rows, settings, err := s.load(ctx, scheduleID, scope, true)
 	if err != nil {
 		return AggregateDocument{}, err
 	}
@@ -100,17 +128,19 @@ func (s *ClosingTitikSerahService) Finalize(ctx context.Context, actor auth.Prin
 	if err != nil {
 		return AggregateDocument{}, err
 	}
-	version, err := s.repository.NextAggregateVersion(ctx, scheduleID, AggregateDocumentClosingTitikSerah, documentDate)
+	documentType := closingDocumentType(location.ID)
+	version, err := s.repository.NextAggregateVersion(ctx, scheduleID, documentType, documentDate)
 	if err != nil {
 		return AggregateDocument{}, err
 	}
 	snapshot := buildClosingTitikSerahSnapshot(ctxData, settings, logos, documentDate, version, rows)
+	snapshot.HandoverLocation = location.Name
 	marks, markImages, err := loadSignatoryMarks(ctx, s.repository, ctxData.ScheduleID, "closing-titik-serah")
 	if err != nil {
 		return AggregateDocument{}, err
 	}
 	snapshot.SignatureMarks = marks
-	wet, wetImages, err := loadWetSignature(ctx, s.repository, ctxData.ScheduleID, "closing-titik-serah", documentDate, snapshot)
+	wet, wetImages, err := loadWetSignature(ctx, s.repository, ctxData.ScheduleID, closingWetKey(location.ID), documentDate, snapshot)
 	if err != nil {
 		return AggregateDocument{}, err
 	}
@@ -135,14 +165,14 @@ func (s *ClosingTitikSerahService) Finalize(ctx context.Context, actor auth.Prin
 	hash := sha256.Sum256(rendered.PDF)
 	checksum := hex.EncodeToString(hash[:])
 
-	active, activeErr := s.repository.GetActiveAggregate(ctx, scheduleID, AggregateDocumentClosingTitikSerah, documentDate, scope)
+	active, activeErr := s.repository.GetActiveAggregate(ctx, scheduleID, documentType, documentDate, scope)
 	if activeErr != nil && !errors.Is(activeErr, ErrNotFound) {
 		return AggregateDocument{}, activeErr
 	}
 	if activeErr == nil && active.Checksum == checksum {
 		return active, nil
 	}
-	filename := formatClosingFilename(ctxData.RegencyName, documentDate, version)
+	filename := formatClosingFilename(ctxData.RegencyName, location.Name, documentDate, version)
 	folderPath, err := media.BuildFolderPath(media.FolderPathInput{
 		ProgramType: ctxData.ProgramType, ZoneName: ctxData.ZoneName, RegencyName: ctxData.RegencyName,
 		Category: media.FolderBA, Child: closingFolder,
@@ -160,7 +190,7 @@ func (s *ClosingTitikSerahService) Finalize(ctx context.Context, actor auth.Prin
 	}
 	activated, err := s.repository.ActivateAggregate(ctx, actor, AggregateActivation{
 		ScheduleID: scheduleID, ProgramID: ctxData.ProgramID, RegencyID: ctxData.RegencyID,
-		DocumentType: AggregateDocumentClosingTitikSerah, DocumentDate: documentDate, Filename: filename,
+		DocumentType: documentType, DocumentDate: documentDate, Filename: filename,
 		RecipientCount: snapshot.GrandTotal, PageCount: rendered.PageCount, Checksum: checksum,
 		StorageKey: storageKey, Snapshot: snapshotJSON, ExpectedVersion: version, ExpectedActiveID: expectedActiveID,
 	}, meta)
@@ -177,11 +207,26 @@ func (s *ClosingTitikSerahService) Finalize(ctx context.Context, actor auth.Prin
 			_ = s.repository.RecordAggregateCleanupFailure(context.Background(), activated.Document.ID, fmt.Sprintf("cleanup old storage key %s: %v", activated.OldStorageKey, deleteErr))
 		}
 	}
+	// Closing Kabupaten merekap BA Serah Terima final tiap lokasi.
+	if err := s.repository.StaleClosingKabupaten(ctx, scheduleID); err != nil {
+		return AggregateDocument{}, err
+	}
 	return activated.Document, nil
 }
 
+// Documents mengembalikan versi BA Serah Terima titik serah terpilih (dari
+// konteks) pada satu tanggal.
 func (s *ClosingTitikSerahService) Documents(ctx context.Context, scheduleID, documentDate string, scope auth.RegencyScope) ([]AggregateDocument, error) {
-	return s.repository.ListAggregates(ctx, strings.TrimSpace(scheduleID), AggregateDocumentClosingTitikSerah, strings.TrimSpace(documentDate), scope)
+	scheduleID = strings.TrimSpace(scheduleID)
+	locations, err := s.repository.ListHandoverLocations(ctx, scheduleID, scope)
+	if err != nil {
+		return nil, err
+	}
+	location, err := pickHandoverLocation(locations, handoverLocationFrom(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return s.repository.ListAggregates(ctx, scheduleID, closingDocumentType(location.ID), strings.TrimSpace(documentDate), scope)
 }
 
 func (s *ClosingTitikSerahService) Open(ctx context.Context, id string, scope auth.RegencyScope) (AggregateContent, error) {
@@ -196,38 +241,41 @@ func (s *ClosingTitikSerahService) Open(ctx context.Context, id string, scope au
 	return AggregateContent{Reader: reader, Filename: doc.Filename}, nil
 }
 
-func (s *ClosingTitikSerahService) load(ctx context.Context, scheduleID string, scope auth.RegencyScope, strict bool) (DP3Context, []ClosingRow, ScheduleSettings, error) {
+func (s *ClosingTitikSerahService) load(ctx context.Context, scheduleID string, scope auth.RegencyScope, strict bool) (DP3Context, HandoverLocation, []ClosingRow, ScheduleSettings, error) {
+	fail := func(err error) (DP3Context, HandoverLocation, []ClosingRow, ScheduleSettings, error) {
+		return DP3Context{}, HandoverLocation{}, nil, ScheduleSettings{}, err
+	}
 	if scheduleID == "" {
-		return DP3Context{}, nil, ScheduleSettings{}, ErrInvalidInput
+		return fail(ErrInvalidInput)
 	}
 	ctxData, err := s.repository.GetDP3Context(ctx, scheduleID, scope)
 	if err != nil {
-		return DP3Context{}, nil, ScheduleSettings{}, err
+		return fail(err)
 	}
 	if err := validateDP3Context(ctxData); err != nil {
-		return DP3Context{}, nil, ScheduleSettings{}, err
+		return fail(err)
 	}
 	settings, err := s.repository.GetScheduleSettings(ctx, scheduleID, scope)
 	if err != nil {
-		return DP3Context{}, nil, ScheduleSettings{}, err
+		return fail(err)
 	}
 	// Preview (strict=false) tidak menuntut pengaturan dan data mesin lengkap.
 	if strict {
 		if err := validateClosingSettings(settings); err != nil {
-			return DP3Context{}, nil, ScheduleSettings{}, err
+			return fail(err)
 		}
 	}
-	rows, err := s.repository.ListClosingRows(ctx, scheduleID, scope)
+	location, rows, err := s.locationRows(ctx, scheduleID, scope)
 	if err != nil {
-		return DP3Context{}, nil, ScheduleSettings{}, err
+		return fail(err)
 	}
 	if !strict && len(rows) == 0 {
-		return DP3Context{}, nil, ScheduleSettings{}, ErrAggregateNoRecipients
+		return fail(ErrAggregateNoRecipients)
 	}
 	if strict {
 		if err := validateClosingRows(rows); err != nil {
-			return DP3Context{}, nil, ScheduleSettings{}, err
+			return fail(err)
 		}
 	}
-	return ctxData, rows, settings, nil
+	return ctxData, location, rows, settings, nil
 }

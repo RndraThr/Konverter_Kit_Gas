@@ -86,10 +86,9 @@ func formatClosingDocumentNumber(regencyCode, documentDate string, totalPaket, s
 	return fmt.Sprintf("%0*d/%d/%s/KKT/CTS/%s/%d", digitWidth(totalPaket), sequence, totalPaket, strings.ToUpper(strings.TrimSpace(regencyCode)), romanMonth(date.Month()), date.Year())
 }
 
+// validateClosingSettings memeriksa penandatangan; nama lokasi berasal dari
+// titik serah terpilih.
 func validateClosingSettings(settings ScheduleSettings) error {
-	if strings.TrimSpace(settings.HandoverLocation) == "" {
-		return ErrHandoverLocationRequired
-	}
 	if strings.TrimSpace(settings.AgricultureOfficeName) == "" || strings.TrimSpace(settings.AgricultureOfficeNIP) == "" || strings.TrimSpace(settings.InstallerName) == "" || strings.TrimSpace(settings.SupervisorName) == "" || strings.TrimSpace(settings.PertaminaRepName) == "" {
 		return ErrSignatoryRequired
 	}
@@ -112,7 +111,11 @@ func closingValidationStatus(err error) string {
 	return dp3ValidationStatus(err)
 }
 
-func formatClosingFilename(regencyName, documentDate string, version int) string {
+func formatClosingFilename(regencyName, location, documentDate string, version int) string {
 	name := strings.ToUpper(strings.Join(strings.Fields(regencyName), " "))
-	return fmt.Sprintf("CLOSING TITIK SERAH - %s - %s - V%d.pdf", name, documentDate, version)
+	place := strings.ToUpper(strings.Join(strings.Fields(strings.NewReplacer("/", " ", `\`, " ").Replace(location)), " "))
+	if place == "" {
+		return fmt.Sprintf("CLOSING TITIK SERAH - %s - %s - V%d.pdf", name, documentDate, version)
+	}
+	return fmt.Sprintf("CLOSING TITIK SERAH - %s - %s - %s - V%d.pdf", name, place, documentDate, version)
 }

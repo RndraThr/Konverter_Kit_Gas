@@ -304,6 +304,7 @@ type Dependencies struct {
 	BASTSignatory       BASTSignatoryService
 	BASTWetSignature    BASTWetSignatureService
 	BASTOverview        BASTOverviewService
+	BASTHandover        BASTHandoverService
 	BASTSignatureLayout BASTSignatureLayoutService
 	DP3                 DP3Service
 	DailyRecap          DailyRecapService
@@ -388,6 +389,11 @@ func (h *Handler) authenticate(w http.ResponseWriter, r *http.Request) (requestC
 
 func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requestContext) {
 	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/v1/"), "/")
+	// Titik serah terpilih (BA Serah Terima per lokasi) ikut ke Preview,
+	// tanda tangan basah, dan tata letak tanda tangan.
+	if location := strings.TrimSpace(r.URL.Query().Get("location_id")); location != "" && strings.HasPrefix(path, "bast/") {
+		r = r.WithContext(bast.WithHandoverLocation(r.Context(), location))
+	}
 	switch {
 	case path == "geo/reverse":
 		h.handleGeoReverse(w, r, rc)
@@ -497,6 +503,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleBASTDP3(w, r, rc, strings.TrimPrefix(path, "bast/dp3/"))
 	case strings.HasPrefix(path, "bast/daily-recap/"):
 		h.handleBASTDailyRecap(w, r, rc, strings.TrimPrefix(path, "bast/daily-recap/"))
+	case path == "bast/handover-locations" || strings.HasPrefix(path, "bast/handover-locations/"):
+		h.handleBASTHandoverLocations(w, r, rc, strings.TrimPrefix(strings.TrimPrefix(path, "bast/handover-locations"), "/"))
 	case strings.HasPrefix(path, "bast/closing-titik-serah/"):
 		h.handleBASTClosingTitikSerah(w, r, rc, strings.TrimPrefix(path, "bast/closing-titik-serah/"))
 	case strings.HasPrefix(path, "bast/closing-kabupaten/"):

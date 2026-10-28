@@ -145,6 +145,7 @@ func run(ctx context.Context, cfg config.Config) error {
 			"gas-elpiji":          bast.PreviewFunc(bastGasElpijiService.SignaturePreview),
 		}),
 		BASTOverview: bastRepository,
+		BASTHandover: bast.NewHandoverService(bastRepository),
 		BASTWetSignature: bast.NewWetSignatureService(bastRepository, map[string]bast.WetPreviewer{
 			"dp3":                 bastDP3Service,
 			"rekap-harian":        bastDailyRecapService,

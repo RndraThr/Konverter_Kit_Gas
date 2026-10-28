@@ -227,6 +227,48 @@ export type ClosingKabupatenRow = {
   machine_brand: string;
   machine_type: string;
   count: number;
+  /** Baris berasal dari BA Serah Terima final lokasinya. */
+  final?: boolean;
+};
+
+/** Cakupan titik serah; village kosong = seluruh kecamatan. */
+export type HandoverArea = { district: string; village?: string };
+
+export type HandoverStatus = 'final' | 'stale' | 'none' | 'empty';
+
+export type HandoverLocationSummary = {
+  id: string;
+  name: string;
+  areas: HandoverArea[];
+  sort_order: number;
+  /** Penerima selesai distribusi. */
+  recipients: number;
+  /** Seluruh penerima (termasuk yang belum selesai). */
+  assigned: number;
+  dates: string[];
+  status: HandoverStatus;
+  document_date?: string;
+};
+
+export type HandoverRecipient = {
+  slot_id: string;
+  slot_number: number;
+  name: string;
+  district: string;
+  village: string;
+  location_id?: string;
+  source?: 'override' | 'village' | 'district' | 'single';
+  completed: boolean;
+  local_date?: string;
+};
+
+export type HandoverView = {
+  schedule_id: string;
+  locations: HandoverLocationSummary[];
+  areas: { district: string; village: string; recipients: number }[];
+  recipients: HandoverRecipient[];
+  unassigned: number;
+  unassigned_total: number;
 };
 
 export type DailyRecapRecipient = {
