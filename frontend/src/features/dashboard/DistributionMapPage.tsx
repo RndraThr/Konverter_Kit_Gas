@@ -57,8 +57,8 @@ function assetGeometry(asset: RegencyAsset | null, name: string): ZoneGeometry |
 }
 
 export function DistributionMapPage() {
-  const [params, setParams] = useSearchParams();
-  const { state: view, update } = useMapUrlState();
+  const [params] = useSearchParams();
+  const { state: view, update, edit } = useMapUrlState();
   const filter = filterQuery(params);
   const programId = params.get('program_id') || undefined;
   const zoneId = params.get('zone_id') || undefined;
@@ -163,10 +163,10 @@ export function DistributionMapPage() {
   };
 
   const setFilter = (key: string, value: string) => {
-    const next = new URLSearchParams(params);
-    if (value) next.set(key, value); else next.delete(key);
-    if (key === 'program_id') next.delete('zone_id'); // zones belong to one program
-    setParams(next, { replace: true });
+    edit((next) => {
+      if (value) next.set(key, value); else next.delete(key);
+      if (key === 'program_id') next.delete('zone_id'); // zones belong to one program
+    });
     if (key === 'regency_id') {
       const region = regions.find((item) => item.regency_id === value);
       const option = regencies.data?.data.find((item) => item.id === value);
@@ -187,9 +187,7 @@ export function DistributionMapPage() {
   };
   const activeFilterCount = FILTER_KEYS.filter((key) => Boolean(params.get(key))).length;
   const resetFilters = () => {
-    const next = new URLSearchParams(params);
-    FILTER_KEYS.forEach((key) => next.delete(key));
-    setParams(next, { replace: true });
+    edit((next) => FILTER_KEYS.forEach((key) => next.delete(key)));
     setFocus(null);
   };
 
@@ -218,18 +216,15 @@ export function DistributionMapPage() {
   const crumbZone = zones?.features.find((zone) => zone.properties.zone_id === crumbZoneId);
   const crumbZoneName = crumbZone ? (crumbZone.properties.is_placeholder ? PLACEHOLDER_ZONE_LABEL : crumbZone.properties.name) : focusedRegion?.zone_name || undefined;
   const toIndonesia = () => {
-    const next = new URLSearchParams(params);
-    next.delete('zone_id');
-    next.delete('regency_id');
-    setParams(next, { replace: true });
+    edit((next) => { next.delete('zone_id'); next.delete('regency_id'); });
     setFocus(null);
     fit(INDONESIA_BOUNDS);
   };
   const toZone = () => {
-    const next = new URLSearchParams(params);
-    next.delete('regency_id');
-    if (crumbZoneId) next.set('zone_id', crumbZoneId);
-    setParams(next, { replace: true });
+    edit((next) => {
+      next.delete('regency_id');
+      if (crumbZoneId) next.set('zone_id', crumbZoneId);
+    });
     setFocus(null);
     const bounds = crumbZone ? geometryBounds(crumbZone.geometry) : null;
     if (bounds) fit(bounds);

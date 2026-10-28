@@ -53,3 +53,11 @@ test('focus returns to the previously focused element when the sheet closes', ()
   expect(opener).toHaveFocus();
   opener.remove();
 });
+
+test('the sheet drops the sibling margin of the page stack so it sits flush with the screen edge', () => {
+  renderSheet();
+  // The page lays its children out with space-y-6, which would add a 24 px bottom margin to a fixed
+  // element and lift it off the edge (found in the E2E at 390 x 844). jsdom has no Tailwind, so the
+  // important utility is asserted; the E2E measures the real position.
+  expect(screen.getByRole('region', { name: 'Detail titik' })).toHaveClass('mb-0!', 'bottom-0');
+});

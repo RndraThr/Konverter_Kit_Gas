@@ -39,7 +39,7 @@ function setOrDelete(params: URLSearchParams, key: string, value: string | undef
 
 // Map view state lives in the URL next to the existing filter params (regency_id,
 // program_id, ...). Only keys that belong to the map are ever touched.
-export function useMapUrlState(): { state: MapUrlState; update(patch: Partial<MapUrlState>): void } {
+export function useMapUrlState(): { state: MapUrlState; update(patch: Partial<MapUrlState>): void; edit(change: (next: URLSearchParams) => void): void } {
   const [params, setParams] = useSearchParams();
   const query = params.toString();
   const state = useMemo(() => parseState(new URLSearchParams(query)), [query]);
@@ -48,8 +48,16 @@ export function useMapUrlState(): { state: MapUrlState; update(patch: Partial<Ma
   const latest = useRef(query);
   useEffect(() => { latest.current = query; }, [query]);
 
-  const update = useCallback((patch: Partial<MapUrlState>) => {
+  // Every URL write goes through here (also the page's filters), so a map move and a filter change
+  // in the same tick never overwrite each other with a stale copy of the query.
+  const edit = useCallback((change: (next: URLSearchParams) => void) => {
     const next = new URLSearchParams(latest.current);
+    change(next);
+    latest.current = next.toString();
+    setParams(next, { replace: true });
+  }, [setParams]);
+
+  const update = useCallback((patch: Partial<MapUrlState>) => edit((next) => {
     if ('base' in patch) setOrDelete(next, 'base', patch.base);
     if ('color' in patch) setOrDelete(next, 'color', patch.color);
     if ('slot' in patch) setOrDelete(next, 'slot', patch.slot);
@@ -59,9 +67,7 @@ export function useMapUrlState(): { state: MapUrlState; update(patch: Partial<Ma
     if ('stage' in patch) setOrDelete(next, 'stage', patch.stage === undefined ? undefined : String(patch.stage));
     if ('center' in patch) setOrDelete(next, 'c', patch.center ? `${round(patch.center[0], 5)},${round(patch.center[1], 5)}` : undefined);
     if ('zoom' in patch) setOrDelete(next, 'z', patch.zoom === undefined ? undefined : String(round(patch.zoom, 2)));
-    latest.current = next.toString();
-    setParams(next, { replace: true });
-  }, [setParams]);
+  }), [edit]);
 
-  return { state, update };
+  return { state, update, edit };
 }

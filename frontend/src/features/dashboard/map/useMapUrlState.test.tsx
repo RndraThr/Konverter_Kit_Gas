@@ -72,3 +72,23 @@ test('center and zoom round-trip with bounded precision', () => {
   expect(result.current.map.state.center).toEqual([110.12346, -7.5]);
   expect(result.current.map.state.zoom).toBe(8.12);
 });
+
+test('a filter edit and a map move in the same tick both apply, in either order', () => {
+  const { result } = setup('/map?schedule_id=s1');
+  act(() => {
+    result.current.map.edit((next) => next.set('zone_id', 'z1'));
+    result.current.map.update({ center: [108.1, -6.4], zoom: 9 });
+  });
+  let p = new URLSearchParams(result.current.loc.search);
+  expect(p.get('zone_id')).toBe('z1');
+  expect(p.get('c')).toBe('108.1,-6.4');
+  expect(p.get('schedule_id')).toBe('s1');
+  act(() => {
+    result.current.map.update({ zoom: 10 });
+    result.current.map.edit((next) => next.delete('schedule_id'));
+  });
+  p = new URLSearchParams(result.current.loc.search);
+  expect(p.get('z')).toBe('10');
+  expect(p.get('zone_id')).toBe('z1');
+  expect(p.has('schedule_id')).toBe(false);
+});
