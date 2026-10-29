@@ -100,7 +100,7 @@ test('splits the catalog and distribution form into separate workspace regions',
 });
 
 test('polls the slot only while photos are still on their way to the final folder', () => {
-  const file = (storage_state: MediaFile['storage_state']) => ({ id: storage_state, original_filename: 'a.jpg', mime_type: 'image/jpeg', byte_size: 1, source: 'camera', status: 'accepted', storage_state, uploaded_at: '' }) as MediaFile;
+  const file = (storage_state: MediaFile['storage_state']): MediaFile => ({ id: storage_state, slot_id: 'ktp', original_filename: 'a.jpg', mime_type: 'image/jpeg', byte_size: 1, source: 'camera', status: 'accepted', content_url: '', storage_state });
   const withFiles = (status: DistributionSlot['status'], date: string | null, ...files: MediaFile[]) => ({
     ...slot, status, distribution_date: date,
     documentation: [{ code: 'ktp', label: 'KTP', stage: 'dokumen', required: true, files }],
