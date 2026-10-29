@@ -95,7 +95,7 @@ func TestPemeriksaanProfileNormalizeRejectsInvalidForms(t *testing.T) {
 }
 
 func TestPemeriksaanNarrativeAndFilename(t *testing.T) {
-	if got := pemeriksaanNarrative("2026-11-03", 2026); !strings.HasPrefix(got, "Pada Hari ini, Selasa Tanggal 3 November Tahun 2026, Telah dilakukan Pemeriksaan Fisik Barang") || !strings.HasSuffix(got, "Program Konversi Tahun 2026, dengan rincian sebagai berikut:") {
+	if got := pemeriksaanNarrative("2026-11-03", 2026); !strings.HasPrefix(got, "Pada Hari ini, Selasa Tanggal 3 November 2026, Telah dilakukan Pemeriksaan Fisik Barang") || !strings.HasSuffix(got, "Program Konversi Tahun 2026, dengan rincian sebagai berikut:") {
 		t.Fatalf("narrative=%q", got)
 	}
 	if got := formatPemeriksaanFilename("Selang Hisap & Buang", "Kab. Wonogiri", "2026-11-03", 2); got != "BA PEMERIKSAAN SELANG HISAP & BUANG - KAB. WONOGIRI - 2026-11-03 - V2.pdf" {

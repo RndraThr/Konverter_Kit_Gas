@@ -214,7 +214,7 @@ func activityNarrative(document activityDocument, documentDate string, fiscalYea
 	days := [...]string{"Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"}
 	months := [...]string{"", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"}
 	return []textSegment{
-		{text: fmt.Sprintf("Pada Hari ini, %s, Tanggal %d %s Tahun %d, Telah dilakukan %s kepada %s ", days[date.Weekday()], date.Day(), months[date.Month()], date.Year(), document.activity, document.audience), style: ""},
+		{text: fmt.Sprintf("Pada Hari ini, %s, Tanggal %d %s %d, Telah dilakukan %s kepada %s ", days[date.Weekday()], date.Day(), months[date.Month()], date.Year(), document.activity, document.audience), style: ""},
 		{text: "Pengadaan Barang Penyediaan dan Pendistribusian Paket Perdana ", style: "B"},
 		{text: "Liquefied Petroleum Gas", style: "BI"},
 		{text: fmt.Sprintf(" (LPG) untuk Mesin Pompa Air Bagi Petani Sasaran Tahun Anggaran %d di PT Pertamina Patra Niaga (Termasuk Pendistribusian Dan Pemasangan) %s", fiscalYear, zoneWithWords(titleCaseWords(zoneName))), style: "B"},

@@ -236,7 +236,7 @@ func formatPemeriksaanFilename(formTitle, regencyName, documentDate string, vers
 }
 
 // pemeriksaanNarrative menyusun "Pada Hari ini, Selasa Tanggal 3 November
-// Tahun 2026, Telah dilakukan Pemeriksaan Fisik Barang ..." sesuai referensi.
+// 2026, Telah dilakukan Pemeriksaan Fisik Barang ..." sesuai referensi.
 func pemeriksaanNarrative(documentDate string, fiscalYear int) string {
 	date, err := time.Parse("2006-01-02", documentDate)
 	if err != nil {
@@ -244,6 +244,6 @@ func pemeriksaanNarrative(documentDate string, fiscalYear int) string {
 	}
 	days := [...]string{"Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"}
 	months := [...]string{"", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"}
-	return fmt.Sprintf("Pada Hari ini, %s Tanggal %d %s Tahun %d, Telah dilakukan Pemeriksaan Fisik Barang atas Paket Konversi BBM ke BBG bagi Petani Sasaran Program Konversi Tahun %d, dengan rincian sebagai berikut:",
+	return fmt.Sprintf("Pada Hari ini, %s Tanggal %d %s %d, Telah dilakukan Pemeriksaan Fisik Barang atas Paket Konversi BBM ke BBG bagi Petani Sasaran Program Konversi Tahun %d, dengan rincian sebagai berikut:",
 		days[date.Weekday()], date.Day(), months[date.Month()], date.Year(), fiscalYear)
 }

@@ -155,9 +155,9 @@ func TestActivityNarrativeFollowsReference(t *testing.T) {
 		document activityDocument
 		opening  string
 	}{
-		{sosialisasiDocument, "Pada Hari ini, Sabtu, Tanggal 3 Oktober Tahun 2026, Telah dilakukan Sosialisasi kepada 10% penerima "},
-		{training10Document, "Pada Hari ini, Sabtu, Tanggal 3 Oktober Tahun 2026, Telah dilakukan Training kepada 10% penerima "},
-		{training100Document, "Pada Hari ini, Sabtu, Tanggal 3 Oktober Tahun 2026, Telah dilakukan Training kepada penerima "},
+		{sosialisasiDocument, "Pada Hari ini, Sabtu, Tanggal 3 Oktober 2026, Telah dilakukan Sosialisasi kepada 10% penerima "},
+		{training10Document, "Pada Hari ini, Sabtu, Tanggal 3 Oktober 2026, Telah dilakukan Training kepada 10% penerima "},
+		{training100Document, "Pada Hari ini, Sabtu, Tanggal 3 Oktober 2026, Telah dilakukan Training kepada penerima "},
 	}
 	for _, tc := range cases {
 		segments := activityNarrative(tc.document, "2026-10-03", 2026, "ZONA 4")
@@ -261,7 +261,7 @@ func TestZoneWithWordsSpellsTheZoneNumber(t *testing.T) {
 			t.Fatalf("zoneWithWords(%q)=%q, want %q", input, got, want)
 		}
 	}
-	if got := segmentsText(rakordaNarrative("2026-10-03", 2026, "ZONA 4")); got != "Pada hari ini, Sabtu, tanggal 3 Oktober tahun 2026, telah dilakukan Rapat Koordinasi (Rakor) Pengadaan Barang Penyediaan dan Pendistribusian Paket Perdana Liquefied Petroleum Gas (LPG) untuk Mesin Pompa Air bagi Petani Sasaran Tahun Anggaran 2026 di PT Pertamina Patra Niaga (Termasuk Pendistribusian dan Pemasangan) Zona 4 (Empat)." {
+	if got := segmentsText(rakordaNarrative("2026-10-03", 2026, "ZONA 4")); got != "Pada hari ini, Sabtu, tanggal 3 Oktober 2026, telah dilakukan Rapat Koordinasi (Rakor) Pengadaan Barang Penyediaan dan Pendistribusian Paket Perdana Liquefied Petroleum Gas (LPG) untuk Mesin Pompa Air bagi Petani Sasaran Tahun Anggaran 2026 di PT Pertamina Patra Niaga (Termasuk Pendistribusian dan Pemasangan) Zona 4 (Empat)." {
 		t.Fatalf("rakorda narrative=%q", got)
 	}
 }

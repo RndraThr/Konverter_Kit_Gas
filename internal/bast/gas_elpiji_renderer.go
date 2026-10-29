@@ -129,7 +129,7 @@ func gasElpijiStatement(documentDate string) string {
 	}
 	days := [...]string{"Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"}
 	months := [...]string{"", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"}
-	return fmt.Sprintf("Pada hari ini, %s, tanggal %d %s tahun %d, telah dilakukan pengantaran tabung gas elpiji dan diterima, dengan rincian sebagai berikut:", days[date.Weekday()], date.Day(), months[date.Month()], date.Year())
+	return fmt.Sprintf("Pada hari ini, %s, tanggal %d %s %d, telah dilakukan pengantaran tabung gas elpiji dan diterima, dengan rincian sebagai berikut:", days[date.Weekday()], date.Day(), months[date.Month()], date.Year())
 }
 
 // renderGasElpijiDetail menggambar tabel kecil di tengah: jumlah tabung dan

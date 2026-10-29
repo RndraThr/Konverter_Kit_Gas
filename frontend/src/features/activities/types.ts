@@ -24,7 +24,7 @@ export type ActivityMedia = {
   mime_type: string;
   byte_size: number;
   checksum: string;
-  source: 'camera' | 'gallery';
+  source: 'camera' | 'gallery' | 'distribution';
   status: 'active' | 'deleted';
   uploaded_by?: string;
   uploaded_at: string;
