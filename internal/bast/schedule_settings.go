@@ -1,6 +1,7 @@
 package bast
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -78,6 +79,9 @@ type ScheduleSettingsInput struct {
 	// ConsultantCompanyDefault diterima agar formulir yang mengirim ulang isi
 	// GET tidak ditolak, tetapi diabaikan (nilainya dari Nama Organisasi).
 	ConsultantCompanyDefault string `json:"consultant_company_default"`
+	// UpdatedAt juga hanya baca: aplikasi mobile mengirim ulang isi GET utuh
+	// saat menyimpan, jadi field ini diterima lalu diabaikan.
+	UpdatedAt json.RawMessage `json:"updated_at,omitempty"`
 }
 
 func (in *ScheduleSettingsInput) normalize() error {
