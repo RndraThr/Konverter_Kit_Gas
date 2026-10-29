@@ -21,8 +21,9 @@ const (
 )
 
 // Kolom: No., Nama Barang, Merek, Jumlah (Unit), TKDN. Proporsi mengikuti
-// referensi; lebar total sama dengan blok teks (154 mm).
-var tkdnColumnWidths = []float64{10.5, 57.7, 28.6, 28.6, 28.6}
+// referensi; lebar total sama dengan blok teks (pageWidthMM-2*marginMM =
+// 178 mm), sehingga tabel rata kiri-kanan dengan teks dan tidak condong.
+var tkdnColumnWidths = []float64{12, 67, 33, 33, 33}
 
 var tkdnSignatureHeaders = []string{"DINAS YANG\nMEMBIDANGI\nPERTANIAN DI DAERAH", "PELAKSANA\nPEMASANGAN &\nPENDISTRIBUSIAN", "KONSULTAN\nPENGAWAS", "PT PERTAMINA\nPATRA NIAGA"}
 

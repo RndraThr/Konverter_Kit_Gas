@@ -309,7 +309,9 @@ test('reports an empty progress table when no regency has data', async () => {
   expect(await screen.findByText('Belum ada wilayah dengan data pada filter ini.')).toBeVisible();
 });
 
-const selectedPanel = () => screen.findByRole('region', { name: 'Detail titik' });
+// The panel waits for the lazy map and its data: slow CI runners need more
+// than the default 1 s.
+const selectedPanel = () => screen.findByRole('region', { name: 'Detail titik' }, { timeout: 8000 });
 
 test('clicking a point opens the detail panel with milestone dates and the link to the nomor bagi', async () => {
   mockApi([region(), bangka()]);
@@ -329,7 +331,7 @@ test('a point outside its regency shows Perlu ditinjau in the panel', async () =
   mockApi([region(), bangka()]);
   renderPage('/map?slot=slot-2');
   const panel = await selectedPanel();
-  expect(within(panel).getByRole('status')).toHaveTextContent('Perlu ditinjau');
+  expect(await within(panel).findByRole('status')).toHaveTextContent('Perlu ditinjau');
 });
 
 test('a handover site lists its slots, and selecting it flies to the marker position, not to members[0]', async () => {
