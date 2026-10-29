@@ -273,6 +273,8 @@ func cleanupE2E(ctx context.Context, tx pgx.Tx) error {
 	statements := []cleanupStatement{
 		{`DELETE FROM audit_logs WHERE actor_user_id IN (SELECT id FROM users WHERE username=$1)`, []any{seedUsername}},
 		{`DELETE FROM eligibility_checks WHERE schedule_id IN (SELECT ps.id FROM program_schedules ps JOIN programs p ON p.id=ps.program_id WHERE p.code=$1) OR person_id IN (SELECT id FROM people WHERE full_name LIKE '% E2E%')`, []any{seedProgramCode}},
+		// Training photos copied from distribution by the server's worker.
+		{`DELETE FROM activity_media WHERE program_id IN (SELECT id FROM programs WHERE code=$1) OR regency_id IN (SELECT id FROM regencies WHERE document_code IN ('EEW',$2))`, []any{seedProgramCode, mapRegencyCode}},
 		{`DELETE FROM distribution_slots WHERE schedule_id IN (SELECT ps.id FROM program_schedules ps JOIN programs p ON p.id=ps.program_id WHERE p.code=$1)`, []any{seedProgramCode}},
 		{`DELETE FROM package_allocations WHERE schedule_id IN (SELECT ps.id FROM program_schedules ps JOIN programs p ON p.id=ps.program_id WHERE p.code=$1)`, []any{seedProgramCode}},
 		{`DELETE FROM candidate_nominations WHERE person_id IN (SELECT id FROM people WHERE full_name LIKE 'Penerima Peta E2E%')`, nil},
