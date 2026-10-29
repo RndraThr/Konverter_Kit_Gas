@@ -106,11 +106,7 @@ func renderPemeriksaanForm(pdf *fpdf.Fpdf, snapshot PemeriksaanSnapshot, logos [
 		{"Pemasok", textnorm.DisplayTitle(snapshot.SupplierName)},
 		{"Fungsi Peminta Pengadaan", pemeriksaanRequester},
 	} {
-		baseline := textBaseline(y, pemeriksaanMetaRowMM, activityTextPt)
-		pdf.Text(textLeft, baseline, item.label)
-		pdf.Text(textLeft+pemeriksaanMetaLabelMM, baseline, ":")
-		pdf.Text(textLeft+pemeriksaanMetaLabelMM+3.5, baseline, item.value)
-		y += pemeriksaanMetaRowMM
+		y = drawMetaRow(pdf, textLeft, pemeriksaanMetaLabelMM, textLeft+tableWidth, y, pemeriksaanMetaRowMM, activityTextPt, item.label, item.value)
 	}
 
 	pdf.SetXY(textLeft, y+4)
@@ -121,12 +117,26 @@ func renderPemeriksaanForm(pdf *fpdf.Fpdf, snapshot PemeriksaanSnapshot, logos [
 	pdf.SetY(y + 8)
 	renderPemeriksaanTable(pdf, snapshot, textLeft)
 
+	// Isian yang sangat panjang memperpanjang tabel A; bagian berikutnya lalu
+	// dipindah utuh ke halaman lanjutan agar tidak melewati batas bawah.
+	limit := pageHeightMM - bottomMarginMM
+	continuePage := func() float64 {
+		pdf.AddPage()
+		return renderRakordaLogoStrip(pdf, logos) + activityTopGapMM
+	}
 	y = pdf.GetY() + 7
+	if y+9+pemeriksaanChecklistHeight > limit {
+		y = continuePage()
+	}
 	renderPemeriksaanSectionTitle(pdf, y, "B.", "Hasil Pemeriksaan Barang")
 	pdf.SetY(y + 9)
 	renderPemeriksaanChecklist(pdf, snapshot.Form.Checklist)
 
-	renderPemeriksaanNote(pdf, pdf.GetY()+5, textLeft, tableWidth, snapshot.Form.Note)
+	noteY := pdf.GetY() + 5
+	if noteY+pemeriksaanNoteHeight(pdf, tableWidth, snapshot.Form.Note) > limit {
+		noteY = continuePage()
+	}
+	renderPemeriksaanNote(pdf, noteY, textLeft, tableWidth, snapshot.Form.Note)
 
 	signature := layoutActivitySignatures(pdf, snapshot.Signatories, pemeriksaanSignatureHeaders).withMarks(fourSignatories, snapshot.SignatureMarks)
 	pdf.AddPage()
@@ -270,14 +280,27 @@ func drawPemeriksaanCheckbox(pdf *fpdf.Fpdf, x, y float64, checked bool) {
 	pdf.Text(x+0.45, y+size-0.5, "4")
 }
 
-func renderPemeriksaanNote(pdf *fpdf.Fpdf, y, left, width float64, note string) {
+// pemeriksaanChecklistHeight adalah tinggi daftar Hasil Pemeriksaan (8 baris).
+const pemeriksaanChecklistHeight = 8 * pemeriksaanChecklistRow
+
+const pemeriksaanNoteLineMM = 5.2
+
+func pemeriksaanNoteLines(pdf *fpdf.Fpdf, width float64, note string) []string {
 	if strings.TrimSpace(note) == "" {
 		note = defaultPemeriksaanNote
 	}
 	pdf.SetFont(activityFont, "", activityTextPt)
-	lines := wrapWords(pdf, "Note : "+note, width-2*activitySignaturePadXMM)
-	lineHeight := 5.2
-	height := 2 + lineHeight + float64(len(lines))*lineHeight + 3
+	return wrapWords(pdf, "Note : "+note, width-2*activitySignaturePadXMM)
+}
+
+func pemeriksaanNoteHeight(pdf *fpdf.Fpdf, width float64, note string) float64 {
+	return 2 + pemeriksaanNoteLineMM + float64(len(pemeriksaanNoteLines(pdf, width, note)))*pemeriksaanNoteLineMM + 3
+}
+
+func renderPemeriksaanNote(pdf *fpdf.Fpdf, y, left, width float64, note string) {
+	lines := pemeriksaanNoteLines(pdf, width, note)
+	lineHeight := pemeriksaanNoteLineMM
+	height := pemeriksaanNoteHeight(pdf, width, note)
 	pdf.Rect(left, y, width, height, "D")
 	pdf.SetFont(activityFont, "B", activityTextPt)
 	baseline := textBaseline(y+1, lineHeight, activityTextPt)

@@ -175,11 +175,17 @@ func renderGasElpijiSignatures(pdf *fpdf.Fpdf, snapshot GasElpijiSnapshot) {
 	usable := width - 2*activitySignaturePadXMM
 	receiver := wrapWords(pdf, strings.TrimSpace("Nama : "+textnorm.DisplayTitle(snapshot.ReceiverName)), usable)
 	if company != "" {
-		receiver = append(receiver, "", company)
+		receiver = append(append(receiver, ""), wrapWords(pdf, company, usable)...)
 	}
 	names := [][]string{receiver, wrapWords(pdf, strings.TrimSpace("Nama : "+textnorm.DisplayTitle(snapshot.PertaminaName)), usable)}
 	lineHeight := activitySignatureLineHeight()
 	nameHeight := tightCellHeight(names) + 1
+	// Isian yang sangat panjang dapat mendorong tabel tanda tangan melewati
+	// batas bawah; tabel itu lalu dipindah utuh ke halaman berikutnya.
+	if pdf.GetY()+gasElpijiSignHeadMM+gasElpijiSignSpaceMM+nameHeight > pageHeightMM-bottomMarginMM {
+		pdf.AddPage()
+		pdf.SetY(topMarginMM)
+	}
 	x := (pageWidthMM - 2*width) / 2
 	y := pdf.GetY()
 	for i, header := range []string{"Penerima", "PT Pertamina Patra Niaga"} {
