@@ -75,7 +75,7 @@ test('a new delivery date keeps the warehouse and names but needs a fresh count'
 test('wet signature mode saves the draft, blocks finalizing without a scan, and holds the merge', async () => {
   mockApi({ receipts: [receipt], drafts: [], total_cylinders: 120, merged: null, merged_current: false }, { enabled: true })
   renderPanel('2026-12-12')
-  expect(await screen.findByText('Tanda tangan basah')).toBeVisible()
+  expect(await screen.findByText('Tanda tangan basah: unggah halaman bertanda tangan sebelum finalisasi.')).toBeVisible()
   expect(screen.getByLabelText(/^Nama penerima/)).toHaveAttribute('placeholder', 'ANDI PELAKSANA')
   expect(screen.getByText(/1 penerimaan belum memakai halaman bertanda tangan basah/)).toBeVisible()
   expect(screen.getByRole('button', { name: 'Gabungkan & finalisasi' })).toBeDisabled()

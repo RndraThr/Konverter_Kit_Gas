@@ -14,6 +14,7 @@ import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
 import { SignatureSettingsPanel } from './SignatureSettingsPanel';
+import { useWetSignatureBlocked, WetSignatureHint } from './WetSignatureBar';
 import { PemeriksaanFormsEditor } from './PemeriksaanFormsEditor';
 import { DocumentInfoFields } from './DocumentInfoFields';
 import type { AggregateDocument, PemeriksaanForm, PemeriksaanProfile, PemeriksaanSummary } from './types';
@@ -34,6 +35,7 @@ export function PemeriksaanPanel({ scheduleID, programID, regencyName, programTy
   const [previewPage, setPreviewPage] = useState<number | undefined>();
   const [showEditor, setShowEditor] = useState(false);
   const [showSignatures, setShowSignatures] = useState(false);
+  const wetBlocked = useWetSignatureBlocked(scheduleID, 'ba-pemeriksaan', documentDate);
 
   const summary = useQuery({
     queryKey: ['bast', 'pemeriksaan', 'summary', scheduleID],
@@ -131,8 +133,10 @@ export function PemeriksaanPanel({ scheduleID, programID, regencyName, programTy
             </div>}
           <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
             <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>
-            {canManage && <Button disabled={finalize.isPending || !ready || documentDate === ''} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi semua form'}</Button>}
+            {canManage && <Button disabled={finalize.isPending || !ready || documentDate === '' || wetBlocked} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi semua form'}</Button>}
           </div>
+
+          {ready && documentDate !== '' && <WetSignatureHint scheduleID={scheduleID} document="ba-pemeriksaan" date={documentDate} open={showSignatures} onOpen={() => setShowSignatures(true)} />}
 
           {!ready && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">Belum ada distribusi selesai pada jadwal ini.</div>}
 

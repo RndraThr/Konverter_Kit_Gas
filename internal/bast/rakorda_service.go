@@ -129,11 +129,18 @@ func (s *RakordaService) Preview(ctx context.Context, scheduleID, documentDate s
 		return AggregatePreview{}, err
 	}
 	snapshot.SignatureMarks = marks
+	var wetImages map[string][]byte
+	if documentKey := rakordaSignatureDocument(s.spec.kind); documentKey != "" {
+		if snapshot.Wet, wetImages, err = loadWetSignature(ctx, s.repository, ctxData.ScheduleID, documentKey, snapshot.DocumentDate, snapshot); err != nil {
+			return AggregatePreview{}, err
+		}
+	}
 	logoBytes, err := loadLogoBytes(ctx, s.storage, logos)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
 	mergeImages(logoBytes, markImages)
+	mergeImages(logoBytes, wetImages)
 	slotIDs := make([]string, 0, len(snapshot.Participants))
 	for _, participant := range snapshot.Participants {
 		slotIDs = append(slotIDs, participant.SignatureKey)

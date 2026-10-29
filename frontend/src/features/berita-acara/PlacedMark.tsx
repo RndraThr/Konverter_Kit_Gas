@@ -10,6 +10,12 @@ type Props = {
   /** Ukuran kotak tanda tangan (CSS px); posisi memakai satuan tinggi kotak, sama seperti PDF. */
   boxWidth: number;
   boxHeight: number;
+  /** 1 mm dalam CSS px: jarak minimal gambar dari garis kolom (sama dengan PDF). */
+  insetPx?: number;
+  /** Kepekatan gambar (stempel); 1 = penuh. */
+  opacity?: number;
+  /** Urutan tumpukan di kolom: lebih besar di atas. */
+  layer?: number;
   editable: boolean;
   selected: boolean;
   onSelect: () => void;
@@ -29,14 +35,24 @@ const round3 = (value: number) => Math.round(value * 1000) / 1000;
  * dipertahankan. Saat dipilih, gambar bisa digeser, diubah ukurannya (handle
  * sudut), diputar (handle atas), atau digeser dengan tombol panah.
  */
-export function PlacedMark({ kind, src, alt, placement, boxWidth, boxHeight, editable, selected, onSelect, onChange, onAspect }: Props) {
+export function PlacedMark({ kind, src, alt, placement, boxWidth, boxHeight, insetPx = 0, opacity = 1, layer = 1, editable, selected, onSelect, onChange, onAspect }: Props) {
   const element = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
   const [aspect, setAspect] = useState(1);
   const side = placement.size * boxHeight;
-  const width = aspect >= 1 ? side : side * aspect;
-  const height = aspect >= 1 ? side / aspect : side;
-  const maxX = Math.min(placementLimits.maxX, boxWidth / 2 / boxHeight);
+  let width = aspect >= 1 ? side : side * aspect;
+  let height = aspect >= 1 ? side / aspect : side;
+  // Sama dengan PDF (fitMarkInColumn): gambar lebih lebar dari kolom
+  // diperkecil, dan pusatnya dijaga agar gambar tetap di dalam kolom.
+  const maxWidth = boxWidth - 2 * insetPx;
+  if (maxWidth > 0 && width > maxWidth) {
+    height *= maxWidth / width;
+    width = maxWidth;
+  }
+  const half = width / 2 + insetPx;
+  const centerLimit = 2 * half <= boxWidth ? boxWidth / 2 - half : boxWidth / 2;
+  const maxX = Math.min(placementLimits.maxX, centerLimit / boxHeight);
+  const centerX = clamp(placement.x * boxHeight, -centerLimit, centerLimit);
   const active = editable && selected;
 
   const begin = (mode: Drag['mode']) => (event: ReactPointerEvent<HTMLElement>) => {
@@ -59,7 +75,7 @@ export function PlacedMark({ kind, src, alt, placement, boxWidth, boxHeight, edi
     if (current.mode === 'move') {
       onChange({
         ...start,
-        x: round3(clamp(start.x + (event.clientX - current.startX) / boxHeight, -maxX, maxX)),
+        x: round3(clamp(clamp(start.x, -maxX, maxX) + (event.clientX - current.startX) / boxHeight, -maxX, maxX)),
         y: round3(clamp(start.y + (event.clientY - current.startY) / boxHeight, -placementLimits.maxY, placementLimits.maxY)),
       });
     } else if (current.mode === 'resize') {
@@ -84,7 +100,7 @@ export function PlacedMark({ kind, src, alt, placement, boxWidth, boxHeight, edi
     event.preventDefault();
     onChange({
       ...placement,
-      x: round3(clamp(placement.x + move[0], -maxX, maxX)),
+      x: round3(clamp(clamp(placement.x, -maxX, maxX) + move[0], -maxX, maxX)),
       y: round3(clamp(placement.y + move[1], -placementLimits.maxY, placementLimits.maxY)),
     });
   };
@@ -98,12 +114,12 @@ export function PlacedMark({ kind, src, alt, placement, boxWidth, boxHeight, edi
     data-testid={`mark-${kind}`}
     className={`pointer-events-auto absolute touch-none select-none focus-visible:outline-none ${editable ? 'cursor-move' : 'cursor-pointer'} ${active ? 'outline-2 outline-dashed outline-primary' : 'hover:outline-1 hover:outline-dashed hover:outline-primary/50'}`}
     style={{
-      left: `calc(50% + ${placement.x * boxHeight}px)`,
+      left: `calc(50% + ${centerX}px)`,
       top: `calc(50% + ${placement.y * boxHeight}px)`,
       width,
       height,
       transform: `translate(-50%, -50%) rotate(${placement.rotation}deg)`,
-      zIndex: selected ? 3 : kind === 'stamp' ? 2 : 1,
+      zIndex: layer,
     }}
     onPointerDown={begin('move')}
     onKeyDown={nudge}
@@ -120,7 +136,8 @@ export function PlacedMark({ kind, src, alt, placement, boxWidth, boxHeight, edi
           onAspect?.(naturalWidth / naturalHeight);
         }
       }}
-      className={`pointer-events-none size-full object-contain ${kind === 'stamp' ? 'opacity-90 mix-blend-multiply' : ''}`}
+      className={`pointer-events-none size-full object-contain ${opacity < 1 ? 'mix-blend-multiply' : ''}`}
+      style={{ opacity }}
     />
     {active && <>
       <span aria-hidden="true" className="absolute -top-5 left-1/2 h-5 w-px -translate-x-1/2 bg-primary" />

@@ -13,6 +13,7 @@ import { uppercaseBusinessText } from '@/lib/text';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
 import { SignatureSettingsPanel } from './SignatureSettingsPanel';
+import { WetSignatureHint } from './WetSignatureBar';
 import { RakordaArchive } from './RakordaArchive';
 import type { ScheduleSettings, TrainingDate } from './types';
 
@@ -117,6 +118,7 @@ export function TrainingPanel({ config, scheduleID, regencyName, programType }: 
               </div>
             </div>
             {!selected?.handover_location && !savedLocation.trim() && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">Lokasi belum diisi: dicetak kosong.</p>}
+            {selectedDate !== '' && <WetSignatureHint scheduleID={scheduleID} document={config.apiPath} date={selectedDate} open={showSignatures} onOpen={() => setShowSignatures(true)} />}
             {ready && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label={config.documentTitle} />}
           </CardContent>
         </Card>

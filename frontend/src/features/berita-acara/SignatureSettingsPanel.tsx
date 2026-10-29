@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eraser, ImageUp, PenLine, RotateCcw, Save, Signature, Trash2, Undo2, ZoomIn, ZoomOut } from 'lucide-react';
+import { Eraser, ImageUp, PenLine, Printer, RotateCcw, Save, Signature, Trash2, Undo2, ZoomIn, ZoomOut } from 'lucide-react';
 import { useEffect, useId, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { DataState } from '@/components/DataState';
@@ -13,12 +13,20 @@ import { useCan } from '@/lib/permissions';
 import { uppercaseBusinessText } from '@/lib/text';
 import { InlineSignatureCanvas } from './InlineSignatureCanvas';
 import { SignatureTableEditor, type EditorDrawing, type EditorItem, type EditorSelection } from './SignatureTableEditor';
+import { WetSignatureBar } from './WetSignatureBar';
 import {
-  defaultSignaturePlacement, defaultStampPlacement, imageFileToPNGBase64, samePlacement, signatoryHeadings, signatoryPath, sizeLimits,
+  defaultSignaturePlacement, defaultStampOpacity, defaultStampPlacement, imageFileToPNGBase64, minStampOpacity, samePlacement, signatoryHeadings, signatoryPath, sizeLimits,
   type MarkPlacement, type SignatoryCard, type SignatoryKind, type SignatoryRole, type SignatureLayout, type SignatureRule, type SignatureRules, type SignatureSettings,
 } from './signatures';
 
-type Props = { scheduleID: string; document: string; documentLabel: string; date: string };
+type Props = {
+  scheduleID: string;
+  document: string;
+  documentLabel: string;
+  date: string;
+  /** Kunci tanda tangan basah bila berbeda dari document (Closing Titik Serah: per lokasi). */
+  wetDocument?: string;
+};
 type DataResponse<T> = { data: T };
 
 type PendingImage = { image: string; preview: string };
@@ -41,6 +49,7 @@ function initialDraft(card: SignatoryCard, rule: SignatureRule | undefined): Dra
 function sameRule(a: SignatureRule, b: SignatureRule | undefined) {
   const other = { ...emptyRule, ...b };
   return a.signature === other.signature && a.stamp === other.stamp
+    && (a.stamp_opacity ?? null) === (other.stamp_opacity ?? null) && Boolean(a.stamp_below) === Boolean(other.stamp_below)
     && samePlacement(a.signature_placement, other.signature_placement) && samePlacement(a.stamp_placement, other.stamp_placement);
 }
 
@@ -53,11 +62,10 @@ function sameRule(a: SignatureRule, b: SignatureRule | undefined) {
  * Nama, tanda tangan, dan stempel berlaku untuk semua BA jadwal ini; pilihan
  * cetak dan posisi global jadwal, atau khusus BA ini bila "Atur khusus" nyala.
  */
-export function SignatureSettingsPanel({ scheduleID, document, documentLabel, date }: Props) {
+export function SignatureSettingsPanel({ scheduleID, document, documentLabel, date, wetDocument = document }: Props) {
   const canManage = useCan('bast.manage');
   const queryClient = useQueryClient();
   const switchID = useId();
-  const wetSwitchID = useId();
   const settings = useQuery({
     queryKey: ['bast', 'signatures', scheduleID, document],
     queryFn: () => apiRequest<DataResponse<SignatureSettings>>(`/api/v1/bast/signatures?schedule_id=${encodeURIComponent(scheduleID)}&document=${encodeURIComponent(document)}`),
@@ -119,6 +127,8 @@ export function SignatureSettingsPanel({ scheduleID, document, documentLabel, da
     items[card.role] = {
       signature: draft.rule.signature && src.signature ? { src: src.signature, placement: placementFor(card.role, 'signature', draft.rule) } : undefined,
       stamp: draft.rule.stamp && src.stamp ? { src: src.stamp, placement: placementFor(card.role, 'stamp', draft.rule) } : undefined,
+      stampOpacity: draft.rule.stamp_opacity ?? defaultStampOpacity,
+      stampBelow: Boolean(draft.rule.stamp_below),
     };
   }
 
@@ -190,7 +200,8 @@ export function SignatureSettingsPanel({ scheduleID, document, documentLabel, da
   // Saat diaktifkan, aturan khusus dimulai dari aturan global; saat dimatikan
   // BA kembali memakai global (aturan khusus tetap tersimpan, tidak aktif).
   const toggleOverride = () => saveRules.mutate({ override: !data.override, rules: data.global_rules, wet_signature: data.wet_signature });
-  const toggleWet = () => saveRules.mutate({ override: data.override, rules: data.rules, wet_signature: !data.wet_signature });
+  const setWet = (wet: boolean) => { if (wet !== data.wet_signature) saveRules.mutate({ override: data.override, rules: data.rules, wet_signature: wet }); };
+  const wet = data.wet_supported && data.wet_signature;
 
   const selectedCard = cards.find((card) => card.role === selection?.role) ?? cards[0];
   const selectedDraft = selectedCard ? drafts[selectedCard.role] : undefined;
@@ -200,28 +211,53 @@ export function SignatureSettingsPanel({ scheduleID, document, documentLabel, da
   return <Card>
     <CardHeader className="border-b"><CardTitle className="flex items-center gap-2 text-base"><Signature className="size-4 text-primary" aria-hidden="true" />Penandatangan</CardTitle></CardHeader>
     <CardContent className="grid gap-4 pt-5">
-      <div className={`grid gap-3 ${data.wet_supported ? 'lg:grid-cols-2' : ''}`}>
-        <SwitchRow
-          id={switchID}
-          checked={data.override}
-          disabled={!canManage || saveRules.isPending}
-          onToggle={toggleOverride}
-          label={`Atur khusus untuk ${documentLabel}`}
-          description={`${data.override
-            ? `Pilihan cetak serta posisi tanda tangan dan stempel hanya berlaku untuk ${documentLabel}.`
-            : 'Pilihan cetak serta posisi tanda tangan dan stempel adalah pengaturan global jadwal ini, berlaku untuk semua BA yang tidak diatur khusus.'} Nama, tanda tangan, dan stempel selalu dipakai bersama di semua BA kabupaten ini.`}
-        />
-        {data.wet_supported && <SwitchRow
-          id={wetSwitchID}
-          checked={data.wet_signature}
-          disabled={!canManage || saveRules.isPending}
-          onToggle={toggleWet}
-          label="Tanda tangan basah"
-          description={`Halaman tanda tangan dicetak, ditandatangani dan distempel basah, lalu hasil pindainya diunggah dan menggantikan halaman tanda tangan di PDF. ${data.override ? `Hanya untuk ${documentLabel}.` : 'Berlaku untuk semua BA jadwal ini yang tidak diatur khusus.'}`}
-        />}
-      </div>
+      {data.wet_supported && <ModeTabs wet={data.wet_signature} disabled={!canManage || saveRules.isPending} onChange={setWet} />}
+      <SwitchRow
+        id={switchID}
+        checked={data.override}
+        disabled={!canManage || saveRules.isPending}
+        onToggle={toggleOverride}
+        label={`Atur khusus untuk ${documentLabel}`}
+        description={`${data.override
+          ? `Cara tanda tangan, pilihan cetak, serta posisi tanda tangan dan stempel hanya berlaku untuk ${documentLabel}.`
+          : 'Cara tanda tangan, pilihan cetak, serta posisi tanda tangan dan stempel mengikuti pengaturan global jadwal ini (semua BA yang tidak diatur khusus).'} Nama, tanda tangan, dan stempel selalu dipakai bersama di semua BA kabupaten ini.`}
+      />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
+      {wet && <div className="grid gap-4">
+        <ol className="grid gap-2 text-sm sm:grid-cols-3">
+          {[
+            [Printer, 'Cetak halaman tanda tangan', 'Nama di bawah ini ikut tercetak.'],
+            [PenLine, 'Tanda tangan & stempel basah', 'Oleh semua pihak di kertas.'],
+            [ImageUp, 'Unggah hasil pindai/foto', 'Menggantikan halaman tanda tangan di PDF.'],
+          ].map(([Icon, title, text], index) => {
+            const StepIcon = Icon as typeof Printer;
+            return <li key={index} className="flex gap-3 rounded-lg border p-3">
+              <span className="grid size-7 shrink-0 place-items-center rounded-full bg-primary/10 text-xs font-semibold text-primary">{index + 1}</span>
+              <div className="grid gap-0.5"><span className="flex items-center gap-1.5 font-medium"><StepIcon className="size-3.5" aria-hidden="true" />{title as string}</span><span className="text-xs text-muted-foreground">{text as string}</span></div>
+            </li>;
+          })}
+        </ol>
+        {date !== '' && <WetSignatureBar scheduleID={scheduleID} document={wetDocument} date={date} label={documentLabel} />}
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {cards.map((card) => {
+            const draft = drafts[card.role];
+            if (!draft) return null;
+            return <div key={card.role} className="grid content-start gap-2 rounded-lg border p-3">
+              <span className="text-sm font-semibold">{signatoryHeadings[card.role]}</span>
+              <div className="grid gap-1">
+                <Label htmlFor={`${switchID}-${card.role}-name`}>Nama</Label>
+                <Input id={`${switchID}-${card.role}-name`} value={draft.name} disabled={!canManage} onChange={(event) => updateDraft(card.role, { name: uppercaseBusinessText(event.target.value) })} />
+              </div>
+              {card.role === 'agriculture_office' && <div className="grid gap-1">
+                <Label htmlFor={`${switchID}-${card.role}-nip`}>NIP</Label>
+                <Input id={`${switchID}-${card.role}-nip`} inputMode="numeric" value={draft.nip} disabled={!canManage} onChange={(event) => updateDraft(card.role, { nip: event.target.value })} />
+              </div>}
+            </div>;
+          })}
+        </div>
+      </div>}
+
+      {!wet && <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="grid min-w-0 content-start gap-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Pihak penandatangan">
@@ -278,7 +314,7 @@ export function SignatureSettingsPanel({ scheduleID, document, documentLabel, da
           onDraw={() => { setSelection({ role: selectedCard.role }); setDrawing(selectedCard.role); }}
           onSelectMark={(kind) => setSelection({ role: selectedCard.role, kind })}
         />}
-      </div>
+      </div>}
 
       {canManage && <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
         <p className="text-xs text-muted-foreground">{dirty ? `Perubahan belum disimpan: ${dirtyRoles.map((card) => signatoryHeadings[card.role]).join(', ')}.` : 'Semua perubahan tersimpan.'}</p>
@@ -365,6 +401,7 @@ function SignatoryEditor({ card, draft, sources, canManage, placement, onDraft, 
           <Label htmlFor={`${id}-white`} className="text-xs font-normal">Hapus latar putih hasil pindai</Label>
         </div>
         {sources.stamp && <PlacementControls kind="stamp" heading={heading} placement={placement('stamp')} custom={Boolean(draft.rule.stamp_placement)} onChange={(value) => onPlacement('stamp', value)} />}
+        {sources.stamp && <StampLook heading={heading} opacity={draft.rule.stamp_opacity ?? defaultStampOpacity} below={Boolean(draft.rule.stamp_below)} onOpacity={(value) => onRule({ stamp_opacity: value })} onBelow={(value) => onRule({ stamp_below: value })} />}
       </>}
     </div>
   </section>;
@@ -387,6 +424,33 @@ function PlacementControls({ kind, heading, placement, custom, onChange }: Contr
       <ExactNumber label={`Putar ${label} ${heading} (derajat)`} unit="°" value={Math.round(placement.rotation)} min={-180} max={180} onCommit={(value) => onChange({ ...placement, rotation: value })} />
     </div>
     <Button type="button" size="sm" variant="ghost" className="justify-self-start" disabled={!custom} onClick={() => onChange(null)}><RotateCcw aria-hidden="true" />Posisi bawaan {label}</Button>
+  </div>;
+}
+
+type StampLookProps = { heading: string; opacity: number; below: boolean; onOpacity: (value: number) => void; onBelow: (value: boolean) => void };
+
+/** Kepekatan stempel dan letaknya di atas atau di bawah tanda tangan. */
+function StampLook({ heading, opacity, below, onOpacity, onBelow }: StampLookProps) {
+  const percent = Math.round(opacity * 100);
+  return <div className="grid gap-2 rounded-md bg-muted/40 p-2">
+    <div className="grid grid-cols-[3.5rem_minmax(0,1fr)_4.5rem] items-center gap-2 text-xs">
+      <span>Pekat</span>
+      <input type="range" aria-label={`Kepekatan stempel ${heading}`} min={minStampOpacity * 100} max={100} step={1} value={percent} onChange={(event) => onOpacity(Number(event.target.value) / 100)} />
+      <ExactNumber label={`Kepekatan stempel ${heading} (persen)`} unit="%" value={percent} min={minStampOpacity * 100} max={100} onCommit={(value) => onOpacity(value / 100)} />
+    </div>
+    <div className="grid grid-cols-[3.5rem_minmax(0,1fr)] items-center gap-2 text-xs">
+      <span>Letak</span>
+      <div role="radiogroup" aria-label={`Letak stempel ${heading}`} className="grid grid-cols-2 gap-1 rounded-md bg-background p-0.5">
+        {[{ value: false, label: 'Di atas TTD' }, { value: true, label: 'Di bawah TTD' }].map((option) => <button
+          key={option.label}
+          type="button"
+          role="radio"
+          aria-checked={below === option.value}
+          onClick={() => onBelow(option.value)}
+          className={`rounded px-2 py-1 font-medium ${below === option.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted'}`}
+        >{option.label}</button>)}
+      </div>
+    </div>
   </div>;
 }
 
@@ -417,6 +481,37 @@ function ExactNumber({ label, unit, value, min, max, onCommit }: ExactNumberProp
     />
     <span className="text-muted-foreground">{unit}</span>
   </span>;
+}
+
+type ModeTabsProps = { wet: boolean; disabled: boolean; onChange: (wet: boolean) => void };
+
+/**
+ * Pilih cara tanda tangan BA: digital (gambar tanda tangan dan stempel
+ * dicetak sistem) atau basah (halaman dicetak, ditandatangani di kertas,
+ * lalu hasil pindainya diunggah). Hanya satu yang berlaku.
+ */
+function ModeTabs({ wet, disabled, onChange }: ModeTabsProps) {
+  const options = [
+    { value: false, label: 'Tanda tangan digital', description: 'Tanda tangan dan stempel digital dicetak langsung di BA.' },
+    { value: true, label: 'Tanda tangan basah', description: 'Cetak halaman tanda tangan, tandatangani di kertas, lalu unggah hasil pindai.' },
+  ];
+  return <div role="tablist" aria-label="Cara tanda tangan" className="grid gap-2 rounded-xl bg-muted p-1 sm:grid-cols-2">
+    {options.map((option) => {
+      const active = option.value === wet;
+      return <button
+        key={option.label}
+        type="button"
+        role="tab"
+        aria-selected={active}
+        disabled={disabled && !active}
+        onClick={() => onChange(option.value)}
+        className={`grid gap-0.5 rounded-lg px-3 py-2 text-left transition-colors disabled:opacity-60 ${active ? 'bg-background shadow-sm ring-1 ring-primary/40' : 'hover:bg-background/60'}`}
+      >
+        <span className={`text-sm font-semibold ${active ? 'text-primary' : ''}`}>{option.label}</span>
+        <span className="text-xs text-muted-foreground">{option.description}</span>
+      </button>;
+    })}
+  </div>;
 }
 
 type SwitchRowProps = { id: string; checked: boolean; disabled: boolean; onToggle: () => void; label: string; description: string };

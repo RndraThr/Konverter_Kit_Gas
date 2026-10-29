@@ -12,7 +12,7 @@ import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
 import { SignatureSettingsPanel } from './SignatureSettingsPanel';
-import { useWetSignatureBlocked, WetSignatureBar } from './WetSignatureBar';
+import { useWetSignatureBlocked, WetSignatureHint } from './WetSignatureBar';
 import { DocumentInfoFields } from './DocumentInfoFields';
 import type { AggregateDocument, ScheduleSettings, ServisBerkalaSummary } from './types';
 
@@ -131,7 +131,7 @@ export function ServisBerkalaPanel({ scheduleID, regencyName, programType, defau
             <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>
             {canManage && <Button disabled={finalize.isPending || status !== 'ready' || documentDate === '' || wetBlocked} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
           </div>
-          <WetSignatureBar scheduleID={scheduleID} document="servis-berkala" date={documentDate} label="Servis Berkala" />
+          <WetSignatureHint scheduleID={scheduleID} document="servis-berkala" date={documentDate} open={showSignatures} onOpen={() => setShowSignatures(true)} />
 
           {status === 'no_recipients' && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">Belum ada distribusi selesai pada jadwal ini.</div>}
           {status === 'servis_schedule_required' && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">Tanggal servis belum lengkap: dibiarkan kosong di preview. Lengkapi dan simpan jadwal servis sebelum finalisasi.</p>}

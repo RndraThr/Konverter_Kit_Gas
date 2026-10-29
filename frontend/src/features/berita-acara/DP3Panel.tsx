@@ -12,7 +12,7 @@ import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
 import { SignatureSettingsPanel } from './SignatureSettingsPanel';
-import { useWetSignatureBlocked, WetSignatureBar } from './WetSignatureBar';
+import { useWetSignatureBlocked, WetSignatureHint } from './WetSignatureBar';
 import { incompletePreviewNote, previewBlockingStatus } from './previewStatus';
 import { DocumentInfoFields } from './DocumentInfoFields';
 import type { AggregateDocument, DailyRecapDate, DP3Recipient } from './types';
@@ -127,7 +127,7 @@ export function DP3Panel({ scheduleID, regencyName, programType }: Props) {
               <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>
               {canManage && <Button disabled={busy || !selectedReady || wetBlocked} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
             </div>
-            <WetSignatureBar scheduleID={scheduleID} document="dp3" date={selectedDate} label="DP3" />
+            <WetSignatureHint scheduleID={scheduleID} document="dp3" date={selectedDate} open={showSignatures} onOpen={() => setShowSignatures(true)} />
 
             {activeDoc && <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center">
               <div><div className="flex items-center gap-2"><FileCheck2 className="size-4 text-emerald-600" /><strong className="text-sm">{activeDoc.filename}</strong></div><p className="mt-1 text-xs text-muted-foreground">Versi {activeDoc.version} · {activeDoc.page_count} halaman · {activeDoc.recipient_count} penerima</p></div>

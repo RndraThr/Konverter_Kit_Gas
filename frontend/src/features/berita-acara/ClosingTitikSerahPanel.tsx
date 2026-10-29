@@ -14,7 +14,7 @@ import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
 import { SignatureSettingsPanel } from './SignatureSettingsPanel';
-import { useWetSignatureBlocked, WetSignatureBar } from './WetSignatureBar';
+import { useWetSignatureBlocked, WetSignatureHint } from './WetSignatureBar';
 import { handoverQueryKey, HandoverLocationsEditor } from './HandoverLocationsEditor';
 import type { AggregateDocument, ClosingRow, HandoverStatus, HandoverView } from './types';
 
@@ -104,7 +104,7 @@ export function ClosingTitikSerahPanel({ scheduleID, regencyName, programType, d
   const view = handover.data?.data;
   const dateRange = (dates: string[]) => dates.length === 0 ? 'Belum ada tanggal distribusi' : dates.length === 1 ? formatLocalDate(dates[0]) : `${formatLocalDate(dates[0])} – ${formatLocalDate(dates[dates.length - 1])}`;
   return <div className="grid gap-5">
-    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} date={documentDate} document="closing-titik-serah" documentLabel="Closing Titik Serah" />}
+    {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} date={locationID !== '' ? documentDate : ''} document="closing-titik-serah" wetDocument={wetDocument} documentLabel="Closing Titik Serah" />}
 
     <div className="grid gap-4 lg:grid-cols-[20rem_minmax(0,1fr)] lg:items-start">
       {/* Sidebar: titik serah of this schedule, then the summary of the chosen one. */}
@@ -149,7 +149,7 @@ export function ClosingTitikSerahPanel({ scheduleID, regencyName, programType, d
             <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>
             {canManage && <Button disabled={busy || status !== 'ready' || wetBlocked} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
           </div>
-          {locationID !== '' && <WetSignatureBar scheduleID={scheduleID} document={wetDocument} date={documentDate} label="Closing Titik Serah" />}
+          {locationID !== '' && <WetSignatureHint scheduleID={scheduleID} document={wetDocument} date={documentDate} open={showSignatures} onOpen={() => setShowSignatures(true)} />}
 
           {activeDoc && <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center">
             <div><div className="flex items-center gap-2"><FileCheck2 className="size-4 text-emerald-600" /><strong className="text-sm">{activeDoc.filename}</strong></div><p className="mt-1 text-xs text-muted-foreground">Versi {activeDoc.version} · {activeDoc.page_count} halaman · {activeDoc.recipient_count} paket</p></div>

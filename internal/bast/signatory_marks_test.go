@@ -170,3 +170,24 @@ func TestRenderClosingDrawsPlacedStamp(t *testing.T) {
 		t.Fatal("stamp must be rotated by the stored angle")
 	}
 }
+
+func TestSignatureRulesNormalizeStampOpacity(t *testing.T) {
+	low, high, odd := 0.05, 1.4, 0.456
+	rules := SignatureRules{
+		SignatoryInstaller:  {Stamp: true, StampOpacity: &low, StampBelow: true},
+		SignatorySupervisor: {Stamp: true, StampOpacity: &high},
+		SignatoryPertamina:  {Stamp: true, StampOpacity: &odd},
+	}.normalized()
+	if got := *rules[SignatoryInstaller].StampOpacity; got != minStampOpacity || !rules[SignatoryInstaller].StampBelow {
+		t.Fatalf("installer = %v below=%v", got, rules[SignatoryInstaller].StampBelow)
+	}
+	if got := *rules[SignatorySupervisor].StampOpacity; got != 1 {
+		t.Fatalf("supervisor = %v", got)
+	}
+	if got := *rules[SignatoryPertamina].StampOpacity; got != 0.46 {
+		t.Fatalf("pertamina = %v", got)
+	}
+	if rules[SignatoryAgricultureOffice].StampOpacity != nil {
+		t.Fatal("absent opacity must stay nil (default)")
+	}
+}
