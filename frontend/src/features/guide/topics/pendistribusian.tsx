@@ -49,10 +49,10 @@ export const pendistribusian: GuideTopic = {
       id: 'pos-dokumen-hubungkan',
       title: 'POS Dokumen: hubungkan penerima',
       summary: 'Menghubungkan nomor bagi ke penerima dari data DCP3 melalui NIK.',
-      shots: [{ id: 'ds-dokumen-hubungkan', title: 'POS Dokumen, nomor bagi belum terhubung', legend: ['Tanggal distribusi', 'Simpan tanggal', 'Ketik minimal 4 digit NIK penerima', 'Data peralatan paket'] }],
+      shots: [{ id: 'ds-dokumen-hubungkan', title: 'POS Dokumen, nomor bagi belum terhubung', legend: ['Tanggal distribusi', 'Simpan tanggal', 'Klik kolom NIK atau ketik NIK penerima', 'Data peralatan paket'] }],
       steps: [
         { n: 1, text: <>Isi tanggal distribusi lalu <ButtonSample variant="outline">Simpan tanggal distribusi</ButtonSample>.</>, permissions: ['distribution.pos_dokumen', 'distribution.manage'] },
-        { n: 3, text: <>Ketik minimal 4 digit NIK dari KTP penerima, pilih nama yang muncul, lalu <ButtonSample>Hubungkan ke Nomor Bagi Ini</ButtonSample>.</>, permissions: ['distribution.pos_dokumen', 'distribution.manage'] },
+        { n: 3, text: <>Klik kolom NIK untuk melihat daftar penerima, atau ketik NIK dari KTP untuk menyaringnya. Pilih nama yang muncul, lengkapi kolom bertanda <strong>Wajib</strong> (nomor HP, alamat, desa, kecamatan, dan nomor kartu tani untuk program petani), lalu <ButtonSample>Hubungkan ke Nomor Bagi Ini</ButtonSample>.</>, permissions: ['distribution.pos_dokumen', 'distribution.manage'] },
       ],
       problems: [
         { q: 'NIK tidak ditemukan?', a: 'Penerima belum ada di DCP3/Data Penerima jadwal ini, sudah terhubung ke nomor bagi lain, atau dibatalkan. Tambahkan di Data Penerima bila memang berhak.' },
@@ -64,11 +64,11 @@ export const pendistribusian: GuideTopic = {
       title: 'POS Dokumen: data penerima & tanda tangan',
       summary: 'Setelah terhubung, lengkapi identitas dan (opsional) tanda tangan penerima.',
       shots: [
-        { id: 'ds-dokumen-penerima', title: 'Data penerima (disamarkan)', legend: ['NIK terpasang', 'Nomor telepon dan data lain dapat dilengkapi', 'Simpan perubahan data', 'Ganti penerima bila salah orang'] },
+        { id: 'ds-dokumen-penerima', title: 'Data penerima (disamarkan)', legend: ['NIK terpasang', 'Nomor HP, alamat, desa, dan kecamatan wajib diisi', 'Simpan perubahan data', 'Ganti penerima bila salah orang'] },
         { id: 'ds-dokumen-ttd', title: 'Tanda tangan penerima (disamarkan)', legend: ['Tanda tangan opsional: bila kosong, ditandatangani basah setelah BA dicetak', 'Ulangi tanda tangan'] },
       ],
       steps: [
-        { n: 2, text: <>Periksa dan lengkapi nomor kartu, telepon, dan alamat, lalu <ButtonSample>Simpan data penerima</ButtonSample>.</>, permissions: ['distribution.pos_dokumen', 'distribution.manage'] },
+        { n: 2, text: <>Periksa dan lengkapi data penerima, lalu <ButtonSample>Simpan data penerima</ButtonSample>. Nomor HP, alamat, desa, dan kecamatan wajib diisi; nomor kartu tani juga wajib untuk program petani, sedangkan nomor KUSUKA (nelayan) opsional. Nomor HP harus diawali 08 dan terdiri dari 10–13 digit (awalan +62 otomatis diubah menjadi 0).</>, permissions: ['distribution.pos_dokumen', 'distribution.manage'] },
         { n: 4, text: <>Salah menghubungkan penerima? Klik <ButtonSample variant="outline">Ganti penerima</ButtonSample> dan isi alasannya; riwayat penggantian tersimpan.</>, permissions: ['distribution.pos_dokumen', 'distribution.manage'] },
         { text: <>Minta penerima menandatangani di layar (opsional). Tanda tangan dipakai di BA Perorangan dan daftar hadir Training.</>, permissions: ['distribution.pos_dokumen', 'distribution.manage'] },
       ],

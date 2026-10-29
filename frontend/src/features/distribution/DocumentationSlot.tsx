@@ -48,8 +48,8 @@ type Props = {
 
 const storageStateCopy: Record<MediaStorageState, { label: string; detail?: string }> = {
   staging: { label: 'Tersimpan sementara', detail: 'Menunggu tanggal dan penerima' },
-  moving: { label: 'Sedang dipindahkan' },
-  final: { label: 'Tersimpan di folder final' },
+  moving: { label: 'Sedang diunggah ke Drive' },
+  final: { label: 'Sudah diunggah ke Drive' },
   move_failed: { label: 'Pemindahan gagal — akan dicoba kembali' },
 };
 
@@ -210,17 +210,19 @@ export function DocumentationSlot({ slot, canManage, canRetryMove = false, onCha
 
   return <article
     aria-label={slot.label}
-    className={cn('space-y-3 rounded-lg border bg-card p-4', complete ? 'border-l-2 border-l-primary' : 'border-l-2 border-l-accent-foreground/50')}
+    className={cn('space-y-3 rounded-lg border border-l-4 bg-card p-4', complete ? 'border-l-primary' : slot.required ? 'border-l-destructive bg-destructive/[0.03]' : 'border-l-muted-foreground/30')}
   >
     <header className="flex items-start justify-between gap-3">
       <div className="min-w-0 space-y-1">
         <div className="flex flex-wrap items-center gap-2">
           <h4 className="text-sm font-medium">{slot.label}</h4>
-          <Badge variant={slot.required ? 'default' : 'outline'}>{slot.required ? 'Wajib' : 'Opsional'}</Badge>
+          {slot.required
+            ? <Badge className="bg-destructive/10 font-semibold uppercase tracking-wide text-destructive">Wajib</Badge>
+            : <Badge variant="outline" className="uppercase tracking-wide text-muted-foreground">Opsional</Badge>}
         </div>
         <p className="text-xs text-muted-foreground">{files.length} dari {required} {mediaLabel}{slot.required ? ' wajib' : ''}</p>
       </div>
-      <span className={cn('inline-flex shrink-0 items-center gap-1 text-xs font-medium', complete ? 'text-primary' : 'text-accent-foreground')}>
+      <span className={cn('inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold', complete ? 'bg-primary/10 text-primary' : slot.required ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground')}>
         {complete ? <CheckCircle2 className="size-4" aria-hidden="true" /> : <CircleAlert className="size-4" aria-hidden="true" />}
         {complete ? 'Lengkap' : slot.required ? 'Belum lengkap' : 'Belum diisi'}
       </span>

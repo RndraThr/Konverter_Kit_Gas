@@ -294,8 +294,8 @@ test('hides upload, drag-drop, and delete controls when the owning POS cannot ma
 
 test.each([
   ['staging', 'Tersimpan sementara', 'Menunggu tanggal dan penerima'],
-  ['moving', 'Sedang dipindahkan', null],
-  ['final', 'Tersimpan di folder final', null],
+  ['moving', 'Sedang diunggah ke Drive', null],
+  ['final', 'Sudah diunggah ke Drive', null],
   ['move_failed', 'Pemindahan gagal — akan dicoba kembali', null],
 ] as const)('shows storage state %s while keeping preview available', (storageState, label, detail) => {
   renderSlot([{ id: `media-${storageState}`, slot_id: 'slot-1', original_filename: `${storageState}.jpg`, mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: `/media/${storageState}.jpg`, storage_state: storageState }]);
@@ -316,7 +316,7 @@ test('offers retry only for failed moves and publishes the returned media state'
   fireEvent.click(screen.getByRole('button', { name: 'Coba pindahkan lagi failed.jpg' }));
 
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/media/media-failed/retry-move', { method: 'POST' }));
-  expect(await screen.findByText('Sedang dipindahkan')).toBeVisible();
+  expect(await screen.findByText('Sedang diunggah ke Drive')).toBeVisible();
   expect(onRetryMove).toHaveBeenCalledWith(expect.objectContaining({ id: 'media-failed', storage_state: 'moving' }));
   expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ files: [expect.objectContaining({ storage_state: 'moving' })] }));
 });

@@ -78,8 +78,49 @@ func TestSuggestCandidatesNormalizesPrefixAndLimitsResults(t *testing.T) {
 	if len(items) != 1 || items[0].FullName != "SITI AMINAH" {
 		t.Fatalf("items = %+v", items)
 	}
-	if repo.seenSchedule != "schedule-1" || repo.seenPrefix != "7306" || repo.seenLimit != 8 {
+	if repo.seenSchedule != "schedule-1" || repo.seenPrefix != "7306" || repo.seenLimit != 20 {
 		t.Fatalf("search = schedule:%q prefix:%q limit:%d", repo.seenSchedule, repo.seenPrefix, repo.seenLimit)
+	}
+}
+
+func TestSuggestCandidatesAllowsAnEmptyPrefix(t *testing.T) {
+	repo := &dokumenRepositoryStub{}
+	service := &Service{posDokumenRepository: repo}
+	if _, err := service.SuggestCandidates(context.Background(), "schedule-1", "", auth.RegencyScope{}); err != nil {
+		t.Fatal(err)
+	}
+	if repo.seenPrefix != "" || repo.seenLimit != 20 {
+		t.Fatalf("search = prefix:%q limit:%d", repo.seenPrefix, repo.seenLimit)
+	}
+	if _, err := service.SuggestCandidates(context.Background(), "schedule-1", "12345678901234567", auth.RegencyScope{}); !errors.Is(err, ErrQueryRequired) {
+		t.Fatalf("17-digit prefix err = %v", err)
+	}
+}
+
+func TestRecipientPhoneNumberMustBeAnIndonesianMobileNumber(t *testing.T) {
+	cases := map[string]string{
+		"":                  "",
+		"0812-3456-7890":    "081234567890",
+		"+62 812 3456 7890": "081234567890",
+		"0812345678":        "0812345678",
+		"0812345678901":     "0812345678901",
+	}
+	for raw, want := range cases {
+		repo := &dokumenRepositoryStub{}
+		service := &Service{posDokumenRecipient: repo}
+		_, err := service.UpdateRecipient(context.Background(), auth.Principal{}, UpdateRecipientInput{ScheduleID: "s1", SlotNumber: 1, PhoneNumber: raw}, auth.ClientMeta{}, auth.RegencyScope{})
+		if err != nil || repo.seenUpdate.PhoneNumber != want {
+			t.Fatalf("%q: err = %v, stored %q, want %q", raw, err, repo.seenUpdate.PhoneNumber, want)
+		}
+	}
+	for _, raw := range []string{"08123456", "02112345678", "08123456789012", "812345678"} {
+		service := &Service{posDokumenRepository: &dokumenRepositoryStub{}, posDokumenRecipient: &dokumenRepositoryStub{}}
+		if _, err := service.UpdateRecipient(context.Background(), auth.Principal{}, UpdateRecipientInput{ScheduleID: "s1", SlotNumber: 1, PhoneNumber: raw}, auth.ClientMeta{}, auth.RegencyScope{}); !errors.Is(err, ErrPhoneInvalid) {
+			t.Fatalf("update %q: err = %v", raw, err)
+		}
+		if _, err := service.LinkSlot(context.Background(), auth.Principal{}, LinkSlotInput{ScheduleID: "s1", SlotNumber: 1, NIK: "1234567890123456", PhoneNumber: raw}, auth.ClientMeta{}, auth.RegencyScope{}); !errors.Is(err, ErrPhoneInvalid) {
+			t.Fatalf("link %q: err = %v", raw, err)
+		}
 	}
 }
 
@@ -113,12 +154,12 @@ func TestUpdateRecipientNormalizesEditableFields(t *testing.T) {
 	service := NewService(repo)
 	_, err := service.UpdateRecipient(context.Background(), auth.Principal{}, UpdateRecipientInput{
 		ScheduleID: " schedule-1 ", SlotNumber: 3, Address: " jl. tani ", Village: " desa baru ",
-		District: " wajo ", PhoneNumber: "0812-3456", SectorIdentifier: " kp-01 ",
+		District: " wajo ", PhoneNumber: "+62 812-3456-7890", SectorIdentifier: " kp-01 ",
 	}, auth.ClientMeta{}, auth.RegencyScope{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if repo.seenUpdate.ScheduleID != "schedule-1" || repo.seenUpdate.Address != "JL. TANI" || repo.seenUpdate.Village != "DESA BARU" || repo.seenUpdate.District != "WAJO" || repo.seenUpdate.PhoneNumber != "08123456" || repo.seenUpdate.SectorIdentifier != "KP01" {
+	if repo.seenUpdate.ScheduleID != "schedule-1" || repo.seenUpdate.Address != "JL. TANI" || repo.seenUpdate.Village != "DESA BARU" || repo.seenUpdate.District != "WAJO" || repo.seenUpdate.PhoneNumber != "081234567890" || repo.seenUpdate.SectorIdentifier != "KP01" {
 		t.Fatalf("input not normalized: %+v", repo.seenUpdate)
 	}
 }
@@ -128,13 +169,13 @@ func TestReplaceRecipientNormalizesNIKAndEditableFields(t *testing.T) {
 	service := NewService(repo)
 	_, err := service.ReplaceRecipient(context.Background(), auth.Principal{}, ReplaceRecipientInput{
 		ScheduleID: " schedule-1 ", SlotNumber: 3, NIK: "9171-0317-0701-0004", Address: " jl. tani ",
-		Village: " desa baru ", District: " wajo ", PhoneNumber: "0812-3456", SectorIdentifier: " kp-01 ",
+		Village: " desa baru ", District: " wajo ", PhoneNumber: "+62 812-3456-7890", SectorIdentifier: " kp-01 ",
 		FullName: " pengganti baru ", Reason: "  penerima awal tidak dapat hadir  ",
 	}, auth.ClientMeta{}, auth.RegencyScope{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if repo.seenReplace.NIK != "9171031707010004" || repo.seenReplace.Address != "JL. TANI" || repo.seenReplace.PhoneNumber != "08123456" || repo.seenReplace.SectorIdentifier != "KP01" {
+	if repo.seenReplace.NIK != "9171031707010004" || repo.seenReplace.Address != "JL. TANI" || repo.seenReplace.PhoneNumber != "081234567890" || repo.seenReplace.SectorIdentifier != "KP01" {
 		t.Fatalf("input not normalized: %+v", repo.seenReplace)
 	}
 	if repo.seenReplace.FullName != "PENGGANTI BARU" || repo.seenReplace.Reason != "penerima awal tidak dapat hadir" {
