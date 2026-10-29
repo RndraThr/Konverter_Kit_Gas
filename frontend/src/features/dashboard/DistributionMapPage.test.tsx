@@ -329,7 +329,7 @@ test('a point outside its regency shows Perlu ditinjau in the panel', async () =
   mockApi([region(), bangka()]);
   renderPage('/map?slot=slot-2');
   const panel = await selectedPanel();
-  expect(within(panel).getByRole('status')).toHaveTextContent('Perlu ditinjau');
+  expect(await within(panel).findByRole('status')).toHaveTextContent('Perlu ditinjau');
 });
 
 test('a handover site lists its slots, and selecting it flies to the marker position, not to members[0]', async () => {
