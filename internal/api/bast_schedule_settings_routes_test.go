@@ -1,11 +1,14 @@
 package api
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"konkit/internal/auth"
 	"konkit/internal/bast"
@@ -78,5 +81,35 @@ func TestBASTScheduleSettingsPutAcceptsFrontendJSONFields(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"handover_location":"Gudang Kabupaten"`) {
 		t.Fatalf("unexpected response body: %s", rec.Body.String())
+	}
+}
+
+// Aplikasi mobile menyimpan dengan mengirim ulang isi GET utuh, termasuk field
+// hanya-baca; itu tidak boleh ditolak sebagai "JSON tidak valid".
+func TestBASTScheduleSettingsPutAcceptsGetResponseRoundTrip(t *testing.T) {
+	secret := []byte("01234567890123456789012345678901")
+	authService := &fakeAuthService{
+		principal:          auth.Principal{UserID: "user-1"},
+		allowedPermissions: map[string]bool{"bast.manage": true},
+		regencyScope:       auth.RegencyScope{RegencyIDs: []string{"regency-1"}},
+	}
+	settingsService := &fakeBASTScheduleSettingsService{}
+	encoded, err := json.Marshal(bast.ScheduleSettings{ScheduleID: "schedule-1", RakordaLocation: "BALAI DESA", RakordaRowCount: 45, UpdatedAt: time.Now(), ConsultantCompanyDefault: "PT ORGANISASI"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/bast/schedules/schedule-1/settings", bytes.NewReader(encoded))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	req.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+	rec := httptest.NewRecorder()
+
+	NewHandler(Dependencies{Auth: authService, BASTSettings: settingsService, SessionSecret: secret}).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if settingsService.putInput.RakordaLocation != "BALAI DESA" {
+		t.Fatalf("settings were not decoded: %+v", settingsService.putInput)
 	}
 }
