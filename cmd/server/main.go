@@ -22,6 +22,7 @@ import (
 	"konkit/internal/config"
 	"konkit/internal/database"
 	"konkit/internal/dcp3"
+	"konkit/internal/distmap"
 	"konkit/internal/distribution"
 	"konkit/internal/finalreport"
 	finalreporttemplate "konkit/internal/finalreport/template"
@@ -57,6 +58,20 @@ func run(ctx context.Context, cfg config.Config) error {
 	}
 	defer pool.Close()
 
+	// The distribution map is non-critical: a failed (or stuck, e.g. behind a lock) boundary import
+	// is logged, not fatal, and may not hold up startup for more than a minute.
+	boundaryCtx, cancelBoundaries := context.WithTimeout(ctx, 60*time.Second)
+	boundaries, err := geo.EnsureRegencyBoundaries(boundaryCtx, pool)
+	cancelBoundaries()
+	if err != nil {
+		log.Printf("regency boundaries: import failed: %v", err)
+	} else {
+		log.Printf("regency boundaries: imported=%d matched=%d unmatched=%d", boundaries.Imported, boundaries.Matched, len(boundaries.Unmatched))
+		if len(boundaries.Unmatched) > 0 {
+			log.Printf("regency boundaries: master regencies without a boundary: %v", boundaries.Unmatched)
+		}
+	}
+
 	repository := auth.NewRepository(pool)
 	authService := auth.NewService(repository, cfg.SessionTTL, cfg.RememberTTL)
 	var mediaStorage media.Storage
@@ -74,6 +89,9 @@ func run(ctx context.Context, cfg config.Config) error {
 		}
 	}
 	programService := programs.NewService(programs.NewRepository(pool))
+	// Zone boundaries are cached per programme; any change to zones or assignments drops that cache.
+	distmapRepository := distmap.NewRepository(pool)
+	programService.OnZoneAssignmentsChanged(distmapRepository.InvalidateZones)
 	videoLimiter := media.NewVideoLimiter(cfg.MaxConcurrentVideoUploads)
 	distributionRepository := distribution.NewRepository(pool)
 	mediaMoveWorkerActive := startMediaMoveWorker(ctx, distributionRepository, mediaStorage)
@@ -111,25 +129,30 @@ func run(ctx context.Context, cfg config.Config) error {
 	go realtime.Listen(ctx, cfg.DatabaseURL, realtimeHub)
 
 	apiHandler := apihttp.NewHandler(apihttp.Dependencies{
-		Auth:           authService,
-		AppReleases:    appreleases.NewService(pool, appReleaseStorage),
-		FinalReport:    finalReportService,
-		Geo:            geo.NewReverser(cfg.GeocoderURL, &http.Client{Timeout: 5 * time.Second}, "Konkit/1.0 (Konverter Kit Gas; PT Kian Santang Muliatama Tbk)"),
-		Profile:        profile.NewService(profile.NewRepository(pool)),
-		Administration: administration.NewService(administration.NewRepository(pool)),
-		Settings:       settings.NewService(settings.NewRepository(pool)),
-		Health:         health.NewService(health.NewPostgresProbe(pool), cfg.Env, "dev", cfg.StorageBackend, mediaMoveWorkerActive, time.Now()),
-		Audit:          audit.NewRepository(pool),
-		Programs:       programService,
-		DCP3:           dcp3.NewImportService(dcp3.NewRepository(pool), dcp3.ParseLimits{MaxBytes: 10 << 20, MaxRows: 5000, MaxColumns: 100}),
-		Distribution:   distribution.NewService(distributionRepository, mediaStorage, videoLimiter),
-		Reports:        reports.NewService(reports.NewRepository(pool)),
-		Recipients:     recipients.NewService(recipients.NewRepository(pool)),
-		Activities:     activities.NewService(activities.NewRepository(pool), mediaStorage, programService, videoLimiter),
-		BAST:           bastService,
-		BASTBranding:   bastBrandingService,
-		BASTSettings:   bastScheduleSettingsService,
-		BASTSignatory:  bast.NewSignatoryService(bastRepository),
+		Auth:            authService,
+		AppReleases:     appreleases.NewService(pool, appReleaseStorage),
+		FinalReport:     finalReportService,
+		Geo:             geo.NewReverser(cfg.GeocoderURL, &http.Client{Timeout: 5 * time.Second}, "Konkit/1.0 (Konverter Kit Gas; PT Kian Santang Muliatama Tbk)"),
+		Profile:         profile.NewService(profile.NewRepository(pool)),
+		Administration:  administration.NewService(administration.NewRepository(pool)),
+		Settings:        settings.NewService(settings.NewRepository(pool)),
+		Health:          health.NewService(health.NewPostgresProbe(pool), cfg.Env, "dev", cfg.StorageBackend, mediaMoveWorkerActive, time.Now()),
+		Audit:           audit.NewRepository(pool),
+		Programs:        programService,
+		DCP3:            dcp3.NewImportService(dcp3.NewRepository(pool), dcp3.ParseLimits{MaxBytes: 10 << 20, MaxRows: 5000, MaxColumns: 100}),
+		Distribution:    distribution.NewService(distributionRepository, mediaStorage, videoLimiter),
+		Reports:         reports.NewService(reports.NewRepository(pool)),
+		Recipients:      recipients.NewService(recipients.NewRepository(pool)),
+		DistributionMap: distmap.NewService(distmapRepository),
+		MapConfig: distmap.ClientConfig{
+			StyleURL: cfg.MapStyleURL, SatelliteTiles: cfg.MapSatelliteTiles, HybridOverlayTiles: cfg.MapHybridOverlayTiles,
+			Attribution: cfg.MapAttribution, APIKey: cfg.MapTileAPIKey,
+		},
+		Activities:    activities.NewService(activities.NewRepository(pool), mediaStorage, programService, videoLimiter),
+		BAST:          bastService,
+		BASTBranding:  bastBrandingService,
+		BASTSettings:  bastScheduleSettingsService,
+		BASTSignatory: bast.NewSignatoryService(bastRepository),
 		BASTSignatureLayout: bast.NewSignatureLayoutService(map[string]bast.WetPreviewer{
 			"dp3":                 bastDP3Service,
 			"ba-perorangan":       bast.PreviewFunc(bastService.SchedulePreview),

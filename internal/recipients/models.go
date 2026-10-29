@@ -107,6 +107,10 @@ type MapRegion struct {
 	RegencyName  string `json:"regency_name"`
 	ProvinceName string `json:"province_name"`
 	DocumentCode string `json:"document_code"`
+	// Zone of the regency in the selected programme; empty unless the filter names a programme.
+	ZoneID   string `json:"zone_id"`
+	ZoneCode string `json:"zone_code"`
+	ZoneName string `json:"zone_name"`
 
 	Recipients  int64 `json:"recipients"`
 	Candidate   int64 `json:"candidate"`

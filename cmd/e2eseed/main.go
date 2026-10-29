@@ -176,6 +176,92 @@ func seedE2E(ctx context.Context, tx pgx.Tx) error {
 	if _, err := tx.Exec(ctx, `INSERT INTO distribution_slots(schedule_id,slot_number,status,allocation_id,recipient_person_id,verification_snapshot_json,distributed_at,completed_at) VALUES($1,1,'completed',$2,$3,'{"fixture":"e2e"}','2025-09-10T09:00:00Z','2025-09-10T09:00:00Z')`, historyScheduleID, allocationID, personID); err != nil {
 		return fmt.Errorf("seed history distribution: %w", err)
 	}
+	return seedDistributionMap(ctx, tx, programID, zoneID, packageID, documentationID, packageSnapshot)
+}
+
+// mapRegencyCode marks the Kabupaten Indramayu fixture of the distribution map E2E. The name must
+// normalize to a geoBoundaries entry (Indramayu) so the points are checked against its boundary.
+const mapRegencyCode = "EEM"
+
+// seedDistributionMap adds a kabupaten with a boundary, six slots and GPS photos through the tables
+// the app itself writes: two slots sharing one titik serah, one slot photographed in another kabupaten
+// (Wajo) and one open slot without any photo.
+func seedDistributionMap(ctx context.Context, tx pgx.Tx, programID, zoneID, packageID, documentationID string, packageSnapshot []byte) error {
+	var regencyID, scheduleID string
+	if err := tx.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code,notes) VALUES('Jawa Barat','Kabupaten Indramayu',$1,'Playwright fixture') RETURNING id::text`, mapRegencyCode).Scan(&regencyID); err != nil {
+		return fmt.Errorf("seed map regency: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO program_regency_assignments(program_id,regency_id,zone_id) VALUES($1,$2,$3)`, programID, regencyID, zoneID); err != nil {
+		return fmt.Errorf("seed map regency assignment: %w", err)
+	}
+	if err := tx.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,notes) VALUES($1,$2,$3,$4,'E2E Peta Indramayu','2026-09-01','2026-09-30','active','Playwright fixture') RETURNING id::text`, programID, regencyID, packageID, documentationID).Scan(&scheduleID); err != nil {
+		return fmt.Errorf("seed map schedule: %w", err)
+	}
+	var handoverID string
+	if err := tx.QueryRow(ctx, `INSERT INTO bast_handover_locations(regency_id,name,name_key) VALUES($1,'Balai Desa E2E','BALAI DESA E2E') RETURNING id::text`, regencyID).Scan(&handoverID); err != nil {
+		return fmt.Errorf("seed map handover location: %w", err)
+	}
+
+	type mapSlot struct {
+		number   int
+		status   string
+		handover bool
+		lon, lat *float64
+	}
+	at := func(lon, lat float64) (*float64, *float64) { return &lon, &lat }
+	lon1, lat1 := at(108.2000, -6.4500) // alone, inside Indramayu
+	lon2, lat2 := at(108.1950, -6.4501) // titik serah, inside
+	lon3, lat3 := at(108.1953, -6.4503) // same titik serah, about 35 m away
+	lon4, lat4 := at(120.0000, -4.0000) // photographed in Wajo: outside the boundary
+	slots := []mapSlot{
+		{1, "completed", false, lon1, lat1},
+		{2, "completed", true, lon2, lat2},
+		{3, "linked", true, lon3, lat3},
+		{4, "linked", false, lon4, lat4},
+		{5, "open", false, nil, nil},
+		{6, "linked", false, nil, nil},
+	}
+	for _, slot := range slots {
+		var slotID string
+		var handover any
+		if slot.handover {
+			handover = handoverID
+		}
+		if slot.status == "open" {
+			if err := tx.QueryRow(ctx, `INSERT INTO distribution_slots(schedule_id,slot_number,status) VALUES($1,$2,'open') RETURNING id::text`, scheduleID, slot.number).Scan(&slotID); err != nil {
+				return fmt.Errorf("seed map open slot: %w", err)
+			}
+			continue
+		}
+		var personID, nominationID, allocationID string
+		if err := tx.QueryRow(ctx, `INSERT INTO people(full_name,nik,verification_status) VALUES($1,$2,'verified') RETURNING id::text`, fmt.Sprintf("Penerima Peta E2E %d", slot.number), fmt.Sprintf("910000000001%04d", slot.number)).Scan(&personID); err != nil {
+			return fmt.Errorf("seed map recipient: %w", err)
+		}
+		if err := tx.QueryRow(ctx, `INSERT INTO candidate_nominations(person_id,program_type,source_snapshot_json,status) VALUES($1,'farmer','{}'::jsonb,'ready') RETURNING id::text`, personID).Scan(&nominationID); err != nil {
+			return fmt.Errorf("seed map nomination: %w", err)
+		}
+		if err := tx.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,actual_recipient_person_id,distribution_number,status,package_snapshot_json) VALUES($1,$2,$3,$3,$4,'ready',$5) RETURNING id::text`, scheduleID, nominationID, personID, slot.number, packageSnapshot).Scan(&allocationID); err != nil {
+			return fmt.Errorf("seed map allocation: %w", err)
+		}
+		if err := tx.QueryRow(ctx, `INSERT INTO distribution_slots(schedule_id,slot_number,status,allocation_id,recipient_person_id,handover_location_id,linked_at,distributed_at,completed_at)
+			VALUES($1,$2,$3,$4,$5,$6,'2026-09-02T03:00:00Z',CASE WHEN $3='completed' THEN '2026-09-05T03:00:00Z'::timestamptz END,CASE WHEN $3='completed' THEN '2026-09-05T03:00:00Z'::timestamptz END) RETURNING id::text`,
+			scheduleID, slot.number, slot.status, allocationID, personID, handover).Scan(&slotID); err != nil {
+			return fmt.Errorf("seed map slot: %w", err)
+		}
+		if slot.lon == nil {
+			continue
+		}
+		var docSlotID string
+		if err := tx.QueryRow(ctx, `INSERT INTO documentation_slots(distribution_slot_id,slot_code,label_snapshot,is_required,min_files,max_files,input_source,stage,sort_order)
+			VALUES($1,'foto_penyerahan','Foto penyerahan',false,1,5,'camera','penyerahan',1) RETURNING id::text`, slotID).Scan(&docSlotID); err != nil {
+			return fmt.Errorf("seed map documentation slot: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO media_files(documentation_slot_id,storage_key,original_filename,mime_type,byte_size,checksum,source,captured_at,latitude,longitude,status)
+			VALUES($1,$2,'foto-peta-e2e.jpg','image/jpeg',100,repeat('a',64),'camera','2026-09-05T03:00:00Z',$3,$4,'accepted')`,
+			docSlotID, fmt.Sprintf("e2e-map/%s.jpg", slotID), *slot.lat, *slot.lon); err != nil {
+			return fmt.Errorf("seed map photo: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -189,13 +275,15 @@ func cleanupE2E(ctx context.Context, tx pgx.Tx) error {
 		{`DELETE FROM eligibility_checks WHERE schedule_id IN (SELECT ps.id FROM program_schedules ps JOIN programs p ON p.id=ps.program_id WHERE p.code=$1) OR person_id IN (SELECT id FROM people WHERE full_name LIKE '% E2E%')`, []any{seedProgramCode}},
 		{`DELETE FROM distribution_slots WHERE schedule_id IN (SELECT ps.id FROM program_schedules ps JOIN programs p ON p.id=ps.program_id WHERE p.code=$1)`, []any{seedProgramCode}},
 		{`DELETE FROM package_allocations WHERE schedule_id IN (SELECT ps.id FROM program_schedules ps JOIN programs p ON p.id=ps.program_id WHERE p.code=$1)`, []any{seedProgramCode}},
+		{`DELETE FROM candidate_nominations WHERE person_id IN (SELECT id FROM people WHERE full_name LIKE 'Penerima Peta E2E%')`, nil},
 		{`DELETE FROM candidate_nominations WHERE batch_id IN (SELECT b.id FROM dcp3_import_batches b JOIN program_schedules ps ON ps.id=b.schedule_id JOIN programs p ON p.id=ps.program_id WHERE p.code=$1)`, []any{seedProgramCode}},
 		{`DELETE FROM dcp3_import_batches WHERE schedule_id IN (SELECT ps.id FROM program_schedules ps JOIN programs p ON p.id=ps.program_id WHERE p.code=$1)`, []any{seedProgramCode}},
 		{`DELETE FROM program_schedules WHERE program_id IN (SELECT id FROM programs WHERE code=$1)`, []any{seedProgramCode}},
 		{`DELETE FROM person_sector_identifiers WHERE person_id IN (SELECT id FROM people WHERE full_name LIKE '% E2E%')`, nil},
 		{`DELETE FROM people WHERE full_name LIKE '% E2E%'`, nil},
 		{`DELETE FROM programs WHERE code=$1`, []any{seedProgramCode}},
-		{`DELETE FROM regencies WHERE document_code='EEW'`, nil},
+		{`DELETE FROM bast_handover_locations WHERE regency_id IN (SELECT id FROM regencies WHERE document_code=$1)`, []any{mapRegencyCode}},
+		{`DELETE FROM regencies WHERE document_code IN ('EEW',$1)`, []any{mapRegencyCode}},
 		{`DELETE FROM users WHERE username LIKE 'petugas.e2e.%' OR username=$1`, []any{seedUsername}},
 	}
 	for _, statement := range statements {

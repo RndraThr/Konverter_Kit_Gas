@@ -30,8 +30,8 @@ test('opens Map Distribusi as its own dashboard feature', async () => {
 
   expect(await screen.findByRole('heading', { name: 'Map Distribusi' })).toBeInTheDocument();
   expect(screen.getByRole('region', { name: 'Ruang kerja Map Distribusi' })).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'Area peta' })).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'Kontrol peta' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Pilih titik di peta' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Filter peta' })).toBeInTheDocument();
   expect(screen.queryByText('Ringkasan program')).not.toBeInTheDocument();
 });
 

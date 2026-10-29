@@ -73,6 +73,10 @@ export type MapRegion = {
   slots_linked: number;
   slots_completed: number;
   slots_cancelled: number;
+  // Filled only when program_id is in the filter and the regency is assigned to a zone.
+  zone_id?: string;
+  zone_code?: string;
+  zone_name?: string;
 };
 
 export type MapData = { regions: MapRegion[]; totals: MapRegion };

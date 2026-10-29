@@ -17,6 +17,7 @@ import (
 	"konkit/internal/auth"
 	"konkit/internal/bast"
 	"konkit/internal/dcp3"
+	"konkit/internal/distmap"
 	"konkit/internal/distribution"
 	"konkit/internal/finalreport"
 	apphealth "konkit/internal/health"
@@ -283,19 +284,22 @@ type GeoService interface {
 }
 
 type Dependencies struct {
-	Geo                 GeoService
-	AppReleases         AppReleaseService
-	Auth                AuthService
-	Profile             ProfileService
-	Administration      AdministrationService
-	Settings            SettingsService
-	Health              HealthService
-	Audit               AuditService
-	Programs            ProgramSetupService
-	DCP3                DCP3Service
-	Distribution        DistributionService
-	Reports             ReportsService
-	Recipients          RecipientsService
+	Geo             GeoService
+	AppReleases     AppReleaseService
+	Auth            AuthService
+	Profile         ProfileService
+	Administration  AdministrationService
+	Settings        SettingsService
+	Health          HealthService
+	Audit           AuditService
+	Programs        ProgramSetupService
+	DCP3            DCP3Service
+	Distribution    DistributionService
+	Reports         ReportsService
+	Recipients      RecipientsService
+	DistributionMap DistributionMapService
+	// MapConfig is the basemap configuration served by /map/config.
+	MapConfig           distmap.ClientConfig
 	Activities          ActivitiesService
 	BAST                BASTService
 	BASTBranding        BASTBrandingService
@@ -469,6 +473,16 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleRecipientStats(w, r, rc)
 	case path == "recipients/map":
 		h.handleRecipientMap(w, r, rc)
+	case path == "map/points":
+		h.handleMapPoints(w, r, rc)
+	case path == "map/unlocated":
+		h.handleMapUnlocated(w, r, rc)
+	case path == "map/zones":
+		h.handleMapZones(w, r, rc)
+	case path == "map/config":
+		h.handleMapConfig(w, r, rc)
+	case strings.HasPrefix(path, "map/regencies/"):
+		h.handleMapRegency(w, r, rc, strings.TrimPrefix(path, "map/regencies/"))
 	case strings.HasPrefix(path, "recipients/"):
 		h.handleRecipient(w, r, rc, strings.TrimPrefix(path, "recipients/"))
 	case path == "activities/sync":

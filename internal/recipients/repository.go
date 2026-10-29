@@ -165,6 +165,18 @@ func recipientFilterArgs(filter Filter, scope auth.RegencyScope) []any {
 	}
 }
 
+// RecipientFilterSQL returns the FROM and WHERE clauses of the Data Penerima list together with
+// their positional arguments ($1..$12), so other views (the distribution map) select exactly the
+// rows the list would show. Callers may append conditions to where and add arguments from $13.
+// The FROM exposes pa, ps, prog, r, z, p, dr (the allocation's distribution slot) and evidence.
+func RecipientFilterSQL(filter Filter, scope auth.RegencyScope) (from, where string, args []any) {
+	return recipientFrom, recipientWhere, recipientFilterArgs(filter, scope)
+}
+
+// EvidenceStatusSQL is the per-allocation evidence status expression (not-configured, empty,
+// partial, complete). It is only valid against the FROM returned by RecipientFilterSQL.
+const EvidenceStatusSQL = evidenceStatusSQL
+
 func scanRecipient(row pgx.Row) (Recipient, error) {
 	var item Recipient
 	var evidenceJSON, replacedByJSON, replacesJSON []byte
@@ -372,6 +384,32 @@ func (r *Repository) MapRegions(ctx context.Context, filter Filter, scope auth.R
 	}
 	if err := slotRows.Err(); err != nil {
 		return MapData{}, fmt.Errorf("iterate map slots: %w", err)
+	}
+
+	// Zones belong to a programme, so they are only attached when the filter selects one.
+	if filter.ProgramID != "" {
+		zoneRows, err := r.pool.Query(ctx, `
+			SELECT pra.regency_id::text, z.id::text, z.code, z.name
+			FROM program_regency_assignments pra
+			JOIN program_zones z ON z.id = pra.zone_id AND z.program_id = pra.program_id
+			WHERE pra.program_id::text = $1
+		`, filter.ProgramID)
+		if err != nil {
+			return MapData{}, fmt.Errorf("map region zones: %w", err)
+		}
+		defer zoneRows.Close()
+		for zoneRows.Next() {
+			var regencyID, zoneID, zoneCode, zoneName string
+			if err := zoneRows.Scan(&regencyID, &zoneID, &zoneCode, &zoneName); err != nil {
+				return MapData{}, fmt.Errorf("scan map region zone: %w", err)
+			}
+			if region, ok := regions[regencyID]; ok {
+				region.ZoneID, region.ZoneCode, region.ZoneName = zoneID, zoneCode, zoneName
+			}
+		}
+		if err := zoneRows.Err(); err != nil {
+			return MapData{}, fmt.Errorf("iterate map region zones: %w", err)
+		}
 	}
 
 	result := MapData{Regions: make([]MapRegion, 0, len(order))}

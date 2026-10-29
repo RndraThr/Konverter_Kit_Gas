@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { buildRegencyPaths, buildRegionIndex, colorForValue, EMPTY_REGION_COLOR, mapMetrics, metricByKey, metricMax, normalizeRegencyName, progressDenominator, REGION_SCALE, type RegencyFeature } from './mapRegions';
+import { buildRegencyPaths, colorForValue, EMPTY_REGION_COLOR, mapMetrics, metricByKey, metricMax, normalizeRegencyName, progressDenominator, REGION_SCALE, type RegencyFeature } from './mapRegions';
 import type { MapRegion } from './types';
 
 function region(overrides: Partial<MapRegion> = {}): MapRegion {
@@ -30,11 +30,6 @@ test('keeps a city distinct from a regency with the same base name', () => {
   expect(normalizeRegencyName('Bandung')).toBe('BANDUNG');
   expect(normalizeRegencyName('KOTA BANDUNG')).toBe('KOTABANDUNG');
   expect(normalizeRegencyName('Kota Bandung')).toBe('KOTABANDUNG');
-});
-
-test('indexes regions under the same key the boundary asset uses', () => {
-  const index = buildRegionIndex([region()]);
-  expect(index.get('BANGKABARAT')?.document_code).toBe('BBR');
 });
 
 test('projects every feature inside the SVG viewbox', () => {
