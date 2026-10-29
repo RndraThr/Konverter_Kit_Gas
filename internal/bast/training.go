@@ -22,6 +22,8 @@ type ActivityParticipant struct {
 	// SignatureKey = ID slot distribusi (satu penerimaan), sama dengan BA
 	// perorangan, sehingga dokumen penerimaan tersebut memakai tanda tangan sama.
 	SignatureKey string `json:"signature_key"`
+	// HandoverLocation adalah titik serah penerimaan peserta (POS Dokumen).
+	HandoverLocation string `json:"handover_location,omitempty"`
 }
 
 // participantMode menentukan peserta daftar hadir kegiatan.
@@ -54,14 +56,18 @@ type TrainingDate struct {
 	LocalDate        string `json:"local_date"`
 	RecipientCount   int    `json:"recipient_count"`
 	ParticipantCount int    `json:"participant_count"`
+	// HandoverLocation: titik serah penerima tanggal itu (dicetak sebagai lokasi).
+	HandoverLocation string `json:"handover_location,omitempty"`
 }
 
 // ListTrainingParticipants mengembalikan penerima yang distribusinya selesai
 // dengan Tanggal distribusi tersebut, berurutan seperti DP3 (nomor bagi).
 func (r *Repository) ListTrainingParticipants(ctx context.Context, scheduleID, localDate string, scope auth.RegencyScope) ([]ActivityParticipant, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT ds.id::text, p.full_name, COALESCE(p.phone_number,''), COALESCE(p.address,''), COALESCE(p.village,''), COALESCE(p.district,''), pr.program_type
+		SELECT ds.id::text, p.full_name, COALESCE(p.phone_number,''), COALESCE(p.address,''), COALESCE(p.village,''), COALESCE(p.district,''), pr.program_type,
+		       COALESCE(hl.name,'')
 		FROM distribution_slots ds
+		LEFT JOIN bast_handover_locations hl ON hl.id = ds.handover_location_id
 		JOIN program_schedules ps ON ps.id = ds.schedule_id
 		JOIN programs pr ON pr.id = ps.program_id
 		JOIN people p ON p.id = ds.recipient_person_id
@@ -76,8 +82,8 @@ func (r *Repository) ListTrainingParticipants(ctx context.Context, scheduleID, l
 	defer rows.Close()
 	participants := []ActivityParticipant{}
 	for rows.Next() {
-		var slotID, name, phone, address, village, district, programType string
-		if err := rows.Scan(&slotID, &name, &phone, &address, &village, &district, &programType); err != nil {
+		var slotID, name, phone, address, village, district, programType, location string
+		if err := rows.Scan(&slotID, &name, &phone, &address, &village, &district, &programType, &location); err != nil {
 			return nil, err
 		}
 		occupation := "Petani"
@@ -91,7 +97,7 @@ func (r *Repository) ListTrainingParticipants(ctx context.Context, scheduleID, l
 		if d := strings.TrimSpace(district); d != "" {
 			parts = append(parts, "Kec. "+d)
 		}
-		participants = append(participants, ActivityParticipant{Name: strings.TrimSpace(name), Occupation: occupation, Phone: strings.TrimSpace(phone), Address: strings.Trim(strings.Join(parts, ", "), ", "), SignatureKey: slotID})
+		participants = append(participants, ActivityParticipant{Name: strings.TrimSpace(name), Occupation: occupation, Phone: strings.TrimSpace(phone), Address: strings.Trim(strings.Join(parts, ", "), ", "), SignatureKey: slotID, HandoverLocation: location})
 	}
 	return participants, rows.Err()
 }

@@ -11,13 +11,17 @@ import (
 type dailyRecapDateRow struct {
 	LocalDate      string
 	RecipientCount int
+	// HandoverLocations: titik serah penerima tanggal itu, digabung koma.
+	HandoverLocations string
 }
 
 func (r *Repository) ListDailyRecapDates(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]dailyRecapDateRow, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT COALESCE(ds.distribution_date, (ds.distributed_at AT TIME ZONE 'Asia/Jakarta')::date)::text AS local_date, count(*)
+		SELECT COALESCE(ds.distribution_date, (ds.distributed_at AT TIME ZONE 'Asia/Jakarta')::date)::text AS local_date, count(*),
+		       COALESCE(string_agg(DISTINCT hl.name, ', ' ORDER BY hl.name), '')
 		FROM distribution_slots ds
 		JOIN program_schedules ps ON ps.id = ds.schedule_id
+		LEFT JOIN bast_handover_locations hl ON hl.id = ds.handover_location_id
 		WHERE ds.schedule_id=$1 AND ds.status='completed' AND ds.distributed_at IS NOT NULL
 		  AND ($2 OR ps.regency_id::text = ANY($3))
 		GROUP BY local_date
@@ -30,7 +34,7 @@ func (r *Repository) ListDailyRecapDates(ctx context.Context, scheduleID string,
 	dates := []dailyRecapDateRow{}
 	for rows.Next() {
 		var item dailyRecapDateRow
-		if err := rows.Scan(&item.LocalDate, &item.RecipientCount); err != nil {
+		if err := rows.Scan(&item.LocalDate, &item.RecipientCount, &item.HandoverLocations); err != nil {
 			return nil, err
 		}
 		dates = append(dates, item)

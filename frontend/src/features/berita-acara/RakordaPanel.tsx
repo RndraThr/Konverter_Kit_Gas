@@ -56,6 +56,12 @@ export function RakordaPanel({ config = rakordaConfig, scheduleID, regencyName, 
   const queryClient = useQueryClient();
   const [date, setDate] = useState(defaultDate);
   const [location, setLocation] = useState('');
+  // Titik serah kabupaten (sama dengan BA Closing Titik Serah) sebagai pilihan lokasi.
+  const handoverPlaces = useQuery({
+    queryKey: ['distribution', 'handover-locations', scheduleID],
+    queryFn: () => apiRequest<DataResponse<{ id: string; name: string }[]>>(`/api/v1/distribution/handover-locations?schedule_id=${encodeURIComponent(scheduleID)}`),
+  });
+  const places = Array.isArray(handoverPlaces.data?.data) ? handoverPlaces.data.data : [];
   const [showSignatures, setShowSignatures] = useState(false);
   const hasSignatures = config.apiPath === 'sosialisasi';
   const [rowCount, setRowCount] = useState(config.defaultRowCount);
@@ -103,7 +109,8 @@ export function RakordaPanel({ config = rakordaConfig, scheduleID, regencyName, 
       <Card className="self-start">
         <CardHeader className="border-b"><CardTitle className="flex items-center gap-2 text-base"><Settings2 className="size-4 text-primary" aria-hidden="true" />Pengaturan daftar hadir</CardTitle></CardHeader>
         <CardContent className="grid gap-4 pt-5">
-          <FormField label={`Lokasi ${config.name}`} name={config.locationKey} required={!config.locationOptional} value={location} disabled={!canManage} onChange={(event) => setLocation(uppercaseBusinessText(event.target.value))} hint={config.locationOptional ? 'Dicetak pada header; boleh dikosongkan.' : 'Dicetak pada header daftar hadir.'} />
+          <FormField label={`Lokasi ${config.name}`} name={config.locationKey} list={`${config.locationKey}-places`} required={!config.locationOptional} value={location} disabled={!canManage} placeholder="Pilih titik serah atau ketik lokasi" onChange={(event) => setLocation(uppercaseBusinessText(event.target.value))} hint={config.locationOptional ? 'Pilih dari titik serah kabupaten atau ketik lokasi lain; boleh dikosongkan.' : 'Pilih dari titik serah kabupaten atau ketik lokasi lain.'} />
+          <datalist id={`${config.locationKey}-places`}>{places.map((place) => <option key={place.id} value={uppercaseBusinessText(place.name)} />)}</datalist>
           <FormField label="Jumlah baris" name={config.rowCountKey} type="number" min={5} max={200} required value={rowCount} disabled={!canManage} onChange={(event) => setRowCount(Number(event.target.value))} hint="Minimal 5 dan maksimal 200 baris; halaman bertambah otomatis." />
           {config.note && <p className="text-xs leading-5 text-muted-foreground">{config.note}</p>}
           {canManage && <Button disabled={!validSettings || saveSettings.isPending} onClick={() => saveSettings.mutate()}><Save aria-hidden="true" />{saveSettings.isPending ? 'Menyimpan...' : 'Simpan pengaturan'}</Button>}

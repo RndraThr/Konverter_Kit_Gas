@@ -35,6 +35,13 @@ func buildRakordaSnapshot(spec rakordaDocumentSpec, ctx DP3Context, settings Sch
 		if rowCount == 0 {
 			return RakordaSnapshot{}, ErrAggregateNoRecipients
 		}
+		// Training diadakan di titik serah penerimanya; lokasi pengaturan
+		// hanya cadangan bila peserta belum punya titik serah.
+		names := make([]string, len(participants))
+		for i, participant := range participants {
+			names[i] = participant.HandoverLocation
+		}
+		location = recipientLocations(names, location)
 	} else {
 		participants = nil
 		if rowCount < 5 || rowCount > 200 {

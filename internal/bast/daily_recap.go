@@ -36,6 +36,8 @@ type DailyRecapDate struct {
 	RecipientCount   int                `json:"recipient_count"`
 	ValidationStatus string             `json:"validation_status"`
 	Document         *AggregateDocument `json:"document,omitempty"`
+	// HandoverLocation: titik serah penerima tanggal itu (Lokasi / Titik Serah).
+	HandoverLocation string `json:"handover_location,omitempty"`
 }
 
 type dailyRecapSignatories struct {

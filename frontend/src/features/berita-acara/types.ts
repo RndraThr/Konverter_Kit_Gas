@@ -279,7 +279,9 @@ export type DailyRecapDate = {
   recipient_count: number;
   validation_status: string;
   document?: AggregateDocument;
+  /** Titik serah penerima tanggal itu (Lokasi / Titik Serah, otomatis). */
+  handover_location?: string;
 };
 
 /** Tanggal distribusi untuk BA Training: jumlah penerima dan peserta (10% pertama untuk Training 10%). */
-export type TrainingDate = { local_date: string; recipient_count: number; participant_count: number };
+export type TrainingDate = { local_date: string; recipient_count: number; participant_count: number; handover_location?: string };

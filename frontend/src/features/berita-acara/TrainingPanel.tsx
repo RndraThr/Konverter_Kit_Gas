@@ -104,17 +104,19 @@ export function TrainingPanel({ config, scheduleID, regencyName, programType }: 
           <CardContent className="grid gap-4 pt-5">
             <div className="flex flex-wrap items-end gap-2">
               <div className="grid min-w-64 flex-1 gap-1.5 sm:max-w-md">
-                <label htmlFor={`${config.apiPath}-location`} className="flex items-center gap-1.5 text-sm font-medium"><MapPin className="size-3.5 text-primary" aria-hidden="true" />Lokasi kegiatan</label>
-                <Input id={`${config.apiPath}-location`} value={location} disabled={!canManage} placeholder="Contoh: Balai Desa Tempe" onChange={(e) => setLocation(uppercaseBusinessText(e.target.value))} />
+                <span className="flex items-center gap-1.5 text-sm font-medium"><MapPin className="size-3.5 text-primary" aria-hidden="true" />Lokasi kegiatan</span>
+                {selected?.handover_location
+                  ? <p className="rounded-md border px-3 py-2 text-sm"><strong>{selected.handover_location}</strong><span className="block text-xs text-muted-foreground">Otomatis dari titik serah peserta (POS Dokumen).</span></p>
+                  : <Input id={`${config.apiPath}-location`} aria-label="Lokasi kegiatan" value={location} disabled={!canManage} placeholder="Peserta belum punya titik serah; isi lokasi" onChange={(e) => setLocation(uppercaseBusinessText(e.target.value))} />}
               </div>
-              {canManage && <Button variant="outline" disabled={!location.trim() || !locationDirty || saveLocation.isPending} onClick={() => saveLocation.mutate()}><Save aria-hidden="true" />{saveLocation.isPending ? 'Menyimpan...' : 'Simpan lokasi'}</Button>}
+              {canManage && !selected?.handover_location && <Button variant="outline" disabled={!location.trim() || !locationDirty || saveLocation.isPending} onClick={() => saveLocation.mutate()}><Save aria-hidden="true" />{saveLocation.isPending ? 'Menyimpan...' : 'Simpan lokasi'}</Button>}
               <div className="flex flex-wrap gap-2 sm:ml-auto">
                 <Button variant="outline" disabled={!preview.data} onClick={printPreview}><Printer aria-hidden="true" />Cetak</Button>
                 <Button variant="outline" disabled={!preview.data} onClick={downloadPreview}><Download aria-hidden="true" />Unduh PDF</Button>
               <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>
               </div>
             </div>
-            {!savedLocation.trim() && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">Lokasi belum diisi: dicetak kosong.</p>}
+            {!selected?.handover_location && !savedLocation.trim() && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">Lokasi belum diisi: dicetak kosong.</p>}
             {ready && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label={config.documentTitle} />}
           </CardContent>
         </Card>
