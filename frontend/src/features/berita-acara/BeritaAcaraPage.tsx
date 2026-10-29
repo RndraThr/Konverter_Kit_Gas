@@ -26,19 +26,19 @@ import { Training10Panel } from './Training10Panel';
 import { Training100Panel } from './Training100Panel';
 
 const documentTypes = [
-  { value: 'dp3', label: 'DP3' },
-  { value: 'ba-perorangan', label: 'BA Perorangan' },
-  { value: 'rekap-harian', label: 'Rekap Harian' },
-  { value: 'closing-titik-serah', label: 'Closing Titik Serah' },
-  { value: 'closing-kabupaten', label: 'Closing Kabupaten' },
   { value: 'rakorda', label: 'Rakorda' },
+  { value: 'gas-elpiji', label: 'Gas LPG' },
   { value: 'sosialisasi', label: 'Sosialisasi' },
   { value: 'training-10', label: 'Training 10%' },
-  { value: 'training-100', label: 'Training 100%' },
   { value: 'ba-pemeriksaan', label: 'BA Pemeriksaan' },
-  { value: 'servis-berkala', label: 'Servis Berkala' },
+  { value: 'ba-perorangan', label: 'BA Perorangan' },
+  { value: 'dp3', label: 'DP3' },
+  { value: 'rekap-harian', label: 'Rekap Harian' },
+  { value: 'training-100', label: 'Training 100%' },
+  { value: 'closing-titik-serah', label: 'Closing Titik Serah' },
+  { value: 'closing-kabupaten', label: 'Closing Kabupaten' },
   { value: 'tkdn', label: 'TKDN' },
-  { value: 'gas-elpiji', label: 'Gas LPG' },
+  { value: 'servis-berkala', label: 'Servis Berkala' },
 ] as const;
 
 type DocumentType = (typeof documentTypes)[number];

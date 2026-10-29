@@ -153,7 +153,7 @@ func TestRenderClosingTitikSerahPrintsTitleCaseNamesAndMachinesAsTyped(t *testin
 
 func TestClosingNarrativeFollowsIndonesianSpelling(t *testing.T) {
 	segments := closingNarrative("2026-10-03", 2026)
-	want := "Pada hari ini, Sabtu, tanggal 3 Oktober tahun 2026, telah dilakukan pemasangan dan pendistribusian Paket Perdana Liquefied Petroleum Gas (LPG) untuk Mesin Pompa Air bagi Petani Sasaran Tahun Anggaran 2026 di PT Pertamina Patra Niaga, dengan rincian sebagai berikut:"
+	want := "Pada hari ini, Sabtu, tanggal 3 Oktober 2026, telah dilakukan pemasangan dan pendistribusian Paket Perdana Liquefied Petroleum Gas (LPG) untuk Mesin Pompa Air bagi Petani Sasaran Tahun Anggaran 2026 di PT Pertamina Patra Niaga, dengan rincian sebagai berikut:"
 	if got := segmentsText(segments); got != want {
 		t.Fatalf("closing narrative=%q\nwant=%q", got, want)
 	}

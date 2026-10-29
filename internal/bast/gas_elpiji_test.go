@@ -56,7 +56,7 @@ func TestGasElpijiInputNormalizeAndComplete(t *testing.T) {
 }
 
 func TestGasElpijiStatementAndThousands(t *testing.T) {
-	if got := gasElpijiStatement("2026-12-02"); got != "Pada hari ini, Rabu, tanggal 2 Desember tahun 2026, telah dilakukan pengantaran tabung gas elpiji dan diterima, dengan rincian sebagai berikut:" {
+	if got := gasElpijiStatement("2026-12-02"); got != "Pada hari ini, Rabu, tanggal 2 Desember 2026, telah dilakukan pengantaran tabung gas elpiji dan diterima, dengan rincian sebagai berikut:" {
 		t.Fatalf("statement=%q", got)
 	}
 	for value, want := range map[int]string{0: "0", 999: "999", 1250: "1.250", 1000000: "1.000.000"} {

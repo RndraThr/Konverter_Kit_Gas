@@ -118,6 +118,9 @@ func run(ctx context.Context, cfg config.Config) error {
 	bastSosialisasiService := bast.NewSosialisasiService(bastRepository, mediaStorage)
 	bastTraining10Service := bast.NewTraining10Service(bastRepository, mediaStorage)
 	bastTraining100Service := bast.NewTraining100Service(bastRepository, mediaStorage)
+	activityService := activities.NewService(activities.NewRepository(pool), mediaStorage, programService, videoLimiter)
+	// Training photos from distribution -> Training 100% / 10% documentation.
+	go activities.NewTrainingPhotoWorker(activityService).Run(ctx)
 	// Mobile app releases (APK updates outside the Play Store) always stay on
 	// the server's own disk, whatever the media backend.
 	appReleaseStorage, err := media.NewLocalStorage(filepath.Join(cfg.StoragePath, "app-releases"))
@@ -148,7 +151,7 @@ func run(ctx context.Context, cfg config.Config) error {
 			StyleURL: cfg.MapStyleURL, SatelliteTiles: cfg.MapSatelliteTiles, HybridOverlayTiles: cfg.MapHybridOverlayTiles,
 			Attribution: cfg.MapAttribution, APIKey: cfg.MapTileAPIKey,
 		},
-		Activities:    activities.NewService(activities.NewRepository(pool), mediaStorage, programService, videoLimiter),
+		Activities:    activityService,
 		BAST:          bastService,
 		BASTBranding:  bastBrandingService,
 		BASTSettings:  bastScheduleSettingsService,

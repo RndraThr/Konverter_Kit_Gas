@@ -107,7 +107,7 @@ func rakordaNarrative(documentDate string, fiscalYear int, zoneName string) []te
 	days := [...]string{"Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"}
 	months := [...]string{"", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"}
 	return []textSegment{
-		{text: fmt.Sprintf("Pada hari ini, %s, tanggal %d %s tahun %d, telah dilakukan Rapat Koordinasi (Rakor) Pengadaan Barang Penyediaan dan Pendistribusian Paket Perdana ", days[date.Weekday()], date.Day(), months[date.Month()], date.Year())},
+		{text: fmt.Sprintf("Pada hari ini, %s, tanggal %d %s %d, telah dilakukan Rapat Koordinasi (Rakor) Pengadaan Barang Penyediaan dan Pendistribusian Paket Perdana ", days[date.Weekday()], date.Day(), months[date.Month()], date.Year())},
 		{text: "Liquefied Petroleum Gas", style: "I"},
 		{text: fmt.Sprintf(" (LPG) untuk Mesin Pompa Air bagi Petani Sasaran Tahun Anggaran %d di PT Pertamina Patra Niaga (Termasuk Pendistribusian dan Pemasangan) %s.", fiscalYear, zoneWithWords(titleCaseWords(zoneName)))},
 	}
