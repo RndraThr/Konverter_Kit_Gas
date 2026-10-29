@@ -29,10 +29,12 @@ export function SlotMesinSection({ slot, onChanged }: SlotMesinSectionProps) {
   const [revisionOpen, setRevisionOpen] = useState(false);
   const [serials, setSerials] = useState({ machine_serial_number: slot.machine_serial_number ?? '', converter_serial_number: slot.converter_serial_number ?? '' });
   const [scanning, setScanning] = useState<SerialField | null>(null);
+  const { machine_serial_number: machineSerial, converter_serial_number: converterSerial } = slot;
+  useEffect(() => setCurrentSlot(slot), [slot]);
+  // Serials reset only when their saved values change, not on a background documentation refresh.
   useEffect(() => {
-    setCurrentSlot(slot);
-    setSerials({ machine_serial_number: slot.machine_serial_number ?? '', converter_serial_number: slot.converter_serial_number ?? '' });
-  }, [slot]);
+    setSerials({ machine_serial_number: machineSerial ?? '', converter_serial_number: converterSerial ?? '' });
+  }, [converterSerial, machineSerial]);
 
   const documentation = currentSlot.documentation.filter((item) => item.stage === 'mesin');
   const editable = canManage && currentSlot.status !== 'completed';

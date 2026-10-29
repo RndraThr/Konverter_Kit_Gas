@@ -43,7 +43,7 @@ func TestTKDNNumberFormattingUsesIndonesianSeparators(t *testing.T) {
 func TestGroupTKDNItemsMergesConsecutiveGroups(t *testing.T) {
 	groups := groupTKDNItems(tkdnItemsFor(defaultTKDNRows(), resolveEntries(mustEntries(sampleTemplateValues), nil, "", nil)))
 	// Referensi: 8 nomor; nomor 2 (konverter) 3 sub-barang, nomor 4 (tabung) 2 sub-barang.
-	if len(groups) != 8 || len(groups[1].items) != 3 || groups[1].rowCount() != 4 || len(groups[3].items) != 2 || groups[0].rowCount() != 1 {
+	if len(groups) != 8 || len(groups[1].items) != 3 || groups[1].title == "" || len(groups[3].items) != 2 || groups[0].title != "" || len(groups[0].items) != 1 {
 		t.Fatalf("groups=%+v", groups)
 	}
 }

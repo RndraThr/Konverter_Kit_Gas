@@ -73,11 +73,7 @@ func RenderServisBerkala(snapshot ServisBerkalaSnapshot, logoBytes map[string][]
 			{"Kabupaten / Kota", textnorm.DisplayTitle(snapshot.RegencyName)},
 			{"Provinsi", textnorm.DisplayTitle(snapshot.ProvinceName)},
 		} {
-			baseline := textBaseline(y, servisMetadataRowMM, activityTextPt)
-			pdf.Text(textLeft, baseline, item.label)
-			pdf.Text(textLeft+servisMetadataLabelMM, baseline, ":")
-			pdf.Text(textLeft+servisMetadataLabelMM+3.5, baseline, item.value)
-			y += servisMetadataRowMM
+			y = drawMetaRow(pdf, textLeft, servisMetadataLabelMM, textLeft+textWidth, y, servisMetadataRowMM, activityTextPt, item.label, item.value)
 		}
 		pdf.SetXY(textLeft, y+servisSectionGapMM)
 
@@ -141,7 +137,7 @@ func renderServisSignatures(pdf *fpdf.Fpdf, snapshot ServisBerkalaSnapshot) {
 	// referensi; baris sebelum indeks ini rata kiri.
 	centerFrom := []int{len(installer), -1}
 	if company != "" {
-		installer = append(installer, company)
+		installer = append(installer, wrapWords(pdf, company, usable)...)
 	}
 	dinas := append(wrapWords(pdf, strings.TrimSpace("Nama : "+textnorm.DisplayTitle(snapshot.Signatories.AgricultureOfficeName)), usable), strings.TrimSpace("NIP : "+snapshot.Signatories.AgricultureOfficeNIP))
 	names := [][]string{installer, dinas}

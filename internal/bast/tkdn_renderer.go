@@ -45,13 +45,6 @@ func groupTKDNItems(items []TKDNItem) []tkdnRowGroup {
 	return groups
 }
 
-func (g tkdnRowGroup) rowCount() int {
-	if g.title == "" {
-		return len(g.items)
-	}
-	return len(g.items) + 1
-}
-
 // RenderTKDN membuat Realisasi TKDN sesuai referensi: halaman pertama memuat
 // kop, nomor dokumen, identitas penyedia/pengadaan/wilayah, tabel barang
 // dengan jumlah unit dari distribusi, dan pernyataan; tanda tangan empat
@@ -99,9 +92,8 @@ func RenderTKDN(snapshot TKDNSnapshot, logoBytes map[string][]byte) (RenderedAgg
 			pdf.Text(textLeft+tkdnMetaLabelMM, baseline, ":")
 			return baseline
 		}
-		writeMeta("Nama Penyedia")
-		pdf.Text(valueLeft, textBaseline(y, tkdnMetaRowMM, activityTextPt), textnorm.DisplayTitle(snapshot.ProviderName))
-		y += tkdnMetaRowMM + 1
+		pdf.SetFont(activityFont, "", activityTextPt)
+		y = drawMetaRow(pdf, textLeft, tkdnMetaLabelMM, textLeft+textWidth, y, tkdnMetaRowMM, activityTextPt, "Nama Penyedia", textnorm.DisplayTitle(snapshot.ProviderName)) + 1
 		writeMeta("Nama Pengadaan")
 		pdf.SetXY(valueLeft, y+0.5)
 		renderJustifiedSegments(pdf, valueLeft, textLeft+textWidth-valueLeft, tkdnMetaRowMM, activityTextPt, []textSegment{
@@ -110,12 +102,9 @@ func RenderTKDN(snapshot TKDNSnapshot, logoBytes map[string][]byte) (RenderedAgg
 			{text: fmt.Sprintf(" (LPG) untuk Mesin Pompa Air Bagi Petani Sasaran Tahun Anggaran %d di PT Pertamina Patra Niaga", snapshot.FiscalYear), style: ""},
 		})
 		y = pdf.GetY() + 1
-		writeMeta("Kabupaten / Kota")
-		pdf.Text(valueLeft, textBaseline(y, tkdnMetaRowMM, activityTextPt), textnorm.DisplayTitle(snapshot.RegencyName))
-		y += tkdnMetaRowMM + 1
-		writeMeta("Provinsi")
-		pdf.Text(valueLeft, textBaseline(y, tkdnMetaRowMM, activityTextPt), textnorm.DisplayTitle(snapshot.ProvinceName))
-		y += tkdnMetaRowMM + 4
+		pdf.SetFont(activityFont, "", activityTextPt)
+		y = drawMetaRow(pdf, textLeft, tkdnMetaLabelMM, textLeft+textWidth, y, tkdnMetaRowMM, activityTextPt, "Kabupaten / Kota", textnorm.DisplayTitle(snapshot.RegencyName)) + 1
+		y = drawMetaRow(pdf, textLeft, tkdnMetaLabelMM, textLeft+textWidth, y, tkdnMetaRowMM, activityTextPt, "Provinsi", textnorm.DisplayTitle(snapshot.ProvinceName)) + 4
 
 		pdf.SetY(y)
 		renderTKDNTable(pdf, snapshot, logos, textLeft)
@@ -157,7 +146,16 @@ func RenderTKDN(snapshot TKDNSnapshot, logoBytes map[string][]byte) (RenderedAgg
 func renderTKDNTable(pdf *fpdf.Fpdf, snapshot TKDNSnapshot, logos []registeredLogo, left float64) {
 	renderTKDNTableHeader(pdf, left)
 	for index, group := range groupTKDNItems(snapshot.Items) {
-		height := float64(group.rowCount()) * tkdnRowMM
+		titleHeight := 0.0
+		if group.title != "" {
+			titleHeight = tkdnRowHeight(pdf, []string{"", group.title})
+		}
+		rowHeights := make([]float64, len(group.items))
+		height := titleHeight
+		for i, item := range group.items {
+			rowHeights[i] = tkdnRowHeight(pdf, tkdnItemCells(group, item, snapshot.TotalPackages))
+			height += rowHeights[i]
+		}
 		// Satu kelompok tidak dipecah antar halaman agar sel nomor tetap utuh.
 		if pdf.GetY()+height+tkdnRowMM > pageHeightMM-bottomMarginMM {
 			pdf.AddPage()
@@ -169,22 +167,19 @@ func renderTKDNTable(pdf *fpdf.Fpdf, snapshot TKDNSnapshot, logos []registeredLo
 		row := y
 		x := left + tkdnColumnWidths[0]
 		if group.title != "" {
-			drawTKDNCell(pdf, x, row, tkdnColumnWidths[1], tkdnRowMM, group.title, "", "L", false)
+			drawTKDNCell(pdf, x, row, tkdnColumnWidths[1], titleHeight, group.title, "", "L", false)
 			for col := 2; col < len(tkdnColumnWidths); col++ {
-				drawTKDNCell(pdf, tkdnColumnX(left, col), row, tkdnColumnWidths[col], tkdnRowMM, "", "", "C", false)
+				drawTKDNCell(pdf, tkdnColumnX(left, col), row, tkdnColumnWidths[col], titleHeight, "", "", "C", false)
 			}
-			row += tkdnRowMM
+			row += titleHeight
 		}
-		for _, item := range group.items {
-			name := item.Name
-			if group.title != "" {
-				name = "- " + name
+		for i, item := range group.items {
+			cells := tkdnItemCells(group, item, snapshot.TotalPackages)
+			aligns := []string{"", "L", "C", "C", "C"}
+			for col := 1; col < len(cells); col++ {
+				drawTKDNCell(pdf, tkdnColumnX(left, col), row, tkdnColumnWidths[col], rowHeights[i], cells[col], "", aligns[col], false)
 			}
-			drawTKDNCell(pdf, x, row, tkdnColumnWidths[1], tkdnRowMM, name, "", "L", false)
-			drawTKDNCell(pdf, tkdnColumnX(left, 2), row, tkdnColumnWidths[2], tkdnRowMM, item.Brand, "", "C", false)
-			drawTKDNCell(pdf, tkdnColumnX(left, 3), row, tkdnColumnWidths[3], tkdnRowMM, formatTKDNQuantity(item.QuantityPerPackage, snapshot.TotalPackages), "", "C", false)
-			drawTKDNCell(pdf, tkdnColumnX(left, 4), row, tkdnColumnWidths[4], tkdnRowMM, formatTKDNPercent(item.TKDNPercent), "", "C", false)
-			row += tkdnRowMM
+			row += rowHeights[i]
 		}
 		pdf.SetY(row)
 	}
@@ -193,6 +188,59 @@ func renderTKDNTable(pdf *fpdf.Fpdf, snapshot TKDNSnapshot, logos []registeredLo
 	drawTKDNCell(pdf, left, y, merged, tkdnRowMM, "JUMLAH", "B", "C", true)
 	drawTKDNCell(pdf, left+merged, y, tkdnColumnWidths[4], tkdnRowMM, formatTKDNTotal(snapshot.TotalTKDN), "B", "C", true)
 	pdf.SetY(y + tkdnRowMM)
+}
+
+// tkdnItemCells adalah isi kolom satu barang (kolom nomor dikosongkan karena
+// digabung per kelompok).
+func tkdnItemCells(group tkdnRowGroup, item TKDNItem, totalPackages int) []string {
+	name := item.Name
+	if group.title != "" {
+		name = "- " + name
+	}
+	return []string{"", name, item.Brand, formatTKDNQuantity(item.QuantityPerPackage, totalPackages), formatTKDNPercent(item.TKDNPercent)}
+}
+
+// tkdnRowHeight adalah tinggi baris yang memuat seluruh isi selnya; minimal
+// tkdnRowMM seperti tata letak acuan.
+func tkdnRowHeight(pdf *fpdf.Fpdf, cells []string) float64 {
+	height := tkdnRowMM
+	for col, text := range cells {
+		if text == "" {
+			continue
+		}
+		size, lines := tkdnCellLines(pdf, text, "", tkdnColumnWidths[col])
+		height = maxFloat(height, float64(len(lines))*tkdnLineHeight(size)+2)
+	}
+	return height
+}
+
+func tkdnLineHeight(size float64) float64 { return size * 0.3528 * 1.2 }
+
+// tkdnCellLines memilih ukuran huruf dan baris isi sel: teks yang sedikit
+// lebih lebar diperkecil (minimal 7 pt) agar tetap satu baris, mis. merek
+// "Pertamina Enduro"; yang masih terlalu lebar dibungkus pada 7 pt.
+func tkdnCellLines(pdf *fpdf.Fpdf, text, style string, w float64) (float64, []string) {
+	parts := strings.Split(text, "\n")
+	width := w - 2*activitySignaturePadXMM
+	size := tkdnTablePt
+	for ; size > 7; size -= 0.5 {
+		pdf.SetFont(activityFont, style, size)
+		fits := true
+		for _, line := range parts {
+			if pdf.GetStringWidth(line) > width {
+				fits = false
+			}
+		}
+		if fits {
+			return size, parts
+		}
+	}
+	pdf.SetFont(activityFont, style, size)
+	var lines []string
+	for _, part := range parts {
+		lines = append(lines, wrapWords(pdf, part, width)...)
+	}
+	return size, lines
 }
 
 func renderTKDNTableHeader(pdf *fpdf.Fpdf, left float64) {
@@ -223,24 +271,9 @@ func drawTKDNCell(pdf *fpdf.Fpdf, x, y, w, h float64, text, style, align string,
 	if text == "" {
 		return
 	}
-	lines := strings.Split(text, "\n")
-	// Teks yang lebih lebar dari sel diperkecil (minimal 7 pt) agar tidak
-	// meluber ke kolom sebelah, mis. merek "Pertamina Enduro".
-	size := tkdnTablePt
-	for ; size > 7; size -= 0.5 {
-		pdf.SetFont(activityFont, style, size)
-		fits := true
-		for _, line := range lines {
-			if pdf.GetStringWidth(line) > w-2*activitySignaturePadXMM {
-				fits = false
-			}
-		}
-		if fits {
-			break
-		}
-	}
+	size, lines := tkdnCellLines(pdf, text, style, w)
 	pdf.SetFont(activityFont, style, size)
-	lineHeight := size * 0.3528 * 1.2
+	lineHeight := tkdnLineHeight(size)
 	top := y + (h-float64(len(lines))*lineHeight)/2
 	for i, line := range lines {
 		lineX := x + activitySignaturePadXMM

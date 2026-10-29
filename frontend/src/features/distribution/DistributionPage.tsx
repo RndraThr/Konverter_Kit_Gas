@@ -1,9 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, Circle, Clock3, LayoutGrid, Lock, MousePointerClick } from 'lucide-react';
 import { apiRequest, ApiError } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
 import type { DataResponse, DistributionSlot, EquipmentOption, ScheduleResponse, SlotCatalogEntry } from './types';
+
+const MEDIA_MOVE_POLL_MS = 3000;
+const MEDIA_RETRY_POLL_MS = 15000;
+
+// Photos uploaded before the recipient and date are set wait in staging; once both are set the
+// server moves them to the final folder in the background. Returns how often to re-read the slot
+// so their labels update without a page reload, or false when nothing is in flight.
+export function mediaPollInterval(slot: DistributionSlot | null): number | false {
+  if (!slot || slot.status === 'open' || !slot.distribution_date) return false;
+  const states = slot.documentation.flatMap((item) => item.files ?? []).map((file) => file.storage_state);
+  if (states.some((state) => state === 'moving' || state === 'staging')) return MEDIA_MOVE_POLL_MS;
+  if (states.includes('move_failed')) return MEDIA_RETRY_POLL_MS;
+  return false;
+}
 import { SlotMesinSection } from './SlotMesinSection';
 import { SlotDokumenSection } from './SlotDokumenSection';
 import { SlotPenyerahanSection } from './SlotPenyerahanSection';
@@ -49,6 +63,23 @@ export function DistributionPage() {
     onSuccess: ({ data }) => setSlot(data),
   });
 
+  const pollInterval = mediaPollInterval(slot);
+  const mediaRefresh = useQuery({
+    queryKey: ['distribution', 'slot-media', scheduleID, slot?.slot_number],
+    queryFn: () => apiRequest<DataResponse<DistributionSlot>>(`/api/v1/distribution/slots/search?schedule_id=${encodeURIComponent(scheduleID)}&q=${slot?.slot_number ?? ''}`),
+    enabled: pollInterval !== false,
+    refetchInterval: pollInterval,
+    refetchIntervalInBackground: false,
+    gcTime: 0,
+  });
+  // Only the documentation is taken from the refresh: the sections reset their forms from the
+  // other slot fields, and those have not changed while media is moving.
+  useEffect(() => {
+    const fresh = mediaRefresh.data?.data;
+    if (!fresh) return;
+    setSlot((current) => current && current.id === fresh.id ? { ...current, documentation: fresh.documentation } : current);
+  }, [mediaRefresh.data]);
+
   const changeSchedule = (value: string) => { setScheduleID(value); setSlot(null); setCreating(null); setSelectedNumber(null); };
   const selectExisting = (slotNumber: number) => { setSlot(null); setCreating(null); setSelectedNumber(slotNumber); search.mutate(slotNumber); };
   const startCreate = (slotNumber: number) => { setSlot(null); setCreating(slotNumber); setSelectedNumber(slotNumber); };
@@ -82,7 +113,7 @@ export function DistributionPage() {
         {search.isError && <DataState kind="error" title="Nomor bagi tidak ditemukan" description={search.error instanceof ApiError ? search.error.message : 'Muat ulang halaman, lalu coba lagi.'} />}
         {slot && <div className={styles.slotSections}>
           <SlotMesinSection slot={slot} machineOptions={machineOptions} converterOptions={converterOptions} hoseOptions={hoseOptions} onChanged={onSlotChanged} />
-          <SlotDokumenSection slot={slot} machineOptions={machineOptions} converterOptions={converterOptions} hoseOptions={hoseOptions} onChanged={onSlotChanged} />
+          <SlotDokumenSection slot={slot} programType={selectedSchedule?.program?.program_type} machineOptions={machineOptions} converterOptions={converterOptions} hoseOptions={hoseOptions} onChanged={onSlotChanged} />
           <SlotPenyerahanSection slot={slot} onChanged={onSlotChanged} />
         </div>}
         {!slot && creating !== null && <div className={styles.slotSections}>

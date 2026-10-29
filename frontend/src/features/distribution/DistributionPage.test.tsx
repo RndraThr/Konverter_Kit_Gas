@@ -4,7 +4,8 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
 import { apiRequest } from '../../lib/api';
 import { PermissionsProvider } from '../../lib/permissions';
-import { DistributionPage } from './DistributionPage';
+import { DistributionPage, mediaPollInterval } from './DistributionPage';
+import type { DistributionSlot, MediaFile } from './types';
 
 vi.mock('../../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../../lib/api')>('../../lib/api');
@@ -96,4 +97,20 @@ test('splits the catalog and distribution form into separate workspace regions',
   expect(within(catalogPanel).getByRole('group', { name: 'Katalog nomor bagi' })).toBeVisible();
   expect(screen.getByRole('region', { name: 'Area kerja pendistribusian' })).toBeVisible();
   expect(screen.getByText('Pilih nomor bagi untuk mulai bekerja')).toBeVisible();
+});
+
+test('polls the slot only while photos are still on their way to the final folder', () => {
+  const file = (storage_state: MediaFile['storage_state']): MediaFile => ({ id: storage_state, slot_id: 'ktp', original_filename: 'a.jpg', mime_type: 'image/jpeg', byte_size: 1, source: 'camera', status: 'accepted', content_url: '', storage_state });
+  const withFiles = (status: DistributionSlot['status'], date: string | null, ...files: MediaFile[]) => ({
+    ...slot, status, distribution_date: date,
+    documentation: [{ code: 'ktp', label: 'KTP', stage: 'dokumen', required: true, files }],
+  }) as unknown as DistributionSlot;
+
+  expect(mediaPollInterval(null)).toBe(false);
+  expect(mediaPollInterval(withFiles('open', '2026-10-20', file('staging')))).toBe(false);
+  expect(mediaPollInterval(withFiles('linked', null, file('staging')))).toBe(false);
+  expect(mediaPollInterval(withFiles('linked', '2026-10-20', file('staging')))).toBe(3000);
+  expect(mediaPollInterval(withFiles('linked', '2026-10-20', file('final'), file('moving')))).toBe(3000);
+  expect(mediaPollInterval(withFiles('linked', '2026-10-20', file('move_failed')))).toBe(15000);
+  expect(mediaPollInterval(withFiles('linked', '2026-10-20', file('final')))).toBe(false);
 });

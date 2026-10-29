@@ -36,6 +36,8 @@ type DailyBundle struct {
 	StorageKey     string     `json:"-"`
 	LastError      string     `json:"last_error,omitempty"`
 	SyncedAt       *time.Time `json:"synced_at,omitempty"`
+	// SourceFingerprint identifies the content the PDF was built from.
+	SourceFingerprint string `json:"-"`
 }
 
 type BundleRequest struct {
@@ -70,28 +72,35 @@ type BundleItemActivation struct {
 }
 
 type BundleActivation struct {
-	ProgramID        string
-	RegencyID        string
-	LocalDate        string
-	Filename         string
-	PageCount        int
-	Checksum         string
-	StorageKey       string
-	ExpectedActiveID string
-	Items            []BundleItemActivation
+	ProgramID         string
+	RegencyID         string
+	LocalDate         string
+	Filename          string
+	PageCount         int
+	Checksum          string
+	StorageKey        string
+	ExpectedActiveID  string
+	Items             []BundleItemActivation
+	SourceFingerprint string
 }
 
 type BundleActivationResult struct {
 	Bundle        DailyBundle
 	OldStorageKey string
-	Unchanged     bool
+	// StaleStorageKeys are the files of stale versions superseded by this activation; the
+	// caller removes them so the Drive folder keeps one PDF per date.
+	StaleStorageKeys []string
+	Unchanged        bool
 }
 
 type DateSummary struct {
-	LocalDate        string       `json:"local_date"`
-	RecipientCount   int          `json:"recipient_count"`
-	ValidationStatus string       `json:"validation_status"`
-	Bundle           *DailyBundle `json:"bundle,omitempty"`
+	LocalDate        string `json:"local_date"`
+	RecipientCount   int    `json:"recipient_count"`
+	ValidationStatus string `json:"validation_status"`
+	// SyncStatus is "synced" when the Drive PDF matches the current data, "out_of_sync" after
+	// any change since the last sync, and "not_created" before the first sync.
+	SyncStatus string       `json:"sync_status"`
+	Bundle     *DailyBundle `json:"bundle,omitempty"`
 }
 
 type LogoSnapshot struct {
