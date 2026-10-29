@@ -157,11 +157,7 @@ func renderActivityHeader(pdf *fpdf.Fpdf, document activityDocument, snapshot Ra
 	pdf.SetFont(activityFont, "", activityTextPt)
 	y := pdf.GetY()
 	for _, item := range metadata {
-		baseline := textBaseline(y, metadataRowMM, activityTextPt)
-		pdf.Text(textLeft, baseline, item.label)
-		pdf.Text(textLeft+labelWidthMM, baseline, ":")
-		pdf.Text(textLeft+labelWidthMM+3.5, baseline, item.value)
-		y += metadataRowMM
+		y = drawMetaRow(pdf, textLeft, labelWidthMM, textLeft+textWidth, y, metadataRowMM, activityTextPt, item.label, item.value)
 	}
 	pdf.SetXY(textLeft, y+1)
 

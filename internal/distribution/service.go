@@ -21,6 +21,8 @@ import (
 var onlyDigits = regexp.MustCompile(`^[0-9]+$`)
 var stripNonDigits = regexp.MustCompile(`[^0-9]+`)
 
+var phoneNumberPattern = regexp.MustCompile(`^08[0-9]{8,11}$`)
+
 type mediaRepository interface {
 	GetMediaSlot(context.Context, string, auth.RegencyScope) (MediaSlot, error)
 	SaveMedia(context.Context, auth.Principal, MediaFileInput, auth.ClientMeta) (MediaFile, error)
@@ -216,13 +218,15 @@ func (s *Service) SuggestCandidates(ctx context.Context, scheduleID, nikPrefix s
 	if scheduleID == "" {
 		return nil, ErrScheduleRequired
 	}
-	if len(nikPrefix) < 4 || len(nikPrefix) > 16 {
+	// An empty or short prefix is allowed so the picker can list receivable candidates as soon as
+	// the officer focuses the field; the limit keeps that first list small.
+	if len(nikPrefix) > 16 {
 		return nil, ErrQueryRequired
 	}
 	if s.posDokumenRepository == nil {
 		return nil, errors.New("distribution POS Dokumen is unavailable")
 	}
-	return s.posDokumenRepository.SuggestCandidates(ctx, scheduleID, nikPrefix, 8, scope)
+	return s.posDokumenRepository.SuggestCandidates(ctx, scheduleID, nikPrefix, 20, scope)
 }
 
 // LookupCandidate classifies one exact NIK so POS Dokumen can distinguish "not registered" from
@@ -269,6 +273,9 @@ func (s *Service) LinkSlot(ctx context.Context, actor auth.Principal, input Link
 		return DistributionSlot{}, ErrNIKInvalid
 	}
 	input.Address, input.Village, input.District, input.PhoneNumber, input.SectorIdentifier = normalizeRecipientFields(input.Address, input.Village, input.District, input.PhoneNumber, input.SectorIdentifier)
+	if !validPhoneNumber(input.PhoneNumber) {
+		return DistributionSlot{}, ErrPhoneInvalid
+	}
 	if s.posDokumenRepository == nil {
 		return DistributionSlot{}, errors.New("distribution POS Dokumen is unavailable")
 	}
@@ -284,6 +291,9 @@ func (s *Service) UpdateRecipient(ctx context.Context, actor auth.Principal, inp
 		return DistributionSlot{}, ErrSlotNumberRequired
 	}
 	input.Address, input.Village, input.District, input.PhoneNumber, input.SectorIdentifier = normalizeRecipientFields(input.Address, input.Village, input.District, input.PhoneNumber, input.SectorIdentifier)
+	if !validPhoneNumber(input.PhoneNumber) {
+		return DistributionSlot{}, ErrPhoneInvalid
+	}
 	if s.posDokumenRecipient == nil {
 		return DistributionSlot{}, errors.New("distribution POS Dokumen is unavailable")
 	}
@@ -308,6 +318,9 @@ func (s *Service) ReplaceRecipient(ctx context.Context, actor auth.Principal, in
 		return DistributionSlot{}, ErrReplacementReasonRequired
 	}
 	input.Address, input.Village, input.District, input.PhoneNumber, input.SectorIdentifier = normalizeRecipientFields(input.Address, input.Village, input.District, input.PhoneNumber, input.SectorIdentifier)
+	if !validPhoneNumber(input.PhoneNumber) {
+		return DistributionSlot{}, ErrPhoneInvalid
+	}
 	if s.posDokumenRecipient == nil {
 		return DistributionSlot{}, errors.New("distribution POS Dokumen is unavailable")
 	}
@@ -409,7 +422,23 @@ func normalizeIdentifier(value string) string {
 }
 
 func normalizeRecipientFields(address, village, district, phoneNumber, sectorIdentifier string) (string, string, string, string, string) {
-	return textnorm.BusinessUpper(address), textnorm.BusinessUpper(village), textnorm.BusinessUpper(district), stripNonDigits.ReplaceAllString(phoneNumber, ""), normalizeIdentifier(sectorIdentifier)
+	return textnorm.BusinessUpper(address), textnorm.BusinessUpper(village), textnorm.BusinessUpper(district), normalizePhoneNumber(phoneNumber), normalizeIdentifier(sectorIdentifier)
+}
+
+// normalizePhoneNumber keeps only digits and rewrites the international 62 prefix to the local 0,
+// so "+62 812-3456-7890" and "0812 3456 7890" are stored the same way.
+func normalizePhoneNumber(value string) string {
+	digits := stripNonDigits.ReplaceAllString(value, "")
+	if strings.HasPrefix(digits, "628") {
+		digits = "0" + strings.TrimPrefix(digits, "62")
+	}
+	return digits
+}
+
+// validPhoneNumber accepts an empty number (the field is optional for older clients) or an
+// Indonesian mobile number: 08 followed by 8 to 11 digits.
+func validPhoneNumber(value string) bool {
+	return value == "" || phoneNumberPattern.MatchString(value)
 }
 
 func (s *Service) UploadMedia(ctx context.Context, actor auth.Principal, input UploadMediaInput, meta auth.ClientMeta, scope auth.RegencyScope) (MediaFile, error) {

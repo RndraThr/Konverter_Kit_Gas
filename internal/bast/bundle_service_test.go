@@ -57,8 +57,56 @@ func TestPreviewBundleWorksBeforeTotalLockAndWithIncompleteData(t *testing.T) {
 	if preview.RecipientCount != 2 || len(preview.PDF) == 0 {
 		t.Fatalf("preview=%+v", preview)
 	}
-	if _, err := service.FinalizeBundle(context.Background(), auth.Principal{}, request, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{}); !errors.Is(err, ErrFinalTotalMissing) {
-		t.Fatalf("finalize err=%v", err)
+	if _, err := service.FinalizeBundle(context.Background(), auth.Principal{}, request, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{}); err == nil || errors.Is(err, ErrFinalTotalMissing) {
+		t.Fatalf("finalize with incomplete data err=%v, want a data error rather than a lock error", err)
+	}
+}
+
+// BA Perorangan is synced without locking the regency total: the number uses the slot quota.
+func TestFinalizeBundleWithoutLockedTotalUsesTheSlotQuota(t *testing.T) {
+	repository := newBundleRepositoryStub(t)
+	repository.unlocked = true
+	storage := newBundleStorageStub(t)
+	storage.files["logo-key"] = testPNG(t)
+	service := NewBundleService(repository, storage, time.UTC)
+
+	bundle, err := service.FinalizeBundle(context.Background(), auth.Principal{}, BundleRequest{ProgramID: "program", RegencyID: "regency", LocalDate: "2024-12-10"}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bundle.RecipientCount != 2 || len(repository.activated.Items) != 2 {
+		t.Fatalf("bundle=%+v activation=%+v", bundle, repository.activated)
+	}
+}
+
+func TestFinalizeBundleDeletesTheFilesOfSupersededStaleVersions(t *testing.T) {
+	repository := newBundleRepositoryStub(t)
+	repository.staleKeys = []string{"stale-key"}
+	storage := newBundleStorageStub(t)
+	storage.files["logo-key"] = testPNG(t)
+	storage.files["stale-key"] = []byte("old pdf")
+	service := NewBundleService(repository, storage, time.UTC)
+
+	if _, err := service.FinalizeBundle(context.Background(), auth.Principal{}, BundleRequest{ProgramID: "program", RegencyID: "regency", LocalDate: "2024-12-10"}, auth.RegencyScope{Unrestricted: true}, auth.ClientMeta{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := storage.files["stale-key"]; ok {
+		t.Fatal("stale bundle file was not deleted")
+	}
+}
+
+func TestRetireDateDeletesTheStaleFiles(t *testing.T) {
+	repository := newBundleRepositoryStub(t)
+	repository.staleKeys = []string{"stale-key"}
+	storage := newBundleStorageStub(t)
+	storage.files["stale-key"] = []byte("old pdf")
+	service := NewBundleService(repository, storage, time.UTC)
+
+	if err := service.RetireDate(context.Background(), "program", "regency", "2024-12-10", auth.RegencyScope{Unrestricted: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := storage.files["stale-key"]; ok || repository.retiredDate != "2024-12-10" {
+		t.Fatalf("retired=%q files=%v", repository.retiredDate, storage.files)
 	}
 }
 
@@ -94,6 +142,8 @@ func TestPreviewBundleOfOneSlotKeepsItsNumber(t *testing.T) {
 	}
 }
 
+// An identical PDF is not uploaded again, but the sync still records the content it checked so
+// the date reads as synced.
 func TestFinalizeBundleChecksumNoOpDoesNotUpload(t *testing.T) {
 	repository := newBundleRepositoryStub(t)
 	storage := newBundleStorageStub(t)
@@ -111,8 +161,8 @@ func TestFinalizeBundleChecksumNoOpDoesNotUpload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.ID != "same" || storage.putCalls != 0 || repository.activateCalls != 0 {
-		t.Fatalf("result=%+v puts=%d activates=%d", result, storage.putCalls, repository.activateCalls)
+	if result.ID != "same" || storage.putCalls != 0 || repository.activateCalls != 1 || repository.activated.StorageKey != "" || repository.activated.SourceFingerprint == "" {
+		t.Fatalf("result=%+v puts=%d activates=%d activation=%+v", result, storage.putCalls, repository.activateCalls, repository.activated)
 	}
 }
 
@@ -193,6 +243,10 @@ type bundleRepositoryStub struct {
 	cleanupMessage  string
 	unlocked        bool
 	blankSource     bool
+	staleKeys       []string
+	retiredDate     string
+	bundles         []DailyBundle
+	address         string
 }
 
 func newBundleRepositoryStub(t *testing.T) *bundleRepositoryStub { return &bundleRepositoryStub{t: t} }
@@ -213,10 +267,13 @@ func (r *bundleRepositoryStub) LockRegencyTotal(context.Context, auth.Principal,
 	panic("unexpected")
 }
 func (r *bundleRepositoryStub) ListActiveBundles(context.Context, string, string, auth.RegencyScope) ([]DailyBundle, error) {
-	return nil, nil
+	return r.bundles, nil
 }
 func (r *bundleRepositoryStub) LoadSourceData(_ context.Context, recipient RecipientDocument, _ SourceContext, _ auth.RegencyScope) (SourceData, error) {
 	source := renderSource(recipient)
+	if r.address != "" {
+		source.Recipient.Address = r.address
+	}
 	if r.blankSource {
 		source.Recipient = RecipientSnapshot{}
 		source.Equipment = EquipmentSnapshot{}
@@ -238,7 +295,16 @@ func (r *bundleRepositoryStub) ActivateBundle(_ context.Context, _ auth.Principa
 	if r.activateErr != nil {
 		return BundleActivationResult{}, r.activateErr
 	}
-	return BundleActivationResult{Bundle: DailyBundle{ID: "new", ProgramID: input.ProgramID, RegencyID: input.RegencyID, LocalDate: input.LocalDate, Filename: input.Filename, RecipientCount: len(input.Items), PageCount: input.PageCount, Checksum: input.Checksum, StorageKey: input.StorageKey, Version: 2, Status: "active"}, OldStorageKey: r.active.StorageKey}, nil
+	if r.active.ID != "" && r.active.Checksum == input.Checksum {
+		unchanged := r.active
+		unchanged.SourceFingerprint = input.SourceFingerprint
+		return BundleActivationResult{Bundle: unchanged, Unchanged: true, StaleStorageKeys: r.staleKeys}, nil
+	}
+	return BundleActivationResult{Bundle: DailyBundle{ID: "new", ProgramID: input.ProgramID, RegencyID: input.RegencyID, LocalDate: input.LocalDate, Filename: input.Filename, RecipientCount: len(input.Items), PageCount: input.PageCount, Checksum: input.Checksum, StorageKey: input.StorageKey, Version: 2, Status: "active"}, OldStorageKey: r.active.StorageKey, StaleStorageKeys: r.staleKeys}, nil
+}
+func (r *bundleRepositoryStub) RetireDateBundles(_ context.Context, _, _, localDate string, _ auth.RegencyScope) ([]string, error) {
+	r.retiredDate = localDate
+	return r.staleKeys, nil
 }
 func (r *bundleRepositoryStub) RecordCleanupFailure(_ context.Context, bundleID, message string) error {
 	r.cleanupBundleID, r.cleanupMessage = bundleID, message
@@ -317,4 +383,54 @@ func containsPrefix(values []string, wanted string) bool {
 		}
 	}
 	return false
+}
+
+// A date is synced only while its content matches what was last written to Drive; any change
+// afterwards labels it out of sync, and a date whose recipients all left is offered for removal.
+func TestListDatesReportsSyncStatusFromTheContent(t *testing.T) {
+	repository := newBundleRepositoryStub(t)
+	storage := newBundleStorageStub(t)
+	storage.files["logo-key"] = testPNG(t)
+	service := NewBundleService(repository, storage, time.UTC)
+	scope := auth.RegencyScope{Unrestricted: true}
+	status := func() map[string]DateSummary {
+		t.Helper()
+		dates, err := service.ListDates(context.Background(), "program", "regency", scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		byDate := map[string]DateSummary{}
+		for _, date := range dates {
+			byDate[date.LocalDate] = date
+		}
+		return byDate
+	}
+
+	if got := status()["2024-12-10"].SyncStatus; got != BundleNotCreated {
+		t.Fatalf("before sync = %q", got)
+	}
+	if _, err := service.FinalizeBundle(context.Background(), auth.Principal{}, BundleRequest{ProgramID: "program", RegencyID: "regency", LocalDate: "2024-12-10"}, scope, auth.ClientMeta{}); err != nil {
+		t.Fatal(err)
+	}
+	repository.bundles = []DailyBundle{{ID: "new", LocalDate: "2024-12-10", Status: "active", SourceFingerprint: repository.activated.SourceFingerprint}}
+	if got := status()["2024-12-10"].SyncStatus; got != BundleSynced {
+		t.Fatalf("after sync = %q", got)
+	}
+
+	repository.address = "Alamat yang diperbaiki"
+	if got := status()["2024-12-10"].SyncStatus; got != BundleOutOfSync {
+		t.Fatalf("after a data change = %q", got)
+	}
+
+	repository.bundles = append(repository.bundles, DailyBundle{ID: "old", LocalDate: "2024-12-01", Status: "stale", StorageKey: "old-key"})
+	orphan := status()["2024-12-01"]
+	if orphan.RecipientCount != 0 || orphan.SyncStatus != BundleOutOfSync {
+		t.Fatalf("emptied date = %+v", orphan)
+	}
+	if _, err := service.FinalizeBundle(context.Background(), auth.Principal{}, BundleRequest{ProgramID: "program", RegencyID: "regency", LocalDate: "2024-12-01"}, scope, auth.ClientMeta{}); err != nil {
+		t.Fatal(err)
+	}
+	if repository.retiredDate != "2024-12-01" {
+		t.Fatalf("emptied date was not retired: %q", repository.retiredDate)
+	}
 }

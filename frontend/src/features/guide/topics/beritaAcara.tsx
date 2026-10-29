@@ -1,4 +1,4 @@
-import { Download, FileUp, ListChecks, PenLine, Printer, RefreshCw, Save, ScanLine, Signature, Upload } from 'lucide-react';
+import { CloudUpload, Download, FileUp, ListChecks, PenLine, Printer, RefreshCw, Save, ScanLine, Signature, Upload } from 'lucide-react';
 import { ButtonSample, FieldSample } from '../GuideExamples';
 import type { GuideTopic } from '../guideTopics';
 
@@ -81,9 +81,10 @@ export const beritaAcara: GuideTopic = {
       id: 'finalisasi',
       title: 'Finalisasi dan riwayat versi',
       summary: 'Finalisasi mengunci BA menjadi PDF resmi, menyimpannya sebagai versi, dan menyinkronkannya ke folder dokumen.',
-      shots: [{ id: 'ba-perorangan', title: 'BA Perorangan setelah finalisasi', legend: ['Daftar tanggal: Siap / Tersinkron / Perlu konfigurasi', 'Unduh PDF versi aktif', 'Finalisasi & sinkronkan'] }],
+      shots: [{ id: 'ba-perorangan', title: 'BA Perorangan', legend: ['Daftar tanggal: Tersinkron / Belum sinkron / Belum dibuat', 'Unduh PDF versi terakhir di Drive', 'Sinkronkan ke Drive (per tanggal atau semua)'] }],
       steps: [
         { n: 3, text: <>Setelah preview benar, klik <ButtonSample icon={<RefreshCw />}>Finalisasi & sinkronkan</ButtonSample>.</>, permissions: ['bast.manage'] },
+        { text: <><b>BA Perorangan tidak perlu finalisasi.</b> Preview selalu memakai data terbaru. Setiap ada perubahan apa pun (data penerima, nomor, penandatangan, tanda tangan, stempel, logo), tanggalnya berlabel <b>Belum sinkron</b>; klik <ButtonSample icon={<CloudUpload />}>Sinkronkan ke Drive</ButtonSample> (atau <b>Sinkronkan semua</b>) untuk memperbarui PDF di Drive.</>, permissions: ['bast.manage'] },
         { n: 2, text: <>Versi aktif tampil dengan nama file, jumlah halaman, dan <ButtonSample variant="outline" icon={<Download />}>Unduh PDF</ButtonSample>.</> },
         { text: <>Bila data berubah setelah final, versi lama ditandai <b>Perlu dibuat ulang</b>; finalisasi lagi untuk membuat versi baru. Versi lama tetap bisa diunduh di Riwayat versi.</> },
       ],

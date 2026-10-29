@@ -16,7 +16,9 @@ export type DailyBundle = {
 export type DateSummary = {
   local_date: string;
   recipient_count: number;
-  validation_status: 'ready' | 'configuration_required' | 'total_not_locked';
+  validation_status: 'ready' | 'configuration_required';
+  // synced: PDF di Drive sesuai data terkini; out_of_sync: ada perubahan sejak sinkron terakhir.
+  sync_status?: 'synced' | 'out_of_sync' | 'not_created';
   bundle?: DailyBundle;
 };
 

@@ -71,6 +71,23 @@ type formalHeader struct {
 	pageWidth float64
 }
 
+// drawMetaRow mencetak satu baris "label : nilai". Nilai yang lebih lebar dari
+// kolomnya dibungkus per kata (kata yang terlalu panjang dipotong) dan baris
+// lanjutannya sejajar kolom nilai, sehingga tidak melewati batas kanan.
+// Mengembalikan Y baris berikutnya.
+func drawMetaRow(pdf *fpdf.Fpdf, left, labelWidth, right, y, rowHeight, sizePt float64, label, value string) float64 {
+	baseline := textBaseline(y, rowHeight, sizePt)
+	pdf.Text(left, baseline, label)
+	pdf.Text(left+labelWidth, baseline, ":")
+	valueLeft := left + labelWidth + 3.5
+	lines := wrapWords(pdf, value, right-valueLeft)
+	lineHeight := formalLineHeight(sizePt)
+	for i, line := range lines {
+		pdf.Text(valueLeft, baseline+float64(i)*lineHeight, line)
+	}
+	return y + rowHeight + float64(len(lines)-1)*lineHeight
+}
+
 func renderFormalHeader(pdf *fpdf.Fpdf, logos []registeredLogo, header formalHeader) {
 	width := header.pageWidth
 	if width == 0 {
@@ -100,11 +117,7 @@ func renderFormalHeader(pdf *fpdf.Fpdf, logos []registeredLogo, header formalHea
 	textLeft, textWidth := marginMM, contentWidth
 	pdf.SetFont(activityFont, "", activityTextPt)
 	for _, item := range header.metadata {
-		baseline := textBaseline(y, formalMetaRowMM, activityTextPt)
-		pdf.Text(textLeft, baseline, item.label)
-		pdf.Text(textLeft+formalMetaLabelMM, baseline, ":")
-		pdf.Text(textLeft+formalMetaLabelMM+3.5, baseline, item.value)
-		y += formalMetaRowMM
+		y = drawMetaRow(pdf, textLeft, formalMetaLabelMM, textLeft+textWidth, y, formalMetaRowMM, activityTextPt, item.label, item.value)
 	}
 	pdf.SetXY(textLeft, y+1)
 	if len(header.narrative) > 0 {

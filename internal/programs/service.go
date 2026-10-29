@@ -37,9 +37,24 @@ type repository interface {
 
 type Service struct {
 	repository repository
+	// onZoneAssignmentsChanged is told the programme whose zones or kabupaten-to-zone assignments
+	// just changed (the distribution map caches zone boundaries per programme).
+	onZoneAssignmentsChanged func(programID string)
 }
 
 func NewService(repository repository) *Service { return &Service{repository: repository} }
+
+// OnZoneAssignmentsChanged registers the observer called after every successful change to a
+// programme's zones or assignments. Call it once while wiring, before serving requests.
+func (s *Service) OnZoneAssignmentsChanged(observer func(programID string)) {
+	s.onZoneAssignmentsChanged = observer
+}
+
+func (s *Service) zoneAssignmentsChanged(programID string) {
+	if s.onZoneAssignmentsChanged != nil {
+		s.onZoneAssignmentsChanged(programID)
+	}
+}
 
 func (s *Service) ListRegencies(ctx context.Context, scope auth.RegencyScope) ([]Regency, error) {
 	return s.repository.ListRegencies(ctx, scope)
@@ -106,7 +121,12 @@ func (s *Service) SaveSchedule(ctx context.Context, actor auth.Principal, input 
 	if input.ReceiptPolicy == nil {
 		input.ReceiptPolicy = map[string]any{"mode": "block_repeat"}
 	}
-	return s.repository.SaveSchedule(ctx, actor, input, scope, meta)
+	schedule, err := s.repository.SaveSchedule(ctx, actor, input, scope, meta)
+	if err == nil {
+		// A schedule in a kabupaten new to the programme creates its placeholder-zone assignment.
+		s.zoneAssignmentsChanged(input.ProgramID)
+	}
+	return schedule, err
 }
 
 func (s *Service) ListPackageTemplates(ctx context.Context) ([]PackageTemplate, error) {
@@ -302,7 +322,11 @@ func (s *Service) SaveZone(ctx context.Context, actor auth.Principal, input Zone
 	if !zoneCodePattern.MatchString(input.Code) {
 		return ProgramZone{}, ErrInvalidInput
 	}
-	return s.repository.SaveZone(ctx, actor, input, meta)
+	zone, err := s.repository.SaveZone(ctx, actor, input, meta)
+	if err == nil {
+		s.zoneAssignmentsChanged(input.ProgramID)
+	}
+	return zone, err
 }
 
 // DeleteZone menghapus zona; kabupaten di dalamnya kembali ke zona
@@ -312,7 +336,11 @@ func (s *Service) DeleteZone(ctx context.Context, actor auth.Principal, programI
 	if programID == "" || zoneID == "" {
 		return ErrInvalidInput
 	}
-	return s.repository.DeleteZone(ctx, actor, programID, zoneID, meta)
+	err := s.repository.DeleteZone(ctx, actor, programID, zoneID, meta)
+	if err == nil {
+		s.zoneAssignmentsChanged(programID)
+	}
+	return err
 }
 
 func (s *Service) AssignRegency(ctx context.Context, actor auth.Principal, input RegencyAssignmentInput, scope auth.RegencyScope, meta auth.ClientMeta) (ProgramZone, error) {
@@ -322,7 +350,11 @@ func (s *Service) AssignRegency(ctx context.Context, actor auth.Principal, input
 	if input.ProgramID == "" || input.RegencyID == "" || input.ZoneID == "" {
 		return ProgramZone{}, ErrInvalidInput
 	}
-	return s.repository.AssignRegency(ctx, actor, input, scope, meta)
+	zone, err := s.repository.AssignRegency(ctx, actor, input, scope, meta)
+	if err == nil {
+		s.zoneAssignmentsChanged(input.ProgramID)
+	}
+	return zone, err
 }
 
 func (s *Service) ResolveStorageContext(ctx context.Context, programID string, regencyID string, scope auth.RegencyScope) (StorageContext, error) {

@@ -22,11 +22,15 @@ const (
 	baPeroranganSubtitle = "(FORM PENERIMA PAKET)"
 	declarationText      = "Dengan ini kami menyatakan bahwa Seluruh Material/Produk/Barang tercantum diatas telah diterima dan dapat berfungsi dengan baik dengan jumlah yang benar serta telah diperiksa dengan seksama oleh masing-masing pihak"
 
-	tableFontPt   = 8.5
-	tableLineMM   = 3.6
-	cellPadMM     = 1.6
-	minRowMM      = 5.8
+	tableFontPt = 8.5
+	tableLineMM = 3.6
+	cellPadMM   = 1.6
+	minRowMM    = 5.8
+	// cellMinFontPt adalah ukuran huruf terkecil sel bertinggi tetap.
+	cellMinFontPt = 5.0
 	infoRowMM     = 4.9
+	// infoLineMM adalah jarak baris lanjutan nilai Data Penerima yang dibungkus.
+	infoLineMM    = 4.0
 	signatureHMM  = 36.0
 	checkToken    = "\u2713"
 	hoseLabelPair = "Panjang Selang Hisap"
@@ -327,7 +331,15 @@ func labelValue(pdf *fpdf.Fpdf, label, value string, bold bool) {
 		style = "B"
 	}
 	pdf.SetFont(arialFamily, style, 9)
-	pdf.CellFormat(pageWidthMM-2*marginMM-33.3, infoRowMM, value, "", 1, "L", false, 0, "")
+	// Nilai yang panjang dibungkus di kolom nilai; satu baris tetap setinggi infoRowMM.
+	valueWidth := pageWidthMM - 2*marginMM - 33.3
+	lines := len(pdf.SplitLines([]byte(value), valueWidth))
+	if lines <= 1 {
+		pdf.CellFormat(valueWidth, infoRowMM, value, "", 1, "L", false, 0, "")
+		return
+	}
+	pdf.MultiCell(valueWidth, infoLineMM, value, "", "L", false)
+	pdf.SetY(pdf.GetY() + infoRowMM - infoLineMM)
 }
 
 func renderEquipmentTables(pdf *fpdf.Fpdf, equipment EquipmentSnapshot) {
@@ -343,26 +355,52 @@ func renderHoseTable(pdf *fpdf.Fpdf, equipment EquipmentSnapshot) {
 	renderFixedRow(pdf, widths, []string{"Merek Selang Hisap Dan Selang Buang", "Spesifikasi Selang Hisap dan Selang Buang", "Serial Number", "Checklist"}, nil, 10.5, true)
 
 	brands, specs := splitHosePair(equipment.HoseBrand), splitHosePair(equipment.HoseSpec)
-	x, y, rowHeight := marginMM, pdf.GetY(), minRowMM
+	x, y := marginMM, pdf.GetY()
 
 	pdf.SetFont(arialFamily, "", tableFontPt)
 	labelWidth := pdf.GetStringWidth(hoseLabelPair) + 1.2
 	labels := [2]string{"Panjang Selang Hisap", "Panjang Selang Buang"}
+	specWidth := widths[1] - 2*cellPadMM - labelWidth
 
+	// Setiap baris setinggi isinya (minimal minRowMM): merek dan spesifikasi
+	// yang panjang dibungkus di dalam selnya.
+	// Spesifikasi yang muat ditulis sesudah labelnya seperti acuan; yang tidak
+	// muat ditulis "label : spesifikasi" dan dibungkus selebar sel.
+	fullWidth := widths[1] - 2*cellPadMM
+	specFits := func(row int) bool { return pdf.GetStringWidth(": "+specs[row]) <= specWidth }
+	specLineCount := func(row int) int {
+		if specFits(row) {
+			return 1
+		}
+		return len(pdf.SplitLines([]byte(labels[row]+" : "+specs[row]), fullWidth))
+	}
+	var rowHeights [2]float64
 	for row := 0; row < 2; row++ {
-		rowY := y + float64(row)*rowHeight
+		brandLines := len(pdf.SplitLines([]byte(brands[row]), widths[0]-2*cellPadMM))
+		rowHeights[row] = maxFloat(minRowMM, float64(maxInt(brandLines, specLineCount(row)))*tableLineMM+2)
+	}
+	rowY := y
+	for row := 0; row < 2; row++ {
+		rowHeight := rowHeights[row]
 		drawCell(pdf, x, rowY, widths[0], rowHeight, brands[row], "C", false)
 		specX := x + widths[0]
 		pdf.Rect(specX, rowY, widths[1], rowHeight, "")
 		pdf.SetFont(arialFamily, "", tableFontPt)
-		pdf.SetXY(specX+cellPadMM, rowY+(rowHeight-tableLineMM)/2)
-		pdf.CellFormat(labelWidth, tableLineMM, labels[row], "", 0, "L", false, 0, "")
-		pdf.CellFormat(widths[1]-2*cellPadMM-labelWidth, tableLineMM, ": "+specs[row], "", 0, "L", false, 0, "")
+		top := rowY + (rowHeight-float64(specLineCount(row))*tableLineMM)/2
+		pdf.SetXY(specX+cellPadMM, top)
+		if specFits(row) {
+			pdf.CellFormat(labelWidth, tableLineMM, labels[row], "", 0, "L", false, 0, "")
+			pdf.CellFormat(specWidth, tableLineMM, ": "+specs[row], "", 0, "L", false, 0, "")
+		} else {
+			pdf.MultiCell(fullWidth, tableLineMM, labels[row]+" : "+specs[row], "", "L", false)
+		}
+		rowY += rowHeight
 	}
+	total := rowHeights[0] + rowHeights[1]
 	spanX := x + widths[0] + widths[1]
-	drawCell(pdf, spanX, y, widths[2], rowHeight*2, equipment.HoseSerial, "C", false)
-	drawCell(pdf, spanX+widths[2], y, widths[3], rowHeight*2, checkMark(true), "C", false)
-	pdf.SetXY(marginMM, y+rowHeight*2)
+	drawCell(pdf, spanX, y, widths[2], total, equipment.HoseSerial, "C", false)
+	drawCell(pdf, spanX+widths[2], y, widths[3], total, checkMark(true), "C", false)
+	pdf.SetXY(marginMM, y+total)
 }
 
 func splitHosePair(value string) [2]string {
@@ -417,11 +455,21 @@ func drawCell(pdf *fpdf.Fpdf, x, y, w, h float64, text, align string, bold bool)
 	if bold {
 		style = "B"
 	}
-	pdf.SetFont(arialFamily, style, tableFontPt)
+	// Sel bertinggi tetap (mis. nama penanda tangan) memperkecil hurufnya bila
+	// teks tidak muat, sampai minimal cellMinFontPt, agar tidak melewati garis.
+	size, lineHeight := tableFontPt, tableLineMM
+	pdf.SetFont(arialFamily, style, size)
 	lines := pdf.SplitLines([]byte(text), w-2*cellPadMM)
-	textHeight := float64(len(lines)) * tableLineMM
+	for float64(len(lines))*lineHeight > h-0.6 && size > cellMinFontPt {
+		size -= 0.5
+		lineHeight = tableLineMM * size / tableFontPt
+		pdf.SetFont(arialFamily, style, size)
+		lines = pdf.SplitLines([]byte(text), w-2*cellPadMM)
+	}
+	textHeight := float64(len(lines)) * lineHeight
 	pdf.SetXY(x+cellPadMM, y+maxFloat(0.3, (h-textHeight)/2))
-	pdf.MultiCell(w-2*cellPadMM, tableLineMM, text, "", align, false)
+	pdf.MultiCell(w-2*cellPadMM, lineHeight, text, "", align, false)
+	pdf.SetFont(arialFamily, style, tableFontPt)
 }
 
 var componentWidths = []float64{106.8, 21.4, 28.5, 21.3}

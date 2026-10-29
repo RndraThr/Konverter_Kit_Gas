@@ -689,7 +689,7 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		errors.Is(err, programs.ErrScheduleDatesInvalid), errors.Is(err, programs.ErrTemplateSlotInvalid):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), validationFields(err))
 	case errors.Is(err, distribution.ErrScheduleRequired), errors.Is(err, distribution.ErrQueryRequired),
-		errors.Is(err, distribution.ErrNIKInvalid), errors.Is(err, distribution.ErrSlotNumberRequired), errors.Is(err, distribution.ErrDistributionDateRequired),
+		errors.Is(err, distribution.ErrNIKInvalid), errors.Is(err, distribution.ErrPhoneInvalid), errors.Is(err, distribution.ErrSlotNumberRequired), errors.Is(err, distribution.ErrDistributionDateRequired),
 		errors.Is(err, distribution.ErrSerialInvalid), errors.Is(err, distribution.ErrSyncCursorInvalid), errors.Is(err, activities.ErrSyncCursorInvalid):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), validationFields(err))
 	case errors.Is(err, distribution.ErrRevisionReasonRequired), errors.Is(err, distribution.ErrRevisionStageInvalid):
@@ -755,6 +755,8 @@ func validationFields(err error) map[string]string {
 		return map[string]string{"full_name": err.Error()}
 	case errors.Is(err, recipients.ErrNIKInvalid):
 		return map[string]string{"nik": err.Error()}
+	case errors.Is(err, distribution.ErrPhoneInvalid):
+		return map[string]string{"phone_number": err.Error()}
 	default:
 		return map[string]string{"request": err.Error()}
 	}

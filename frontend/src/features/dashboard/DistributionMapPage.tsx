@@ -1,198 +1,362 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { Layers3, MapPinned, RotateCcw, SlidersHorizontal } from 'lucide-react';
+import { Feather, Globe2, MapPinned, Maximize2, MapPinOff } from 'lucide-react';
 import { apiRequest } from '../../lib/api';
 import { PageHeader } from '../../components/PageHeader';
 import { DataState } from '../../components/DataState';
-import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader } from '../../components/ui/card';
-import { Label } from '../../components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
-import { DistributionMap } from './DistributionMap';
 import { loadRegencyAsset } from './mapAsset';
-import { buildRegionIndex, colorForValue, mapMetrics, metricByKey, metricMax, progressDenominator, type MetricKey, type RegencyAsset } from './mapRegions';
-import { allocationStatusLabel, type MapData, type MapRegion } from './types';
+import { DistributionMap } from './DistributionMap';
+import { metricByKey, normalizeRegencyName, type RegencyAsset } from './mapRegions';
+import type { MapData, MapRegion } from './types';
+import { MapView, type CameraRequest } from './map/MapView';
+import { MapFilters } from './map/MapFilters';
+import { LightModeNotice } from './map/LightModeNotice';
+import { MapSearch } from './map/MapSearch';
+import { KpiStrip, MilestoneLegend } from './map/MapSummary';
+import { MilestoneFilter } from './map/MilestoneFilter';
+import { PointBottomSheet } from './map/PointBottomSheet';
+import { PointDetailPanel } from './map/PointDetailPanel';
+import { ProgressByZone } from './map/ProgressByZone';
+import { Segmented } from './map/Segmented';
+import { TimelinePlayer } from './map/TimelinePlayer';
+import { UnlocatedDialog } from './map/UnlocatedDialog';
+import { ZoneBreadcrumb } from './map/ZoneBreadcrumb';
+import { DETAIL_PANEL_WIDTH, INDONESIA_BOUNDS, assetRegencyBounds, fitPadding, geometryBounds, initialFitTarget, pointsBounds, regencyBoundsIndex } from './map/fitTargets';
+import { buildRegionFills, buildSites, groupSites, zoneColorIndex, PLACEHOLDER_ZONE_LABEL } from './map/layerData';
+import { progressByZone, stageCounts } from './map/progress';
+import type { SearchResult } from './map/search';
+import { filterPoints, timelineRange } from './map/timeline';
+import { useIsPhone } from './map/useIsPhone';
+import { useMapConfig } from './map/useMapConfig';
+import { FILTER_KEYS, filterQuery, useMapPoints } from './map/useMapPoints';
+import { useMapSelection } from './map/useMapSelection';
+import { useMapUrlState } from './map/useMapUrlState';
+import { useRegencyBoundary, useZoneBoundaries } from './map/useZoneBoundaries';
+import type { BasemapMode, Bounds, ColorMode, PointCollection, PointFeature, ZoneGeometry } from './map/types';
 
-type ScheduleOption = { id: string; name: string; regency?: { name: string }; program?: { program_type: string } };
+type ScheduleOption = { id: string; name: string };
 type RegencyOption = { id: string; name: string; document_code: string };
-type ProgramOption = { id: string; name: string; program_type: string };
+type ProgramOption = { id: string; name: string; program_type: string; status?: string };
+type Focus = { regencyId?: string; geometry: ZoneGeometry | null; name: string };
 
-const numberFormat = new Intl.NumberFormat('id-ID');
 const emptyRegions: MapRegion[] = [];
-const filterKeys = ['regency_id', 'program_id', 'schedule_id', 'district', 'evidence_status', 'allocation_status'] as const;
+const emptyPoints: PointFeature[] = [];
+const emptyCollection: PointCollection = { type: 'FeatureCollection', features: [] };
+const SELECT_ZOOM = 15;
 
-const evidenceLabels: Record<string, string> = {
-  complete: 'Lengkap', partial: 'Sebagian', empty: 'Belum ada', 'not-configured': 'Belum diatur',
-};
+const basemapOptions: Array<{ value: BasemapMode; label: string }> = [{ value: 'map', label: 'Biasa' }, { value: 'sat', label: 'Satelit' }, { value: 'hyb', label: 'Hybrid' }];
+const colorOptions: Array<{ value: ColorMode; label: string }> = [{ value: 'zone', label: 'Zona' }, { value: 'evidence', label: 'Bukti lengkap' }, { value: 'progress', label: 'Diserahkan' }, { value: 'recipients', label: 'Sebaran' }];
+
+function assetGeometry(asset: RegencyAsset | null, name: string): ZoneGeometry | null {
+  const key = normalizeRegencyName(name);
+  const feature = asset?.regencies.find((item) => normalizeRegencyName(item.n) === key);
+  return feature ? { type: 'MultiPolygon', coordinates: feature.r.map((ring) => [ring]) } : null;
+}
 
 export function DistributionMapPage() {
-  const [params, setParams] = useSearchParams();
-  const [metricKey, setMetricKey] = useState<MetricKey>('recipients');
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [params] = useSearchParams();
+  const { state: view, update, edit } = useMapUrlState();
+  const filter = filterQuery(params);
+  const programId = params.get('program_id') || undefined;
+  const zoneId = params.get('zone_id') || undefined;
+  const regencyFilter = params.get('regency_id') || undefined;
+
   const [asset, setAsset] = useState<RegencyAsset | null>(null);
   const [assetError, setAssetError] = useState(false);
-  const [assetLoadAttempt, setAssetLoadAttempt] = useState(0);
-
-  // The boundary asset is ~440 kB, so it is a separate chunk fetched only when this page is opened.
-  // Until it arrives the aggregate request and the ranking table already work.
+  // The boundary asset (~440 kB) is a separate chunk fetched only on this page; it feeds regency
+  // search, fit bounds and the regency fills.
   useEffect(() => {
     let cancelled = false;
-    setAssetError(false);
-    void loadRegencyAsset().then((loaded) => {
-      if (cancelled) return;
-      setAsset(loaded);
-    }).catch(() => {
-      if (!cancelled) setAssetError(true);
-    });
+    void loadRegencyAsset().then((loaded) => { if (!cancelled) setAsset(loaded); }).catch(() => { if (!cancelled) setAssetError(true); });
     return () => { cancelled = true; };
-  }, [assetLoadAttempt]);
+  }, []);
 
-  const query = params.toString();
-  const map = useQuery({
-    queryKey: ['recipients', 'map', query],
-    queryFn: () => apiRequest<{ data: MapData }>(`/api/v1/recipients/map?${query}`),
+  const aggregate = useQuery({
+    queryKey: ['recipients', 'map', filter],
+    queryFn: () => apiRequest<{ data: MapData }>(`/api/v1/recipients/map${filter ? `?${filter}` : ''}`),
   });
   const regencies = useQuery({ queryKey: ['program-setup', 'regencies'], queryFn: () => apiRequest<{ data: RegencyOption[] }>('/api/v1/program-setup/regencies') });
   const programs = useQuery({ queryKey: ['program-setup', 'programs'], queryFn: () => apiRequest<{ data: ProgramOption[] }>('/api/v1/program-setup/programs') });
   const schedules = useQuery({ queryKey: ['program-setup', 'schedules'], queryFn: () => apiRequest<{ data: ScheduleOption[] }>('/api/v1/program-setup/schedules') });
+  const pointsQuery = useMapPoints(filter);
+  const config = useMapConfig();
+  // Zone colours only mean something within one program. Without a program filter, Zona mode borrows
+  // the first active program (in the programs list order) for its zone polygons only; points and the
+  // aggregate stay unfiltered (Ruling R15).
+  const fallbackProgram = !programId && view.color === 'zone' ? programs.data?.data.find((item) => item.status === 'active') : undefined;
+  const zoneProgramId = programId ?? fallbackProgram?.id;
+  const zonesQuery = useZoneBoundaries(zoneProgramId);
+  const zones = zoneProgramId ? zonesQuery.data ?? null : null;
+  // Zone filter, breadcrumb and focus follow the selected program only, never the fallback.
+  const filterZones = programId ? zones : null;
 
-  const data = map.data?.data;
-  const regions = data?.regions ?? emptyRegions;
-  const totals = data?.totals;
-  const metric = metricByKey(metricKey);
-  const max = useMemo(() => metricMax(metric, regions), [metric, regions]);
-  const regionIndex = useMemo(() => buildRegionIndex(regions), [regions]);
-  // Reverse lookup so each ranking row does not scan the index.
-  const keyByRegencyID = useMemo(() => new Map([...regionIndex.entries()].map(([key, region]) => [region.regency_id, key])), [regionIndex]);
-  const selectedRegion = selectedKey ? regionIndex.get(selectedKey) : undefined;
+  const regions = aggregate.data?.data.regions ?? emptyRegions;
+  const allPoints = pointsQuery.data?.features ?? emptyPoints;
+  const searchRegencies = useMemo(() => (asset ? assetRegencyBounds(asset) : []), [asset]);
+  const boundsIndex = useMemo(() => (asset ? regencyBoundsIndex(asset, regions) : new Map<string, Bounds>()), [asset, regions]);
+  const regencyNames = useMemo(() => new Map(regions.map((region) => [region.regency_id, region.regency_name])), [regions]);
 
-  const ranked = useMemo(
-    () => [...regions].filter((region) => region.recipients > 0 || region.slot_quota > 0).sort((a, b) => metric.value(b) - metric.value(a) || a.regency_name.localeCompare(b.regency_name)),
-    [metric, regions],
-  );
-  const ranking = useMemo(() => {
-    const top = ranked.slice(0, 12);
-    if (selectedRegion && !top.some((region) => region.regency_id === selectedRegion.regency_id)) return [selectedRegion, ...top.slice(0, 11)];
-    return top;
-  }, [ranked, selectedRegion]);
+  // Timeline (null = live) and milestone filter, both client-side over the loaded points.
+  const range = useMemo(() => timelineRange(allPoints), [allPoints]);
+  const [day, setDay] = useState<number | null>(null);
+  const timelineDay = range && day !== null ? Math.min(day, range.days - 1) : null;
+  const dayPoints = useMemo(() => filterPoints(allPoints, { range, day: timelineDay }), [allPoints, range, timelineDay]);
+  const counts = useMemo(() => Object.fromEntries(stageCounts(dayPoints).map((count, i) => [i + 1, count])), [dayPoints]);
+  const visiblePoints = useMemo(() => (view.stage ? dayPoints.filter((point) => point.properties.stage === view.stage) : dayPoints), [dayPoints, view.stage]);
+
+  const [show, setShow] = useState({ zones: true, points: true });
+  const [focus, setFocus] = useState<Focus | null>(null);
+  const boundary = useRegencyBoundary(focus?.regencyId);
+  const zoneFeature = filterZones?.features.find((zone) => zone.properties.zone_id === zoneId);
+  const focusGeometry = focus ? boundary.data?.geometry ?? focus.geometry : zoneFeature?.geometry ?? null;
+
+  const zoneColors = useMemo(() => zoneColorIndex(zones), [zones]);
+  const regionFills = useMemo(() => buildRegionFills(asset, regions, view.color, zoneColors), [asset, regions, view.color, zoneColors]);
+  const layers = useMemo(() => ({
+    points: show.points ? visiblePoints : emptyPoints,
+    zones: show.zones ? zones : null,
+    regions: regionFills,
+    colorMode: view.color,
+    focus: focusGeometry,
+  }), [show, visiblePoints, zones, regionFills, view.color, focusGeometry]);
+
+  const { selected, select } = useMapSelection(view, update);
+  const [camera, setCamera] = useState<CameraRequest | null>(null);
+  const cameraSeq = useRef(0);
+  const isPhone = useIsPhone();
+  const panelWidth = selected && !isPhone ? DETAIL_PANEL_WIDTH : 0;
+  const fit = useCallback((bounds: Bounds) => {
+    cameraSeq.current += 1;
+    setCamera({ id: cameraSeq.current, kind: 'fit', bounds, padding: fitPadding(window.innerWidth, panelWidth) });
+  }, [panelWidth]);
+  const fly = (center: [number, number]) => {
+    cameraSeq.current += 1;
+    setCamera({ id: cameraSeq.current, kind: 'fly', center, zoom: SELECT_ZOOM });
+  };
+
+  const scopeIds = useMemo(() => (regencyFilter ? [regencyFilter] : regions.map((region) => region.regency_id)), [regencyFilter, regions]);
+  const homeTarget = () => initialFitTarget(pointsQuery.data ?? emptyCollection, scopeIds, boundsIndex);
+  // Opening view: a shared link's position, else the points, else the user's regencies, else Indonesia.
+  // The link position is read once at mount: later c/z values are our own moveend writes and must not
+  // be mistaken for a shared link.
+  const linkCamera = useRef(view.center && view.zoom !== undefined ? { center: view.center, zoom: view.zoom } : null);
+  const initialDone = useRef(false);
+  useEffect(() => {
+    if (initialDone.current) return;
+    const link = linkCamera.current;
+    if (link) {
+      initialDone.current = true;
+      cameraSeq.current += 1;
+      setCamera({ id: cameraSeq.current, kind: 'jump', center: link.center, zoom: link.zoom });
+      return;
+    }
+    if (pointsQuery.isPending || aggregate.isPending || (!asset && !assetError)) return;
+    initialDone.current = true;
+    fit(initialFitTarget(pointsQuery.data ?? emptyCollection, scopeIds, boundsIndex));
+  }, [pointsQuery.isPending, pointsQuery.data, aggregate.isPending, asset, assetError, scopeIds, boundsIndex, fit]);
+  // Moves before the opening camera is requested (e.g. resize() of the default view) are not written
+  // to the URL, so the default position never overwrites a pending fit or the shared link.
+  const onMove = (center: [number, number], zoom: number) => {
+    if (initialDone.current) update({ center, zoom });
+  };
+
+  const focusRegency = (region: MapRegion) => {
+    setFocus({ regencyId: region.regency_id, geometry: assetGeometry(asset, region.regency_name), name: region.regency_name });
+    const bounds = boundsIndex.get(region.regency_id);
+    if (bounds) fit(bounds);
+  };
 
   const setFilter = (key: string, value: string) => {
-    const next = new URLSearchParams(params);
-    if (value) next.set(key, value); else next.delete(key);
-    setParams(next);
-    setSelectedKey(null);
+    edit((next) => {
+      if (value) next.set(key, value); else next.delete(key);
+      if (key === 'program_id') next.delete('zone_id'); // zones belong to one program
+    });
+    if (key === 'regency_id') {
+      const region = regions.find((item) => item.regency_id === value);
+      const option = regencies.data?.data.find((item) => item.id === value);
+      if (region) focusRegency(region);
+      else if (option) {
+        // Not in the current aggregate (no data yet): still zoom to it through the boundary asset.
+        setFocus({ regencyId: option.id, geometry: assetGeometry(asset, option.name), name: option.name });
+        const bounds = searchRegencies.find((item) => item.key === normalizeRegencyName(option.name))?.bounds;
+        if (bounds) fit(bounds);
+      } else setFocus(null);
+    }
+    if (key === 'zone_id') {
+      setFocus(null);
+      const zone = filterZones?.features.find((item) => item.properties.zone_id === value);
+      const bounds = zone ? geometryBounds(zone.geometry) : null;
+      if (bounds) fit(bounds);
+    }
   };
-  const activeFilterCount = filterKeys.filter((key) => Boolean(params.get(key))).length;
-  const resetFilters = () => { setParams(new URLSearchParams()); setSelectedKey(null); };
+  const focusProgramPicker = () => {
+    const picker = document.querySelector<HTMLElement>('[aria-labelledby="map-filter-program"]');
+    picker?.scrollIntoView?.({ block: 'center' });
+    picker?.focus();
+  };
+  const activeFilterCount = FILTER_KEYS.filter((key) => Boolean(params.get(key))).length;
+  const resetFilters = () => {
+    edit((next) => FILTER_KEYS.forEach((key) => next.delete(key)));
+    setFocus(null);
+  };
 
-  const summary = (region: MapRegion) => [
-    { label: 'Penerima di wilayah ini', value: numberFormat.format(region.recipients) },
-    { label: 'Nomor bagi selesai', value: `${region.slots_completed}/${progressDenominator(region)}` },
-    { label: 'Dokumentasi lengkap', value: numberFormat.format(region.evidence_complete) },
-    { label: 'Perlu ditinjau', value: numberFormat.format(region.needs_review) },
-  ];
+  const selectPoint = (slotId: string) => {
+    select({ kind: 'point', slotId });
+    const point = allPoints.find((item) => item.properties.slot_id === slotId);
+    if (point) fly(point.geometry.coordinates);
+  };
+  const selectSite = (siteId: string) => {
+    select({ kind: 'site', siteId });
+    // Fly to where the site marker is drawn (median of its members), not to members[0], which can be
+    // the >1 km outlier. The marker is built from the visible points, so prefer those members.
+    const members = groupSites(visiblePoints).get(siteId) ?? groupSites(allPoints).get(siteId);
+    const center = members?.length ? buildSites(members).sites.features[0]?.geometry.coordinates ?? members[0].geometry.coordinates : undefined;
+    if (center) fly(center);
+  };
+  const onSearch = (result: SearchResult) => {
+    if (result.kind === 'point') { selectPoint(result.id); return; }
+    const region = regions.find((item) => normalizeRegencyName(item.regency_name) === result.id);
+    setFocus({ regencyId: region?.regency_id, geometry: assetGeometry(asset, result.label), name: region?.regency_name ?? result.label });
+    fit(result.bounds);
+  };
+
+  const focusedRegion = focus?.regencyId ? regions.find((item) => item.regency_id === focus.regencyId) : regions.find((item) => item.regency_id === regencyFilter);
+  const crumbZoneId = zoneId ?? focusedRegion?.zone_id;
+  const crumbZone = filterZones?.features.find((zone) => zone.properties.zone_id === crumbZoneId);
+  const crumbZoneName = crumbZone ? (crumbZone.properties.is_placeholder ? PLACEHOLDER_ZONE_LABEL : crumbZone.properties.name) : focusedRegion?.zone_name || undefined;
+  const toIndonesia = () => {
+    edit((next) => { next.delete('zone_id'); next.delete('regency_id'); });
+    setFocus(null);
+    fit(INDONESIA_BOUNDS);
+  };
+  const toZone = () => {
+    edit((next) => {
+      next.delete('regency_id');
+      if (crumbZoneId) next.set('zone_id', crumbZoneId);
+    });
+    setFocus(null);
+    const bounds = crumbZone ? geometryBounds(crumbZone.geometry) : null;
+    if (bounds) fit(bounds);
+  };
+
+  const [mapAttempt, setMapAttempt] = useState(0);
+  const [styleFailed, setStyleFailed] = useState(false);
+  const [lightMode, setLightMode] = useState(false);
+  const [lightKey, setLightKey] = useState<string | null>(null);
+  const [unlocatedOpen, setUnlocatedOpen] = useState(false);
+  const unlocatedCount = pointsQuery.data?.meta?.unlocated ?? 0;
+  const groups = useMemo(() => progressByZone(allPoints, regions, Boolean(programId)), [allPoints, regions, programId]);
+  const zoneLegend = view.color === 'zone' && zones ? zones.features.map((zone) => ({ name: zone.properties.is_placeholder ? PLACEHOLDER_ZONE_LABEL : zone.properties.name, color: zoneColors.get(zone.properties.zone_id) ?? '' })) : undefined;
+
+  const leaveLightMode = () => {
+    setLightMode(false);
+    setStyleFailed(false);
+    setMapAttempt((n) => n + 1);
+    if (config.isError) void config.refetch();
+  };
+
+  let mapBody;
+  if (lightMode || config.isError || styleFailed) {
+    // Light mode: the original SVG map (regency fills only), shown by choice or when the basemap style
+    // does not load in time. The progress table below carries the rest of the data.
+    mapBody = <div className="absolute inset-0 flex flex-col bg-background">
+      <LightModeNotice reason={lightMode ? 'manual' : 'failed'} onRetry={leaveLightMode} />
+      <div className="min-h-0 flex-1 overflow-auto p-2">
+        {asset
+          ? <DistributionMap asset={asset} regions={regions} metric={metricByKey('recipients')} selectedKey={lightKey} onSelect={setLightKey} />
+          : <DataState kind={assetError ? 'error' : 'loading'} title={assetError ? 'Batas wilayah tidak dapat dimuat' : 'Memuat peta ringan'} description={assetError ? 'Muat ulang halaman, lalu coba lagi.' : 'Menyiapkan batas kabupaten.'} />}
+      </div>
+    </div>;
+  } else if (!config.data) {
+    mapBody = <div className="absolute inset-0 p-6"><DataState kind="loading" title="Memuat peta" description="Menyiapkan peta dasar." /></div>;
+  } else {
+    mapBody = <MapView
+      key={`${config.data.style_url}|${config.data.attribution}|${mapAttempt}`}
+      config={config.data}
+      basemap={view.base}
+      layers={layers}
+      camera={camera}
+      onMove={onMove}
+      onStyleError={() => setStyleFailed(true)}
+      onPoint={selectPoint}
+      onSite={selectSite}
+    />;
+  }
 
   return <div className="space-y-6">
-    <PageHeader title="Map Distribusi" description="Pemetaan sebaran penerima, progres penyaluran, dan kelengkapan bukti per kabupaten/kota." />
+    <PageHeader title="Map Distribusi" description="Titik distribusi per nomor bagi, milestone penyaluran, dan zona program." />
+    <KpiStrip points={pointsQuery.data} />
 
     <section aria-label="Ruang kerja Map Distribusi" className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-      <Card className="gap-0 overflow-hidden py-0 shadow-none">
-        <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b py-4">
-          <div className="flex items-center gap-3"><MapPinned className="size-5 text-primary" aria-hidden="true" /><h2 className="text-base leading-snug font-medium">Area peta</h2></div>
-          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Pilih metrik peta">
-            {mapMetrics.map((item) => <Button
-              key={item.key}
-              type="button"
-              size="sm"
-              variant={item.key === metricKey ? 'default' : 'outline'}
-              aria-pressed={item.key === metricKey}
-              onClick={() => setMetricKey(item.key)}
-            >{item.label}</Button>)}
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          {map.isPending && <div className="p-6"><DataState kind="loading" title="Menghitung agregat wilayah" description="Menyiapkan angka peta dari data penerima." /></div>}
-          {map.isError && <div className="p-6"><DataState kind="error" title="Agregat peta tidak dapat dimuat" description="Muat ulang halaman, lalu coba lagi." /></div>}
-          {data && (asset
-            ? <DistributionMap asset={asset} regions={regions} metric={metric} selectedKey={selectedKey} onSelect={setSelectedKey} />
-            : assetError
-              ? <div className="p-6"><DataState kind="error" title="Batas wilayah tidak dapat dimuat" description="Periksa koneksi, lalu coba memuat aset peta kembali." action={{ label: 'Coba lagi', onClick: () => setAssetLoadAttempt((current) => current + 1) }} /></div>
-              : <div className="p-6"><DataState kind="loading" title="Memuat batas wilayah" description="Menyiapkan geometri kabupaten/kota." /></div>)}
-        </CardContent>
-      </Card>
+      <div className="min-w-0 space-y-4">
+        <Card className="gap-0 overflow-hidden py-0 shadow-none">
+          <CardHeader className="space-y-3 border-b py-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <MapSearch regencies={searchRegencies} points={allPoints} regencyNames={regencyNames} onPick={onSearch} />
+              <Segmented label="Jenis peta" value={view.base} options={basemapOptions} onChange={(base) => update({ base })} />
+              <Segmented label="Mode warna" value={view.color} options={colorOptions} onChange={(color) => update({ color })} />
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <ZoneBreadcrumb zoneName={crumbZoneName} regencyName={focus?.name ?? focusedRegion?.regency_name} onIndonesia={toIndonesia} onZone={toZone} />
+              <div role="group" aria-label="Lapisan peta" className="flex min-w-0 max-w-full flex-wrap gap-1">
+                <Button type="button" size="sm" className="min-h-11" variant={show.zones ? 'secondary' : 'outline'} aria-pressed={show.zones} onClick={() => setShow((s) => ({ ...s, zones: !s.zones }))}>Batas zona</Button>
+                <Button type="button" size="sm" className="min-h-11" variant={show.points ? 'secondary' : 'outline'} aria-pressed={show.points} onClick={() => setShow((s) => ({ ...s, points: !s.points }))}>Titik</Button>
+                <Button type="button" size="sm" className="min-h-11" variant={lightMode ? 'secondary' : 'outline'} aria-pressed={lightMode} onClick={() => (lightMode ? leaveLightMode() : setLightMode(true))}><Feather aria-hidden="true" />Mode ringan</Button>
+                {unlocatedCount > 0 && <Button type="button" size="sm" className="min-h-11" variant="outline" onClick={() => setUnlocatedOpen(true)}><MapPinOff aria-hidden="true" />{unlocatedCount} belum ada lokasi</Button>}
+              </div>
+            </div>
+            {view.color === 'zone' && !programId && (fallbackProgram
+              ? <div className="flex min-w-0 flex-wrap items-center gap-x-2 rounded-md bg-muted px-3 py-1 text-sm text-muted-foreground">
+                <p className="min-w-0 break-words">Zona menurut program:{' '}<span className="font-medium text-foreground">{fallbackProgram.name}</span></p>
+                <Button type="button" size="sm" variant="link" className="min-h-11 px-0" onClick={focusProgramPicker}>Pilih program lain</Button>
+              </div>
+              : <p className="rounded-md bg-muted px-3 py-2 text-sm text-muted-foreground">Pilih program untuk mewarnai zona.</p>)}
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="relative aspect-video min-h-80 w-full bg-muted/30">
+              {mapBody}
+              <div className="absolute top-3 left-3 flex flex-col gap-2">
+                <Button type="button" size="sm" variant="secondary" className="min-h-11 shadow-sm" onClick={() => fit(pointsBounds(visiblePoints) ?? homeTarget())}><Maximize2 aria-hidden="true" />Pas ke semua titik</Button>
+                <Button type="button" size="sm" variant="secondary" className="min-h-11 shadow-sm" onClick={() => fit(INDONESIA_BOUNDS)}><Globe2 aria-hidden="true" />Seluruh Indonesia</Button>
+              </div>
+              <div className="absolute bottom-8 left-3"><MilestoneLegend zones={zoneLegend} /></div>
+            </div>
+            {pointsQuery.isError && <p role="alert" className="border-t px-4 py-2 text-sm text-destructive">Titik distribusi tidak dapat dimuat. Data akan dicoba lagi otomatis.</p>}
+            {assetError && <p className="border-t px-4 py-2 text-xs text-muted-foreground">Batas wilayah tidak dapat dimuat; pencarian kabupaten tidak tersedia.</p>}
+          </CardContent>
+        </Card>
+
+        <MilestoneFilter counts={counts} selected={view.stage} onChange={(stage) => update({ stage })} />
+        {range && <TimelinePlayer start={range.start} days={range.days} day={timelineDay} onChange={setDay} />}
+      </div>
 
       <div className="space-y-5">
-        <Card className="gap-0 py-0 shadow-none">
-          <CardHeader className="border-b py-4"><div className="flex items-center gap-3"><SlidersHorizontal className="size-5 text-primary" aria-hidden="true" /><h2 className="text-base leading-snug font-medium">Kontrol peta</h2></div></CardHeader>
-          <CardContent className="space-y-4 py-5">
-            <div className="grid gap-2"><Label id="map-filter-regency">Kabupaten</Label><Select value={params.get('regency_id') ?? ''} onValueChange={(value) => setFilter('regency_id', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="map-filter-regency"><SelectValue placeholder="Semua kabupaten" /></SelectTrigger><SelectContent><SelectItem value="">Semua kabupaten</SelectItem>{regencies.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.document_code} - {item.name}</SelectItem>)}</SelectContent></Select></div>
-            <div className="grid gap-2"><Label id="map-filter-program">Program</Label><Select value={params.get('program_id') ?? ''} onValueChange={(value) => setFilter('program_id', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="map-filter-program"><SelectValue placeholder="Semua program" /></SelectTrigger><SelectContent><SelectItem value="">Semua program</SelectItem>{programs.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div>
-            <div className="grid gap-2"><Label id="map-filter-schedule">Jadwal</Label><Select value={params.get('schedule_id') ?? ''} onValueChange={(value) => setFilter('schedule_id', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="map-filter-schedule"><SelectValue placeholder="Semua jadwal" /></SelectTrigger><SelectContent><SelectItem value="">Semua jadwal</SelectItem>{schedules.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div>
-            <div className="grid gap-2"><Label id="map-filter-evidence">Kelengkapan bukti</Label><Select value={params.get('evidence_status') ?? ''} onValueChange={(value) => setFilter('evidence_status', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="map-filter-evidence"><SelectValue placeholder="Semua kelengkapan" /></SelectTrigger><SelectContent><SelectItem value="">Semua kelengkapan</SelectItem>{Object.entries(evidenceLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
-            <div className="grid gap-2"><Label id="map-filter-allocation">Status alokasi</Label><Select value={params.get('allocation_status') ?? ''} onValueChange={(value) => setFilter('allocation_status', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="map-filter-allocation"><SelectValue placeholder="Aktif (bukan dibatalkan)" /></SelectTrigger><SelectContent><SelectItem value="">Aktif (bukan dibatalkan)</SelectItem>{Object.entries(allocationStatusLabel).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select></div>
-            <Button type="button" variant="outline" className="w-full" disabled={activeFilterCount === 0} onClick={resetFilters}><RotateCcw aria-hidden="true" />Reset filter{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}</Button>
-          </CardContent>
-        </Card>
-
-        <Card className="gap-0 py-0 shadow-none">
-          <CardHeader className="border-b py-4"><div className="flex items-center gap-3"><Layers3 className="size-5 text-primary" aria-hidden="true" /><h2 className="text-base leading-snug font-medium">Legenda</h2></div></CardHeader>
-          <CardContent className="space-y-3 py-5">
-            <p className="text-sm text-muted-foreground">{metric.description}</p>
-            <div className="flex items-center gap-1" aria-hidden="true">
-              {[0, 0.25, 0.5, 0.75, 1].map((ratio) => <span key={ratio} className="h-3 flex-1 rounded-sm border" style={{ backgroundColor: colorForValue(ratio, 1, true) }} />)}
-            </div>
-            <div className="flex justify-between text-xs text-muted-foreground"><span>Rendah</span><span>{metric.ratio ? '100%' : numberFormat.format(Math.round(max))}</span></div>
-            <p className="flex items-center gap-2 text-xs text-muted-foreground"><span className="size-3 rounded-sm border" style={{ backgroundColor: colorForValue(0, 1, false) }} />Belum ada data pada filter ini</p>
-            {totals && <dl className="space-y-1 border-t pt-3 text-sm">
-              <div className="flex justify-between"><dt className="text-muted-foreground">Penerima aktif</dt><dd className="font-medium tabular-nums">{numberFormat.format(totals.recipients)}</dd></div>
-              <div className="flex justify-between"><dt className="text-muted-foreground">Nomor selesai</dt><dd className="font-medium tabular-nums">{`${numberFormat.format(totals.slots_completed)} / ${numberFormat.format(progressDenominator(totals))}`}</dd></div>
-              <div className="flex justify-between"><dt className="text-muted-foreground">Bukti lengkap</dt><dd className="font-medium tabular-nums">{numberFormat.format(totals.evidence_complete)}</dd></div>
-              <div className="flex justify-between"><dt className="text-muted-foreground">Kabupaten berdata</dt><dd className="font-medium tabular-nums">{numberFormat.format(ranked.length)}</dd></div>
-            </dl>}
-            <p className="border-t pt-3 text-xs text-muted-foreground">Angka peta memakai filter yang sama dengan Data Penerima, sehingga keduanya selalu sinkron.</p>
-          </CardContent>
-        </Card>
+        {selected && !isPhone && <PointDetailPanel selected={selected} points={allPoints} regencyNames={regencyNames} onSelect={select} onClose={() => select(null)} />}
+        {!selected && !isPhone && <Card className="gap-0 py-0 shadow-none" aria-label="Detail titik">
+          <CardHeader className="border-b py-4"><div className="flex items-center gap-3"><MapPinned className="size-5 text-primary" aria-hidden="true" /><h2 className="text-base leading-snug font-medium">Pilih titik di peta</h2></div></CardHeader>
+          <CardContent className="py-5 text-sm text-muted-foreground">Klik titik atau titik serah untuk melihat milestone, bukti foto, dan lokasinya.</CardContent>
+        </Card>}
+        <MapFilters
+          params={params}
+          regencies={regencies.data?.data.map((item) => ({ value: item.id, label: `${item.document_code} - ${item.name}` })) ?? []}
+          programs={programs.data?.data.map((item) => ({ value: item.id, label: item.name })) ?? []}
+          schedules={schedules.data?.data.map((item) => ({ value: item.id, label: item.name })) ?? []}
+          zones={filterZones?.features.map((zone) => ({ value: zone.properties.zone_id, label: zone.properties.is_placeholder ? PLACEHOLDER_ZONE_LABEL : zone.properties.name })) ?? []}
+          onChange={setFilter}
+          onReset={resetFilters}
+          activeCount={activeFilterCount}
+        />
       </div>
     </section>
 
-    <section aria-label="Peringkat wilayah" className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-base font-medium">Peringkat wilayah — {metric.label}</h2>
-        {selectedRegion && <Badge variant="secondary">{`Terpilih: ${selectedRegion.regency_name}`}</Badge>}
-      </div>
-      {selectedRegion && <div role="group" aria-label="Rincian wilayah terpilih" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {summary(selectedRegion).map((item) => <Card key={item.label} className="py-4 shadow-none"><CardContent><strong className="text-xl font-semibold tabular-nums">{item.value}</strong><span className="block text-sm text-muted-foreground">{item.label}</span></CardContent></Card>)}
-      </div>}
-      <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50 text-left">
-            <tr>
-              <th scope="col" className="px-3 py-2 font-medium">Kabupaten/Kota</th>
-              <th scope="col" className="px-3 py-2 font-medium">Provinsi</th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">{metric.label}</th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">Penerima</th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">Nomor selesai</th>
-              <th scope="col" className="px-3 py-2 text-right font-medium">Bukti lengkap</th>
-            </tr>
-          </thead>
-          <tbody>
-            {ranking.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-muted-foreground">Belum ada wilayah dengan data pada filter ini.</td></tr>}
-            {ranking.map((region) => {
-              const key = keyByRegencyID.get(region.regency_id) ?? null;
-              return <tr key={region.regency_id} className={`border-t hover:bg-muted/40 ${key && key === selectedKey ? 'bg-muted/60' : ''}`}>
-                <td className="p-1"><button type="button" aria-label={`Pilih ${region.regency_name}`} aria-pressed={key === selectedKey} className="flex min-h-11 w-full items-center rounded-md px-2 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50" onClick={() => setSelectedKey(key)}><span className="mr-2 inline-block size-2.5 shrink-0 rounded-sm border" style={{ backgroundColor: colorForValue(metric.value(region), max, metric.hasData(region)) }} /><strong>{region.regency_name}</strong><span className="ml-1 text-muted-foreground">{region.document_code}</span></button></td>
-                <td className="px-3 py-2 text-muted-foreground">{region.province_name}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{metric.format(region)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{numberFormat.format(region.recipients)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{`${region.slots_completed}/${progressDenominator(region)}`}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{numberFormat.format(region.evidence_complete)}</td>
-              </tr>;
-            })}
-          </tbody>
-        </table>
-      </div>
-    </section>
+    {selected && isPhone && <PointBottomSheet selected={selected} points={allPoints} regencyNames={regencyNames} onSelect={select} onClose={() => select(null)} />}
+    <UnlocatedDialog open={unlocatedOpen} onOpenChange={setUnlocatedOpen} filter={filter} regencyNames={regencyNames} />
+
+    {aggregate.isError
+      ? <DataState kind="error" title="Agregat wilayah tidak dapat dimuat" description="Muat ulang halaman, lalu coba lagi." />
+      : <ProgressByZone groups={groups} onSelectRegency={(id) => { const region = regions.find((item) => item.regency_id === id); if (region) focusRegency(region); }} />}
   </div>;
 }

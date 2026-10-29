@@ -10,6 +10,7 @@ var (
 	ErrScheduleRequired          = errors.New("distribution schedule is required")
 	ErrQueryRequired             = errors.New("recipient search query is required")
 	ErrNIKInvalid                = errors.New("NIK must contain 16 digits")
+	ErrPhoneInvalid              = errors.New("Nomor HP harus diawali 08 dan terdiri dari 10-13 digit")
 	ErrSerialInvalid             = errors.New("serial number must contain 1 to 100 characters")
 	ErrSyncCursorInvalid         = errors.New("sync cursor must be an RFC3339 timestamp")
 	ErrIdentifierConflict        = errors.New("recipient identifier is already in use")

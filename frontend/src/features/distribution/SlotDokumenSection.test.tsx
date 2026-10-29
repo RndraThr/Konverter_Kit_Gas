@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
 import { apiRequest } from '../../lib/api';
 import { PermissionsProvider } from '../../lib/permissions';
-import { SlotDokumenSection } from './SlotDokumenSection';
+import { normalizePhoneInput, recipientErrors, SlotDokumenSection } from './SlotDokumenSection';
 import type { DistributionSlot } from './types';
 
 vi.mock('../../lib/api', async () => {
@@ -27,14 +27,14 @@ const openSlot: DistributionSlot = {
 const candidate = {
   allocation_id: 'allocation-1', full_name: 'Siti Aminah', nik: '7306014101900001',
   sector_identifier: 'KP01', sector_identifier_type: 'farmer_card',
-  address: 'Jalan Sawah 10', village: 'Tempe', district: 'Sabbangparu', phone_number: '0812345',
+  address: 'Jalan Sawah 10', village: 'Tempe', district: 'Sabbangparu', phone_number: '0812345678',
   program_type: 'farmer' as const,
 };
 
-function renderSection(slot: DistributionSlot, permissions = ['distribution.pos_dokumen']) {
+function renderSection(slot: DistributionSlot, permissions = ['distribution.pos_dokumen'], programType?: 'farmer' | 'fisherman') {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   const onChanged = vi.fn();
-  render(<QueryClientProvider client={client}><PermissionsProvider permissions={permissions}><SlotDokumenSection slot={slot} machineOptions={[{ code: 'MSN-001', brand: 'SHARK', type: 'SPWP' }]} converterOptions={[{ code: 'CNV-001', brand: 'ERGAS' }]} hoseOptions={[{ code: 'HSE-001', brand: 'TRILIUN' }]} onChanged={onChanged} /></PermissionsProvider></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><PermissionsProvider permissions={permissions}><SlotDokumenSection slot={slot} programType={programType} machineOptions={[{ code: 'MSN-001', brand: 'SHARK', type: 'SPWP' }]} converterOptions={[{ code: 'CNV-001', brand: 'ERGAS' }]} hoseOptions={[{ code: 'HSE-001', brand: 'TRILIUN' }]} onChanged={onChanged} /></PermissionsProvider></QueryClientProvider>);
   return { onChanged };
 }
 
@@ -45,7 +45,7 @@ test('shows the NIK lookup form when open and permitted', () => {
   expect(screen.getByLabelText('POS Dokumen')).toBeVisible();
   expect(screen.getByText('Hubungkan penerima')).toBeVisible();
   expect(screen.getByLabelText('NIK Penerima')).toBeVisible();
-  expect(screen.getByText('Ketik minimal 4 digit NIK.')).toBeVisible();
+  expect(screen.getByText('Ketik NIK atau pilih dari daftar penerima.')).toBeVisible();
   expect(screen.queryByRole('button', { name: 'Cari di DCP3' })).not.toBeInTheDocument();
 });
 
@@ -104,8 +104,8 @@ test('links the candidate selected from NIK suggestions', async () => {
   fireEvent.click(await screen.findByRole('option', { name: '7306014101900001 Siti Aminah' }));
 
   await waitFor(() => expect(screen.getByDisplayValue('Siti Aminah')).toBeVisible());
-  expect(screen.getByLabelText('Nomor kartu petani')).toHaveValue('KP01');
-  expect(screen.getByLabelText('Nomor telepon')).toHaveValue('0812345');
+  expect(screen.getByLabelText('Nomor kartu tani')).toHaveValue('KP01');
+  expect(screen.getByLabelText('Nomor HP')).toHaveValue('0812345678');
   expect(screen.getByLabelText('Alamat')).toHaveValue('Jalan Sawah 10');
 
   fireEvent.change(screen.getByLabelText('Alamat'), { target: { value: 'Jl. Nelayan' } });
@@ -160,7 +160,7 @@ test('can mount a recipient first and save the date afterward', async () => {
 });
 
 test('edits recipient details without allowing NIK mutation and supports replacement search', async () => {
-  const linked = { ...openSlot, status: 'linked' as const, full_name: candidate.full_name, nik: candidate.nik, address: 'Alamat Lama', village: 'Tempe', district: 'Wajo', phone_number: '0812', sector_identifier: 'KP01' };
+  const linked = { ...openSlot, status: 'linked' as const, full_name: candidate.full_name, nik: candidate.nik, address: 'Alamat Lama', village: 'Tempe', district: 'Wajo', phone_number: '081234567890', sector_identifier: 'KP01' };
   vi.mocked(apiRequest).mockImplementation((path) => path.includes('candidate-suggestions') ? Promise.resolve({ data: [candidate] }) : Promise.resolve({ data: linked }));
   renderSection(linked);
 
@@ -203,6 +203,12 @@ test('offers recipient creation for a substitute who is not registered in this s
 
   expect(await screen.findByText('Pengganti belum terdaftar')).toBeVisible();
   await userEvent.type(screen.getByLabelText('Nama lengkap pengganti'), 'Pengganti Keluarga');
+  // The mounted recipient form stays on screen, so target the replacement form's own fields.
+  const replacementField = (name: string) => document.querySelector<HTMLInputElement>(`input[name="${name}"]`)!;
+  await userEvent.type(replacementField('phone_number'), '081298765432');
+  await userEvent.type(replacementField('address'), 'Jl. Tani');
+  await userEvent.type(replacementField('village'), 'Tempe');
+  await userEvent.type(replacementField('district'), 'Wajo');
   await userEvent.type(screen.getByLabelText('Alasan penggantian'), 'Penerima awal sakit');
   await userEvent.click(screen.getByRole('button', { name: 'Pasang penerima pengganti' }));
 
@@ -330,4 +336,60 @@ test('locks completed document POS until revision succeeds and refreshes automat
   await userEvent.type(screen.getByLabelText('Alasan revisi'), 'Perbaiki dokumen');
   await userEvent.click(screen.getByRole('button', { name: 'Buka revisi' }));
   expect(await screen.findByRole('button', { name: 'Buka kamera' })).toBeVisible();
+});
+
+test('lists candidates as soon as the empty NIK field gets focus', async () => {
+  vi.mocked(apiRequest).mockImplementation((path) => path === '/api/v1/distribution/candidate-suggestions?schedule_id=schedule-1&nik_prefix='
+    ? Promise.resolve({ data: [candidate] })
+    : Promise.reject(new Error(`Unexpected request: ${path}`)));
+  renderSection(openSlot);
+
+  fireEvent.focus(screen.getByLabelText('NIK Penerima'));
+  expect(await screen.findByRole('option', { name: '7306014101900001 Siti Aminah' })).toBeVisible();
+
+  fireEvent.change(screen.getByLabelText('NIK Penerima'), { target: { value: '7' } });
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/candidate-suggestions?schedule_id=schedule-1&nik_prefix=7'));
+});
+
+test('blocks linking until the mandatory recipient data and a valid mobile number are filled', async () => {
+  vi.mocked(apiRequest).mockImplementation((path) => path.includes('candidate-suggestions')
+    ? Promise.resolve({ data: [{ ...candidate, phone_number: '', village: '' }] })
+    : Promise.reject(new Error(`Unexpected request: ${path}`)));
+  renderSection(openSlot);
+
+  fireEvent.change(screen.getByLabelText('NIK Penerima'), { target: { value: '7306' } });
+  fireEvent.click(await screen.findByRole('option', { name: '7306014101900001 Siti Aminah' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Hubungkan ke Nomor Bagi Ini' }));
+
+  expect(await screen.findByText('Nomor HP wajib diisi.')).toBeVisible();
+  expect(screen.getByText('Desa/kelurahan wajib diisi.')).toBeVisible();
+  fireEvent.change(screen.getByLabelText('Nomor HP'), { target: { value: '0812' } });
+  expect(screen.getByText('Nomor HP harus diawali 08 dan terdiri dari 10–13 digit.')).toBeVisible();
+  expect(apiRequest).not.toHaveBeenCalledWith(expect.stringContaining('/link'), expect.anything());
+});
+
+test('normalizes phone input and validates the mandatory recipient fields', () => {
+  expect(normalizePhoneInput('+62 812-3456-7890')).toBe('081234567890');
+  expect(normalizePhoneInput('0812 3456 7890 1234')).toBe('0812345678901');
+  const filled = { address: 'JL. A', village: 'DESA', district: 'KEC', sector_identifier: '', phone_number: '081234567890' };
+  expect(recipientErrors(filled)).toEqual({});
+  expect(recipientErrors({ ...filled, phone_number: '0212345678' }).phone_number).toMatch(/diawali 08/);
+  expect(recipientErrors({ ...filled, phone_number: '081234567' }).phone_number).toMatch(/10–13 digit/);
+  expect(recipientErrors(filled, 'farmer').sector_identifier).toBe('Nomor kartu tani wajib diisi.');
+  expect(recipientErrors({ ...filled, sector_identifier: 'KP01' }, 'farmer')).toEqual({});
+  expect(recipientErrors(filled, 'fisherman')).toEqual({});
+});
+
+test('requires the farmer card number on a farmer schedule before saving recipient data', async () => {
+  const linked = { ...openSlot, status: 'linked' as const, full_name: candidate.full_name, nik: candidate.nik, address: 'Alamat', village: 'Tempe', district: 'Wajo', phone_number: '081234567890', sector_identifier: '' };
+  vi.mocked(apiRequest).mockResolvedValue({ data: linked });
+  renderSection(linked, ['distribution.pos_dokumen'], 'farmer');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Simpan data penerima' }));
+  expect(await screen.findByText('Nomor kartu tani wajib diisi.')).toBeVisible();
+  expect(apiRequest).not.toHaveBeenCalledWith(expect.stringContaining('/recipient'), expect.anything());
+
+  fireEvent.change(screen.getByLabelText('Nomor kartu tani'), { target: { value: 'kp01' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Simpan data penerima' }));
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/slots/7/recipient?schedule_id=schedule-1', expect.objectContaining({ method: 'PATCH' })));
 });

@@ -101,7 +101,6 @@ func (s *Service) ListDates(ctx context.Context, programID, regencyID string, sc
 		return nil, err
 	}
 	contextErr := validateContext(contextData)
-	lock, lockErr := s.repository.GetLockedTotal(ctx, programID, regencyID)
 	slots, err := s.repository.ListCompletedSlots(ctx, programID, regencyID, scope)
 	if err != nil {
 		return nil, err
@@ -125,11 +124,11 @@ func (s *Service) ListDates(ctx context.Context, programID, regencyID string, sc
 	sort.Sort(sort.Reverse(sort.StringSlice(dates)))
 	result := make([]DateSummary, 0, len(dates))
 	for _, date := range dates {
+		// BA Perorangan disinkronkan otomatis; satu-satunya penghambat adalah
+		// konfigurasi program yang belum lengkap.
 		status := "ready"
 		if contextErr != nil {
 			status = "configuration_required"
-		} else if lockErr != nil || lock.FinalTotal < 1 {
-			status = "total_not_locked"
 		}
 		result = append(result, DateSummary{LocalDate: date, RecipientCount: counts[date], ValidationStatus: status, Bundle: bundleByDate[date]})
 	}
@@ -137,7 +136,7 @@ func (s *Service) ListDates(ctx context.Context, programID, regencyID string, sc
 }
 
 func (s *Service) ListRecipients(ctx context.Context, programID, regencyID, localDate string, scope auth.RegencyScope) ([]RecipientDocument, error) {
-	return s.listRecipients(ctx, programID, regencyID, localDate, scope, true)
+	return s.listRecipients(ctx, programID, regencyID, localDate, scope, false)
 }
 
 // listRecipients menyusun penerima per tanggal beserta nomor BA. requireLock=false

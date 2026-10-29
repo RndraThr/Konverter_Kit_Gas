@@ -105,14 +105,14 @@ func TestDistributionUppercasesSerialsAndRecipientBusinessText(t *testing.T) {
 
 	if _, err := service.LinkSlot(context.Background(), auth.Principal{}, LinkSlotInput{
 		ScheduleID: "schedule-1", SlotNumber: 1, NIK: "9171031707010004", SectorIdentifier: " kp-01 ",
-		Address: " jl. tani ", Village: " desa baru ", District: " wajo ", PhoneNumber: "0812-3456",
+		Address: " jl. tani ", Village: " desa baru ", District: " wajo ", PhoneNumber: "0812-3456-7890",
 	}, auth.ClientMeta{}, auth.RegencyScope{}); err != nil {
 		t.Fatal(err)
 	}
 	if repository.linkInput.SectorIdentifier != "KP01" || repository.linkInput.Address != "JL. TANI" || repository.linkInput.Village != "DESA BARU" || repository.linkInput.District != "WAJO" {
 		t.Fatalf("link input=%+v", repository.linkInput)
 	}
-	if repository.linkInput.NIK != "9171031707010004" || repository.linkInput.PhoneNumber != "08123456" {
+	if repository.linkInput.NIK != "9171031707010004" || repository.linkInput.PhoneNumber != "081234567890" {
 		t.Fatalf("numeric identifiers=%+v", repository.linkInput)
 	}
 }

@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgis/postgis:17-3.5-alpine
         env:
           POSTGRES_USER: konkit
           POSTGRES_PASSWORD: konkit
@@ -118,7 +118,7 @@ jobs:
     needs: [backend, frontend]
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgis/postgis:17-3.5-alpine
         env:
           POSTGRES_USER: konkit
           POSTGRES_PASSWORD: konkit

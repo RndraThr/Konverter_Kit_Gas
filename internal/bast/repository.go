@@ -180,18 +180,26 @@ func (r *Repository) SaveFinalDocument(ctx context.Context, actor auth.Principal
 		return IndividualDocument{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	var existingID string
-	err = tx.QueryRow(ctx, `SELECT id::text FROM bast_individual_documents WHERE distribution_slot_id=$1 AND document_type='individual' AND status='final'`, recipient.DistributionSlotID).Scan(&existingID)
-	if err == nil {
-		_ = tx.Rollback(ctx)
-		return r.getIndividualDocument(ctx, existingID)
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return IndividualDocument{}, err
-	}
 	payload, err := json.Marshal(snapshot)
 	if err != nil {
 		return IndividualDocument{}, ErrInvalidInput
+	}
+	// The current document is reused while its content still matches the live data; after any
+	// change (address, number, signatory, ...) it is superseded by a new revision so a sync
+	// writes the current content.
+	var existingID string
+	var unchanged bool
+	err = tx.QueryRow(ctx, `SELECT id::text, snapshot_json=$2::jsonb AND document_number=$3 FROM bast_individual_documents WHERE distribution_slot_id=$1 AND document_type='individual' AND status='final' FOR UPDATE`, recipient.DistributionSlotID, payload, recipient.DocumentNumber).Scan(&existingID, &unchanged)
+	switch {
+	case err == nil && unchanged:
+		_ = tx.Rollback(ctx)
+		return r.getIndividualDocument(ctx, existingID)
+	case err == nil:
+		if _, err := tx.Exec(ctx, `UPDATE bast_individual_documents SET status='superseded' WHERE id=$1`, existingID); err != nil {
+			return IndividualDocument{}, fmt.Errorf("supersede BA document: %w", err)
+		}
+	case !errors.Is(err, pgx.ErrNoRows):
+		return IndividualDocument{}, err
 	}
 	var id string
 	err = tx.QueryRow(ctx, `INSERT INTO bast_individual_documents(distribution_slot_id,program_id,regency_id,local_date,slot_number,final_total,document_number,package_template_version_id,snapshot_json,revision,status,finalized_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,(SELECT COALESCE(max(revision),0)+1 FROM bast_individual_documents WHERE distribution_slot_id=$1 AND document_type='individual'),'final',NULLIF($10,'')::uuid) RETURNING id::text`, recipient.DistributionSlotID, source.ProgramID, source.RegencyID, recipient.LocalDate, recipient.SlotNumber, recipient.FinalTotal, recipient.DocumentNumber, source.PackageTemplateVersionID, payload, actor.UserID).Scan(&id)
@@ -290,7 +298,7 @@ func (r *Repository) LockRegencyTotal(ctx context.Context, actor auth.Principal,
 }
 
 func (r *Repository) ListActiveBundles(ctx context.Context, programID, regencyID string, scope auth.RegencyScope) ([]DailyBundle, error) {
-	rows, err := r.pool.Query(ctx, `SELECT DISTINCT ON (b.local_date) b.id::text,b.program_id::text,b.regency_id::text,b.local_date::text,b.filename,b.recipient_count,b.page_count,b.version,b.status,b.checksum,b.storage_key,COALESCE(b.last_error,''),b.synced_at FROM bast_daily_bundles b WHERE b.program_id=$1 AND b.regency_id=$2 AND b.document_type='individual' AND b.status IN ('active','stale') AND ($3 OR b.regency_id::text=ANY($4)) ORDER BY b.local_date DESC,CASE WHEN b.status='active' THEN 0 ELSE 1 END,b.version DESC`, programID, regencyID, scope.Unrestricted, scope.RegencyIDs)
+	rows, err := r.pool.Query(ctx, `SELECT DISTINCT ON (b.local_date) b.id::text,b.program_id::text,b.regency_id::text,b.local_date::text,b.filename,b.recipient_count,b.page_count,b.version,b.status,b.checksum,b.storage_key,COALESCE(b.last_error,''),b.synced_at,b.source_fingerprint FROM bast_daily_bundles b WHERE b.program_id=$1 AND b.regency_id=$2 AND b.document_type='individual' AND b.status IN ('active','stale') AND ($3 OR b.regency_id::text=ANY($4)) ORDER BY b.local_date DESC,CASE WHEN b.status='active' THEN 0 ELSE 1 END,b.version DESC`, programID, regencyID, scope.Unrestricted, scope.RegencyIDs)
 	if err != nil {
 		return nil, fmt.Errorf("list BA bundles: %w", err)
 	}
@@ -298,7 +306,7 @@ func (r *Repository) ListActiveBundles(ctx context.Context, programID, regencyID
 	items := []DailyBundle{}
 	for rows.Next() {
 		var item DailyBundle
-		if err := rows.Scan(&item.ID, &item.ProgramID, &item.RegencyID, &item.LocalDate, &item.Filename, &item.RecipientCount, &item.PageCount, &item.Version, &item.Status, &item.Checksum, &item.StorageKey, &item.LastError, &item.SyncedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.ProgramID, &item.RegencyID, &item.LocalDate, &item.Filename, &item.RecipientCount, &item.PageCount, &item.Version, &item.Status, &item.Checksum, &item.StorageKey, &item.LastError, &item.SyncedAt, &item.SourceFingerprint); err != nil {
 			return nil, err
 		}
 		items = append(items, item)
@@ -308,7 +316,7 @@ func (r *Repository) ListActiveBundles(ctx context.Context, programID, regencyID
 
 func (r *Repository) GetActiveBundle(ctx context.Context, programID, regencyID, localDate string, scope auth.RegencyScope) (DailyBundle, error) {
 	var item DailyBundle
-	err := r.pool.QueryRow(ctx, `SELECT id::text,program_id::text,regency_id::text,local_date::text,filename,recipient_count,page_count,version,status,checksum,storage_key,COALESCE(last_error,''),synced_at FROM bast_daily_bundles WHERE program_id=$1 AND regency_id=$2 AND local_date=$3 AND document_type='individual' AND status='active' AND ($4 OR regency_id::text=ANY($5))`, programID, regencyID, localDate, scope.Unrestricted, scope.RegencyIDs).Scan(&item.ID, &item.ProgramID, &item.RegencyID, &item.LocalDate, &item.Filename, &item.RecipientCount, &item.PageCount, &item.Version, &item.Status, &item.Checksum, &item.StorageKey, &item.LastError, &item.SyncedAt)
+	err := r.pool.QueryRow(ctx, `SELECT id::text,program_id::text,regency_id::text,local_date::text,filename,recipient_count,page_count,version,status,checksum,storage_key,COALESCE(last_error,''),synced_at,source_fingerprint FROM bast_daily_bundles WHERE program_id=$1 AND regency_id=$2 AND local_date=$3 AND document_type='individual' AND status='active' AND ($4 OR regency_id::text=ANY($5))`, programID, regencyID, localDate, scope.Unrestricted, scope.RegencyIDs).Scan(&item.ID, &item.ProgramID, &item.RegencyID, &item.LocalDate, &item.Filename, &item.RecipientCount, &item.PageCount, &item.Version, &item.Status, &item.Checksum, &item.StorageKey, &item.LastError, &item.SyncedAt, &item.SourceFingerprint)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return DailyBundle{}, ErrNotFound
 	}
@@ -320,7 +328,7 @@ func (r *Repository) GetActiveBundle(ctx context.Context, programID, regencyID, 
 
 func (r *Repository) GetActiveBundleByID(ctx context.Context, id string, scope auth.RegencyScope) (DailyBundle, error) {
 	var item DailyBundle
-	err := r.pool.QueryRow(ctx, `SELECT id::text,program_id::text,regency_id::text,local_date::text,filename,recipient_count,page_count,version,status,checksum,storage_key,COALESCE(last_error,''),synced_at FROM bast_daily_bundles WHERE id=$1 AND document_type='individual' AND status IN ('active','superseded','stale') AND ($2 OR regency_id::text=ANY($3))`, id, scope.Unrestricted, scope.RegencyIDs).Scan(&item.ID, &item.ProgramID, &item.RegencyID, &item.LocalDate, &item.Filename, &item.RecipientCount, &item.PageCount, &item.Version, &item.Status, &item.Checksum, &item.StorageKey, &item.LastError, &item.SyncedAt)
+	err := r.pool.QueryRow(ctx, `SELECT id::text,program_id::text,regency_id::text,local_date::text,filename,recipient_count,page_count,version,status,checksum,storage_key,COALESCE(last_error,''),synced_at,source_fingerprint FROM bast_daily_bundles WHERE id=$1 AND document_type='individual' AND status IN ('active','superseded','stale') AND ($2 OR regency_id::text=ANY($3))`, id, scope.Unrestricted, scope.RegencyIDs).Scan(&item.ID, &item.ProgramID, &item.RegencyID, &item.LocalDate, &item.Filename, &item.RecipientCount, &item.PageCount, &item.Version, &item.Status, &item.Checksum, &item.StorageKey, &item.LastError, &item.SyncedAt, &item.SourceFingerprint)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return DailyBundle{}, ErrNotFound
 	}
@@ -342,18 +350,30 @@ func (r *Repository) ActivateBundle(ctx context.Context, actor auth.Principal, i
 	}
 
 	var current DailyBundle
-	err = tx.QueryRow(ctx, `SELECT id::text,program_id::text,regency_id::text,local_date::text,filename,recipient_count,page_count,version,status,checksum,storage_key,COALESCE(last_error,''),synced_at FROM bast_daily_bundles WHERE program_id=$1 AND regency_id=$2 AND local_date=$3 AND document_type='individual' AND status='active' FOR UPDATE`, input.ProgramID, input.RegencyID, input.LocalDate).Scan(&current.ID, &current.ProgramID, &current.RegencyID, &current.LocalDate, &current.Filename, &current.RecipientCount, &current.PageCount, &current.Version, &current.Status, &current.Checksum, &current.StorageKey, &current.LastError, &current.SyncedAt)
+	err = tx.QueryRow(ctx, `SELECT id::text,program_id::text,regency_id::text,local_date::text,filename,recipient_count,page_count,version,status,checksum,storage_key,COALESCE(last_error,''),synced_at,source_fingerprint FROM bast_daily_bundles WHERE program_id=$1 AND regency_id=$2 AND local_date=$3 AND document_type='individual' AND status='active' FOR UPDATE`, input.ProgramID, input.RegencyID, input.LocalDate).Scan(&current.ID, &current.ProgramID, &current.RegencyID, &current.LocalDate, &current.Filename, &current.RecipientCount, &current.PageCount, &current.Version, &current.Status, &current.Checksum, &current.StorageKey, &current.LastError, &current.SyncedAt, &current.SourceFingerprint)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return BundleActivationResult{}, err
 	}
 	currentExists := err == nil
 	if currentExists && current.Checksum == input.Checksum {
+		// The PDF is identical, but the source it was checked against may be newer
+		// (for example a re-saved setting); record it so the date reads as synced.
+		if current.SourceFingerprint != input.SourceFingerprint {
+			if err := tx.QueryRow(ctx, `UPDATE bast_daily_bundles SET source_fingerprint=$2,synced_at=now(),updated_at=now() WHERE id=$1 RETURNING synced_at`, current.ID, input.SourceFingerprint).Scan(&current.SyncedAt); err != nil {
+				return BundleActivationResult{}, err
+			}
+			current.SourceFingerprint = input.SourceFingerprint
+		}
+		staleKeys, err := supersedeStaleBundles(ctx, tx, input.ProgramID, input.RegencyID, input.LocalDate)
+		if err != nil {
+			return BundleActivationResult{}, err
+		}
 		if err := tx.Commit(ctx); err != nil {
 			return BundleActivationResult{}, err
 		}
-		return BundleActivationResult{Bundle: current, Unchanged: true}, nil
+		return BundleActivationResult{Bundle: current, Unchanged: true, StaleStorageKeys: staleKeys}, nil
 	}
-	if (currentExists && current.ID != input.ExpectedActiveID) || (!currentExists && input.ExpectedActiveID != "") {
+	if (currentExists && current.ID != input.ExpectedActiveID) || (!currentExists && input.ExpectedActiveID != "") || input.StorageKey == "" {
 		return BundleActivationResult{}, ErrBundleConflict
 	}
 	if !currentExists && input.ExpectedActiveID == "" {
@@ -363,13 +383,17 @@ func (r *Repository) ActivateBundle(ctx context.Context, actor auth.Principal, i
 			return BundleActivationResult{}, err
 		}
 	}
+	staleKeys, err := supersedeStaleBundles(ctx, tx, input.ProgramID, input.RegencyID, input.LocalDate)
+	if err != nil {
+		return BundleActivationResult{}, err
+	}
 
 	var version int
 	if err := tx.QueryRow(ctx, `SELECT COALESCE(max(version),0)+1 FROM bast_daily_bundles WHERE program_id=$1 AND regency_id=$2 AND local_date=$3 AND document_type='individual'`, input.ProgramID, input.RegencyID, input.LocalDate).Scan(&version); err != nil {
 		return BundleActivationResult{}, err
 	}
 	var bundle DailyBundle
-	err = tx.QueryRow(ctx, `INSERT INTO bast_daily_bundles(program_id,regency_id,local_date,document_type,filename,recipient_count,page_count,checksum,storage_key,version,status,synced_at,synced_by) VALUES($1,$2,$3,'individual',$4,$5,$6,$7,$8,$9,'active',now(),NULLIF($10,'')::uuid) RETURNING id::text,program_id::text,regency_id::text,local_date::text,filename,recipient_count,page_count,version,status,checksum,storage_key,COALESCE(last_error,''),synced_at`, input.ProgramID, input.RegencyID, input.LocalDate, input.Filename, len(input.Items), input.PageCount, input.Checksum, input.StorageKey, version, actor.UserID).Scan(&bundle.ID, &bundle.ProgramID, &bundle.RegencyID, &bundle.LocalDate, &bundle.Filename, &bundle.RecipientCount, &bundle.PageCount, &bundle.Version, &bundle.Status, &bundle.Checksum, &bundle.StorageKey, &bundle.LastError, &bundle.SyncedAt)
+	err = tx.QueryRow(ctx, `INSERT INTO bast_daily_bundles(program_id,regency_id,local_date,document_type,filename,recipient_count,page_count,checksum,storage_key,version,status,synced_at,synced_by,source_fingerprint) VALUES($1,$2,$3,'individual',$4,$5,$6,$7,$8,$9,'active',now(),NULLIF($10,'')::uuid,$11) RETURNING id::text,program_id::text,regency_id::text,local_date::text,filename,recipient_count,page_count,version,status,checksum,storage_key,COALESCE(last_error,''),synced_at,source_fingerprint`, input.ProgramID, input.RegencyID, input.LocalDate, input.Filename, len(input.Items), input.PageCount, input.Checksum, input.StorageKey, version, actor.UserID, input.SourceFingerprint).Scan(&bundle.ID, &bundle.ProgramID, &bundle.RegencyID, &bundle.LocalDate, &bundle.Filename, &bundle.RecipientCount, &bundle.PageCount, &bundle.Version, &bundle.Status, &bundle.Checksum, &bundle.StorageKey, &bundle.LastError, &bundle.SyncedAt, &bundle.SourceFingerprint)
 	if err != nil {
 		return BundleActivationResult{}, fmt.Errorf("insert BA bundle: %w", err)
 	}
@@ -384,7 +408,44 @@ func (r *Repository) ActivateBundle(ctx context.Context, actor auth.Principal, i
 	if err := tx.Commit(ctx); err != nil {
 		return BundleActivationResult{}, err
 	}
-	return BundleActivationResult{Bundle: bundle, OldStorageKey: current.StorageKey}, nil
+	return BundleActivationResult{Bundle: bundle, OldStorageKey: current.StorageKey, StaleStorageKeys: staleKeys}, nil
+}
+
+// supersedeStaleBundles retires the stale versions of one date and returns their files.
+func supersedeStaleBundles(ctx context.Context, tx pgx.Tx, programID, regencyID, localDate string) ([]string, error) {
+	rows, err := tx.Query(ctx, `UPDATE bast_daily_bundles SET status='superseded',updated_at=now() WHERE program_id=$1 AND regency_id=$2 AND local_date=$3 AND document_type='individual' AND status='stale' RETURNING storage_key`, programID, regencyID, localDate)
+	if err != nil {
+		return nil, fmt.Errorf("supersede stale BA bundles: %w", err)
+	}
+	defer rows.Close()
+	keys := []string{}
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		keys = append(keys, key)
+	}
+	return keys, rows.Err()
+}
+
+// RetireDateBundles supersedes every current PDF of a date that no longer has completed
+// distributions (every recipient moved to another date or was reopened) and returns their files.
+func (r *Repository) RetireDateBundles(ctx context.Context, programID, regencyID, localDate string, scope auth.RegencyScope) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `UPDATE bast_daily_bundles SET status='superseded',updated_at=now() WHERE program_id=$1 AND regency_id=$2 AND local_date=$3 AND document_type='individual' AND status IN ('active','stale') AND ($4 OR regency_id::text=ANY($5)) RETURNING storage_key`, programID, regencyID, localDate, scope.Unrestricted, scope.RegencyIDs)
+	if err != nil {
+		return nil, fmt.Errorf("retire BA bundles: %w", err)
+	}
+	defer rows.Close()
+	keys := []string{}
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		keys = append(keys, key)
+	}
+	return keys, rows.Err()
 }
 
 func (r *Repository) RecordCleanupFailure(ctx context.Context, bundleID, message string) error {

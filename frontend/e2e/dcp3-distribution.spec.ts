@@ -81,7 +81,7 @@ test('DCP3 to completed package distribution', async ({ page }, testInfo) => {
   await recipientNIK.fill(cleanNIK);
   await page.getByRole('option', { name: `${cleanNIK} ${storedCleanName}` }).click();
   await expect(page.getByLabel('Nama')).toHaveValue(storedCleanName);
-  await page.getByLabel('Nomor telepon').fill('081234567890');
+  await page.getByLabel('Nomor HP').fill('081234567890');
   await page.getByRole('button', { name: 'Hubungkan ke Nomor Bagi Ini' }).click();
   const recipientHeading = page.getByRole('heading', { name: storedCleanName });
   await expect(recipientHeading).toBeVisible();

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -41,6 +42,34 @@ type Config struct {
 	GDriveRootFolderID        string
 	MaxConcurrentVideoUploads int
 	GeocoderURL               string
+	// Map tile sources handed to the browser by /api/v1/map/config. The API key is a public client key.
+	MapStyleURL           string
+	MapSatelliteTiles     string
+	MapHybridOverlayTiles []string
+	MapAttribution        string
+	MapTileAPIKey         string
+}
+
+const (
+	defaultMapStyleURL       = "https://tiles.openfreemap.org/styles/liberty"
+	defaultMapSatelliteTiles = "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+	defaultMapAttribution    = "© OpenStreetMap contributors · Imagery © Esri · Batas wilayah: geoBoundaries (CC BY 3.0 IGO)"
+)
+
+var defaultMapHybridOverlayTiles = []string{
+	"https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}",
+	"https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+}
+
+// splitList splits a comma-separated list, trimming blanks and dropping empty items.
+func splitList(raw string) []string {
+	items := []string{}
+	for _, item := range strings.Split(raw, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			items = append(items, item)
+		}
+	}
+	return items
 }
 
 type lookupFunc func(string) (string, bool)
@@ -65,6 +94,11 @@ func loadFrom(lookup lookupFunc) (Config, error) {
 		StorageBackend:            valueOrDefault(lookup, "STORAGE_BACKEND", "local"),
 		MaxConcurrentVideoUploads: 3,
 		GeocoderURL:               valueOrDefault(lookup, "GEOCODER_URL", "https://nominatim.openstreetmap.org"),
+		MapStyleURL:               valueOrDefault(lookup, "MAP_STYLE_URL", defaultMapStyleURL),
+		MapSatelliteTiles:         valueOrDefault(lookup, "MAP_SATELLITE_TILES", defaultMapSatelliteTiles),
+		MapHybridOverlayTiles:     splitList(valueOrDefault(lookup, "MAP_HYBRID_OVERLAY_TILES", strings.Join(defaultMapHybridOverlayTiles, ","))),
+		MapAttribution:            valueOrDefault(lookup, "MAP_ATTRIBUTION", defaultMapAttribution),
+		MapTileAPIKey:             valueOrDefault(lookup, "MAP_TILE_API_KEY", ""),
 	}
 
 	if cfg.DatabaseURL == "" {

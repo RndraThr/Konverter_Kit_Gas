@@ -18,12 +18,6 @@ export function normalizeRegencyName(name: string): string {
     .replace(/[^A-Z0-9]/g, '');
 }
 
-export function buildRegionIndex(regions: MapRegion[]): Map<string, MapRegion> {
-  const index = new Map<string, MapRegion>();
-  for (const region of regions) index.set(normalizeRegencyName(region.regency_name), region);
-  return index;
-}
-
 export type MetricKey = 'recipients' | 'progress' | 'evidence';
 
 export type MetricDefinition = {
@@ -143,8 +137,4 @@ export function buildRegencyPaths(features: RegencyFeature[], width: number, hei
       center: [Number(cx.toFixed(1)), Number(cy.toFixed(1))] as [number, number],
     };
   });
-}
-
-export function formatRegencyLabel(region: MapRegion): string {
-  return region.regency_name || region.regency_id;
 }
