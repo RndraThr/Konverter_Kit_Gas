@@ -110,3 +110,20 @@ export function WetSignatureBar({ scheduleID, document, date, label }: Props) {
 function errorMessage(error: unknown) {
   return error instanceof ApiError || error instanceof Error ? error.message : 'Permintaan belum dapat diproses.';
 }
+
+type HintProps = { scheduleID: string; document: string; date: string; open: boolean; onOpen: () => void };
+
+/**
+ * Pengingat singkat di dekat tombol finalisasi saat mode tanda tangan basah
+ * aktif dan halaman bertanda tangan belum diunggah. Cetak dan unggah hanya
+ * ada di panel Penandatangan.
+ */
+export function WetSignatureHint({ scheduleID, document, date, open, onOpen }: HintProps) {
+  const data = useWetSignatureStatus(scheduleID, document, date).data?.data;
+  // Panel Penandatangan terbuka: langkahnya sudah tampil di sana.
+  if (open || !data?.enabled || data.scan?.valid) return null;
+  return <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">
+    <span>{data.scan ? 'Isi dokumen berubah: halaman tanda tangan basah perlu ditandatangani dan diunggah ulang.' : 'Tanda tangan basah: unggah halaman bertanda tangan sebelum finalisasi.'}</span>
+    <Button type="button" size="sm" variant="outline" onClick={onOpen}>Buka penandatangan</Button>
+  </div>;
+}

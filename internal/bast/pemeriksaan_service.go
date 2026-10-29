@@ -99,14 +99,20 @@ func (s *PemeriksaanService) Preview(ctx context.Context, scheduleID, documentDa
 	if err != nil {
 		return AggregatePreview{}, err
 	}
+	wet, wetImages, err := s.wet(ctx, ctxData.ScheduleID, strings.TrimSpace(documentDate), scope)
+	if err != nil {
+		return AggregatePreview{}, err
+	}
 	for i := range snapshots {
 		snapshots[i].SignatureMarks = marks
+		snapshots[i].Wet = wet
 	}
 	logoBytes, err := loadLogoBytes(ctx, s.storage, snapshots[0].Logos)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
 	mergeImages(logoBytes, markImages)
+	mergeImages(logoBytes, wetImages)
 	rendered, err := RenderPemeriksaan(snapshots, logoBytes)
 	if err != nil {
 		return AggregatePreview{}, err
@@ -128,14 +134,23 @@ func (s *PemeriksaanService) Finalize(ctx context.Context, actor auth.Principal,
 	if err != nil {
 		return nil, err
 	}
+	wet, wetImages, err := s.wet(ctx, ctxData.ScheduleID, documentDate, scope)
+	if err != nil {
+		return nil, err
+	}
+	if wet.Enabled && !wet.Scanned {
+		return nil, ErrWetSignatureRequired
+	}
 	for i := range snapshots {
 		snapshots[i].SignatureMarks = marks
+		snapshots[i].Wet = wet
 	}
 	logoBytes, err := loadLogoBytes(ctx, s.storage, snapshots[0].Logos)
 	if err != nil {
 		return nil, err
 	}
 	mergeImages(logoBytes, markImages)
+	mergeImages(logoBytes, wetImages)
 	folderPath, err := media.BuildFolderPath(media.FolderPathInput{
 		ProgramType: ctxData.ProgramType, ZoneName: ctxData.ZoneName, RegencyName: ctxData.RegencyName,
 		Category: media.FolderBA, Child: pemeriksaanFolder,
@@ -301,6 +316,19 @@ func (s *PemeriksaanService) closingRows(ctx context.Context, scheduleID string,
 		total += row.Count
 	}
 	return rows, total, nil
+}
+
+// wet menentukan tanda tangan basah BA Pemeriksaan satu tanggal. Kode isi
+// dihitung dari semua form agar sama untuk preview, cetak, dan finalisasi
+// sebagian form.
+func (s *PemeriksaanService) wet(ctx context.Context, scheduleID, documentDate string, scope auth.RegencyScope) (WetSignature, map[string][]byte, error) {
+	all, _, err := s.snapshots(ctx, scheduleID, documentDate, nil, scope)
+	if err != nil {
+		return WetSignature{}, nil, err
+	}
+	return loadWetSignature(ctx, s.repository, scheduleID, "ba-pemeriksaan", documentDate, struct {
+		Forms []PemeriksaanSnapshot `json:"forms"`
+	}{all})
 }
 
 // SignaturePreview merender semua form, dipakai editor tanda tangan.

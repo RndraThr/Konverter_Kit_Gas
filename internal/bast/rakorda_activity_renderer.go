@@ -94,36 +94,45 @@ func renderActivityAttendance(document activityDocument, snapshot RakordaSnapsho
 	}
 	registerSignatures(pdf, logoBytes)
 	registerSignatoryImages(pdf, logoBytes)
+	registerWetScan(pdf, logoBytes)
 
-	pdf.AddPage()
-	renderActivityHeader(pdf, document, snapshot, logos)
-	renderActivityTableHeader(pdf)
-	rows := snapshot.RowCount
-	if len(snapshot.Participants) > 0 {
-		rows = len(snapshot.Participants)
-	}
-	for number := 1; number <= rows; number++ {
-		height := activityRowMM
-		var lines [][]string
+	// Cetak halaman tanda tangan saja: isi dokumen dilewati.
+	if !snapshot.Wet.PageOnly {
+		pdf.AddPage()
+		renderActivityHeader(pdf, document, snapshot, logos)
+		renderActivityTableHeader(pdf)
+		rows := snapshot.RowCount
 		if len(snapshot.Participants) > 0 {
-			lines, height = layoutParticipantRow(pdf, snapshot.Participants[number-1])
+			rows = len(snapshot.Participants)
 		}
-		if pdf.GetY()+height > pageHeightMM-bottomMarginMM {
-			pdf.AddPage()
-			pdf.SetXY(marginMM, renderRakordaLogoStrip(pdf, logos)+activityTopGapMM)
-		}
-		if len(snapshot.Participants) > 0 {
-			renderActivityParticipantRow(pdf, number, snapshot.Participants[number-1], lines, height)
-		} else {
-			renderActivityBlankRow(pdf, number)
+		for number := 1; number <= rows; number++ {
+			height := activityRowMM
+			var lines [][]string
+			if len(snapshot.Participants) > 0 {
+				lines, height = layoutParticipantRow(pdf, snapshot.Participants[number-1])
+			}
+			if pdf.GetY()+height > pageHeightMM-bottomMarginMM {
+				pdf.AddPage()
+				pdf.SetXY(marginMM, renderRakordaLogoStrip(pdf, logos)+activityTopGapMM)
+			}
+			if len(snapshot.Participants) > 0 {
+				renderActivityParticipantRow(pdf, number, snapshot.Participants[number-1], lines, height)
+			} else {
+				renderActivityBlankRow(pdf, number)
+			}
 		}
 	}
 
-	// Tanda tangan selalu di halaman terakhir tersendiri, terpisah dari tabel hadir.
-	signature := layoutActivitySignatures(pdf, snapshot.Signatories, activitySignatureHeaders).withMarks(fourSignatories, snapshot.SignatureMarks)
-	pdf.AddPage()
-	pdf.SetXY(marginMM, renderRakordaLogoStrip(pdf, logos)+activitySignatureGap)
-	renderActivitySignatures(pdf, signature)
+	// Tanda tangan selalu di halaman terakhir tersendiri, terpisah dari tabel
+	// hadir; dengan tanda tangan basah, halaman pindaian menggantikannya.
+	if snapshot.Wet.Scanned {
+		drawWetScanPage(pdf, "P")
+	} else {
+		signature := layoutActivitySignatures(pdf, snapshot.Signatories, activitySignatureHeaders).withMarks(fourSignatories, snapshot.SignatureMarks)
+		pdf.AddPage()
+		pdf.SetXY(marginMM, renderRakordaLogoStrip(pdf, logos)+activitySignatureGap)
+		renderActivitySignatures(pdf, signature)
+	}
 
 	var output bytes.Buffer
 	if err := pdf.Output(&output); err != nil {

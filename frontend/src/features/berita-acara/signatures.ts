@@ -16,7 +16,14 @@ export type SignatureRule = {
   stamp: boolean;
   signature_placement?: MarkPlacement | null;
   stamp_placement?: MarkPlacement | null;
+  /** Kepekatan stempel 0,2-1 (kosong = bawaan 0,92, sama dengan server). */
+  stamp_opacity?: number | null;
+  /** Stempel di bawah tanda tangan (bawaan: di atas). */
+  stamp_below?: boolean;
 };
+
+export const defaultStampOpacity = 0.92;
+export const minStampOpacity = 0.2;
 
 /** Posisi bawaan stempel bila belum diatur (sama dengan server). */
 export const defaultStampPlacement: MarkPlacement = { x: -0.4, y: 0, size: 0.78, rotation: 0 };
@@ -30,11 +37,11 @@ export const markOverflow = 0.75;
 
 /**
  * Posisi bawaan tanda tangan (sama dengan server): proporsional di tengah
- * kotak, lebar maksimal min(lebar kotak - 6 mm, 60 mm) dan tinggi kotak - 4 mm.
+ * kotak, lebar maksimal min(lebar kotak - 6 mm, 38 mm) dan tinggi kotak - 4 mm.
  */
 export function defaultSignaturePlacement(aspect: number, boxWidthMM: number, boxHeightMM: number): MarkPlacement {
   const ratio = aspect > 0 ? aspect : 3;
-  let width = Math.min(boxWidthMM - 6, 60);
+  let width = Math.min(boxWidthMM - 6, 38);
   let height = width / ratio;
   if (height > boxHeightMM - 4) {
     height = boxHeightMM - 4;

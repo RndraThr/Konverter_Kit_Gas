@@ -14,7 +14,7 @@ import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
 import { SignatureSettingsPanel } from './SignatureSettingsPanel';
 import type { AggregateDocument, GasElpijiInput, GasElpijiReceipt, GasElpijiSummary, ScheduleSettings } from './types';
-import { useWetSignatureStatus, WetSignatureBar } from './WetSignatureBar';
+import { useWetSignatureStatus, WetSignatureHint } from './WetSignatureBar';
 import { wetSignatureKey } from './wetScan';
 
 type Props = { scheduleID: string; regencyName: string; programType: ProgramType; defaultDate: string };
@@ -187,7 +187,7 @@ export function GasElpijiPanel({ scheduleID, regencyName, programType, defaultDa
       <Card className="min-w-0">
         <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle className="text-base">BA Gas Elpiji · {documentDate ? formatDate(documentDate) : 'pilih tanggal'}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{regencyName} · disimpan ke 13. GAS ELPIJI</p></div>{current && <Badge variant="outline">Final v{current.document.version}</Badge>}</div></CardHeader>
         <CardContent className="grid gap-4 pt-5">
-          {documentDate !== '' && <WetSignatureBar scheduleID={scheduleID} document={documentKey} date={documentDate} label="BA Gas Elpiji" />}
+          {documentDate !== '' && <WetSignatureHint scheduleID={scheduleID} document={documentKey} date={documentDate} open={showSignatures} onOpen={() => setShowSignatures(true)} />}
           {versions.length > 1 && <div className="grid gap-2 rounded-lg border p-3">
             <strong className="text-sm">Riwayat versi tanggal ini</strong>
             {versions.filter((doc) => doc.status !== 'active').map((doc) => <div className="flex items-center justify-between gap-3 text-sm" key={doc.id}><span className="text-muted-foreground">Versi {doc.version} · {formatCount(doc.recipient_count)} tabung</span><Button nativeButton={false} render={<a href={`/api/v1/bast/gas-elpiji/documents/${doc.id}/content`} />} variant="ghost" size="sm"><Download />Unduh</Button></div>)}

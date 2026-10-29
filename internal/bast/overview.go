@@ -69,6 +69,10 @@ var overviewWetKeys = map[string]string{
 	"servis-berkala":      "servis-berkala",
 	"tkdn":                "tkdn",
 	"gas-elpiji":          "gas-elpiji",
+	"sosialisasi":         "sosialisasi",
+	"training-10":         "training-10",
+	"training-100":        "training-100",
+	"pemeriksaan":         "ba-pemeriksaan",
 }
 
 // Overview mengembalikan status final, perlu dibuat ulang, arsip, dan tanda

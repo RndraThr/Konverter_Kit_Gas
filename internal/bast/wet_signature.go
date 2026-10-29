@@ -26,10 +26,13 @@ var ErrWetSignatureRequired = errors.New("signed signature page scan is required
 
 // wetSignatureDocuments adalah BA yang tanda tangannya berada di halaman
 // terakhir tersendiri (Servis Berkala satu halaman: seluruh halaman diganti).
+// BA Pemeriksaan memakai satu pindaian untuk halaman tanda tangan setiap
+// form (isinya sama). RAKORDA tidak punya tabel penandatangan.
 var wetSignatureDocuments = map[string]bool{
 	"dp3": true, "rekap-harian": true, "closing-titik-serah": true,
 	"closing-kabupaten": true, "servis-berkala": true, "tkdn": true,
-	"gas-elpiji": true,
+	"gas-elpiji": true, "sosialisasi": true, "training-10": true,
+	"training-100": true, "ba-pemeriksaan": true,
 }
 
 const wetScanImageKey = "wetscan"

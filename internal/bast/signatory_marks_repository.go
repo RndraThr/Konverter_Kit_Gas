@@ -341,6 +341,8 @@ func (r *Repository) ResolveSignatoryMarks(ctx context.Context, scheduleID, docu
 		} else {
 			mark.Stamp = true
 			mark.StampPlacement = rule.StampPlacement
+			mark.StampOpacity = rule.StampOpacity
+			mark.StampBelow = rule.StampBelow
 		}
 		marks[role] = mark
 		images[signatoryImageKey(role, kind)] = image

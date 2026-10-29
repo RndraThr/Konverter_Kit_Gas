@@ -15,6 +15,7 @@ import { uppercaseBusinessText } from '@/lib/text';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
 import { SignatureSettingsPanel } from './SignatureSettingsPanel';
+import { WetSignatureHint } from './WetSignatureBar';
 import { RakordaArchive } from './RakordaArchive';
 import type { ScheduleSettings } from './types';
 
@@ -132,6 +133,7 @@ export function RakordaPanel({ config = rakordaConfig, scheduleID, regencyName, 
             {hasSignatures && <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>}
           </div>}
           {settingsReady && date && config.locationOptional && !savedLocation.trim() && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">Lokasi belum diisi: dicetak kosong.</p>}
+          {hasSignatures && settingsReady && date && <WetSignatureHint scheduleID={scheduleID} document="sosialisasi" date={date} open={showSignatures} onOpen={() => setShowSignatures(true)} />}
           {settingsReady && date && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label={config.documentTitle} />}
         </CardContent>
       </Card>

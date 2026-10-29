@@ -185,6 +185,7 @@ type PemeriksaanSnapshot struct {
 	Logos          []LogoSnapshot     `json:"logos"`
 	Signatories    closingSignatories `json:"signatories"`
 	SignatureMarks SignatureMarks     `json:"signature_marks,omitempty"`
+	Wet            WetSignature       `json:"wet_signature,omitempty"`
 }
 
 // PemeriksaanFormSummary adalah satu form dengan baris dan No. PO yang sudah

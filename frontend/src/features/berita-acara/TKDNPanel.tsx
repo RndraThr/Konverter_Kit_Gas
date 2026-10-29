@@ -15,7 +15,7 @@ import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
 import { SignatureSettingsPanel } from './SignatureSettingsPanel';
-import { useWetSignatureBlocked, WetSignatureBar } from './WetSignatureBar';
+import { useWetSignatureBlocked, WetSignatureHint } from './WetSignatureBar';
 import { DocumentInfoFields } from './DocumentInfoFields';
 import { TemplateEntrySelect } from './TemplateEntrySelect';
 import type { AggregateDocument, TKDNProfile, TKDNRow, TKDNSummary } from './types';
@@ -111,7 +111,7 @@ export function TKDNPanel({ scheduleID, programID, regencyName, programType, def
           </div>
           {canManage && <Button disabled={finalize.isPending || !ready || documentDate === '' || !totalSaved || wetBlocked} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
         </div>
-        <WetSignatureBar scheduleID={scheduleID} document="tkdn" date={documentDate} label="TKDN" />
+        <WetSignatureHint scheduleID={scheduleID} document="tkdn" date={documentDate} open={showSignatures} onOpen={() => setShowSignatures(true)} />
 
         {!ready && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">Belum ada distribusi selesai pada jadwal ini.</div>}
         {ready && !totalSaved && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">TKDN gabungan belum diisi: dibiarkan kosong di preview. Isi dan simpan sebelum finalisasi.</p>}

@@ -23,6 +23,7 @@ type RakordaSnapshot struct {
 	Logos          []LogoSnapshot        `json:"logos"`
 	Signatories    closingSignatories    `json:"signatories"`
 	SignatureMarks SignatureMarks        `json:"signature_marks,omitempty"`
+	Wet            WetSignature          `json:"wet_signature,omitempty"`
 }
 
 func buildRakordaSnapshot(spec rakordaDocumentSpec, ctx DP3Context, settings ScheduleSettings, logos []LogoSnapshot, documentDate string, participants []ActivityParticipant) (RakordaSnapshot, error) {

@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { InlineSignatureCanvas } from './InlineSignatureCanvas';
 import { PlacedMark } from './PlacedMark';
 import { base64ToBytes, renderPdfRegion, type RegionMM } from './pdfRegion';
-import { markOverflow, signatoryHeadings, type MarkPlacement, type SignatoryKind, type SignatoryRole, type SignatureLayout } from './signatures';
+import { defaultStampOpacity, markOverflow, signatoryHeadings, type MarkPlacement, type SignatoryKind, type SignatoryRole, type SignatureLayout } from './signatures';
 
 const minPxPerMM = 2.2;
 
 export type EditorMark = { src: string; placement: MarkPlacement };
-export type EditorItem = { signature?: EditorMark; stamp?: EditorMark };
+/** stampOpacity/stampBelow: kepekatan stempel dan urutannya terhadap tanda tangan. */
+export type EditorItem = { signature?: EditorMark; stamp?: EditorMark; stampOpacity?: number; stampBelow?: boolean };
 export type EditorSelection = { role: SignatoryRole; kind?: SignatoryKind };
 /** Kolom yang sedang dicoret tanda tangannya langsung di tabel. */
 export type EditorDrawing = { role: SignatoryRole; onDone: (png: string, placement: MarkPlacement) => void; onCancel: () => void };
@@ -108,6 +109,9 @@ export function SignatureTableEditor({ layout, items, selection, editable, zoom,
                 placement={mark.placement}
                 boxWidth={boxWidth}
                 boxHeight={boxHeight}
+                insetPx={pxPerMM}
+                opacity={kind === 'stamp' ? item.stampOpacity ?? defaultStampOpacity : 1}
+                layer={(kind === 'stamp') === !item.stampBelow ? 2 : 1}
                 editable={editable && !drawing}
                 selected={isSelected && selection?.kind === kind}
                 onSelect={() => onSelect({ role: box.role, kind })}

@@ -209,17 +209,27 @@ test('the per-document switch saves immediately and starts from the global rules
   await waitFor(() => expect(writes('/api/v1/bast/signatures')).toEqual([expect.objectContaining({ override: true, rules: globalRules })]))
 })
 
-test('the wet-signature switch saves immediately and keeps the current rules', async () => {
+test('the wet-signature tab saves immediately and keeps the current rules', async () => {
   renderPanel()
-  await userEvent.click(await screen.findByRole('switch', { name: 'Tanda tangan basah' }))
+  expect(await screen.findByRole('tab', { name: /Tanda tangan digital/ })).toHaveAttribute('aria-selected', 'true')
+  await userEvent.click(screen.getByRole('tab', { name: /Tanda tangan basah/ }))
   await waitFor(() => expect(writes('/api/v1/bast/signatures')).toEqual([expect.objectContaining({ override: false, rules: globalRules, wet_signature: true })]))
 })
 
-test('hides the wet-signature switch for documents without a separate signature page', async () => {
+test('wet mode shows the print-sign-upload steps and names instead of the digital editor', async () => {
+  settings = { ...settings, wet_signature: true }
+  renderPanel()
+  expect(await screen.findByRole('tab', { name: /Tanda tangan basah/ })).toHaveAttribute('aria-selected', 'true')
+  expect(screen.getByText('Cetak halaman tanda tangan')).toBeInTheDocument()
+  expect(screen.getAllByLabelText('Nama').length).toBeGreaterThan(0)
+  expect(screen.queryByRole('button', { name: 'Gambar tanda tangan' })).not.toBeInTheDocument()
+})
+
+test('hides the signing-mode tabs for documents without a separate signature page', async () => {
   settings = { ...settings, wet_supported: false }
   renderPanel()
   await screen.findByRole('switch', { name: 'Atur khusus untuk DP3' })
-  expect(screen.queryByRole('switch', { name: 'Tanda tangan basah' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('tab', { name: /Tanda tangan basah/ })).not.toBeInTheDocument()
 })
 
 test('is read-only without bast.manage', async () => {

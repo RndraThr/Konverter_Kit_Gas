@@ -103,3 +103,56 @@ func TestRenderClosingWetSignaturePages(t *testing.T) {
 		t.Fatal("scanned document must not print the code footer")
 	}
 }
+
+func TestActivityAndPemeriksaanWetSignaturePages(t *testing.T) {
+	logo := map[string][]byte{"logo-1": testPNG(t)}
+	activity := RakordaSnapshot{DocumentDate: "2026-10-03", RegencyName: "WAJO", ProvinceName: "SULAWESI SELATAN", ZoneName: "ZONA 4", FiscalYear: 2026, RowCount: 51, Logos: []LogoSnapshot{{AssetID: "logo-1", MimeType: "image/png", SortOrder: 1}}}
+	full, err := RenderSosialisasi(activity, logo)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Cetak halaman tanda tangan saja.
+	activity.Wet = WetSignature{Enabled: true, PageOnly: true}
+	page, err := RenderSosialisasi(activity, logo)
+	if err != nil || page.PageCount != 1 {
+		t.Fatalf("page only = %d pages, %v", page.PageCount, err)
+	}
+
+	// Pindaian menggantikan halaman tanda tangan: jumlah halaman tetap.
+	activity.Wet = WetSignature{Enabled: true, Scanned: true}
+	scanned, err := RenderSosialisasi(activity, map[string][]byte{"logo-1": testPNG(t), wetScanImageKey: testPNG(t)})
+	if err != nil || scanned.PageCount != full.PageCount {
+		t.Fatalf("scanned = %d pages (full %d), %v", scanned.PageCount, full.PageCount, err)
+	}
+
+	forms := samplePemeriksaanSnapshots()
+	all, err := RenderPemeriksaan(forms, logo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range forms {
+		forms[i].Wet = WetSignature{Enabled: true, PageOnly: true}
+	}
+	if page, err := RenderPemeriksaan(forms, logo); err != nil || page.PageCount != 1 {
+		t.Fatalf("pemeriksaan page only = %d pages, %v", page.PageCount, err)
+	}
+	for i := range forms {
+		forms[i].Wet = WetSignature{Enabled: true, Scanned: true}
+	}
+	if scanned, err := RenderPemeriksaan(forms, map[string][]byte{"logo-1": testPNG(t), wetScanImageKey: testPNG(t)}); err != nil || scanned.PageCount != all.PageCount {
+		t.Fatalf("pemeriksaan scanned = %d pages (all %d), %v", scanned.PageCount, all.PageCount, err)
+	}
+}
+
+func TestFitMarkInColumnKeepsMarksInside(t *testing.T) {
+	// 60 mm signature in a 44.5 mm column: shrunk to the column, centred.
+	w, h, cx := fitMarkInColumn(60, 20, 100, 80, 44.5)
+	if w != 42.5 || cx != 80+44.5/2 || h >= 20 {
+		t.Fatalf("fit = %.2f x %.2f at %.2f", w, h, cx)
+	}
+	// A stamp pushed past the right edge is pulled back inside.
+	if _, _, cx := fitMarkInColumn(20, 20, 130, 80, 44.5); cx != 80+44.5-11 {
+		t.Fatalf("clamped centre = %.2f", cx)
+	}
+}

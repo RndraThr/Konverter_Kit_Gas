@@ -67,9 +67,15 @@ func RenderPemeriksaan(snapshots []PemeriksaanSnapshot, logoBytes map[string][]b
 		return RenderedAggregate{}, err
 	}
 	registerSignatoryImages(pdf, logoBytes)
+	registerWetScan(pdf, logoBytes)
 	for _, snapshot := range snapshots {
 		if !strings.HasPrefix(snapshot.DocumentType, pemeriksaanDocumentPrefix) || len(snapshot.Form.Rows) == 0 {
 			return RenderedAggregate{}, ErrInvalidInput
+		}
+		// Halaman tanda tangan sama untuk semua form: dicetak sekali.
+		if snapshot.Wet.PageOnly {
+			renderPemeriksaanSignaturePage(pdf, snapshot, logos)
+			break
 		}
 		renderPemeriksaanForm(pdf, snapshot, logos, len(snapshots) > 1)
 	}
@@ -138,6 +144,16 @@ func renderPemeriksaanForm(pdf *fpdf.Fpdf, snapshot PemeriksaanSnapshot, logos [
 	}
 	renderPemeriksaanNote(pdf, noteY, textLeft, tableWidth, snapshot.Form.Note)
 
+	renderPemeriksaanSignaturePage(pdf, snapshot, logos)
+}
+
+// renderPemeriksaanSignaturePage menambahkan halaman tanda tangan satu form,
+// atau halaman pindaian tanda tangan basah yang menggantikannya.
+func renderPemeriksaanSignaturePage(pdf *fpdf.Fpdf, snapshot PemeriksaanSnapshot, logos []registeredLogo) {
+	if snapshot.Wet.Scanned {
+		drawWetScanPage(pdf, "P")
+		return
+	}
 	signature := layoutActivitySignatures(pdf, snapshot.Signatories, pemeriksaanSignatureHeaders).withMarks(fourSignatories, snapshot.SignatureMarks)
 	pdf.AddPage()
 	pdf.SetXY(marginMM, renderRakordaLogoStrip(pdf, logos)+activitySignatureGap)
