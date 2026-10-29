@@ -177,4 +177,85 @@ func TestRepositoryResolvesScopedBAContextAndCompletedSlotsIncludingStaleHistory
 	if replaced.Bundle.Version != 2 || replaced.Bundle.Status != "active" {
 		t.Fatalf("replacement=%+v", replaced)
 	}
+
+	// A sync refreshes a recipient's document once the live data differs (the name and serial
+	// changed above), and keeps reusing it while nothing changes.
+	refreshed, err := service.FinalizeRecipient(ctx, auth.Principal{}, programID, regencyID, recipients[0], scope, auth.ClientMeta{UserAgent: "bast-finalize-test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.ID == document.ID || refreshed.Snapshot.Recipient.FullName != "Nama Berubah" || refreshed.Revision != document.Revision+1 {
+		t.Fatalf("refreshed=%+v previous=%s", refreshed, document.ID)
+	}
+	var previousStatus string
+	if err := pool.QueryRow(ctx, `SELECT status FROM bast_individual_documents WHERE id=$1`, document.ID).Scan(&previousStatus); err != nil || previousStatus != "superseded" {
+		t.Fatalf("previous status=%q err=%v", previousStatus, err)
+	}
+	again, err := service.FinalizeRecipient(ctx, auth.Principal{}, programID, regencyID, recipients[0], scope, auth.ClientMeta{UserAgent: "bast-finalize-test"})
+	if err != nil || again.ID != refreshed.ID {
+		t.Fatalf("unchanged data created a new revision: %s vs %s err=%v", again.ID, refreshed.ID, err)
+	}
+}
+
+func TestRepositoryRetiresEveryPDFOfAnEmptiedDate(t *testing.T) {
+	pool := bastIntegrationPool(t)
+	ctx := context.Background()
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	code := fmt.Sprintf("%c%c%c", 'A'+suffix[len(suffix)-1]%20, 'A'+suffix[len(suffix)-2]%20, 'A'+suffix[len(suffix)-4]%20)
+	var programID, regencyID, packageID, documentationID, scheduleID string
+	mustQuery := func(query string, args []any, dest *string) {
+		t.Helper()
+		if err := pool.QueryRow(ctx, query, args...).Scan(dest); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustQuery(`INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES($1,'Sync BA Test','farmer',2026,'active') RETURNING id::text`, []any{"BASYNC-" + suffix}, &programID)
+	mustQuery(`INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan',$1,$2,true) RETURNING id::text`, []any{"Sync BA " + suffix, code}, &regencyID)
+	mustQuery(`INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES($1,1,'Paket','farmer','{}','published') RETURNING id::text`, []any{"BASYNCPKG-" + suffix}, &packageID)
+	mustQuery(`INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES($1,1,'Dok','farmer','published') RETURNING id::text`, []any{"BASYNCDOC-" + suffix}, &documentationID)
+	mustQuery(`INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,slot_quota,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal','2024-12-01','2024-12-31','active',10,'{}') RETURNING id::text`, []any{programID, regencyID, packageID, documentationID}, &scheduleID)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM bast_daily_bundles WHERE program_id=$1`, programID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM distribution_slots WHERE schedule_id=$1`, scheduleID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM program_schedules WHERE id=$1`, scheduleID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM programs WHERE id=$1`, programID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM package_template_versions WHERE id=$1`, packageID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM documentation_template_versions WHERE id=$1`, documentationID)
+		_, _ = pool.Exec(context.Background(), `DELETE FROM regencies WHERE id=$1`, regencyID)
+	})
+	// Slot 1 has a distribution date; slot 2 falls back to its completion day in Jakarta time
+	// (2024-12-04 18:00 UTC is 2024-12-05 in Asia/Jakarta).
+	if _, err := pool.Exec(ctx, `INSERT INTO distribution_slots(schedule_id,slot_number,status,distribution_date,distributed_at,completed_at) VALUES($1,1,'completed','2024-12-02',now(),now()),($1,2,'completed',NULL,'2024-12-04T18:00:00Z','2024-12-04T18:00:00Z'),($1,3,'linked','2024-12-02',NULL,NULL)`, scheduleID); err != nil {
+		t.Fatal(err)
+	}
+	insertBundle := func(date, status, key string, version int) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, `INSERT INTO bast_daily_bundles(program_id,regency_id,local_date,document_type,filename,recipient_count,page_count,checksum,storage_key,version,status) VALUES($1,$2,$3,'individual','BA.pdf',1,2,$4,$5,$6,$7)`, programID, regencyID, date, strings.Repeat("b", 64), key, version, status); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insertBundle("2024-12-05", "active", "active-key-"+suffix, 1)
+	insertBundle("2024-12-09", "stale", "stale-key-"+suffix, 1)
+
+	repository := NewRepository(pool)
+	// A regency outside the caller's scope is never touched.
+	if keys, err := repository.RetireDateBundles(ctx, programID, regencyID, "2024-12-09", auth.RegencyScope{RegencyIDs: []string{"00000000-0000-0000-0000-000000000000"}}); err != nil || len(keys) != 0 {
+		t.Fatalf("out-of-scope retire keys=%v err=%v", keys, err)
+	}
+	keys, err := repository.RetireDateBundles(ctx, programID, regencyID, "2024-12-09", auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 1 || keys[0] != "stale-key-"+suffix {
+		t.Fatalf("retired keys=%v", keys)
+	}
+	// Another date keeps its PDF.
+	var active int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM bast_daily_bundles WHERE program_id=$1 AND status IN ('active','stale')`, programID).Scan(&active); err != nil || active != 1 {
+		t.Fatalf("remaining=%d err=%v", active, err)
+	}
+	keys, err = repository.RetireDateBundles(ctx, programID, regencyID, "2024-12-05", auth.RegencyScope{RegencyIDs: []string{regencyID}})
+	if err != nil || len(keys) != 1 || keys[0] != "active-key-"+suffix {
+		t.Fatalf("retire active keys=%v err=%v", keys, err)
+	}
 }

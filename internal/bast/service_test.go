@@ -88,13 +88,14 @@ func TestLockRejectsOutOfRangeAndPlaceholder(t *testing.T) {
 	}
 }
 
-func TestListDatesReportsMissingLock(t *testing.T) {
+// BA Perorangan no longer waits for the regency total to be locked.
+func TestListDatesIsReadyWithoutALockedTotal(t *testing.T) {
 	repository := &repositoryStub{context: readyContext(), errorLock: ErrNotFound, slots: []CompletedSlot{{SlotNumber: 1, DistributedAt: time.Date(2024, 12, 10, 1, 0, 0, 0, time.UTC)}}}
 	dates, err := NewService(repository, time.UTC).ListDates(context.Background(), "program-1", "regency-1", auth.RegencyScope{Unrestricted: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(dates) != 1 || dates[0].ValidationStatus != "total_not_locked" {
+	if len(dates) != 1 || dates[0].ValidationStatus != "ready" {
 		t.Fatalf("dates=%+v", dates)
 	}
 }
