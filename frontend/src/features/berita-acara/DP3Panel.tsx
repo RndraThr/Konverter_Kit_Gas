@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, Download, FileCheck2, RefreshCw, Signature, Users } from 'lucide-react';
+import { MapPin, CalendarDays, Download, FileCheck2, RefreshCw, Signature, Users } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { DataState } from '@/components/DataState';
@@ -120,6 +120,7 @@ export function DP3Panel({ scheduleID, regencyName, programType }: Props) {
           <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle>{selected ? formatLocalDate(selected.local_date) : 'DP3'}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{regencyName} · {selected?.recipient_count ?? 0} penerima.</p></div><Badge variant="outline">Petani</Badge></div></CardHeader>
           <CardContent className="grid gap-4 pt-5">
             <div className="grid gap-3 sm:items-start sm:grid-cols-2">
+              <div className="grid gap-1 rounded-lg border px-3 py-2 text-sm"><span className="flex items-center gap-1.5 text-xs text-muted-foreground"><MapPin className="size-3.5 text-primary" aria-hidden="true" />Lokasi / Titik Serah</span><strong>{selected?.handover_location || 'Belum ada titik serah'}</strong><span className="text-xs text-muted-foreground">Otomatis dari titik serah penerima (POS Dokumen).</span></div>
               <DocumentInfoFields scheduleID={scheduleID} fields={[{ key: 'consultant_company_name', label: 'Konsultan Distribusi' }]} />
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">

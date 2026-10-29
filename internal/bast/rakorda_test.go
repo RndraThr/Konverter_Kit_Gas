@@ -265,3 +265,20 @@ func TestZoneWithWordsSpellsTheZoneNumber(t *testing.T) {
 		t.Fatalf("rakorda narrative=%q", got)
 	}
 }
+
+func TestTrainingLocationComesFromParticipantsHandoverLocation(t *testing.T) {
+	ctx := DP3Context{RegencyName: "Wajo", ProvinceName: "Sulawesi Selatan", ZoneName: "Zona 1", FiscalYear: 2026}
+	settings := ScheduleSettings{Training100Location: "Lokasi Cadangan"}
+	participants := []ActivityParticipant{{Name: "A", HandoverLocation: "Balai Desa Tempe"}, {Name: "B", HandoverLocation: "Balai Desa Tempe"}, {Name: "C", HandoverLocation: "Lapangan"}}
+	snapshot, err := buildRakordaSnapshot(training100Spec, ctx, settings, nil, "2026-10-03", participants)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Location != "BALAI DESA TEMPE, LAPANGAN" {
+		t.Fatalf("location=%q", snapshot.Location)
+	}
+	snapshot, err = buildRakordaSnapshot(training100Spec, ctx, settings, nil, "2026-10-03", []ActivityParticipant{{Name: "A"}})
+	if err != nil || snapshot.Location != "LOKASI CADANGAN" {
+		t.Fatalf("fallback location=%q err=%v", snapshot.Location, err)
+	}
+}

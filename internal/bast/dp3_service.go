@@ -123,7 +123,7 @@ func (s *DP3Service) Dates(ctx context.Context, scheduleID string, scope auth.Re
 			}
 			validationErr = validateDP3Recipients(recipients)
 		}
-		date := DailyRecapDate{LocalDate: row.LocalDate, RecipientCount: row.RecipientCount, ValidationStatus: dp3ValidationStatus(validationErr)}
+		date := DailyRecapDate{LocalDate: row.LocalDate, RecipientCount: row.RecipientCount, ValidationStatus: dp3ValidationStatus(validationErr), HandoverLocation: row.HandoverLocations}
 		if doc, ok := docByDate[row.LocalDate]; ok {
 			date.Document = &doc
 		}

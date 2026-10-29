@@ -169,7 +169,7 @@ func (s *RakordaService) Dates(ctx context.Context, scheduleID string, scope aut
 		if s.spec.participants == participantsTenPercent {
 			count = tenPercentCount(count)
 		}
-		dates = append(dates, TrainingDate{LocalDate: row.LocalDate, RecipientCount: row.RecipientCount, ParticipantCount: count})
+		dates = append(dates, TrainingDate{LocalDate: row.LocalDate, RecipientCount: row.RecipientCount, ParticipantCount: count, HandoverLocation: row.HandoverLocations})
 	}
 	return dates, nil
 }

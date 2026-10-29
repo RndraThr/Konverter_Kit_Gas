@@ -83,7 +83,7 @@ func (s *DailyRecapService) Dates(ctx context.Context, scheduleID string, scope 
 			validationErr = validateDailyRecapRecipients(recipients)
 		}
 		status := dp3ValidationStatus(validationErr)
-		date := DailyRecapDate{LocalDate: row.LocalDate, RecipientCount: row.RecipientCount, ValidationStatus: status}
+		date := DailyRecapDate{LocalDate: row.LocalDate, RecipientCount: row.RecipientCount, ValidationStatus: status, HandoverLocation: row.HandoverLocations}
 		if doc, ok := docByDate[row.LocalDate]; ok {
 			date.Document = &doc
 		}
