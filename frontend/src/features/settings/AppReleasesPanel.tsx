@@ -21,6 +21,8 @@ export type AppRelease = {
   size_bytes: number;
   uploaded_by_name?: string;
   created_at: string;
+  /** Delta updates to this release from earlier ones (made by the server). */
+  patches?: { from_version_name: string; from_version_code: number; size_bytes: number; ready: boolean }[];
 };
 
 const queryKey = ['app-releases'];
@@ -146,6 +148,9 @@ export function AppReleasesPanel() {
               </p>
               {release.notes ? <p className="mt-1 whitespace-pre-line text-sm text-muted-foreground">{release.notes}</p> : null}
               <p className="mt-1 text-xs text-muted-foreground">{megabytes(release.size_bytes)} · {new Date(release.created_at).toLocaleString('id-ID')}{release.uploaded_by_name ? ` · ${release.uploaded_by_name}` : ''}</p>
+              {release.patches?.some((patch) => patch.ready) ? <p className="mt-1 text-xs text-muted-foreground">
+                Update delta: {release.patches.filter((patch) => patch.ready).map((patch) => `dari ${patch.from_version_name} ${megabytes(patch.size_bytes)}`).join(' · ')}
+              </p> : null}
             </div>
             <div className="flex shrink-0 gap-2">
               <Button variant="outline" size="sm" nativeButton={false} render={<a href={`/api/v1/app/releases/${release.id}/apk`} />}><Download aria-hidden="true" />APK</Button>

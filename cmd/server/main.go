@@ -127,13 +127,15 @@ func run(ctx context.Context, cfg config.Config) error {
 	if err != nil {
 		return err
 	}
+	appReleaseService := appreleases.NewService(pool, appReleaseStorage)
+	go appReleaseService.RunPatches(ctx)
 	// Change signals for the mobile app: Postgres NOTIFY -> WebSocket clients.
 	realtimeHub := realtime.NewHub()
 	go realtime.Listen(ctx, cfg.DatabaseURL, realtimeHub)
 
 	apiHandler := apihttp.NewHandler(apihttp.Dependencies{
 		Auth:            authService,
-		AppReleases:     appreleases.NewService(pool, appReleaseStorage),
+		AppReleases:     appReleaseService,
 		FinalReport:     finalReportService,
 		Geo:             geo.NewReverser(cfg.GeocoderURL, &http.Client{Timeout: 5 * time.Second}, "Konkit/1.0 (Konverter Kit Gas; PT Kian Santang Muliatama Tbk)"),
 		Profile:         profile.NewService(profile.NewRepository(pool)),
