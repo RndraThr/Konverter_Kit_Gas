@@ -23,6 +23,8 @@ export type AppRelease = {
   created_at: string;
   /** Delta updates to this release from earlier ones (made by the server). */
   patches?: { from_version_name: string; from_version_code: number; size_bytes: number; ready: boolean }[];
+  /** The server is still making its patches: phones are not offered it yet. */
+  patches_pending?: boolean;
 };
 
 const queryKey = ['app-releases'];
@@ -39,7 +41,12 @@ function megabytes(bytes: number) {
 export function AppReleasesPanel() {
   const canManage = useCan('settings.manage');
   const client = useQueryClient();
-  const releases = useQuery({ queryKey, queryFn: () => apiRequest<{ data: AppRelease[] }>('/api/v1/app/releases') });
+  const releases = useQuery({
+    queryKey,
+    queryFn: () => apiRequest<{ data: AppRelease[] }>('/api/v1/app/releases'),
+    // Follow the patches being made until the release is offered.
+    refetchInterval: (query) => (query.state.data?.data.some((release) => release.patches_pending) ? 10_000 : false),
+  });
   const latest = releases.data?.data[0];
 
   const [versionName, setVersionName] = useState('');
@@ -148,6 +155,7 @@ export function AppReleasesPanel() {
               </p>
               {release.notes ? <p className="mt-1 whitespace-pre-line text-sm text-muted-foreground">{release.notes}</p> : null}
               <p className="mt-1 text-xs text-muted-foreground">{megabytes(release.size_bytes)} · {new Date(release.created_at).toLocaleString('id-ID')}{release.uploaded_by_name ? ` · ${release.uploaded_by_name}` : ''}</p>
+              {release.patches_pending ? <p className="mt-1 text-xs text-muted-foreground">Menyiapkan update delta. Versi ini ditawarkan ke HP setelah selesai (sekitar 1–3 menit).</p> : null}
               {release.patches?.some((patch) => patch.ready) ? <p className="mt-1 text-xs text-muted-foreground">
                 Update delta: {release.patches.filter((patch) => patch.ready).map((patch) => `dari ${patch.from_version_name} ${megabytes(patch.size_bytes)}`).join(' · ')}
               </p> : null}

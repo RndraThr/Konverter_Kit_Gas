@@ -46,9 +46,12 @@ type Release struct {
 	Checksum    string    `json:"checksum"`
 	UploadedBy  string    `json:"uploaded_by_name,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
-	// Patches are the delta updates to this release (website list only).
-	Patches    []PatchSummary `json:"patches,omitempty"`
-	storageKey string
+	// Patches are the delta updates to this release, and PatchesPending
+	// that they are still being made, so phones are not offered it yet
+	// (website list only).
+	Patches        []PatchSummary `json:"patches,omitempty"`
+	PatchesPending bool           `json:"patches_pending,omitempty"`
+	storageKey     string
 }
 
 // Update is what a phone on CurrentCode is offered: the newest release, and
@@ -117,17 +120,23 @@ func (s *Service) List(ctx context.Context) ([]Release, error) {
 	if err != nil {
 		return nil, err
 	}
+	pending, err := s.pendingReleases(ctx)
+	if err != nil {
+		return nil, err
+	}
 	for i := range result {
 		result[i].Patches = patches[result[i].ID]
+		result[i].PatchesPending = pending[result[i].ID]
 	}
 	return result, nil
 }
 
 // Latest is the update for a phone running currentCode, or nil when it is
-// already on the newest release.
+// already on the newest release. A release still waiting for its delta
+// patches is not offered yet (see releaseReady).
 func (s *Service) Latest(ctx context.Context, platform string, currentCode int) (*Update, error) {
 	release, err := scanRelease(s.pool.QueryRow(ctx, `SELECT `+releaseColumns+` FROM app_releases r LEFT JOIN users u ON u.id = r.uploaded_by
-		WHERE r.platform = $1 ORDER BY r.version_code DESC LIMIT 1`, platform))
+		WHERE r.platform = $1 AND `+releaseReady+` ORDER BY r.version_code DESC LIMIT 1`, platform))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
