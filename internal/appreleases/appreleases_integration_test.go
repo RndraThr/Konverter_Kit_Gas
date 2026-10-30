@@ -126,3 +126,72 @@ func TestIntegrationUploadRejectsOldVersionsAndNonAPK(t *testing.T) {
 		t.Fatalf("missing version name: %v", err)
 	}
 }
+
+func TestIntegrationDeltaPatches(t *testing.T) {
+	service, pool := integrationService(t)
+	ctx := context.Background()
+	actor := auth.Principal{}
+
+	body := make([]byte, 200_000)
+	for i := range body {
+		body[i] = byte(i * 7 % 251)
+	}
+	oldBody := append([]byte("PK\x03\x04"), body...)
+	newBody := append([]byte{}, oldBody...)
+	copy(newBody[1000:], "release 3 changes these bytes")
+	v2, err := service.Upload(ctx, actor, UploadInput{VersionName: "1.1.0", VersionCode: 2}, bytes.NewReader(oldBody), auth.ClientMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	v3, err := service.Upload(ctx, actor, UploadInput{VersionName: "1.2.0", VersionCode: 3}, bytes.NewReader(newBody), auth.ClientMeta{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if update, err := service.Latest(ctx, "android", 2); err != nil || update == nil || update.Patch != nil {
+		t.Fatalf("before the patch is made: %+v err=%v", update, err)
+	}
+
+	job, err := service.missingPatch(ctx)
+	if err != nil || job == nil || job.releaseID != v3.ID || job.fromID != v2.ID {
+		t.Fatalf("missing patch: %+v err=%v", job, err)
+	}
+	if err := service.makePatch(ctx, *job); err != nil {
+		t.Fatal(err)
+	}
+	if job, err := service.missingPatch(ctx); err != nil || job != nil {
+		t.Fatalf("patch made twice: %+v err=%v", job, err)
+	}
+
+	update, err := service.Latest(ctx, "android", 2)
+	if err != nil || update == nil || update.Patch == nil || update.Patch.FromChecksum != v2.Checksum || update.Patch.SizeBytes >= v3.SizeBytes/10 {
+		t.Fatalf("phone on 2: %+v err=%v", update, err)
+	}
+	if update, err := service.Latest(ctx, "android", 1); err != nil || update == nil || update.Patch != nil {
+		t.Fatalf("phone on 1 has no patch: %+v err=%v", update, err)
+	}
+	content, err := service.OpenPatch(ctx, v3.ID, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ApplyPatch(oldBody, content.Reader)
+	_ = content.Reader.Close()
+	if err != nil || !bytes.Equal(got, newBody) {
+		t.Fatalf("patched APK differs: err=%v", err)
+	}
+	list, err := service.List(ctx)
+	if err != nil || len(list) != 2 || len(list[0].Patches) != 1 || !list[0].Patches[0].Ready || list[0].Patches[0].FromVersionCode != 2 {
+		t.Fatalf("list: %+v err=%v", list, err)
+	}
+
+	// Deleting the older release removes its patch too.
+	if err := service.Delete(ctx, actor, v2.ID, auth.ClientMeta{}); err != nil {
+		t.Fatal(err)
+	}
+	var patches int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM app_release_patches`).Scan(&patches); err != nil || patches != 0 {
+		t.Fatalf("patches after delete: %d err=%v", patches, err)
+	}
+	if _, err := service.OpenPatch(ctx, v3.ID, 2); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted patch opened: %v", err)
+	}
+}

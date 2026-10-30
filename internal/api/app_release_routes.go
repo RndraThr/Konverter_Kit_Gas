@@ -22,6 +22,7 @@ type AppReleaseService interface {
 	SetMandatory(ctx context.Context, actor auth.Principal, id string, mandatory bool, meta auth.ClientMeta) (appreleases.Release, error)
 	Delete(ctx context.Context, actor auth.Principal, id string, meta auth.ClientMeta) error
 	Open(ctx context.Context, id string) (appreleases.Content, error)
+	OpenPatch(ctx context.Context, id string, fromCode int) (appreleases.Content, error)
 }
 
 const maxAppReleaseRequestBody = appreleases.MaxAPKBytes + (1 << 20)
@@ -125,7 +126,8 @@ func (h *Handler) handleAppReleaseLatest(w http.ResponseWriter, r *http.Request,
 	writeData(w, http.StatusOK, update)
 }
 
-// handleAppRelease: {id}/apk downloads (any signed-in account); {id} PATCH
+// handleAppRelease: {id}/apk and {id}/patch/{from_code} download (any
+// signed-in account); {id} PATCH
 // {"mandatory": bool} and DELETE (settings.manage).
 func (h *Handler) handleAppRelease(w http.ResponseWriter, r *http.Request, rc requestContext, suffix string) {
 	if h.deps.AppReleases == nil {
@@ -133,22 +135,32 @@ func (h *Handler) handleAppRelease(w http.ResponseWriter, r *http.Request, rc re
 		return
 	}
 	id, rest, _ := strings.Cut(suffix, "/")
-	if id == "" || (rest != "" && rest != "apk") {
+	fromText, isPatch := strings.CutPrefix(rest, "patch/")
+	fromCode, fromErr := strconv.Atoi(fromText)
+	if id == "" || (rest != "" && rest != "apk" && !isPatch) || (isPatch && (fromErr != nil || fromCode <= 0)) {
 		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
 		return
 	}
-	if rest == "apk" {
+	if rest == "apk" || isPatch {
 		if r.Method != http.MethodGet {
 			methodNotAllowed(w, http.MethodGet)
 			return
 		}
-		content, err := h.deps.AppReleases.Open(r.Context(), id)
+		var content appreleases.Content
+		var err error
+		contentType := "application/vnd.android.package-archive"
+		if isPatch {
+			content, err = h.deps.AppReleases.OpenPatch(r.Context(), id, fromCode)
+			contentType = "application/octet-stream"
+		} else {
+			content, err = h.deps.AppReleases.Open(r.Context(), id)
+		}
 		if err != nil {
 			writeAppReleaseError(w, err)
 			return
 		}
 		defer content.Reader.Close()
-		w.Header().Set("Content-Type", "application/vnd.android.package-archive")
+		w.Header().Set("Content-Type", contentType)
 		w.Header().Set("Content-Length", strconv.FormatInt(content.Size, 10))
 		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": content.Filename}))
 		w.Header().Set("X-Content-Type-Options", "nosniff")

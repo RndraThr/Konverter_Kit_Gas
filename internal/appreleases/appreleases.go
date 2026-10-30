@@ -46,7 +46,9 @@ type Release struct {
 	Checksum    string    `json:"checksum"`
 	UploadedBy  string    `json:"uploaded_by_name,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
-	storageKey  string
+	// Patches are the delta updates to this release (website list only).
+	Patches    []PatchSummary `json:"patches,omitempty"`
+	storageKey string
 }
 
 // Update is what a phone on CurrentCode is offered: the newest release, and
@@ -55,6 +57,9 @@ type Update struct {
 	Release
 	Mandatory    bool   `json:"mandatory"`
 	DownloadPath string `json:"download_path"`
+	// Patch, when there is one from the phone's release, replaces the
+	// download with a small delta.
+	Patch *Patch `json:"patch,omitempty"`
 }
 
 type UploadInput struct {
@@ -73,10 +78,12 @@ type Content struct {
 type Service struct {
 	pool    *pgxpool.Pool
 	storage media.Storage
+	// uploaded wakes RunPatches after an upload.
+	uploaded chan struct{}
 }
 
 func NewService(pool *pgxpool.Pool, storage media.Storage) *Service {
-	return &Service{pool: pool, storage: storage}
+	return &Service{pool: pool, storage: storage, uploaded: make(chan struct{}, 1)}
 }
 
 const releaseColumns = `r.id::text, r.platform, r.version_name, r.version_code, r.notes, r.mandatory, r.size_bytes, r.checksum,
@@ -103,7 +110,17 @@ func (s *Service) List(ctx context.Context) ([]Release, error) {
 		}
 		result = append(result, release)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	patches, err := s.patchSummaries(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range result {
+		result[i].Patches = patches[result[i].ID]
+	}
+	return result, nil
 }
 
 // Latest is the update for a phone running currentCode, or nil when it is
@@ -124,7 +141,11 @@ func (s *Service) Latest(ctx context.Context, platform string, currentCode int) 
 	if err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM app_releases WHERE platform = $1 AND version_code > $2 AND mandatory)`, platform, currentCode).Scan(&mandatory); err != nil {
 		return nil, fmt.Errorf("mandatory app release: %w", err)
 	}
-	return &Update{Release: release, Mandatory: mandatory, DownloadPath: "/api/v1/app/releases/" + release.ID + "/apk"}, nil
+	patch, err := s.patchFor(ctx, platform, release.ID, currentCode)
+	if err != nil {
+		return nil, err
+	}
+	return &Update{Release: release, Mandatory: mandatory, DownloadPath: "/api/v1/app/releases/" + release.ID + "/apk", Patch: patch}, nil
 }
 
 // Upload stores an APK as a new release. Its version code must be higher
@@ -187,6 +208,10 @@ func (s *Service) Upload(ctx context.Context, actor auth.Principal, input Upload
 		_ = s.storage.Delete(ctx, storageKey)
 		return Release{}, err
 	}
+	select {
+	case s.uploaded <- struct{}{}:
+	default:
+	}
 	return s.get(ctx, id)
 }
 
@@ -221,6 +246,10 @@ func (s *Service) Delete(ctx context.Context, actor auth.Principal, id string, m
 	if err != nil {
 		return err
 	}
+	patchKeys, err := s.patchStorageKeys(ctx, id)
+	if err != nil {
+		return err
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -237,6 +266,9 @@ func (s *Service) Delete(ctx context.Context, actor auth.Principal, id string, m
 		return err
 	}
 	_ = s.storage.Delete(ctx, release.storageKey)
+	for _, key := range patchKeys {
+		_ = s.storage.Delete(ctx, key)
+	}
 	return nil
 }
 
