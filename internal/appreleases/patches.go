@@ -17,6 +17,34 @@ import (
 // phones further behind download the whole APK.
 const patchSources = 3
 
+// releaseReady (SQL on app_releases r): the release is offered to phones
+// once a patch (or "no patch") is recorded from each of its patchSources
+// earlier releases, so phones see the small download from the first
+// notification. Should making patches fail, it is offered 10 minutes after
+// the upload anyway. Recording a patch signals phones (migration 00084).
+const releaseReady = `(r.created_at < now() - interval '10 minutes' OR NOT EXISTS (
+	SELECT 1 FROM (SELECT s.id FROM app_releases s WHERE s.platform = r.platform AND s.version_code < r.version_code
+		ORDER BY s.version_code DESC LIMIT 3) src
+	WHERE NOT EXISTS (SELECT 1 FROM app_release_patches p WHERE p.release_id = r.id AND p.from_release_id = src.id)))`
+
+// pendingReleases are the releases not offered yet (patches being made).
+func (s *Service) pendingReleases(ctx context.Context) (map[string]bool, error) {
+	rows, err := s.pool.Query(ctx, `SELECT r.id::text FROM app_releases r WHERE NOT `+releaseReady)
+	if err != nil {
+		return nil, fmt.Errorf("list pending app releases: %w", err)
+	}
+	defer rows.Close()
+	result := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		result[id] = true
+	}
+	return result, rows.Err()
+}
+
 // Patch is the delta a phone on an earlier release can download instead of
 // the whole APK.
 type Patch struct {

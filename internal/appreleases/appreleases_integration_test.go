@@ -55,6 +55,24 @@ func integrationService(t *testing.T) (*Service, *pgxpool.Pool) {
 
 func fakeAPK(body string) io.Reader { return bytes.NewReader(append([]byte("PK\x03\x04"), body...)) }
 
+// makePatches does what RunPatches does in the background.
+func makePatches(t *testing.T, service *Service) {
+	t.Helper()
+	ctx := context.Background()
+	for {
+		job, err := service.missingPatch(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if job == nil {
+			return
+		}
+		if err := service.makePatch(ctx, *job); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestIntegrationReleasesOfferNewestAndMandatory(t *testing.T) {
 	service, _ := integrationService(t)
 	ctx := context.Background()
@@ -70,6 +88,14 @@ func TestIntegrationReleasesOfferNewestAndMandatory(t *testing.T) {
 	if _, err := service.Upload(ctx, actor, UploadInput{VersionName: "1.2.0", VersionCode: 3}, fakeAPK("v3"), auth.ClientMeta{}); err != nil {
 		t.Fatal(err)
 	}
+	// 3 waits for its patch from 2: phones are offered 2 meanwhile.
+	if update, err := service.Latest(ctx, "android", 1); err != nil || update == nil || update.VersionCode != 2 {
+		t.Fatalf("while 3 waits for patches: %+v err=%v", update, err)
+	}
+	if list, err := service.List(ctx); err != nil || !list[0].PatchesPending || list[1].PatchesPending {
+		t.Fatalf("pending in list: %+v err=%v", list, err)
+	}
+	makePatches(t, service)
 
 	// A phone on 1 skips the mandatory 2: still must update, to the newest.
 	update, err := service.Latest(ctx, "android", 1)
@@ -147,8 +173,16 @@ func TestIntegrationDeltaPatches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if update, err := service.Latest(ctx, "android", 2); err != nil || update == nil || update.Patch != nil {
+	// Not offered before its patch is made.
+	if update, err := service.Latest(ctx, "android", 2); err != nil || update != nil {
 		t.Fatalf("before the patch is made: %+v err=%v", update, err)
+	}
+	// Unless making it takes too long.
+	if _, err := pool.Exec(ctx, `UPDATE app_releases SET created_at = now() - interval '11 minutes' WHERE id::text = $1`, v3.ID); err != nil {
+		t.Fatal(err)
+	}
+	if update, err := service.Latest(ctx, "android", 2); err != nil || update == nil || update.VersionCode != 3 || update.Patch != nil {
+		t.Fatalf("patch late: %+v err=%v", update, err)
 	}
 
 	job, err := service.missingPatch(ctx)
