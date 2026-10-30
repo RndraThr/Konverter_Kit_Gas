@@ -28,6 +28,8 @@ const fakeMap = vi.hoisted(() => {
     reset: () => { calls.length = 0; sources.clear(); layers.length = 0; handlers.clear(); layerHandlers.clear(); },
     // Simulates a click on a konkit layer feature (what bindLayerEvents listens to).
     clickLayer: (layerId: string, properties: Record<string, unknown>) => { layerHandlers.get(`click:${layerId}`)?.({ features: [{ properties }] }); },
+    // Whether the page has bound its click handler to a layer yet.
+    listens: (layerId: string) => layerHandlers.has(`click:${layerId}`),
     // Fires a map-level event the way resize() does (no originalEvent).
     emit: (type: string) => { handlers.get(type)?.forEach((fn) => fn()); },
     getStyle: () => ({ layers }),
@@ -313,12 +315,19 @@ test('reports an empty progress table when no regency has data', async () => {
 // than the default 1 s.
 const selectedPanel = () => screen.findByRole('region', { name: 'Detail titik' }, { timeout: 8000 });
 
+// Clicks a layer feature once the lazy map has bound its click handler; a
+// click before that is lost (the cause of a flaky CI run).
+async function clickLayer(layerId: string, properties: Record<string, unknown>) {
+  await waitFor(() => expect(fakeMap.listens(layerId)).toBe(true), { timeout: 8000 });
+  act(() => { fakeMap.clickLayer(layerId, properties); });
+}
+
 test('clicking a point opens the detail panel with milestone dates and the link to the nomor bagi', async () => {
   mockApi([region(), bangka()]);
   renderPage();
   await screen.findByRole('button', { name: /M3 Diserahkan/ });
 
-  act(() => { fakeMap.clickLayer('konkit-dots', { slot_id: 'slot-1' }); });
+  await clickLayer('konkit-dots', { slot_id: 'slot-1' });
   const panel = await selectedPanel();
   expect(within(panel).getByRole('heading', { name: 'Nomor bagi 12' })).toBeVisible();
   expect(within(panel).getByRole('list', { name: 'Milestone' })).toHaveTextContent('1 November 2026');
@@ -341,9 +350,10 @@ test('a handover site lists its slots, and selecting it flies to the marker posi
   const members = [site('1', [109, -5], { site_outlier: true }), site('2', [105.5, -2]), site('3', [105.75, -2.25]), site('4', [106, -2.5])];
   mockApi([region(), bangka()], members);
   renderPage();
-  await screen.findByRole('group', { name: 'Ringkasan titik' });
+  const kpis = await screen.findByRole('group', { name: 'Ringkasan titik' });
+  await waitFor(() => expect(within(kpis).getByText('Titik terdata').parentElement).toHaveTextContent('4'), { timeout: 8000 });
 
-  act(() => { fakeMap.clickLayer('konkit-sites', { site_id: 'hl:balai' }); });
+  await clickLayer('konkit-sites', { site_id: 'hl:balai' });
   const panel = await selectedPanel();
   expect(within(panel).getByRole('heading', { name: 'Balai Desa' })).toBeVisible();
   expect(within(panel).getAllByRole('listitem')).toHaveLength(4);
