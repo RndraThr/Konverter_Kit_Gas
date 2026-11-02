@@ -1,6 +1,7 @@
 import type maplibregl from 'maplibre-gl';
 import { buildLayerData, type LayerData, type LayerInput } from './layerData';
 import { MILESTONES, REVIEW_COLOR } from './milestones';
+import { OFFICE_ICON_ID, OFFICE_ICON_PIXEL_RATIO, officeIcon } from './officeIcon';
 
 export type { LayerInput } from './layerData';
 
@@ -29,7 +30,7 @@ const SOURCES: Record<string, keyof LayerData> = {
   'konkit-offices': 'offices',
 };
 
-// Dinas Pertanian offices: a dark blue marker, distinct from the milestone colours.
+// Dinas Pertanian offices: a house on dark blue, distinct from the milestone colours.
 export const OFFICE_COLOR = '#0f4c81';
 
 // Layers that draw individual points; hidden below this zoom in zone mode, where the zone labels
@@ -87,12 +88,12 @@ function layerSpecs(): maplibregl.LayerSpecification[] {
       paint: { 'text-color': '#1f2a24', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
     },
     {
-      id: 'konkit-office', type: 'circle', source: 'konkit-offices',
-      paint: { 'circle-color': OFFICE_COLOR, 'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 5, 10, 9], 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 },
+      id: 'konkit-office', type: 'symbol', source: 'konkit-offices',
+      layout: { 'icon-image': OFFICE_ICON_ID, 'icon-size': ['interpolate', ['linear'], ['zoom'], 4, 0.8, 10, 1.1], 'icon-allow-overlap': true, 'icon-ignore-placement': true },
     },
     {
       id: 'konkit-office-label', type: 'symbol', source: 'konkit-offices', minzoom: 8,
-      layout: { 'text-field': ['concat', 'Dinas Pertanian\n', ['get', 'regency_name']], 'text-font': FONT, 'text-size': 11, 'text-offset': [0, 1.2], 'text-anchor': 'top', 'text-optional': true },
+      layout: { 'text-field': ['concat', 'Dinas Pertanian\n', ['get', 'regency_name']], 'text-font': FONT, 'text-size': 11, 'text-offset': [0, 1.6], 'text-anchor': 'top', 'text-optional': true },
       paint: { 'text-color': OFFICE_COLOR, 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
     },
   ];
@@ -125,6 +126,7 @@ export function installLayers(map: maplibregl.Map, input: LayerInput): void {
     }
     map.addSource(sourceId, spec);
   }
+  if (!map.hasImage(OFFICE_ICON_ID)) map.addImage(OFFICE_ICON_ID, officeIcon(OFFICE_COLOR), { pixelRatio: OFFICE_ICON_PIXEL_RATIO });
   for (const layer of layerSpecs()) {
     if (!map.getLayer(layer.id)) map.addLayer(layer);
   }

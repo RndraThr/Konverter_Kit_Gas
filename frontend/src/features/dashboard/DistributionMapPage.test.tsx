@@ -41,6 +41,8 @@ const fakeMap = vi.hoisted(() => {
     setPaintProperty: () => undefined,
     setLayoutProperty: () => undefined,
     setLayerZoomRange: () => undefined,
+    hasImage: () => false,
+    addImage: () => undefined,
     // Map-level listeners go to `handlers`; layer-scoped ones (click on a konkit layer) to `layerHandlers`.
     on: (type: string, layerOrFn: unknown, fn?: unknown) => {
       if (typeof layerOrFn === 'function') handlers.set(type, [...(handlers.get(type) ?? []), layerOrFn as () => void]);

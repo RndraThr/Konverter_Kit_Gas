@@ -107,6 +107,7 @@ function fakeMap() {
   const data: Record<string, unknown> = {};
   const paint: Record<string, unknown> = {};
   const zoom: Record<string, number> = {};
+  const images = new Set<string>();
   const map = {
     getSource: (id: string) => (id in data ? { setData: (d: unknown) => { data[id] = d; } } : undefined),
     addSource: (id: string, spec: { data: unknown }) => { data[id] = spec.data; },
@@ -115,6 +116,8 @@ function fakeMap() {
     setPaintProperty: (id: string, prop: string, value: unknown) => { paint[`${id}.${prop}`] = value; },
     setLayoutProperty: (id: string, prop: string, value: unknown) => { paint[`${id}.${prop}`] = value; },
     setLayerZoomRange: (id: string, min: number) => { zoom[id] = min; },
+    hasImage: (id: string) => images.has(id),
+    addImage: (id: string) => { images.add(id); },
   };
   return { map: map as unknown as maplibregl.Map, layers, data, paint, zoom };
 }
