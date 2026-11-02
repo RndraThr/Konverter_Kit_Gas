@@ -481,6 +481,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleMapZones(w, r, rc)
 	case path == "map/config":
 		h.handleMapConfig(w, r, rc)
+	case path == "map/offices":
+		h.handleMapOffices(w, r, rc)
 	case strings.HasPrefix(path, "map/regencies/"):
 		h.handleMapRegency(w, r, rc, strings.TrimPrefix(path, "map/regencies/"))
 	case strings.HasPrefix(path, "recipients/"):

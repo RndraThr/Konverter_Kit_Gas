@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
-import { Feather, Globe2, MapPinned, Maximize2, MapPinOff } from 'lucide-react';
+import { Building2, ExternalLink, Feather, Globe2, MapPinned, Maximize2, MapPinOff, X } from 'lucide-react';
 import { apiRequest } from '../../lib/api';
 import { PageHeader } from '../../components/PageHeader';
 import { DataState } from '../../components/DataState';
@@ -34,7 +34,7 @@ import { useMapConfig } from './map/useMapConfig';
 import { FILTER_KEYS, filterQuery, useMapPoints } from './map/useMapPoints';
 import { useMapSelection } from './map/useMapSelection';
 import { useMapUrlState } from './map/useMapUrlState';
-import { useRegencyBoundary, useZoneBoundaries } from './map/useZoneBoundaries';
+import { useAgricultureOffices, useRegencyBoundary, useZoneBoundaries } from './map/useZoneBoundaries';
 import type { BasemapMode, Bounds, ColorMode, PointCollection, PointFeature, ZoneGeometry } from './map/types';
 
 type ScheduleOption = { id: string; name: string };
@@ -107,7 +107,11 @@ export function DistributionMapPage() {
   const counts = useMemo(() => Object.fromEntries(stageCounts(dayPoints).map((count, i) => [i + 1, count])), [dayPoints]);
   const visiblePoints = useMemo(() => (view.stage ? dayPoints.filter((point) => point.properties.stage === view.stage) : dayPoints), [dayPoints, view.stage]);
 
-  const [show, setShow] = useState({ zones: true, points: true });
+  const officesQuery = useAgricultureOffices();
+  const offices = officesQuery.data ?? null;
+  const [show, setShow] = useState({ zones: true, points: true, offices: true });
+  const [officeId, setOfficeId] = useState<string | null>(null);
+  const office = officeId ? offices?.features.find((item) => item.properties.regency_id === officeId) : undefined;
   const [focus, setFocus] = useState<Focus | null>(null);
   const boundary = useRegencyBoundary(focus?.regencyId);
   const zoneFeature = filterZones?.features.find((zone) => zone.properties.zone_id === zoneId);
@@ -121,7 +125,8 @@ export function DistributionMapPage() {
     regions: regionFills,
     colorMode: view.color,
     focus: focusGeometry,
-  }), [show, visiblePoints, zones, regionFills, view.color, focusGeometry]);
+    offices: show.offices ? offices : null,
+  }), [show, visiblePoints, zones, regionFills, view.color, focusGeometry, offices]);
 
   const { selected, select } = useMapSelection(view, update);
   const [camera, setCamera] = useState<CameraRequest | null>(null);
@@ -283,6 +288,7 @@ export function DistributionMapPage() {
       onStyleError={() => setStyleFailed(true)}
       onPoint={selectPoint}
       onSite={selectSite}
+      onOffice={setOfficeId}
     />;
   }
 
@@ -304,6 +310,7 @@ export function DistributionMapPage() {
               <div role="group" aria-label="Lapisan peta" className="flex min-w-0 max-w-full flex-wrap gap-1">
                 <Button type="button" size="sm" className="min-h-11" variant={show.zones ? 'secondary' : 'outline'} aria-pressed={show.zones} onClick={() => setShow((s) => ({ ...s, zones: !s.zones }))}>Batas zona</Button>
                 <Button type="button" size="sm" className="min-h-11" variant={show.points ? 'secondary' : 'outline'} aria-pressed={show.points} onClick={() => setShow((s) => ({ ...s, points: !s.points }))}>Titik</Button>
+                {(offices?.features.length ?? 0) > 0 && <Button type="button" size="sm" className="min-h-11" variant={show.offices ? 'secondary' : 'outline'} aria-pressed={show.offices} onClick={() => { setShow((s) => ({ ...s, offices: !s.offices })); setOfficeId(null); }}><Building2 aria-hidden="true" />Dinas Pertanian</Button>}
                 <Button type="button" size="sm" className="min-h-11" variant={lightMode ? 'secondary' : 'outline'} aria-pressed={lightMode} onClick={() => (lightMode ? leaveLightMode() : setLightMode(true))}><Feather aria-hidden="true" />Mode ringan</Button>
                 {unlocatedCount > 0 && <Button type="button" size="sm" className="min-h-11" variant="outline" onClick={() => setUnlocatedOpen(true)}><MapPinOff aria-hidden="true" />{unlocatedCount} belum ada lokasi</Button>}
               </div>
@@ -323,6 +330,18 @@ export function DistributionMapPage() {
                 <Button type="button" size="sm" variant="secondary" className="min-h-11 shadow-sm" onClick={() => fit(INDONESIA_BOUNDS)}><Globe2 aria-hidden="true" />Seluruh Indonesia</Button>
               </div>
               <div className="absolute bottom-8 left-3"><MilestoneLegend zones={zoneLegend} /></div>
+              {office && show.offices && <div role="dialog" aria-label="Kantor Dinas Pertanian" className="absolute right-3 bottom-8 z-10 w-64 max-w-[calc(100%-1.5rem)] rounded-md border bg-background/95 p-3 text-sm shadow-md">
+                <div className="flex items-start gap-2">
+                  <Building2 className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium">Dinas Pertanian</p>
+                    <p className="break-words">{office.properties.regency_name}</p>
+                    <p className="text-xs text-muted-foreground">{office.properties.province_name}</p>
+                  </div>
+                  <button type="button" aria-label="Tutup" className="grid size-8 place-items-center rounded hover:bg-muted" onClick={() => setOfficeId(null)}><X className="size-4" aria-hidden="true" /></button>
+                </div>
+                <a className="mt-2 inline-flex min-h-11 items-center gap-1 text-primary underline underline-offset-2" href={`https://www.google.com/maps/search/?api=1&query=${office.geometry.coordinates[1]},${office.geometry.coordinates[0]}`} target="_blank" rel="noreferrer"><ExternalLink className="size-4" aria-hidden="true" />Buka di Google Maps</a>
+              </div>}
             </div>
             {pointsQuery.isError && <p role="alert" className="border-t px-4 py-2 text-sm text-destructive">Titik distribusi tidak dapat dimuat. Data akan dicoba lagi otomatis.</p>}
             {assetError && <p className="border-t px-4 py-2 text-xs text-muted-foreground">Batas wilayah tidak dapat dimuat; pencarian kabupaten tidak tersedia.</p>}

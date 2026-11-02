@@ -1,7 +1,7 @@
 import { EMPTY_REGION_COLOR, colorForValue, metricByKey, metricMax, normalizeRegencyName, type MetricKey, type RegencyAsset } from '../mapRegions';
 import type { MapRegion } from '../types';
 import { MILESTONES } from './milestones';
-import type { ColorMode, PointFeature, ZoneCollection, ZoneGeometry } from './types';
+import type { ColorMode, OfficeCollection, OfficeProperties, PointFeature, ZoneCollection, ZoneGeometry } from './types';
 
 // Categorical zone palette: hues are far apart and lightness alternates, so neighbouring zones
 // stay distinguishable in greyscale and for colour-blind users.
@@ -32,6 +32,8 @@ export type LayerInput = {
   colorMode: ColorMode;
   /** Outline to highlight (selected regency or zone). */
   focus?: ZoneGeometry | null;
+  /** Dinas Pertanian offices; null or absent = layer hidden. */
+  offices?: OfficeCollection | null;
 };
 
 export type LayerData = {
@@ -42,6 +44,7 @@ export type LayerData = {
   zones: Collection<ZoneGeometry, ZoneFillProperties>;
   zoneLabels: Collection<PointGeometry, ZoneLabelProperties>;
   focus: Collection<ZoneGeometry, Record<string, never>>;
+  offices: Collection<PointGeometry, OfficeProperties>;
 };
 
 export const needsReview = (point: PointFeature) => point.properties.site_outlier || point.properties.location_status === 'outside';
@@ -172,5 +175,6 @@ export function buildLayerData(input: LayerInput): LayerData {
     zones: { type: 'FeatureCollection', features: zones },
     zoneLabels: { type: 'FeatureCollection', features: zoneLabels },
     focus: { type: 'FeatureCollection', features: input.focus ? [{ type: 'Feature', geometry: input.focus, properties: {} }] : [] },
+    offices: input.offices ?? { type: 'FeatureCollection', features: [] },
   };
 }

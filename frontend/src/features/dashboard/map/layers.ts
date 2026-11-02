@@ -15,6 +15,8 @@ export const LAYER_IDS = [
   'konkit-sites',
   'konkit-site-label',
   'konkit-zone-label',
+  'konkit-office',
+  'konkit-office-label',
 ];
 
 const SOURCES: Record<string, keyof LayerData> = {
@@ -24,7 +26,11 @@ const SOURCES: Record<string, keyof LayerData> = {
   'konkit-focus': 'focus',
   'konkit-points': 'points',
   'konkit-sites': 'sites',
+  'konkit-offices': 'offices',
 };
+
+// Dinas Pertanian offices: a dark blue marker, distinct from the milestone colours.
+export const OFFICE_COLOR = '#0f4c81';
 
 // Layers that draw individual points; hidden below this zoom in zone mode, where the zone labels
 // show a per-zone summary instead.
@@ -80,6 +86,15 @@ function layerSpecs(): maplibregl.LayerSpecification[] {
       layout: { 'text-field': ['get', 'name'], 'text-font': FONT, 'text-size': 12 },
       paint: { 'text-color': '#1f2a24', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
     },
+    {
+      id: 'konkit-office', type: 'circle', source: 'konkit-offices',
+      paint: { 'circle-color': OFFICE_COLOR, 'circle-radius': ['interpolate', ['linear'], ['zoom'], 4, 5, 10, 9], 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 },
+    },
+    {
+      id: 'konkit-office-label', type: 'symbol', source: 'konkit-offices', minzoom: 8,
+      layout: { 'text-field': ['concat', 'Dinas Pertanian\n', ['get', 'regency_name']], 'text-font': FONT, 'text-size': 11, 'text-offset': [0, 1.2], 'text-anchor': 'top', 'text-optional': true },
+      paint: { 'text-color': OFFICE_COLOR, 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
+    },
   ];
 }
 
@@ -129,6 +144,7 @@ export function updateLayers(map: maplibregl.Map, input: LayerInput, prebuilt?: 
 export type LayerHandlers = {
   onPoint: (slotId: string) => void;
   onSite: (siteId: string) => void;
+  onOffice?: (regencyId: string) => void;
 };
 
 /** Click and hover behaviour of the point layers. Handlers are read through the getter on each event. */
@@ -141,6 +157,10 @@ export function bindLayerEvents(map: maplibregl.Map, handlers: () => LayerHandle
     const id = event.features?.[0]?.properties?.site_id;
     if (typeof id === 'string') handlers().onSite(id);
   });
+  map.on('click', 'konkit-office', (event) => {
+    const id = event.features?.[0]?.properties?.regency_id;
+    if (typeof id === 'string') handlers().onOffice?.(id);
+  });
   map.on('click', 'konkit-clusters', (event) => {
     const feature = event.features?.[0];
     const clusterId = feature?.properties?.cluster_id;
@@ -150,7 +170,7 @@ export function bindLayerEvents(map: maplibregl.Map, handlers: () => LayerHandle
       map.easeTo({ center: (feature.geometry as GeoJSON.Point).coordinates as [number, number], zoom });
     }).catch(() => undefined);
   });
-  for (const id of ['konkit-dots', 'konkit-sites', 'konkit-clusters']) {
+  for (const id of ['konkit-dots', 'konkit-sites', 'konkit-clusters', 'konkit-office']) {
     map.on('mouseenter', id, () => { map.getCanvas().style.cursor = 'pointer'; });
     map.on('mouseleave', id, () => { map.getCanvas().style.cursor = ''; });
   }

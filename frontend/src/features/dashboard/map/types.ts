@@ -55,3 +55,8 @@ export type Bounds = [[number, number], [number, number]];
 // What the page has selected on the map. Task 7 renders the detail panel from it.
 // A `hl:` site id is mirrored to the URL; a `geo:` site lives only in component state.
 export type MapSelection = { kind: 'point'; slotId: string } | { kind: 'site'; siteId: string };
+
+// GET /api/v1/map/offices (inner `data`): the Dinas Pertanian office of each kabupaten in scope.
+export type OfficeProperties = { regency_id: string; regency_name: string; province_name: string };
+export type OfficeFeature = { type: 'Feature'; geometry: { type: 'Point'; coordinates: [number, number] }; properties: OfficeProperties };
+export type OfficeCollection = { type: 'FeatureCollection'; features: OfficeFeature[] };
