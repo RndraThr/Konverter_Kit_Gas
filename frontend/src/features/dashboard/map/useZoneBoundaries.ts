@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../../lib/api';
-import type { RegencyBoundary, ZoneCollection } from './types';
+import type { OfficeCollection, RegencyBoundary, ZoneCollection } from './types';
 
 /** Zone outlines of one program. Zones only mean something within a program, so no program = no request. */
 export function useZoneBoundaries(programId: string | undefined) {
@@ -20,5 +20,14 @@ export function useRegencyBoundary(regencyId: string | undefined) {
     enabled: Boolean(regencyId),
     staleTime: Infinity,
     retry: false,
+  });
+}
+
+/** Dinas Pertanian offices of the user's kabupaten; they rarely change. */
+export function useAgricultureOffices() {
+  return useQuery({
+    queryKey: ['map', 'offices'],
+    queryFn: async () => (await apiRequest<{ data: OfficeCollection }>('/api/v1/map/offices')).data,
+    staleTime: 30 * 60_000,
   });
 }

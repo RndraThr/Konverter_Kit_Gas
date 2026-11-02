@@ -206,3 +206,32 @@ func TestRegencyBoundary(t *testing.T) {
 		t.Fatalf("out-of-scope regency: want ErrBoundaryNotFound, got %v", err)
 	}
 }
+
+func TestIntegrationAgricultureOfficesFollowScope(t *testing.T) {
+	z := newZoneEnv(t)
+	ctx := context.Background()
+	z.exec(t, `UPDATE regencies SET agriculture_office_latitude=-6.7, agriculture_office_longitude=108.5 WHERE id=$1`, z.regencyA)
+
+	offices, err := z.repo.AgricultureOffices(ctx, auth.RegencyScope{RegencyIDs: []string{z.regencyA, z.regencyB}})
+	if err != nil || len(offices) != 1 || offices[0].RegencyID != z.regencyA || offices[0].Lat != -6.7 || offices[0].Lon != 108.5 {
+		t.Fatalf("scoped offices: %+v err=%v", offices, err)
+	}
+	if offices, err := z.repo.AgricultureOffices(ctx, auth.RegencyScope{RegencyIDs: []string{z.regencyB}}); err != nil || len(offices) != 0 {
+		t.Fatalf("office outside scope: %+v err=%v", offices, err)
+	}
+	all, err := z.repo.AgricultureOffices(ctx, auth.RegencyScope{Unrestricted: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, office := range all {
+		found = found || office.RegencyID == z.regencyA
+	}
+	if !found {
+		t.Fatalf("unrestricted scope misses the office: %+v", all)
+	}
+	// Half a location is rejected.
+	if _, err := z.pool.Exec(ctx, `UPDATE regencies SET agriculture_office_longitude=NULL WHERE id=$1`, z.regencyA); err == nil {
+		t.Fatal("latitude without longitude was accepted")
+	}
+}

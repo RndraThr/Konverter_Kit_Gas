@@ -20,6 +20,7 @@ type fakeDistributionMap struct {
 	zones      []distmap.ZoneBoundary
 	boundary   json.RawMessage
 	boundaryOK bool
+	offices    []distmap.AgricultureOffice
 
 	seenQuery     distmap.PointQuery
 	seenScope     auth.RegencyScope
@@ -55,6 +56,12 @@ func (f *fakeDistributionMap) RegencyBoundary(_ context.Context, regencyID strin
 	return f.boundary, nil
 }
 
+func (f *fakeDistributionMap) AgricultureOffices(_ context.Context, scope auth.RegencyScope) ([]distmap.AgricultureOffice, error) {
+	f.calls++
+	f.seenScope = scope
+	return f.offices, nil
+}
+
 func mapGet(t *testing.T, service *fakeDistributionMap, authService *fakeAuthService, target string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, target, nil)
@@ -75,7 +82,7 @@ func TestMapEndpointsRequireAViewPermission(t *testing.T) {
 	denied := &fakeAuthService{principal: auth.Principal{UserID: "user-2"}}
 	for _, target := range []string{
 		"/api/v1/map/points", "/api/v1/map/unlocated", "/api/v1/map/zones?program_id=p",
-		"/api/v1/map/regencies/r-1/boundary", "/api/v1/map/config",
+		"/api/v1/map/regencies/r-1/boundary", "/api/v1/map/config", "/api/v1/map/offices",
 	} {
 		service := &fakeDistributionMap{}
 		if rec := mapGet(t, service, denied, target); rec.Code != http.StatusForbidden || service.calls != 0 {
@@ -266,6 +273,28 @@ func TestMapRegencyBoundary(t *testing.T) {
 	}
 	if rec := mapGet(t, service, viewer, "/api/v1/map/regencies/r1/other"); rec.Code != http.StatusNotFound {
 		t.Fatalf("unknown sub-path: want 404, got %d", rec.Code)
+	}
+}
+
+func TestMapOffices(t *testing.T) {
+	service := &fakeDistributionMap{offices: []distmap.AgricultureOffice{{RegencyID: "r1", RegencyName: "KAB. WONOGIRI", ProvinceName: "JAWA TENGAH", Lat: -7.795777, Lon: 110.914345}}}
+	scope := auth.RegencyScope{RegencyIDs: []string{"r1"}}
+	rec := mapGet(t, service, mapViewer(scope), "/api/v1/map/offices")
+	var body struct {
+		Data struct {
+			Type     string `json:"type"`
+			Features []struct {
+				Geometry   mapGeometry         `json:"geometry"`
+				Properties mapOfficeProperties `json:"properties"`
+			} `json:"features"`
+		} `json:"data"`
+	}
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &body) != nil || len(body.Data.Features) != 1 {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	office := body.Data.Features[0]
+	if office.Geometry.Coordinates != [2]float64{110.914345, -7.795777} || office.Properties.RegencyName != "KAB. WONOGIRI" || len(service.seenScope.RegencyIDs) != 1 {
+		t.Fatalf("office feature: %+v scope=%+v", office, service.seenScope)
 	}
 }
 

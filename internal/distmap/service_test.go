@@ -32,6 +32,11 @@ func (f *fakeRepository) RegencyBoundary(context.Context, string, auth.RegencySc
 	return nil, nil
 }
 
+func (f *fakeRepository) AgricultureOffices(context.Context, auth.RegencyScope) ([]AgricultureOffice, error) {
+	f.called = true
+	return nil, nil
+}
+
 func TestServiceRejectsInvalidStageAndBBox(t *testing.T) {
 	cases := []struct {
 		name  string

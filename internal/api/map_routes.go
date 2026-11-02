@@ -21,6 +21,7 @@ type DistributionMapService interface {
 	UnlocatedSlots(context.Context, distmap.PointQuery, auth.RegencyScope) ([]distmap.UnlocatedSlot, int, error)
 	ZoneBoundaries(context.Context, string, auth.RegencyScope) ([]distmap.ZoneBoundary, error)
 	RegencyBoundary(context.Context, string, auth.RegencyScope) (json.RawMessage, error)
+	AgricultureOffices(context.Context, auth.RegencyScope) ([]distmap.AgricultureOffice, error)
 }
 
 // mapViewPermissions are the permissions of GET /recipients/map; every map endpoint shares them.
@@ -285,6 +286,44 @@ func (h *Handler) handleMapRegency(w http.ResponseWriter, r *http.Request, rc re
 		return
 	}
 	writeData(w, http.StatusOK, feature)
+}
+
+type mapOfficeProperties struct {
+	RegencyID    string `json:"regency_id"`
+	RegencyName  string `json:"regency_name"`
+	ProvinceName string `json:"province_name"`
+}
+
+type mapOfficeFeature struct {
+	Type       string              `json:"type"`
+	Geometry   mapGeometry         `json:"geometry"`
+	Properties mapOfficeProperties `json:"properties"`
+}
+
+// handleMapOffices serves the Dinas Pertanian offices of the caller's kabupaten.
+func (h *Handler) handleMapOffices(w http.ResponseWriter, r *http.Request, rc requestContext) {
+	if h.deps.DistributionMap == nil {
+		writeUnavailable(w)
+		return
+	}
+	scope, ok := h.authorizeMap(w, r, rc)
+	if !ok {
+		return
+	}
+	offices, err := h.deps.DistributionMap.AgricultureOffices(r.Context(), scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	features := make([]mapOfficeFeature, 0, len(offices))
+	for _, o := range offices {
+		features = append(features, mapOfficeFeature{
+			Type:       "Feature",
+			Geometry:   mapGeometry{Type: "Point", Coordinates: [2]float64{o.Lon, o.Lat}},
+			Properties: mapOfficeProperties{RegencyID: o.RegencyID, RegencyName: o.RegencyName, ProvinceName: o.ProvinceName},
+		})
+	}
+	writeData(w, http.StatusOK, map[string]any{"type": "FeatureCollection", "features": features})
 }
 
 // handleMapConfig serves the basemap configuration. Tile keys are public client keys, so the

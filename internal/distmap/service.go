@@ -42,6 +42,7 @@ type repository interface {
 	UnlocatedSlots(context.Context, PointQuery, auth.RegencyScope) ([]UnlocatedSlot, int, error)
 	ZoneBoundaries(context.Context, string, auth.RegencyScope) ([]ZoneBoundary, error)
 	RegencyBoundary(context.Context, string, auth.RegencyScope) (json.RawMessage, error)
+	AgricultureOffices(context.Context, auth.RegencyScope) ([]AgricultureOffice, error)
 }
 
 type Service struct{ repository repository }
@@ -71,4 +72,9 @@ func (s *Service) ZoneBoundaries(ctx context.Context, programID string, scope au
 // when it has none or lies outside scope.
 func (s *Service) RegencyBoundary(ctx context.Context, regencyID string, scope auth.RegencyScope) (json.RawMessage, error) {
 	return s.repository.RegencyBoundary(ctx, regencyID, scope)
+}
+
+// AgricultureOffices returns the Dinas Pertanian offices of the kabupaten in scope.
+func (s *Service) AgricultureOffices(ctx context.Context, scope auth.RegencyScope) ([]AgricultureOffice, error) {
+	return s.repository.AgricultureOffices(ctx, scope)
 }

@@ -41,6 +41,8 @@ const fakeMap = vi.hoisted(() => {
     setPaintProperty: () => undefined,
     setLayoutProperty: () => undefined,
     setLayerZoomRange: () => undefined,
+    hasImage: () => false,
+    addImage: () => undefined,
     // Map-level listeners go to `handlers`; layer-scoped ones (click on a konkit layer) to `layerHandlers`.
     on: (type: string, layerOrFn: unknown, fn?: unknown) => {
       if (typeof layerOrFn === 'function') handlers.set(type, [...(handlers.get(type) ?? []), layerOrFn as () => void]);
@@ -121,6 +123,7 @@ function mockApi(regions: MapRegion[], features: PointFeature[] = points, gate: 
     }
     if (url.startsWith('/api/v1/map/points')) return gate.then(() => ({ data: { type: 'FeatureCollection', features, meta: { total: 5, located: features.length, unlocated: 5 - features.length, outside: 1 } } }));
     if (url.startsWith('/api/v1/map/zones')) return Promise.resolve({ data: { type: 'FeatureCollection', features: [] } });
+    if (url === '/api/v1/map/offices') return Promise.resolve({ data: { type: 'FeatureCollection', features: [{ type: 'Feature', geometry: { type: 'Point', coordinates: [105.16, -2.02] }, properties: { regency_id: 'regency-1', regency_name: 'KAB. BANGKA BARAT', province_name: 'BANGKA BELITUNG' } }] } });
     if (url.startsWith('/api/v1/map/unlocated')) return Promise.resolve({ data: { items: [{ slot_id: 'slot-9', code: '99', regency_id: 'regency-1', stage: 2 }], total: 1 } });
     if (url.startsWith('/api/v1/distribution/slots/search')) return Promise.resolve({ data: { id: 'slot-1', schedule_id: 'schedule-1', slot_number: 12, status: 'completed', distribution_date: null, full_name: 'Siti Aminah', documentation: [], needs_recompletion: false, created_at: '', updated_at: '' } });
     if (url === '/api/v1/map/config') return Promise.resolve({ data: { style_url: 'https://style.test', satellite_tiles: 'https://sat.test/{z}/{y}/{x}', hybrid_overlay_tiles: [], attribution: 'attr', api_key: '' } });
@@ -334,6 +337,22 @@ test('clicking a point opens the detail panel with milestone dates and the link 
   expect(within(panel).getByRole('link', { name: 'Buka nomor bagi' })).toBeVisible();
   expect(await within(panel).findByText('Siti Aminah')).toBeVisible();
   expect(panel).toHaveAttribute('data-variant', 'panel');
+});
+
+test('clicking a Dinas Pertanian office shows its kabupaten and a Google Maps link; the layer can be hidden', async () => {
+  mockApi([region(), bangka()]);
+  renderPage();
+  const toggle = await screen.findByRole('button', { name: 'Dinas Pertanian' });
+  expect(toggle).toHaveAttribute('aria-pressed', 'true');
+
+  await clickLayer('konkit-office', { regency_id: 'regency-1' });
+  const card = await screen.findByRole('dialog', { name: 'Kantor Dinas Pertanian' });
+  expect(within(card).getByText('KAB. BANGKA BARAT')).toBeVisible();
+  expect(within(card).getByRole('link', { name: /Buka di Google Maps/ })).toHaveAttribute('href', 'https://www.google.com/maps/search/?api=1&query=-2.02,105.16');
+
+  await userEvent.click(toggle);
+  expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  expect(screen.queryByRole('dialog', { name: 'Kantor Dinas Pertanian' })).not.toBeInTheDocument();
 });
 
 test('a point outside its regency shows Perlu ditinjau in the panel', async () => {

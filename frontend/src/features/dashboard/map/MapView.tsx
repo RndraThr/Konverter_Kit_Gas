@@ -25,10 +25,10 @@ type Props = LayerHandlers & {
 };
 
 /** MapCanvas plus the konkit data layers, basemap switching and camera requests. */
-export function MapView({ config, basemap, layers, camera, onMove, onStyleError, onPoint, onSite }: Props) {
+export function MapView({ config, basemap, layers, camera, onMove, onStyleError, onPoint, onSite, onOffice }: Props) {
   const [map, setMap] = useState<maplibregl.Map | null>(null);
-  const latest = useRef({ layers, basemap, config, onMove, handlers: { onPoint, onSite } });
-  useEffect(() => { latest.current = { layers, basemap, config, onMove, handlers: { onPoint, onSite } }; });
+  const latest = useRef({ layers, basemap, config, onMove, handlers: { onPoint, onSite, onOffice } });
+  useEffect(() => { latest.current = { layers, basemap, config, onMove, handlers: { onPoint, onSite, onOffice } }; });
 
   const onReady = useCallback((ready: maplibregl.Map) => {
     const current = latest.current;
