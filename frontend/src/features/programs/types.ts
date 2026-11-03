@@ -2,7 +2,8 @@ export type ProgramType = 'farmer' | 'fisherman';
 export type Regency = { id: string; province_name: string; name: string; document_code: string; is_active: boolean; notes?: string };
 export type Program = { id: string; code: string; name: string; program_type: ProgramType; fiscal_year: number; status: string; notes?: string };
 export type ProgramZone = { id: string; program_id: string; code: string; name: string; sort_order: number; is_placeholder: boolean; regencies?: Regency[] };
-export type MachineOption = { code: string; brand: string; type: string; power: string; fuel_type: string; tkdn_percent?: number };
+/** is_default: opsi yang terisi otomatis saat distribusi dan dipakai BA bila kabupaten belum memilih. */
+export type MachineOption = { code: string; brand: string; type: string; power: string; fuel_type: string; tkdn_percent?: number; is_default?: boolean };
 export type HoseOption = {
   code: string;
   suction_brand: string;
@@ -13,8 +14,9 @@ export type HoseOption = {
   discharge_tkdn_percent?: number;
   brand?: string;
   spec?: string;
+  is_default?: boolean;
 };
-export type ConverterOption = { code: string; brand: string; tkdn_percent?: number };
+export type ConverterOption = { code: string; brand: string; tkdn_percent?: number; is_default?: boolean };
 /** brand & tkdn_percent dipakai Realisasi TKDN; handover_hidden = tidak dicetak di checklist BA serah terima. */
 export type PackageComponent = { code: string; label: string; quantity: number; unit: string; brand?: string; tkdn_percent?: number; handover_hidden?: boolean };
 export type PackageTemplate = { id: string; template_code: string; version: number; name: string; program_type: ProgramType; values: Record<string, unknown>; status: string };

@@ -35,6 +35,9 @@ type TemplateVariant struct {
 	Type        string  `json:"type"`
 	Spec        string  `json:"spec"`
 	TKDNPercent float64 `json:"tkdn_percent"`
+	// IsDefault: the template's default option, also the one filled in
+	// automatically on distribution.
+	IsDefault bool `json:"is_default"`
 }
 
 // TemplateEntry adalah satu barang template yang dapat dirujuk profil BA.
@@ -53,12 +56,14 @@ type packageTemplateValues struct {
 		Brand       string  `json:"brand"`
 		Type        string  `json:"type"`
 		TKDNPercent float64 `json:"tkdn_percent"`
+		IsDefault   bool    `json:"is_default"`
 	} `json:"machine_options"`
 	ConverterOptions []struct {
 		Code        string  `json:"code"`
 		Brand       string  `json:"brand"`
 		Spec        string  `json:"spec"`
 		TKDNPercent float64 `json:"tkdn_percent"`
+		IsDefault   bool    `json:"is_default"`
 	} `json:"converter_options"`
 	HoseOptions []struct {
 		Code                 string  `json:"code"`
@@ -70,6 +75,7 @@ type packageTemplateValues struct {
 		DischargeSpec        string  `json:"discharge_spec"`
 		SuctionTKDNPercent   float64 `json:"suction_tkdn_percent"`
 		DischargeTKDNPercent float64 `json:"discharge_tkdn_percent"`
+		IsDefault            bool    `json:"is_default"`
 	} `json:"hose_options"`
 	Components []struct {
 		Code        string  `json:"code"`
@@ -103,14 +109,14 @@ func TemplateEntriesFromValues(raw []byte) ([]TemplateEntry, error) {
 	if len(values.MachineOptions) > 0 {
 		entry := TemplateEntry{Ref: ItemKindMachine, Kind: ItemKindMachine, Label: "Mesin", Unit: "PAKET", QuantityPerPackage: 1}
 		for _, o := range values.MachineOptions {
-			entry.Variants = append(entry.Variants, TemplateVariant{Code: o.Code, Brand: o.Brand, Type: o.Type, TKDNPercent: o.TKDNPercent})
+			entry.Variants = append(entry.Variants, TemplateVariant{Code: o.Code, Brand: o.Brand, Type: o.Type, TKDNPercent: o.TKDNPercent, IsDefault: o.IsDefault})
 		}
 		entries = append(entries, entry)
 	}
 	if len(values.ConverterOptions) > 0 {
 		entry := TemplateEntry{Ref: ItemKindConverter, Kind: ItemKindConverter, Label: "Konkit/Reducer", Unit: "PAKET", QuantityPerPackage: 1}
 		for _, o := range values.ConverterOptions {
-			entry.Variants = append(entry.Variants, TemplateVariant{Code: o.Code, Brand: o.Brand, Spec: o.Spec, TKDNPercent: o.TKDNPercent})
+			entry.Variants = append(entry.Variants, TemplateVariant{Code: o.Code, Brand: o.Brand, Spec: o.Spec, TKDNPercent: o.TKDNPercent, IsDefault: o.IsDefault})
 		}
 		entries = append(entries, entry)
 	}
@@ -118,8 +124,8 @@ func TemplateEntriesFromValues(raw []byte) ([]TemplateEntry, error) {
 		suction := TemplateEntry{Ref: ItemKindHoseSuction, Kind: ItemKindHoseSuction, Label: "Selang Hisap", Unit: "PAKET", QuantityPerPackage: 1}
 		discharge := TemplateEntry{Ref: ItemKindHoseDischarge, Kind: ItemKindHoseDischarge, Label: "Selang Buang", Unit: "PAKET", QuantityPerPackage: 1}
 		for _, o := range values.HoseOptions {
-			suction.Variants = append(suction.Variants, TemplateVariant{Code: o.Code, Brand: firstNonEmpty(o.SuctionBrand, o.Brand), Spec: firstNonEmpty(o.SuctionSpec, o.Spec), TKDNPercent: o.SuctionTKDNPercent})
-			discharge.Variants = append(discharge.Variants, TemplateVariant{Code: o.Code, Brand: firstNonEmpty(o.DischargeBrand, o.Brand), Spec: firstNonEmpty(o.DischargeSpec, o.Spec), TKDNPercent: o.DischargeTKDNPercent})
+			suction.Variants = append(suction.Variants, TemplateVariant{Code: o.Code, Brand: firstNonEmpty(o.SuctionBrand, o.Brand), Spec: firstNonEmpty(o.SuctionSpec, o.Spec), TKDNPercent: o.SuctionTKDNPercent, IsDefault: o.IsDefault})
+			discharge.Variants = append(discharge.Variants, TemplateVariant{Code: o.Code, Brand: firstNonEmpty(o.DischargeBrand, o.Brand), Spec: firstNonEmpty(o.DischargeSpec, o.Spec), TKDNPercent: o.DischargeTKDNPercent, IsDefault: o.IsDefault})
 		}
 		entries = append(entries, suction, discharge)
 	}
@@ -170,7 +176,11 @@ func resolveEntries(entries []TemplateEntry, selection map[string]string, machin
 		if len(entry.Variants) == 0 {
 			continue
 		}
+		// Without a choice: the template's default option, else the first.
 		chosen, source := entry.Variants[0], ChoiceSourceDefault
+		if index := slices.IndexFunc(entry.Variants, func(v TemplateVariant) bool { return v.IsDefault }); index >= 0 {
+			chosen = entry.Variants[index]
+		}
 		if len(entry.Variants) == 1 {
 			source = ChoiceSourceSingle
 		} else if index := findVariant(entry, selection[entry.Ref]); index >= 0 {
@@ -271,21 +281,21 @@ type TKDNRow struct {
 	Ref   string `json:"ref"`
 }
 
-// defaultTKDNRows mengikuti dokumen referensi Realisasi TKDN Petani.
+// defaultTKDNRows mengikuti Komponen Biaya Barang pada perhitungan TKDN
+// Konverter Kit 2026 (Jumlah Biaya Barang 80,87%).
 func defaultTKDNRows() []TKDNRow {
-	const converter, lpg = "Konverter Kit dan kelengkapannya", "Tabung LPG 3 kg beserta isinya"
+	const converter, hose = "Konverter Kit dan aksesoris kelengkapannya", "Selang Pompa Air untuk selang hisap dan Selang Buang (termasuk Klem)"
 	return []TKDNRow{
-		{Name: "Pompa Air Irigasi", Ref: ItemKindMachine},
+		{Name: "Mesin Pompa Air range 5.5 HP - 6.5 HP", Ref: ItemKindMachine},
 		{Name: "Konverter Kit", Group: converter, Ref: ItemKindConverter},
-		{Name: "Selang LPG", Group: converter, Ref: "component:hose_clamp_accessories"},
+		{Name: "Selang Karet LPG", Group: converter, Ref: "component:hose_clamp_accessories"},
 		{Name: "Regulator LPG", Group: converter, Ref: "component:regulator"},
-		{Name: "Minyak Pelumas (Oli)", Ref: "component:oil"},
-		{Name: "Tabung LPG 3 kg", Group: lpg, Ref: "component:lpg_tank"},
-		{Name: "Isi LPG 3 kg", Group: lpg, Ref: "component:lpg_refill"},
-		{Name: "Bracket", Ref: "component:bracket"},
-		{Name: "Selang Hisap", Ref: ItemKindHoseSuction},
-		{Name: "Selang Buang", Ref: ItemKindHoseDischarge},
-		{Name: "Plat Anti Karat", Ref: "component:anti_rust_plate"},
+		{Name: "1 (satu) buah tabung LPG 3 kg beserta isinya", Ref: "component:lpg_tank"},
+		{Name: "Bracket pegangan tabung LPG dan pegangan Konverter Kit", Ref: "component:bracket"},
+		{Name: "Selang Hisap", Group: hose, Ref: ItemKindHoseSuction},
+		{Name: "Selang Buang", Group: hose, Ref: ItemKindHoseDischarge},
+		{Name: "Plat anti karat bertuliskan “Bantuan Pemerintah Tidak untuk Diperjualbelikan”", Ref: "component:anti_rust_plate"},
+		{Name: "Pelumas (oli) sejumlah 2 (dua) buah dengan volume kemasan masing masing 0,8 liter", Ref: "component:oil"},
 	}
 }
 

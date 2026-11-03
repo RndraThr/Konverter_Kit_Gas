@@ -65,6 +65,11 @@ type Props = {
   programType?: 'farmer' | 'fisherman';
 };
 
+/** The option filled in automatically: the template's default, or the only option. */
+export function defaultOptionCode(options: EquipmentOption[]): string {
+  return options.find((option) => option.is_default)?.code ?? (options.length === 1 ? options[0].code : '');
+}
+
 function withLegacyOption(options: EquipmentOption[], code?: string): EquipmentOption[] {
   if (!code || options.some((option) => option.code === code)) return options;
   return [...options, { code, brand: code }];
@@ -90,7 +95,15 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
   const [suggestionError, setSuggestionError] = useState<Error | null>(null);
   const [linkInput, setLinkInput] = useState<LinkSlotInput>(() => emptyLinkInput(slot.schedule_id, slot.slot_number));
   const [recipient, setRecipient] = useState<UpdateRecipientInput>({ schedule_id: slot.schedule_id, slot_number: slot.slot_number, address: slot.address ?? '', village: slot.village ?? '', district: slot.district ?? '', phone_number: slot.phone_number ?? '', sector_identifier: slot.sector_identifier ?? '' });
-  const [equipment, setEquipment] = useState<UpdateEquipmentInput>({ machine_option_code: slot.machine_option_code ?? '', machine_serial_number: slot.machine_serial_number ?? '', hose_option_code: slot.hose_option_code ?? '', hose_serial_number: '', converter_option_code: slot.converter_option_code ?? '', converter_serial_number: slot.converter_serial_number ?? '' });
+  // Equipment not chosen yet starts at the template's default (Shark, ERGAS, Figo); a completed
+  // nomor bagi shows only what was saved.
+  const autofill = slot.status !== 'completed';
+  const equipmentFrom = (machine?: string, machineSerialNumber?: string, hose?: string, converter?: string, converterSerialNumber?: string): UpdateEquipmentInput => ({
+    machine_option_code: machine || (autofill ? defaultOptionCode(machineOptions) : ''), machine_serial_number: machineSerialNumber ?? '',
+    hose_option_code: hose || (autofill ? defaultOptionCode(hoseOptions) : ''), hose_serial_number: '',
+    converter_option_code: converter || (autofill ? defaultOptionCode(converterOptions) : ''), converter_serial_number: converterSerialNumber ?? '',
+  });
+  const [equipment, setEquipment] = useState<UpdateEquipmentInput>(() => equipmentFrom(slot.machine_option_code, slot.machine_serial_number, slot.hose_option_code, slot.converter_option_code, slot.converter_serial_number));
   const [scanning, setScanning] = useState<SerialField | null>(null);
   const [replacementReason, setReplacementReason] = useState('');
   const [replacementName, setReplacementName] = useState('');
@@ -109,7 +122,9 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
     setRecipientAttempted(false);
   }, [address, district, phoneNumber, scheduleID, sectorIdentifier, slotNumber, village]);
   useEffect(() => {
-    setEquipment({ machine_option_code: machineOptionCode ?? '', machine_serial_number: machineSerial ?? '', hose_option_code: hoseOptionCode ?? '', hose_serial_number: '', converter_option_code: converterOptionCode ?? '', converter_serial_number: converterSerial ?? '' });
+    setEquipment(equipmentFrom(machineOptionCode, machineSerial, hoseOptionCode, converterOptionCode, converterSerial));
+    // equipmentFrom only reads the options, which come with the schedule.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [converterOptionCode, converterSerial, hoseOptionCode, machineOptionCode, machineSerial]);
 
   const publish = (next: DistributionSlot) => {

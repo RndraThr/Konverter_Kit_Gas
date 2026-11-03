@@ -393,3 +393,22 @@ test('requires the farmer card number on a farmer schedule before saving recipie
   fireEvent.click(screen.getByRole('button', { name: 'Simpan data penerima' }));
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/slots/7/recipient?schedule_id=schedule-1', expect.objectContaining({ method: 'PATCH' })));
 });
+
+test('equipment not chosen yet starts at the template defaults (Shark, ERGAS, Figo)', async () => {
+  const linked = { ...openSlot, status: 'linked' as const, machine_option_code: undefined, hose_option_code: undefined, converter_option_code: undefined, full_name: candidate.full_name, nik: candidate.nik };
+  vi.mocked(apiRequest).mockResolvedValue({ data: linked });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+  render(<QueryClientProvider client={client}><PermissionsProvider permissions={['distribution.pos_dokumen']}><SlotDokumenSection slot={linked}
+    machineOptions={[{ code: 'shark', brand: 'Shark', type: 'SPWP', is_default: true }]}
+    converterOptions={[{ code: 'ergas', brand: 'ERGAS' }]}
+    hoseOptions={[{ code: 'triliunhose', brand: 'Triliunhose' }, { code: 'figo', brand: 'Figo', is_default: true }]}
+    onChanged={vi.fn()} /></PermissionsProvider></QueryClientProvider>);
+
+  expect(screen.getByRole('combobox', { name: 'Merk/Tipe Mesin' })).toHaveTextContent('Shark SPWP');
+  expect(screen.getByRole('combobox', { name: 'Merk Konkit/Reducer' })).toHaveTextContent('ERGAS');
+  expect(screen.getByRole('combobox', { name: 'Selang Hisap & Buang' })).toHaveTextContent('Figo');
+  fireEvent.click(screen.getByRole('button', { name: 'Simpan data peralatan' }));
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/slots/7/equipment?schedule_id=schedule-1', expect.objectContaining({
+    body: expect.stringContaining('"hose_option_code":"figo"'),
+  })));
+});

@@ -54,17 +54,31 @@ func TestTemplateEntriesReadBrandsQuantitiesAndTKDNFromTemplate(t *testing.T) {
 func TestDefaultTKDNRowsMatchReferenceFromTemplate(t *testing.T) {
 	resolved := resolveEntries(mustEntries(sampleTemplateValues), nil, "SHARK", nil)
 	items := tkdnItemsFor(defaultTKDNRows(), resolved)
-	if len(items) != 11 {
+	if len(items) != 10 {
 		t.Fatalf("items=%d %+v", len(items), items)
 	}
-	want := map[string][2]any{"Pompa Air Irigasi": {"SHARK", 61.42}, "Selang LPG": {"Mondea", 87.58}, "Minyak Pelumas (Oli)": {"Pertamina Enduro", 53.42}, "Isi LPG 3 kg": {"-", 51.99}}
+	want := map[string][2]any{"Mesin Pompa Air range 5.5 HP - 6.5 HP": {"SHARK", 61.42}, "Selang Karet LPG": {"Mondea", 87.58}, "Regulator LPG": {"Top Gas", 56.73}, "Selang Buang": {"YAMAKOYO", 0.0}}
 	for _, item := range items {
 		if w, ok := want[item.Name]; ok && (item.Brand != w[0] || item.TKDNPercent != w[1]) {
 			t.Fatalf("%s=%+v", item.Name, item)
 		}
 	}
-	if items[4].QuantityPerPackage != 2 {
-		t.Fatalf("oli qty=%v", items[4].QuantityPerPackage)
+	if oil := items[len(items)-1]; oil.Brand != "Pertamina Enduro" || oil.QuantityPerPackage != 2 {
+		t.Fatalf("oli=%+v", oil)
+	}
+}
+
+func TestResolveEntriesPrefersTheTemplateDefault(t *testing.T) {
+	entries := mustEntries(`{"hose_options":[
+		{"code":"triliunhose","suction_brand":"Triliunhose","suction_spec":"6 m","discharge_brand":"Yamakoyo","discharge_spec":"10 m","suction_tkdn_percent":98.45},
+		{"code":"figo","suction_brand":"Figo","suction_spec":"6 m","discharge_brand":"Figo","discharge_spec":"10 m","suction_tkdn_percent":97.06,"discharge_tkdn_percent":93.95,"is_default":true}]}`)
+	resolved := resolveEntries(entries, nil, "", nil)
+	if got := resolved[ItemKindHoseSuction]; got.Variant.Code != "figo" || got.Variant.TKDNPercent != 97.06 || got.Source != ChoiceSourceDefault {
+		t.Fatalf("suction=%+v", got)
+	}
+	// A choice made for the kabupaten still wins.
+	if got := resolveEntries(entries, map[string]string{ItemKindHoseDischarge: "triliunhose"}, "", nil)[ItemKindHoseDischarge]; got.Variant.Code != "triliunhose" {
+		t.Fatalf("manual=%+v", got)
 	}
 }
 

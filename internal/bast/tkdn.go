@@ -39,7 +39,7 @@ type TKDNProfile struct {
 // defaultTKDNProfile mengikuti dokumen referensi Realisasi TKDN Petani dan
 // dipakai sampai program menyimpan nilainya sendiri.
 func defaultTKDNProfile(programID string) TKDNProfile {
-	return TKDNProfile{ProgramID: programID, IsDefault: true, Rows: defaultTKDNRows(), TotalTKDN: 68.53}
+	return TKDNProfile{ProgramID: programID, IsDefault: true, Rows: defaultTKDNRows(), TotalTKDN: 80.87}
 }
 
 func (p *TKDNProfile) normalize() error {

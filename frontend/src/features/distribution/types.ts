@@ -76,7 +76,7 @@ export type LinkSlotInput = {
   address: string; village: string; district: string; phone_number: string; sector_identifier: string;
 };
 
-export type EquipmentOption = { code: string; brand: string; type?: string; spec?: string };
+export type EquipmentOption = { code: string; brand: string; type?: string; spec?: string; is_default?: boolean };
 
 export type SlotCatalogEntry = { slot_number: number; status: 'open' | 'linked' | 'completed' | 'cancelled'; documentation_complete: boolean; needs_recompletion?: boolean };
 
