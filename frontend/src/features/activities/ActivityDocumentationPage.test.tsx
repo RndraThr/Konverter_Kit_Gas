@@ -195,7 +195,8 @@ test('renders a video element while a video upload is pending', async () => {
   fireEvent.change(await screen.findByLabelText('Pilih dari Galeri'), { target: { files: [new File(['video'], 'rakor.mp4', { type: 'video/mp4' })] } });
 
   expect(await screen.findByLabelText('Preview unggahan video')).toHaveAttribute('src', 'blob:video-preview');
-  expect(screen.getByRole('combobox', { name: 'Kabupaten / Kota' })).toBeDisabled();
+  // The upload runs in the app-wide queue, so the operator can keep working meanwhile.
+  expect(screen.getByRole('combobox', { name: 'Kabupaten / Kota' })).toBeEnabled();
 });
 
 test('validates media sizes and sends activity metadata before the file', async () => {
@@ -267,7 +268,7 @@ test('offers retry and cancel actions after an upload fails', async () => {
 
   expect(await screen.findByText('Coba lagi')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Batalkan' })).toBeVisible();
-  expect(screen.getByRole('combobox', { name: 'Kabupaten / Kota' })).toBeDisabled();
+  expect(screen.getByRole('combobox', { name: 'Kabupaten / Kota' })).toBeEnabled();
   fireEvent.click(screen.getByText('Coba lagi'));
   expect(await screen.findByText('Belum ada dokumentasi')).toBeVisible();
   expect(uploadAttempts).toBe(2);

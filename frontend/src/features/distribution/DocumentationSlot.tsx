@@ -1,8 +1,9 @@
 import { Camera, CheckCircle2, CircleAlert, ImagePlus, RefreshCw, Trash2, UploadCloud, Video, X } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { apiRequest } from '../../lib/api';
-import { uploadRequest } from '../../lib/upload';
+import { sameTarget, uploadQueue, useUploadCompletions, useUploadJobs, type UploadJob, type UploadTarget } from '../../lib/uploadQueue';
+import { useObjectURL } from '../../lib/useObjectURL';
 import type { DataResponse, MediaFile, MediaStorageState, SlotSummary } from './types';
 import styles from './Distribution.module.css';
 import { Badge } from '@/components/ui/badge';
@@ -14,21 +15,7 @@ import { useWatermarkProgram } from '../camera/WatermarkProgramContext';
 
 const WatermarkCamera = lazy(() => import('../camera/WatermarkCamera'));
 
-type QueuedFile = {
-  id: string;
-  file: File;
-  source: 'camera' | 'gallery';
-  /** Real capture time sent as captured_at (camera: shutter time; gallery: file.lastModified). */
-  capturedAt: Date;
-  latitude: number | null;
-  longitude: number | null;
-  previewURL: string;
-  status: 'queued' | 'uploading' | 'error';
-  progress: number;
-  controller: AbortController | null;
-  errorMessage?: string;
-};
-type Incoming = Pick<QueuedFile, 'file' | 'source' | 'capturedAt' | 'latitude' | 'longitude'>;
+type Incoming = { file: File; source: 'camera' | 'gallery'; capturedAt: Date; latitude: number | null; longitude: number | null };
 const acceptedImageTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const acceptedVideoTypes = new Set(['video/mp4', 'video/webm', 'video/quicktime']);
 const imageAccept = 'image/jpeg,image/png,image/webp';
@@ -55,53 +42,32 @@ const storageStateCopy: Record<MediaStorageState, { label: string; detail?: stri
 
 export function DocumentationSlot({ slot, canManage, canRetryMove = false, onChanged, onRetryMove }: Props) {
   const [files, setFiles] = useState<MediaFile[]>(slot.files ?? []);
-  const [queue, setQueue] = useState<QueuedFile[]>([]);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
   const [fileError, setFileError] = useState('');
   const [moveError, setMoveError] = useState('');
   const [cameraOpen, setCameraOpen] = useState(false);
   const programId = useWatermarkProgram();
-  const processingRef = useRef(false);
-  const queueRef = useRef<QueuedFile[]>([]);
+  const filesRef = useRef(files);
   useEffect(() => setFiles(slot.files ?? []), [slot.files]);
-  useEffect(() => { queueRef.current = queue; }, [queue]);
-  useEffect(() => () => queueRef.current.forEach((item) => URL.revokeObjectURL(item.previewURL)), []);
+  useEffect(() => { filesRef.current = files; }, [files]);
   useEffect(() => { if (previewIndex !== null && previewIndex >= files.length) setPreviewIndex(null); }, [files.length, previewIndex]);
 
+  // Unggahan berjalan di antrian aplikasi (lib/uploadQueue), jadi tetap
+  // diproses saat halaman ini ditinggalkan atau dimuat ulang.
+  const target = useMemo<UploadTarget | null>(() => (slot.id ? { kind: 'distribution-slot', slotId: slot.id } : null), [slot.id]);
+  const allJobs = useUploadJobs();
+  const queue = useMemo(() => (target ? allJobs.filter((job) => sameTarget(job.target, target)) : []), [allJobs, target]);
+
   const publish = (nextFiles: MediaFile[]) => {
+    filesRef.current = nextFiles;
     setFiles(nextFiles);
     onChanged({ ...slot, files: nextFiles, status: nextFiles.length >= (slot.min_files ?? 0) ? 'complete' : 'missing' });
   };
-  const upload = useMutation({
-    mutationFn: (item: QueuedFile) => {
-      if (!slot.id) throw new Error('Slot dokumentasi tidak valid');
-      const controller = new AbortController();
-      setQueue((current) => current.map((entry) => entry.id === item.id ? { ...entry, controller } : entry));
-      const body = new FormData();
-      body.set('source', item.source);
-      body.set('file_size', String(item.file.size));
-      body.set('captured_at', item.capturedAt.toISOString());
-      if (item.latitude !== null && item.longitude !== null) {
-        body.set('latitude', String(item.latitude));
-        body.set('longitude', String(item.longitude));
-      }
-      body.set('file', item.file);
-      return uploadRequest<DataResponse<MediaFile>>(`/api/v1/distribution/slots/${slot.id}/media`, body, {
-        signal: controller.signal,
-        onProgress: (progress) => setQueue((current) => current.map((entry) => entry.id === item.id ? { ...entry, progress } : entry)),
-      });
-    },
-    onSuccess: ({ data }, item) => {
-      publish([...files, data]);
-      URL.revokeObjectURL(item.previewURL);
-      setQueue((current) => current.filter((entry) => entry.id !== item.id));
-    },
-    onError: (error, item) => {
-      if (error instanceof DOMException && error.name === 'AbortError') return;
-      const errorMessage = error instanceof Error ? error.message : 'Media belum dapat diunggah.';
-      setQueue((current) => current.map((entry) => entry.id === item.id ? { ...entry, status: 'error', errorMessage } : entry));
-    },
+  useUploadCompletions(({ job, response }) => {
+    if (!target || !sameTarget(job.target, target)) return;
+    const data = (response as DataResponse<MediaFile> | undefined)?.data;
+    if (data && !filesRef.current.some((file) => file.id === data.id)) publish([...filesRef.current, data]);
   });
   const remove = useMutation({
     mutationFn: (id: string) => apiRequest<void>(`/api/v1/distribution/media/${id}`, { method: 'DELETE' }),
@@ -117,19 +83,6 @@ export function DocumentationSlot({ slot, canManage, canRetryMove = false, onCha
     onError: (cause) => setMoveError(cause instanceof Error ? cause.message : 'Pemindahan media belum dapat dicoba kembali.'),
   });
 
-  // Processes the queue one upload at a time so a photo selected mid-upload
-  // never overwrites the card tracking the one still in flight. The ref
-  // guards against the effect re-firing before upload.isPending flips true.
-  useEffect(() => {
-    if (processingRef.current) return;
-    const next = queue.find((item) => item.status === 'queued');
-    if (!next) return;
-    processingRef.current = true;
-    setQueue((current) => current.map((item) => item.id === next.id ? { ...item, status: 'uploading' } : item));
-    upload.mutate(next, { onSettled: () => { processingRef.current = false; } });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queue]);
-
   const required = slot.min_files ?? 0;
   const maxFiles = slot.max_files ?? 1;
   const complete = files.length >= required;
@@ -144,11 +97,12 @@ export function DocumentationSlot({ slot, canManage, canRetryMove = false, onCha
 
   const requireLocation = slot.require_location === true;
 
-  // Validates and queues files. Capacity is read from the ref-backed queue at call time, because
+  // Validates and queues files. Capacity is read from the queue at call time, because
   // gallery images arrive after an async resize and the render-time value may be stale by then.
   const enqueue = (incoming: Incoming[]) => {
-    if (!incoming.length) return;
-    let remaining = Math.max(0, maxFiles - files.length - queueRef.current.length);
+    if (!incoming.length || !target) return;
+    const queued = uploadQueue.getSnapshot().filter((job) => sameTarget(job.target, target)).length;
+    let remaining = Math.max(0, maxFiles - filesRef.current.length - queued);
     const capacity = remaining;
     const accepted: Incoming[] = [];
     let rejectedType = false, rejectedCapacity = false, rejectedImageSize = false, rejectedVideoSize = false, rejectedLocation = false;
@@ -171,9 +125,11 @@ export function DocumentationSlot({ slot, canManage, canRetryMove = false, onCha
     else if (rejectedCapacity) setFileError(`Hanya ${capacity} ${mediaLabel} lagi yang dapat ditambahkan pada slot ini.`);
     else setFileError('');
     if (!accepted.length) return;
-    const queued = accepted.map((item): QueuedFile => ({ ...item, id: crypto.randomUUID(), previewURL: URL.createObjectURL(item.file), status: 'queued', progress: 0, controller: null }));
-    queueRef.current = [...queueRef.current, ...queued];
-    setQueue((current) => [...current, ...queued]);
+    for (const item of accepted) {
+      const fields: [string, string][] = [['source', item.source], ['file_size', String(item.file.size)], ['captured_at', item.capturedAt.toISOString()]];
+      if (item.latitude !== null && item.longitude !== null) fields.push(['latitude', String(item.latitude)], ['longitude', String(item.longitude)]);
+      uploadQueue.enqueue({ target, label: `Pendistribusian · ${slot.label}`, fields, file: item.file });
+    }
   };
 
   const fromFiles = (list: File[], source: 'camera' | 'gallery'): Incoming[] =>
@@ -200,12 +156,6 @@ export function DocumentationSlot({ slot, canManage, canRetryMove = false, onCha
     }
     enqueue([{ file: photo.file, source: 'camera', capturedAt: photo.capturedAt, latitude: photo.latitude, longitude: photo.longitude }]);
   };
-  const retry = (id: string) => setQueue((current) => current.map((item) => item.id === id ? { ...item, status: 'queued' as const, progress: 0, controller: null, errorMessage: undefined } : item));
-  const cancelQueued = (id: string) => setQueue((current) => {
-    const item = current.find((entry) => entry.id === id);
-    if (item) { item.controller?.abort(); URL.revokeObjectURL(item.previewURL); }
-    return current.filter((entry) => entry.id !== id);
-  });
   const uploadError = queue.find((item) => item.status === 'error');
 
   return <article
@@ -249,18 +199,7 @@ export function DocumentationSlot({ slot, canManage, canRetryMove = false, onCha
           </div>
         </div>;
       })}
-      {queue.map((item) => <figure key={item.id} className="relative aspect-4/3 overflow-hidden rounded-md border bg-muted">
-        {acceptedVideoTypes.has(item.file.type) ? <video src={item.previewURL} aria-label={`Preview ${slot.label}`} preload="metadata" className="size-full object-cover opacity-50" /> : <img src={item.previewURL} alt={`Preview ${slot.label}`} className="size-full object-cover opacity-50" />}
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/40 text-center text-white">
-          {item.status === 'uploading' && <UploadCloud className="size-5 animate-pulse" aria-hidden="true" />}
-          <span className="text-[10px] font-medium">{item.status === 'error' ? 'Upload gagal' : item.status === 'uploading' ? `${item.progress}%` : 'Menunggu...'}</span>
-          {item.status === 'uploading' && <button className={styles.removeMedia} type="button" aria-label="Batalkan unggahan" title="Batalkan unggahan" onClick={() => cancelQueued(item.id)}><X className="size-4" /></button>}
-          {item.status === 'error' && <div className="flex items-center gap-1">
-            <button className={styles.removeMedia} type="button" aria-label="Coba unggah lagi" title="Coba unggah lagi" onClick={() => retry(item.id)}><RefreshCw className="size-4" /></button>
-            <button className={styles.removeMedia} type="button" aria-label="Batalkan unggahan" title="Batalkan unggahan" onClick={() => cancelQueued(item.id)}><X className="size-4" /></button>
-          </div>}
-        </div>
-      </figure>)}
+      {queue.map((item) => <QueuedMedia key={item.id} job={item} slotLabel={slot.label} />)}
     </div>}
 
     {canAddMore && <div className="grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)]">
@@ -288,4 +227,20 @@ export function DocumentationSlot({ slot, canManage, canRetryMove = false, onCha
     {cameraOpen && <Suspense fallback={null}><WatermarkCamera title={slot.label} programId={programId} onCapture={capturePhoto} onClose={() => setCameraOpen(false)} /></Suspense>}
     <MediaPreviewDialog items={files.map((mediaFile) => ({ id: mediaFile.id, url: mediaFile.content_url, title: mediaFile.original_filename, mediaType: mediaFile.mime_type.startsWith('video/') ? 'video' : 'image' }))} index={previewIndex} onIndexChange={setPreviewIndex} />
   </article>;
+}
+
+function QueuedMedia({ job, slotLabel }: { job: UploadJob; slotLabel: string }) {
+  const previewURL = useObjectURL(job.file);
+  return <figure className="relative aspect-4/3 overflow-hidden rounded-md border bg-muted">
+    {previewURL && (acceptedVideoTypes.has(job.file.type) ? <video src={previewURL} aria-label={`Preview ${slotLabel}`} preload="metadata" className="size-full object-cover opacity-50" /> : <img src={previewURL} alt={`Preview ${slotLabel}`} className="size-full object-cover opacity-50" />)}
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/40 text-center text-white">
+      {job.status === 'uploading' && <UploadCloud className="size-5 animate-pulse" aria-hidden="true" />}
+      <span className="text-[10px] font-medium">{job.status === 'error' ? (job.autoRetry ? 'Gagal, dicoba lagi otomatis' : 'Upload gagal') : job.status === 'uploading' ? `${job.progress}%` : 'Menunggu antrian...'}</span>
+      {job.status !== 'error' && <button className={styles.removeMedia} type="button" aria-label="Batalkan unggahan" title="Batalkan unggahan" onClick={() => uploadQueue.cancel(job.id)}><X className="size-4" /></button>}
+      {job.status === 'error' && <div className="flex items-center gap-1">
+        <button className={styles.removeMedia} type="button" aria-label="Coba unggah lagi" title="Coba unggah lagi" onClick={() => uploadQueue.retry(job.id)}><RefreshCw className="size-4" /></button>
+        <button className={styles.removeMedia} type="button" aria-label="Batalkan unggahan" title="Batalkan unggahan" onClick={() => uploadQueue.cancel(job.id)}><X className="size-4" /></button>
+      </div>}
+    </div>
+  </figure>;
 }
