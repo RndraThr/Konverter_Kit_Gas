@@ -24,7 +24,7 @@ import { ConverterOption, DataResponse, DocumentationSlot, DocumentationTemplate
 const newSlot = (index = 0): DocumentationSlot => ({ slot_code: '', label: '', stage: 'mesin', is_required: true, min_files: 1, max_files: 1, input_source: 'both', media_kind: 'image', require_location: false, require_captured_at: false, sort_order: (index + 1) * 10 });
 const newMachineOption = (): MachineOption => ({ code: '', brand: '', type: '', power: '', fuel_type: '', tkdn_percent: 0 });
 const newHoseOption = (): HoseOption => ({ code: '', suction_brand: '', suction_spec: '', discharge_brand: '', discharge_spec: '', suction_tkdn_percent: 0, discharge_tkdn_percent: 0 });
-const newConverterOption = (): ConverterOption => ({ code: '', brand: '', tkdn_percent: 0 });
+const newConverterOption = (): ConverterOption => ({ code: '', brand: '', spec: '', tkdn_percent: 0 });
 const newComponent = (): PackageComponent => ({ code: '', label: '', quantity: 1, unit: '', brand: '', tkdn_percent: 0, handover_hidden: false });
 
 const emptyPackageValues = { template_code: '', name: '', program_type: 'farmer' as ProgramType, status: 'draft', machine_options: [] as MachineOption[], hose_options: [] as HoseOption[], converter_options: [] as ConverterOption[], components: [] as PackageComponent[] };
@@ -40,7 +40,7 @@ function legacyPair(value = '') {
 }
 
 function normalizeMachineOption(option: Partial<MachineOption>): MachineOption {
-  return { code: option.code ?? '', brand: option.brand ?? '', type: option.type ?? '', power: option.power ?? '', fuel_type: option.fuel_type ?? '', tkdn_percent: option.tkdn_percent ?? 0 };
+  return { code: option.code ?? '', brand: option.brand ?? '', type: option.type ?? '', power: option.power ?? '', fuel_type: option.fuel_type ?? '', tkdn_percent: option.tkdn_percent ?? 0, is_default: option.is_default ?? false };
 }
 
 function normalizeHoseOption(option: Partial<HoseOption>): HoseOption {
@@ -54,6 +54,7 @@ function normalizeHoseOption(option: Partial<HoseOption>): HoseOption {
     discharge_spec: option.discharge_spec ?? specs[1],
     suction_tkdn_percent: option.suction_tkdn_percent ?? 0,
     discharge_tkdn_percent: option.discharge_tkdn_percent ?? 0,
+    is_default: option.is_default ?? false,
   };
 }
 
@@ -112,6 +113,8 @@ export function TemplatesPanel() {
     };
     setDocumentValues({ ...documentValues, slots: documentValues.slots.map((slot, slotIndex) => slotIndex === index ? { ...slot, ...normalizedPatch } : slot) });
   };
+  // One default per list: marking an option clears the others.
+  const asDefault = <T extends { is_default?: boolean }>(options: T[], index: number, on: boolean) => options.map((option, optionIndex) => ({ ...option, is_default: optionIndex === index ? on : on ? false : option.is_default }));
   const updateMachineOption = (index: number, patch: Partial<MachineOption>) => setPackageValues({ ...packageValues, machine_options: packageValues.machine_options.map((option, optionIndex) => optionIndex === index ? { ...option, ...patch } : option) });
   const updateHoseOption = (index: number, patch: Partial<HoseOption>) => setPackageValues({ ...packageValues, hose_options: packageValues.hose_options.map((option, optionIndex) => optionIndex === index ? { ...option, ...patch } : option) });
   const updateConverterOption = (index: number, patch: Partial<ConverterOption>) => setPackageValues({ ...packageValues, converter_options: packageValues.converter_options.map((option, optionIndex) => optionIndex === index ? { ...option, ...patch } : option) });
@@ -150,6 +153,7 @@ export function TemplatesPanel() {
           <FormField label={`Daya mesin ${index + 1}`} name={`machine_power_${index}`} required value={option.power} onChange={(e) => updateMachineOption(index, { power: e.target.value })} />
           <FormField label={`Jenis BBM ${index + 1}`} name={`machine_fuel_type_${index}`} required value={option.fuel_type} onChange={(e) => updateMachineOption(index, { fuel_type: e.target.value })} />
           <FormField label={`TKDN mesin ${index + 1} (%)`} name={`machine_tkdn_${index}`} type="number" min={0} max={100} step="0.01" value={option.tkdn_percent ?? 0} onChange={(e) => updateMachineOption(index, { tkdn_percent: Number(e.target.value) })} />
+          <label className="componentHiddenToggle"><Checkbox checked={option.is_default ?? false} onCheckedChange={(checked) => setPackageValues({ ...packageValues, machine_options: asDefault(packageValues.machine_options, index, checked === true) })} aria-label={`Default mesin ${index + 1}`} /><span>Default: terisi otomatis saat distribusi</span></label>
         </div>)}
       </div></SetupFormSection>
 
@@ -163,6 +167,7 @@ export function TemplatesPanel() {
           <FormField label={`Spesifikasi selang buang ${index + 1}`} name={`hose_discharge_spec_${index}`} required value={option.discharge_spec} onChange={(e) => updateHoseOption(index, { discharge_spec: e.target.value })} />
           <FormField label={`TKDN selang hisap ${index + 1} (%)`} name={`hose_suction_tkdn_${index}`} type="number" min={0} max={100} step="0.01" value={option.suction_tkdn_percent ?? 0} onChange={(e) => updateHoseOption(index, { suction_tkdn_percent: Number(e.target.value) })} />
           <FormField label={`TKDN selang buang ${index + 1} (%)`} name={`hose_discharge_tkdn_${index}`} type="number" min={0} max={100} step="0.01" value={option.discharge_tkdn_percent ?? 0} onChange={(e) => updateHoseOption(index, { discharge_tkdn_percent: Number(e.target.value) })} />
+          <label className="componentHiddenToggle"><Checkbox checked={option.is_default ?? false} onCheckedChange={(checked) => setPackageValues({ ...packageValues, hose_options: asDefault(packageValues.hose_options, index, checked === true) })} aria-label={`Default selang ${index + 1}`} /><span>Default: terisi otomatis saat distribusi</span></label>
         </div>)}
       </div></SetupFormSection>
 
@@ -171,7 +176,9 @@ export function TemplatesPanel() {
           <div className="repeatableRowHeader"><strong>Opsi konkit {index + 1}</strong><Button type="button" variant="ghost" size="sm" className="dangerIcon" aria-label={`Hapus opsi konkit ${index + 1}`} onClick={() => setPackageValues({ ...packageValues, converter_options: packageValues.converter_options.filter((_, optionIndex) => optionIndex !== index) })}><Trash2 />Hapus</Button></div>
           <FormField label={`Kode konkit ${index + 1}`} name={`converter_code_${index}`} required value={option.code} onChange={(e) => updateConverterOption(index, { code: e.target.value.toLowerCase() })} />
           <FormField label={`Merk konkit ${index + 1}`} name={`converter_brand_${index}`} required value={option.brand} onChange={(e) => updateConverterOption(index, { brand: e.target.value })} />
+          <FormField label={`Tipe konkit ${index + 1}`} name={`converter_spec_${index}`} value={option.spec ?? ''} onChange={(e) => updateConverterOption(index, { spec: e.target.value })} />
           <FormField label={`TKDN konkit ${index + 1} (%)`} name={`converter_tkdn_${index}`} type="number" min={0} max={100} step="0.01" value={option.tkdn_percent ?? 0} onChange={(e) => updateConverterOption(index, { tkdn_percent: Number(e.target.value) })} />
+          <label className="componentHiddenToggle"><Checkbox checked={option.is_default ?? false} onCheckedChange={(checked) => setPackageValues({ ...packageValues, converter_options: asDefault(packageValues.converter_options, index, checked === true) })} aria-label={`Default konkit ${index + 1}`} /><span>Default: terisi otomatis saat distribusi</span></label>
         </div>)}
       </div></SetupFormSection>
 

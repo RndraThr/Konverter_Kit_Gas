@@ -65,6 +65,11 @@ type Props = {
   programType?: 'farmer' | 'fisherman';
 };
 
+/** The option filled in automatically: the template's default, or the only option. */
+export function defaultOptionCode(options: EquipmentOption[]): string {
+  return options.find((option) => option.is_default)?.code ?? (options.length === 1 ? options[0].code : '');
+}
+
 function withLegacyOption(options: EquipmentOption[], code?: string): EquipmentOption[] {
   if (!code || options.some((option) => option.code === code)) return options;
   return [...options, { code, brand: code }];
@@ -90,7 +95,15 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
   const [suggestionError, setSuggestionError] = useState<Error | null>(null);
   const [linkInput, setLinkInput] = useState<LinkSlotInput>(() => emptyLinkInput(slot.schedule_id, slot.slot_number));
   const [recipient, setRecipient] = useState<UpdateRecipientInput>({ schedule_id: slot.schedule_id, slot_number: slot.slot_number, address: slot.address ?? '', village: slot.village ?? '', district: slot.district ?? '', phone_number: slot.phone_number ?? '', sector_identifier: slot.sector_identifier ?? '' });
-  const [equipment, setEquipment] = useState<UpdateEquipmentInput>({ machine_option_code: slot.machine_option_code ?? '', machine_serial_number: slot.machine_serial_number ?? '', hose_option_code: slot.hose_option_code ?? '', hose_serial_number: '', converter_option_code: slot.converter_option_code ?? '', converter_serial_number: slot.converter_serial_number ?? '' });
+  // Equipment not chosen yet starts at the template's default (Shark, ERGAS, Figo); a completed
+  // nomor bagi shows only what was saved.
+  const autofill = slot.status !== 'completed';
+  const equipmentFrom = (machine?: string, machineSerialNumber?: string, hose?: string, converter?: string, converterSerialNumber?: string): UpdateEquipmentInput => ({
+    machine_option_code: machine || (autofill ? defaultOptionCode(machineOptions) : ''), machine_serial_number: machineSerialNumber ?? '',
+    hose_option_code: hose || (autofill ? defaultOptionCode(hoseOptions) : ''), hose_serial_number: '',
+    converter_option_code: converter || (autofill ? defaultOptionCode(converterOptions) : ''), converter_serial_number: converterSerialNumber ?? '',
+  });
+  const [equipment, setEquipment] = useState<UpdateEquipmentInput>(() => equipmentFrom(slot.machine_option_code, slot.machine_serial_number, slot.hose_option_code, slot.converter_option_code, slot.converter_serial_number));
   const [scanning, setScanning] = useState<SerialField | null>(null);
   const [replacementReason, setReplacementReason] = useState('');
   const [replacementName, setReplacementName] = useState('');
@@ -109,7 +122,9 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
     setRecipientAttempted(false);
   }, [address, district, phoneNumber, scheduleID, sectorIdentifier, slotNumber, village]);
   useEffect(() => {
-    setEquipment({ machine_option_code: machineOptionCode ?? '', machine_serial_number: machineSerial ?? '', hose_option_code: hoseOptionCode ?? '', hose_serial_number: '', converter_option_code: converterOptionCode ?? '', converter_serial_number: converterSerial ?? '' });
+    setEquipment(equipmentFrom(machineOptionCode, machineSerial, hoseOptionCode, converterOptionCode, converterSerial));
+    // equipmentFrom only reads the options, which come with the schedule.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [converterOptionCode, converterSerial, hoseOptionCode, machineOptionCode, machineSerial]);
 
   const publish = (next: DistributionSlot) => {
@@ -321,12 +336,12 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
       </ol>
     </section>}
 
-    <section aria-labelledby={`equipment-heading-${currentSlot.id}`} className="space-y-3 rounded-lg border p-4"><h4 id={`equipment-heading-${currentSlot.id}`} className="font-medium">Data peralatan</h4><form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); equipmentUpdate.mutate(); }}>
-      <div className="grid gap-2"><Label id={`machine-label-${currentSlot.id}`}>Merk/Tipe Mesin</Label><Select disabled={!editable} value={equipment.machine_option_code} onValueChange={(value) => setEquipment({ ...equipment, machine_option_code: value ?? '' })}><SelectTrigger aria-labelledby={`machine-label-${currentSlot.id}`}><SelectValue placeholder="Pilih mesin" /></SelectTrigger><SelectContent>{machineItems.map((option) => <SelectItem key={option.code} value={option.code}>{option.brand} {option.type}</SelectItem>)}</SelectContent></Select></div>
+    <section aria-labelledby={`equipment-heading-${currentSlot.id}`} className="space-y-3 rounded-lg border p-4"><h4 id={`equipment-heading-${currentSlot.id}`} className="font-medium">Data peralatan</h4><form className="grid grid-cols-1 gap-3 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); equipmentUpdate.mutate(); }}>
+      <div className="grid min-w-0 gap-2"><Label id={`machine-label-${currentSlot.id}`}>Merk/Tipe Mesin</Label><Select disabled={!editable} value={equipment.machine_option_code} onValueChange={(value) => setEquipment({ ...equipment, machine_option_code: value ?? '' })}><SelectTrigger className="w-full min-w-0" aria-labelledby={`machine-label-${currentSlot.id}`}><SelectValue placeholder="Pilih mesin" /></SelectTrigger><SelectContent>{machineItems.map((option) => <SelectItem key={option.code} value={option.code}>{option.brand} {option.type}</SelectItem>)}</SelectContent></Select></div>
       {serialField('Serial Number Mesin', 'machine_serial_number')}
-      <div className="grid gap-2"><Label id={`converter-label-${currentSlot.id}`}>Merk Konkit/Reducer</Label><Select disabled={!editable} value={equipment.converter_option_code} onValueChange={(value) => setEquipment({ ...equipment, converter_option_code: value ?? '' })}><SelectTrigger aria-labelledby={`converter-label-${currentSlot.id}`}><SelectValue placeholder="Pilih konkit/reducer" /></SelectTrigger><SelectContent>{converterItems.map((option) => <SelectItem key={option.code} value={option.code}>{option.brand}</SelectItem>)}</SelectContent></Select></div>
+      <div className="grid min-w-0 gap-2"><Label id={`converter-label-${currentSlot.id}`}>Merk Konkit/Reducer</Label><Select disabled={!editable} value={equipment.converter_option_code} onValueChange={(value) => setEquipment({ ...equipment, converter_option_code: value ?? '' })}><SelectTrigger className="w-full min-w-0" aria-labelledby={`converter-label-${currentSlot.id}`}><SelectValue placeholder="Pilih konkit/reducer" /></SelectTrigger><SelectContent>{converterItems.map((option) => <SelectItem key={option.code} value={option.code}>{[option.brand, option.spec].filter(Boolean).join(' ')}</SelectItem>)}</SelectContent></Select></div>
       {serialField('Serial Number Konkit/Reducer', 'converter_serial_number')}
-      <div className="grid gap-2"><Label id={`hose-label-${currentSlot.id}`}>Selang Hisap &amp; Buang</Label><Select disabled={!editable} value={equipment.hose_option_code} onValueChange={(value) => setEquipment({ ...equipment, hose_option_code: value ?? '' })}><SelectTrigger aria-labelledby={`hose-label-${currentSlot.id}`}><SelectValue placeholder="Pilih selang" /></SelectTrigger><SelectContent>{hoseItems.map((option) => <SelectItem key={option.code} value={option.code}>{option.brand} {option.spec}</SelectItem>)}</SelectContent></Select></div>
+      <div className="grid min-w-0 gap-2"><Label id={`hose-label-${currentSlot.id}`}>Selang Hisap &amp; Buang</Label><Select disabled={!editable} value={equipment.hose_option_code} onValueChange={(value) => setEquipment({ ...equipment, hose_option_code: value ?? '' })}><SelectTrigger className="w-full min-w-0" aria-labelledby={`hose-label-${currentSlot.id}`}><SelectValue placeholder="Pilih selang" /></SelectTrigger><SelectContent>{hoseItems.map((option) => <SelectItem key={option.code} value={option.code}>{option.brand} {option.spec}</SelectItem>)}</SelectContent></Select></div>
       {editable && <Button className="sm:col-span-2" type="submit">Simpan data peralatan</Button>}
     </form></section>
 

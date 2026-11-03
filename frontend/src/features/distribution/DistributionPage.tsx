@@ -53,8 +53,8 @@ export function DistributionPage() {
     const suction = [option.suction_brand, option.suction_spec].filter(Boolean).join(' ');
     const discharge = [option.discharge_brand, option.discharge_spec].filter(Boolean).join(' ');
     return suction || discharge
-      ? { code: option.code, brand: [suction && `Hisap: ${suction}`, discharge && `Buang: ${discharge}`].filter(Boolean).join(' · '), spec: '' }
-      : { code: option.code, brand: option.brand, spec: option.spec };
+      ? { code: option.code, brand: [suction && `Hisap: ${suction}`, discharge && `Buang: ${discharge}`].filter(Boolean).join(' · '), spec: '', is_default: option.is_default }
+      : { code: option.code, brand: option.brand, spec: option.spec, is_default: option.is_default };
   });
   const converterOptions = ((selectedPackageTemplate?.values as { converter_options?: EquipmentOption[] } | undefined)?.converter_options) ?? [];
 

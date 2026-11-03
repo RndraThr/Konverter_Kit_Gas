@@ -17,7 +17,7 @@ func TestDP3AndDailyRecapNumberRowsAcrossDistributionDays(t *testing.T) {
 	pool := bastIntegrationPool(t)
 	ctx := context.Background()
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
-	code := fmt.Sprintf("%c%c%c", 'A'+suffix[len(suffix)-1]%20, 'A'+suffix[len(suffix)-2]%20, 'A'+suffix[len(suffix)-4]%20)
+	code := freeRegencyCode(t, pool)
 	var programID, regencyID, packageID, documentationID, scheduleID string
 	mustQuery := func(query string, args []any, dest *string) {
 		t.Helper()
