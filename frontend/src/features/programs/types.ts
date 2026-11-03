@@ -16,7 +16,7 @@ export type HoseOption = {
   spec?: string;
   is_default?: boolean;
 };
-export type ConverterOption = { code: string; brand: string; tkdn_percent?: number; is_default?: boolean };
+export type ConverterOption = { code: string; brand: string; spec?: string; tkdn_percent?: number; is_default?: boolean };
 /** brand & tkdn_percent dipakai Realisasi TKDN; handover_hidden = tidak dicetak di checklist BA serah terima. */
 export type PackageComponent = { code: string; label: string; quantity: number; unit: string; brand?: string; tkdn_percent?: number; handover_hidden?: boolean };
 export type PackageTemplate = { id: string; template_code: string; version: number; name: string; program_type: ProgramType; values: Record<string, unknown>; status: string };

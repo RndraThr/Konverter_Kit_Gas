@@ -68,6 +68,14 @@ func TestDefaultTKDNRowsMatchReferenceFromTemplate(t *testing.T) {
 	}
 }
 
+func TestTKDNConverterBrandCarriesItsType(t *testing.T) {
+	entries := mustEntries(`{"converter_options":[{"code":"ergas","brand":"ERGAS","spec":"ECK-300","tkdn_percent":93.72}]}`)
+	items := tkdnItemsFor(defaultTKDNRows(), resolveEntries(entries, nil, "", nil))
+	if len(items) != 1 || items[0].Brand != "ERGAS ECK-300" || items[0].TKDNPercent != 93.72 {
+		t.Fatalf("items=%+v", items)
+	}
+}
+
 func TestResolveEntriesPrefersTheTemplateDefault(t *testing.T) {
 	entries := mustEntries(`{"hose_options":[
 		{"code":"triliunhose","suction_brand":"Triliunhose","suction_spec":"6 m","discharge_brand":"Yamakoyo","discharge_spec":"10 m","suction_tkdn_percent":98.45},

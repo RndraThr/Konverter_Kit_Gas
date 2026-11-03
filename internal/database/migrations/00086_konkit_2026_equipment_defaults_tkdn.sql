@@ -1,8 +1,9 @@
 -- +goose Up
 -- Konverter Kit 2026: semua jadwal memakai template paket KONKIT-2026 v4
 -- (punya opsi selang Figo). Template v4 menandai opsi default yang terisi
--- otomatis saat distribusi (mesin Shark, konkit ERGAS, selang Figo) dan memuat
--- % TKDN perhitungan Komponen Biaya Barang (Jumlah Biaya Barang 80,87%).
+-- otomatis saat distribusi (mesin Shark, konkit ERGAS tipe ECK-300, selang
+-- Figo) dan memuat % TKDN perhitungan Komponen Biaya Barang (Jumlah Biaya
+-- Barang 80,87%).
 -- Merk konkit ERGAS ditulis kapital di semua template. Jadwal yang sudah
 -- memilih Triliunhose tetap valid: kodenya ada di v4.
 UPDATE program_schedules s
@@ -28,7 +29,7 @@ SET values_json = values_json
         FROM jsonb_array_elements(values_json->'machine_options') WITH ORDINALITY AS e(o, n)))
     || jsonb_build_object('converter_options', (
         SELECT jsonb_agg(CASE WHEN o->>'code' = 'ergas'
-            THEN o || '{"brand": "ERGAS", "tkdn_percent": 93.72, "is_default": true}' ELSE o - 'is_default' END ORDER BY n)
+            THEN o || '{"brand": "ERGAS", "spec": "ECK-300", "tkdn_percent": 93.72, "is_default": true}' ELSE o - 'is_default' END ORDER BY n)
         FROM jsonb_array_elements(values_json->'converter_options') WITH ORDINALITY AS e(o, n)))
     || jsonb_build_object('hose_options', (
         SELECT jsonb_agg(CASE WHEN o->>'code' = 'figo'

@@ -24,7 +24,7 @@ import { ConverterOption, DataResponse, DocumentationSlot, DocumentationTemplate
 const newSlot = (index = 0): DocumentationSlot => ({ slot_code: '', label: '', stage: 'mesin', is_required: true, min_files: 1, max_files: 1, input_source: 'both', media_kind: 'image', require_location: false, require_captured_at: false, sort_order: (index + 1) * 10 });
 const newMachineOption = (): MachineOption => ({ code: '', brand: '', type: '', power: '', fuel_type: '', tkdn_percent: 0 });
 const newHoseOption = (): HoseOption => ({ code: '', suction_brand: '', suction_spec: '', discharge_brand: '', discharge_spec: '', suction_tkdn_percent: 0, discharge_tkdn_percent: 0 });
-const newConverterOption = (): ConverterOption => ({ code: '', brand: '', tkdn_percent: 0 });
+const newConverterOption = (): ConverterOption => ({ code: '', brand: '', spec: '', tkdn_percent: 0 });
 const newComponent = (): PackageComponent => ({ code: '', label: '', quantity: 1, unit: '', brand: '', tkdn_percent: 0, handover_hidden: false });
 
 const emptyPackageValues = { template_code: '', name: '', program_type: 'farmer' as ProgramType, status: 'draft', machine_options: [] as MachineOption[], hose_options: [] as HoseOption[], converter_options: [] as ConverterOption[], components: [] as PackageComponent[] };
@@ -176,6 +176,7 @@ export function TemplatesPanel() {
           <div className="repeatableRowHeader"><strong>Opsi konkit {index + 1}</strong><Button type="button" variant="ghost" size="sm" className="dangerIcon" aria-label={`Hapus opsi konkit ${index + 1}`} onClick={() => setPackageValues({ ...packageValues, converter_options: packageValues.converter_options.filter((_, optionIndex) => optionIndex !== index) })}><Trash2 />Hapus</Button></div>
           <FormField label={`Kode konkit ${index + 1}`} name={`converter_code_${index}`} required value={option.code} onChange={(e) => updateConverterOption(index, { code: e.target.value.toLowerCase() })} />
           <FormField label={`Merk konkit ${index + 1}`} name={`converter_brand_${index}`} required value={option.brand} onChange={(e) => updateConverterOption(index, { brand: e.target.value })} />
+          <FormField label={`Tipe konkit ${index + 1}`} name={`converter_spec_${index}`} value={option.spec ?? ''} onChange={(e) => updateConverterOption(index, { spec: e.target.value })} />
           <FormField label={`TKDN konkit ${index + 1} (%)`} name={`converter_tkdn_${index}`} type="number" min={0} max={100} step="0.01" value={option.tkdn_percent ?? 0} onChange={(e) => updateConverterOption(index, { tkdn_percent: Number(e.target.value) })} />
           <label className="componentHiddenToggle"><Checkbox checked={option.is_default ?? false} onCheckedChange={(checked) => setPackageValues({ ...packageValues, converter_options: asDefault(packageValues.converter_options, index, checked === true) })} aria-label={`Default konkit ${index + 1}`} /><span>Default: terisi otomatis saat distribusi</span></label>
         </div>)}
