@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"strings"
 	"testing"
@@ -135,4 +136,22 @@ func bastIntegrationPool(t *testing.T) *pgxpool.Pool {
 	}
 	t.Cleanup(pool.Close)
 	return pool
+}
+
+// freeRegencyCode is a random three-letter document code no regency uses yet
+// (the test database also holds the seeded kabupaten and earlier runs' rows).
+func freeRegencyCode(t *testing.T, pool *pgxpool.Pool) string {
+	t.Helper()
+	for range 100 {
+		code := string([]byte{byte('A' + rand.IntN(26)), byte('A' + rand.IntN(26)), byte('A' + rand.IntN(26))})
+		var taken bool
+		if err := pool.QueryRow(context.Background(), `SELECT EXISTS (SELECT 1 FROM regencies WHERE document_code = $1)`, code).Scan(&taken); err != nil {
+			t.Fatal(err)
+		}
+		if !taken {
+			return code
+		}
+	}
+	t.Fatal("no free regency document code")
+	return ""
 }
