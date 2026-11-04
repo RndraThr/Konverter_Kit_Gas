@@ -7,6 +7,9 @@ import { uploadRequest } from './upload';
 // tetap berjalan saat pengguna pindah menu dan dilanjutkan setelah halaman
 // dimuat ulang. Bila beberapa tab terbuka, hanya satu tab (pemegang Web Lock)
 // yang mengunggah; tab lain melihat antrian yang sama lewat BroadcastChannel.
+// Setiap pekerjaan terikat ke akun yang memilih berkasnya: di perangkat yang
+// dipakai bergantian, berkas akun lain tidak pernah ditampilkan atau diunggah
+// dengan sesi akun yang sedang masuk.
 
 export type UploadTarget =
   | { kind: 'distribution-slot'; slotId: string }
@@ -16,6 +19,8 @@ export type UploadJobStatus = 'queued' | 'uploading' | 'error';
 
 export type UploadJob = {
   id: string;
+  /** ID pengguna yang memilih berkas; hanya sesi pengguna ini yang mengunggahnya. */
+  ownerId: string;
   target: UploadTarget;
   /** Nama tujuan yang dibaca manusia, mis. "Pendistribusian · BAST bertanda tangan". */
   label: string;
@@ -106,6 +111,8 @@ function isRetryable(error: unknown) {
 
 class UploadQueue {
   private jobs: UploadJob[] = [];
+  private visible: UploadJob[] = [];
+  private owner = '';
   private listeners = new Set<() => void>();
   private completionListeners = new Set<(completion: UploadCompletion) => void>();
   private active: { id: string; controller: AbortController } | null = null;
@@ -126,7 +133,24 @@ class UploadQueue {
     return () => { this.listeners.delete(listener); };
   };
 
-  getSnapshot = () => this.jobs;
+  /** Antrian milik pengguna yang sedang masuk. */
+  getSnapshot = () => this.visible;
+
+  /** Menetapkan pengguna yang sedang masuk; pekerjaan akun lain ditahan. */
+  setOwner(userId: string) {
+    if (this.owner === userId) return;
+    this.owner = userId;
+    const active = this.active && this.jobs.find((item) => item.id === this.active?.id);
+    if (this.active && active && active.ownerId !== userId) {
+      // Unggahan akun sebelumnya tidak boleh selesai memakai sesi akun baru.
+      this.active.controller.abort();
+      this.active = null;
+      this.jobs = this.jobs.map((item) => item.id === active.id ? { ...item, status: 'queued', progress: 0 } : item);
+      void this.persist({ ...active, status: 'queued', progress: 0 });
+    }
+    this.setJobs(this.jobs);
+    this.pump();
+  }
 
   onComplete(listener: (completion: UploadCompletion) => void) {
     this.completionListeners.add(listener);
@@ -155,7 +179,7 @@ class UploadQueue {
     this.start();
     // createdAt selalu naik agar urutan antrian tetap sama setelah dimuat dari IndexedDB.
     const createdAt = Math.max(Date.now(), ...this.jobs.map((item) => item.createdAt + 1));
-    const job: UploadJob = { ...input, id: crypto.randomUUID(), createdAt, status: 'queued', progress: 0 };
+    const job: UploadJob = { ...input, id: crypto.randomUUID(), ownerId: this.owner, createdAt, status: 'queued', progress: 0 };
     this.unsaved.add(job.id);
     this.setJobs([...this.jobs, job]);
     void this.persist(job).then(() => { this.unsaved.delete(job.id); this.broadcast({ type: 'changed' }); this.pump(); });
@@ -188,6 +212,8 @@ class UploadQueue {
     if (typeof window !== 'undefined') window.removeEventListener('online', this.retryWaiting);
     void this.database?.then((db) => db?.close());
     this.jobs = [];
+    this.visible = [];
+    this.owner = '';
     this.unsaved.clear();
     this.removing.clear();
     this.completionListeners.clear();
@@ -198,6 +224,7 @@ class UploadQueue {
 
   private setJobs(next: UploadJob[]) {
     this.jobs = next;
+    this.visible = next.filter((item) => item.ownerId === this.owner);
     this.listeners.forEach((listener) => listener());
   }
 
@@ -278,7 +305,7 @@ class UploadQueue {
   private handleMessage(message: ChannelMessage) {
     if (message.type === 'changed') void this.reload().then(() => this.pump());
     else if (message.type === 'progress') this.update(message.id, { status: 'uploading', progress: message.progress }, false);
-    else if (message.type === 'completed') this.completionListeners.forEach((listener) => listener({ job: message.job, response: message.response }));
+    else if (message.type === 'completed' && message.job.ownerId === this.owner) this.completionListeners.forEach((listener) => listener({ job: message.job, response: message.response }));
   }
 
   private broadcast(message: ChannelMessage) {
@@ -288,7 +315,7 @@ class UploadQueue {
   private retryWaiting = () => {
     let requeued = false;
     this.jobs.forEach((item) => {
-      if (item.status === 'error' && item.autoRetry) { requeued = true; this.update(item.id, { status: 'queued', progress: 0, errorMessage: undefined, autoRetry: false }); }
+      if (item.status === 'error' && item.autoRetry && item.ownerId === this.owner) { requeued = true; this.update(item.id, { status: 'queued', progress: 0, errorMessage: undefined, autoRetry: false }); }
     });
     if (requeued) this.pump();
   };
@@ -300,7 +327,7 @@ class UploadQueue {
 
   private pump() {
     if (!this.leader || this.active) return;
-    const next = this.jobs.find((item) => item.status === 'queued');
+    const next = this.jobs.find((item) => item.status === 'queued' && item.ownerId === this.owner);
     if (!next) return;
     const controller = new AbortController();
     const generation = this.generation;

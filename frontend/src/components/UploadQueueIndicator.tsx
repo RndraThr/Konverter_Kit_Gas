@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { RefreshCw, UploadCloud, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -18,7 +18,9 @@ function statusText(job: UploadJob) {
  * unggahan, komponen ini menyegarkan data halaman terkait saat unggahan selesai
  * (termasuk bila pengguna sudah pindah menu) dan mengingatkan sebelum tab ditutup.
  */
-export function UploadQueueIndicator() {
+export function UploadQueueIndicator({ userId }: { userId: string }) {
+  // Sebelum halaman mana pun sempat menambah antrian.
+  useLayoutEffect(() => { uploadQueue.setOwner(userId); }, [userId]);
   const jobs = useUploadJobs();
   const client = useQueryClient();
   const [open, setOpen] = useState(false);

@@ -140,3 +140,28 @@ test('an expired session keeps the file queued instead of failing it', async () 
   await vi.waitFor(() => expect(uploadRequest).toHaveBeenCalledTimes(1));
   await vi.waitFor(() => expect(queue.getSnapshot()[0].status).toBe('queued'));
 });
+
+test('never shows or uploads files of another account on a shared device', async () => {
+  const signals: AbortSignal[] = [];
+  vi.mocked(uploadRequest).mockImplementation((_path, _body, options) => {
+    signals.push(options!.signal!);
+    return new Promise((_resolve, reject) => options?.signal?.addEventListener('abort', () => reject(new DOMException('cancelled', 'AbortError'))));
+  });
+  const queue = await freshQueue();
+  queue.setOwner('petugas-a');
+  queue.enqueue({ target: slot, label: 'Slot', fields: [], file: photo('a.jpg') });
+  await vi.waitFor(() => expect(uploadRequest).toHaveBeenCalledTimes(1));
+
+  // Petugas B signs in on the same phone while A's photo is still uploading.
+  queue.setOwner('petugas-b');
+
+  expect(signals[0].aborted).toBe(true);
+  expect(queue.getSnapshot()).toEqual([]);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(uploadRequest).toHaveBeenCalledTimes(1);
+
+  // Back as petugas A, the held photo uploads under A's own session.
+  queue.setOwner('petugas-a');
+  expect(queue.getSnapshot().map((job) => job.file.name)).toEqual(['a.jpg']);
+  await vi.waitFor(() => expect(uploadRequest).toHaveBeenCalledTimes(2));
+});

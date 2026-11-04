@@ -8,10 +8,10 @@ import { UploadQueueIndicator } from './UploadQueueIndicator';
 
 vi.mock('@/lib/upload', () => ({ uploadRequest: vi.fn() }));
 
-function renderIndicator() {
+function renderIndicator(userId = 'user-1') {
   const client = new QueryClient();
   const invalidate = vi.spyOn(client, 'invalidateQueries');
-  render(<QueryClientProvider client={client}><UploadQueueIndicator /></QueryClientProvider>);
+  render(<QueryClientProvider client={client}><UploadQueueIndicator userId={userId} /></QueryClientProvider>);
   return { invalidate };
 }
 
