@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { UploadQueueIndicator } from '@/components/UploadQueueIndicator';
 import {
   Activity, BookOpen, BookOpenCheck, BookOpenText, CalendarClock, CalendarRange, Camera, ChevronDown, FileClock,
   FileCheck2, Files, FileSpreadsheet, FileText, GraduationCap, ListFilter, MapPinned, Menu, PackageOpen, PanelLeftClose, PanelLeftOpen,
@@ -372,6 +373,7 @@ export function AppShell() {
         <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur sm:px-6">
           <MobileNavigation permissions={user.permissions} connectionState={connectionState} />
           <PageContext />
+          <UploadQueueIndicator userId={user.id} />
           <LiveClock />
           <PageHelp permissions={user.permissions} />
           <AccountMenu user={user} csrfToken={bootstrap.data.meta.csrf_token} />

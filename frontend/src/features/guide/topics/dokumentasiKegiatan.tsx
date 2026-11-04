@@ -23,6 +23,7 @@ export const dokumentasiKegiatan: GuideTopic = {
       ],
       problems: [
         { q: 'Unggahan tertahan atau gagal?', a: 'Pastikan kabupaten sudah masuk zona di Persiapan program, lalu coba lagi. Unggahan video besar butuh sinyal stabil.' },
+        { q: 'Boleh pindah menu atau muat ulang saat video masih diunggah?', a: 'Boleh. Berkas masuk antrian unggah (ikon awan di header) dan tetap diunggah di latar belakang, termasuk setelah halaman dimuat ulang. Beberapa foto bisa dipilih sekaligus. Jangan tutup tab sampai antrian habis.' },
       ],
     },
     {

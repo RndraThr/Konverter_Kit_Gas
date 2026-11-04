@@ -53,13 +53,18 @@ afterEach(() => {
 
 test('offers camera and gallery then uploads an image preview', async () => {
   vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:preview'), revokeObjectURL: vi.fn() });
+  const uploaded = vi.mocked(uploadRequest).getMockImplementation()!;
+  let finish = () => undefined as void;
+  vi.mocked(uploadRequest).mockImplementationOnce((...args) => new Promise((resolve) => { finish = () => resolve(uploaded(...args)); }));
   renderSlot();
 
   const gallery = screen.getByLabelText('Pilih galeri');
   expect(gallery).not.toHaveAttribute('capture');
   await captureWithCamera(-6.2, 106.8);
 
-  expect(screen.getByAltText('Preview BAST bertanda tangan')).toHaveAttribute('src', 'blob:preview');
+  expect(await screen.findByAltText('Preview BAST bertanda tangan')).toHaveAttribute('src', 'blob:preview');
+  await waitFor(() => expect(uploadRequest).toHaveBeenCalledOnce());
+  finish();
   expect(await screen.findByText('1 dari 1 foto wajib')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Hapus bast.jpg' })).toBeVisible();
   const request = vi.mocked(uploadRequest).mock.calls[0];
