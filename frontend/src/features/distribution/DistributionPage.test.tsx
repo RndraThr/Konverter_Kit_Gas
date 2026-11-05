@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
 import { apiRequest } from '../../lib/api';
 import { PermissionsProvider } from '../../lib/permissions';
-import { DistributionPage, mediaPollInterval } from './DistributionPage';
+import { DistributionPage, exportFilename, mediaPollInterval } from './DistributionPage';
 import type { DistributionSlot, MediaFile } from './types';
 
 vi.mock('../../lib/api', async () => {
@@ -113,4 +113,10 @@ test('polls the slot only while photos are still on their way to the final folde
   expect(mediaPollInterval(withFiles('linked', '2026-10-20', file('final'), file('moving')))).toBe(3000);
   expect(mediaPollInterval(withFiles('linked', '2026-10-20', file('move_failed')))).toBe(15000);
   expect(mediaPollInterval(withFiles('linked', '2026-10-20', file('final')))).toBe(false);
+});
+
+test('export file is named after the regency and the WIB day', () => {
+  // 18:30 UTC is already the next day in WIB.
+  expect(exportFilename('WNG', new Date('2026-11-04T18:30:00Z'))).toBe('nomor-mesin-WNG-20261105.xlsx');
+  expect(exportFilename(undefined, new Date('2026-11-04T01:00:00Z'))).toBe('nomor-mesin-20261104.xlsx');
 });

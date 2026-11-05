@@ -1,4 +1,4 @@
-import { Ban, Check, Circle, Clock3, Plus, TriangleAlert } from 'lucide-react';
+import { Ban, Check, Circle, Clock3, Plus, SquareCheck, TriangleAlert } from 'lucide-react';
 import styles from './Distribution.module.css';
 import type { SlotCatalogEntry } from './types';
 
@@ -9,12 +9,16 @@ type Props = {
   onCreate: (slotNumber: number) => void;
   canCreate: boolean;
   selectedNumber?: number | null;
+  /** Select mode (export): existing numbers toggle in `picked`, empty ones are off. */
+  picked?: ReadonlySet<number>;
+  onTogglePick?: (slotNumber: number) => void;
 };
 
 const statusLabel: Record<SlotCatalogEntry['status'], string> = { open: 'Terbuka', linked: 'Proses', completed: 'Selesai', cancelled: 'Batal' };
 const statusClass: Record<SlotCatalogEntry['status'], string> = { open: styles.catalogOpen, linked: styles.catalogPending, completed: styles.catalogCompleted, cancelled: styles.catalogPending };
 
-export function SlotCatalogGrid({ quota, entries, onSelect, onCreate, canCreate, selectedNumber }: Props) {
+export function SlotCatalogGrid({ quota, entries, onSelect, onCreate, canCreate, selectedNumber, picked, onTogglePick }: Props) {
+  const picking = picked != null && onTogglePick != null;
   const byNumber = new Map(entries.map((entry) => [entry.slot_number, entry]));
   const hasQuota = quota != null && quota > 0;
   // Slot numbers are allocated contiguously from 1 and slots are only ever cancelled, never
@@ -38,11 +42,17 @@ export function SlotCatalogGrid({ quota, entries, onSelect, onCreate, canCreate,
         const cellClass = needsAttention || isCompletedButIncomplete ? styles.catalogCompletedWarning : statusClass[entry.status];
         const label = needsAttention ? 'Perlu diselesaikan ulang' : isCompletedButIncomplete ? `${statusLabel[entry.status]} (dokumen berkurang)` : statusLabel[entry.status];
         const StatusIcon = needsAttention || isCompletedButIncomplete ? TriangleAlert : entry.status === 'completed' ? Check : entry.status === 'linked' ? Clock3 : entry.status === 'cancelled' ? Ban : Circle;
+        if (picking) {
+          const on = picked.has(number);
+          return <button key={number} type="button" className={`${styles.catalogCell} ${cellClass} ${on ? styles.catalogPicked : ''}`}
+            aria-label={`Pilih nomor ${number} - ${label}`} aria-pressed={on} title={`Nomor ${number} · ${label}`}
+            onClick={() => onTogglePick(number)}><span>{number}</span>{on ? <SquareCheck aria-hidden="true" /> : <StatusIcon aria-hidden="true" />}</button>;
+        }
         return <button key={number} type="button" className={`${styles.catalogCell} ${cellClass}`}
           aria-label={`Nomor ${number} - ${label}`} aria-pressed={selectedNumber === number} title={`Nomor ${number} · ${label}`}
           onClick={() => onSelect(number)}><span>{number}</span><StatusIcon aria-hidden="true" /></button>;
       }
-      if (isCreatePosition(number)) {
+      if (isCreatePosition(number) && !picking) {
         return <button key={number} type="button" className={`${styles.catalogCell} ${styles.catalogNext}`}
           aria-label={`Buat Nomor ${number}`} aria-pressed={selectedNumber === number} title={`Buat Nomor ${number}`}
           disabled={!canCreate} onClick={() => onCreate(number)}><span>{number}</span><Plus aria-hidden="true" /></button>;

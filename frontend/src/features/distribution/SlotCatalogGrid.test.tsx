@@ -88,3 +88,18 @@ test('prioritizes recompletion attention over linked status in its accessible la
 
   expect(screen.getByRole('button', { name: 'Nomor 4 - Perlu diselesaikan ulang' })).toBeVisible();
 });
+
+test('select mode toggles existing numbers and turns empty ones off', async () => {
+  const onTogglePick = vi.fn();
+  const onSelect = vi.fn();
+  const entries: SlotCatalogEntry[] = [
+    { slot_number: 1, status: 'completed', documentation_complete: true },
+    { slot_number: 2, status: 'linked', documentation_complete: false },
+  ];
+  render(<SlotCatalogGrid quota={3} entries={entries} onSelect={onSelect} onCreate={vi.fn()} canCreate picked={new Set([2])} onTogglePick={onTogglePick} />);
+  expect(screen.getByRole('button', { name: /Pilih nomor 2/ })).toHaveAttribute('aria-pressed', 'true');
+  await userEvent.click(screen.getByRole('button', { name: /Pilih nomor 1/ }));
+  expect(onTogglePick).toHaveBeenCalledWith(1);
+  expect(onSelect).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: /Nomor 3 belum tersedia/ })).toBeDisabled();
+});

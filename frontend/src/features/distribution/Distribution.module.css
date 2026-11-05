@@ -8,6 +8,15 @@
 .catalogHeader strong { font-size: 15px; }
 .catalogEyebrow { display: flex; align-items: center; gap: 6px; color: var(--muted-foreground); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .catalogEyebrow svg { width: 13px; height: 13px; }
+.catalogHeaderActions { display: flex !important; align-items: center; gap: 8px; }
+.selectToggle { display: inline-flex; height: 28px; align-items: center; gap: 5px; padding: 0 10px; border: 1px solid var(--border); border-radius: 999px; color: var(--muted-foreground); background: var(--card); font-size: 11px; font-weight: 750; cursor: pointer; }
+.selectToggle svg { width: 13px; height: 13px; }
+.selectToggle[aria-pressed="true"] { border-color: var(--primary); color: var(--primary-foreground); background: var(--primary); }
+.selectBar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 14px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--primary) 6%, var(--card)); font-size: 12px; }
+.selectBar > button:not([data-slot]) { padding: 0; border: 0; color: var(--primary); background: none; font-size: 12px; font-weight: 700; cursor: pointer; }
+.selectBar > button:disabled { cursor: not-allowed; opacity: .5; }
+.selectBar > :last-child { margin-left: auto; }
+.catalogPicked { border-color: var(--primary) !important; box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 35%, transparent); }
 .catalogCount { min-width: 52px; padding: 5px 8px; border-radius: 999px; color: var(--muted-foreground); background: var(--muted); font-size: 11px; font-weight: 750; text-align: center; }
 .catalogLegend { display: flex; flex-wrap: wrap; gap: 8px 12px; padding: 9px 14px; border-bottom: 1px solid var(--border); color: var(--muted-foreground); font-size: 10px; font-weight: 650; }
 .catalogLegend span { display: inline-flex; align-items: center; gap: 4px; }

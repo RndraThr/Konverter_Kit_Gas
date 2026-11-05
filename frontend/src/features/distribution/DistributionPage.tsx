@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { Check, Circle, Clock3, LayoutGrid, Lock, MousePointerClick } from 'lucide-react';
-import { apiRequest, ApiError } from '../../lib/api';
+import { Check, Circle, Clock3, FileSpreadsheet, LayoutGrid, ListChecks, Lock, MousePointerClick } from 'lucide-react';
+import { toast } from 'sonner';
+import { apiBlobRequest, apiRequest, ApiError } from '../../lib/api';
+import { Button } from '@/components/ui/button';
 import { useCan } from '../../lib/permissions';
 import type { DataResponse, DistributionSlot, EquipmentOption, ScheduleResponse, SlotCatalogEntry } from './types';
 
@@ -17,6 +19,12 @@ export function mediaPollInterval(slot: DistributionSlot | null): number | false
   if (states.some((state) => state === 'moving' || state === 'staging')) return MEDIA_MOVE_POLL_MS;
   if (states.includes('move_failed')) return MEDIA_RETRY_POLL_MS;
   return false;
+}
+
+/** nomor-mesin-<kode kabupaten>-<yyyymmdd>.xlsx, the name the server also gives. */
+export function exportFilename(documentCode: string | undefined, today = new Date()): string {
+  const day = today.toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' }).replaceAll('-', '');
+  return `nomor-mesin${documentCode ? `-${documentCode}` : ''}-${day}.xlsx`;
 }
 import { SlotMesinSection } from './SlotMesinSection';
 import { SlotDokumenSection } from './SlotDokumenSection';
@@ -80,7 +88,29 @@ export function DistributionPage() {
     setSlot((current) => current && current.id === fresh.id ? { ...current, documentation: fresh.documentation } : current);
   }, [mediaRefresh.data]);
 
-  const changeSchedule = (value: string) => { setScheduleID(value); setSlot(null); setCreating(null); setSelectedNumber(null); };
+  // Select mode: the slot numbers chosen for the Excel export (null = off).
+  const [picked, setPicked] = useState<Set<number> | null>(null);
+  const allNumbers = (catalog.data?.data ?? []).map((entry) => entry.slot_number);
+  const togglePick = (slotNumber: number) => setPicked((current) => {
+    const next = new Set(current);
+    if (!next.delete(slotNumber)) next.add(slotNumber);
+    return next;
+  });
+  const exportExcel = useMutation({
+    mutationFn: (slotNumbers: number[]) => apiBlobRequest('/api/v1/distribution/slots/export', { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, slot_numbers: slotNumbers }) }),
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = exportFilename(selectedSchedule?.regency?.document_code);
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast.success('Excel nomor mesin diunduh.');
+    },
+    onError: (error) => toast.error(error instanceof ApiError ? error.message : 'Gagal membuat Excel.'),
+  });
+
+  const changeSchedule = (value: string) => { setScheduleID(value); setSlot(null); setCreating(null); setSelectedNumber(null); setPicked(null); };
   const selectExisting = (slotNumber: number) => { setSlot(null); setCreating(null); setSelectedNumber(slotNumber); search.mutate(slotNumber); };
   const startCreate = (slotNumber: number) => { setSlot(null); setCreating(slotNumber); setSelectedNumber(slotNumber); };
   const onSlotChanged = (next: DistributionSlot) => { setSlot(next); void queryClient.invalidateQueries({ queryKey: ['distribution', 'slot-catalog', scheduleID] }); };
@@ -99,13 +129,26 @@ export function DistributionPage() {
       <aside className={styles.catalogPanel} aria-label="Katalog nomor bagi">
         <div className={styles.catalogHeader}>
           <div><span className={styles.catalogEyebrow}><LayoutGrid aria-hidden="true" />Katalog</span><strong>Nomor bagi</strong></div>
-          <span className={styles.catalogCount}>{catalog.data?.data.length ?? 0}{selectedSchedule?.slot_quota ? ` / ${selectedSchedule.slot_quota}` : ''}</span>
+          <div className={styles.catalogHeaderActions}>
+            <span className={styles.catalogCount}>{catalog.data?.data.length ?? 0}{selectedSchedule?.slot_quota ? ` / ${selectedSchedule.slot_quota}` : ''}</span>
+            <button type="button" className={styles.selectToggle} aria-pressed={picked !== null} title="Mode pilih untuk export Excel"
+              onClick={() => setPicked((current) => current === null ? new Set() : null)}><ListChecks aria-hidden="true" />Pilih</button>
+          </div>
         </div>
-        <div className={styles.catalogLegend} aria-label="Keterangan status">
+        {picked !== null ? <div className={styles.selectBar} aria-label="Export nomor bagi terpilih">
+          <span><strong>{picked.size}</strong> dipilih</span>
+          <button type="button" onClick={() => setPicked(picked.size === allNumbers.length ? new Set() : new Set(allNumbers))} disabled={allNumbers.length === 0}>
+            {picked.size === allNumbers.length && allNumbers.length > 0 ? 'Batal semua' : 'Pilih semua'}
+          </button>
+          <Button size="sm" disabled={picked.size === 0 || exportExcel.isPending} onClick={() => exportExcel.mutate([...picked])}>
+            <FileSpreadsheet aria-hidden="true" />{exportExcel.isPending ? 'Menyiapkan...' : 'Export Excel'}
+          </Button>
+        </div> : <div className={styles.catalogLegend} aria-label="Keterangan status">
           <span><Circle aria-hidden="true" />Terbuka</span><span><Clock3 aria-hidden="true" />Proses</span><span><Check aria-hidden="true" />Selesai</span>
-        </div>
+        </div>}
         <div className={styles.catalogScroll}>
-          <SlotCatalogGrid quota={selectedSchedule?.slot_quota} entries={catalog.data?.data ?? []} selectedNumber={selectedNumber} onSelect={selectExisting} onCreate={startCreate} canCreate={canCreateSlot} />
+          <SlotCatalogGrid quota={selectedSchedule?.slot_quota} entries={catalog.data?.data ?? []} selectedNumber={selectedNumber} onSelect={selectExisting} onCreate={startCreate} canCreate={canCreateSlot}
+            picked={picked ?? undefined} onTogglePick={picked === null ? undefined : togglePick} />
         </div>
       </aside>
       <section className={styles.workArea} aria-label="Area kerja pendistribusian">
