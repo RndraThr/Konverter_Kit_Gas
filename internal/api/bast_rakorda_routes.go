@@ -2,11 +2,14 @@ package api
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"mime"
+	"mime/multipart"
 	"net/http"
 	"strings"
 
+	"konkit/internal/activities"
 	"konkit/internal/bast"
 )
 
@@ -98,13 +101,28 @@ func (h *Handler) handleRakordaUploads(w http.ResponseWriter, r *http.Request, r
 		if !ok {
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, (20<<20)+(1<<20))
+		// Pages scanned on the phone ("page" parts) are bound into one PDF
+		// here, like a Dokumen Pendukung scan; a single "file" is stored as is.
+		r.Body = http.MaxBytesReader(w, r.Body, (40<<20)+(1<<20))
 		if err := r.ParseMultipartForm(20 << 20); err != nil {
 			writeError(w, http.StatusRequestEntityTooLarge, "file_too_large", "Berkas melebihi batas 20 MiB")
 			return
 		}
 		if r.MultipartForm != nil {
 			defer r.MultipartForm.RemoveAll()
+		}
+		if pages := r.MultipartForm.File["page"]; len(pages) > 0 {
+			data, ok := assembleRakordaScan(w, pages)
+			if !ok {
+				return
+			}
+			item, err := service.Upload(r.Context(), rc.principal, bast.RakordaUploadInput{ScheduleID: r.FormValue("schedule_id"), EventDate: r.FormValue("date"), OriginalName: "pindaian.pdf", Data: data}, scope, clientMeta(r))
+			if err != nil {
+				writeServiceError(w, err)
+				return
+			}
+			writeData(w, http.StatusCreated, item)
+			return
 		}
 		file, header, err := r.FormFile("file")
 		if err != nil {
@@ -200,4 +218,32 @@ func (h *Handler) handleRakordaDates(w http.ResponseWriter, r *http.Request, rc 
 		result = []bast.TrainingDate{}
 	}
 	writeData(w, http.StatusOK, result)
+}
+
+// assembleRakordaScan binds the scanned pages into one PDF of at most 20 MiB.
+func assembleRakordaScan(w http.ResponseWriter, pages []*multipart.FileHeader) ([]byte, bool) {
+	readers := make([]io.Reader, 0, len(pages))
+	for _, header := range pages {
+		file, err := header.Open()
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_request", "Halaman pindaian tidak dapat dibaca")
+			return nil, false
+		}
+		defer file.Close()
+		readers = append(readers, file)
+	}
+	data, err := activities.AssembleScanPDF(readers)
+	switch {
+	case errors.Is(err, activities.ErrScanTooManyPages):
+		writeError(w, http.StatusBadRequest, "too_many_pages", "Maksimal 30 halaman per dokumen")
+	case errors.Is(err, activities.ErrMediaTypeInvalid):
+		writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "Halaman pindaian harus JPG atau PNG")
+	case errors.Is(err, activities.ErrFileTooLarge) || (err == nil && len(data) > 20<<20):
+		writeError(w, http.StatusRequestEntityTooLarge, "file_too_large", "Hasil pindaian melebihi batas 20 MiB")
+	case err != nil:
+		writeServiceError(w, err)
+	default:
+		return data, true
+	}
+	return nil, false
 }

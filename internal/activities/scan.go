@@ -115,6 +115,19 @@ func scanPaperFor(width, height float64) (float64, float64) {
 	return best[0], best[1]
 }
 
+// AssembleScanPDF binds scanned page images (JPEG/PNG, at most 30) into one
+// PDF, like a Dokumen Pendukung scan; used for other scanned uploads (arsip
+// BA) too.
+func AssembleScanPDF(pages []io.Reader) ([]byte, error) {
+	if len(pages) == 0 {
+		return nil, ErrScanPagesRequired
+	}
+	if len(pages) > maxScanPages {
+		return nil, ErrScanTooManyPages
+	}
+	return assembleScanPDF(pages)
+}
+
 // assembleScanPDF validates each page as an allowed image and renders it on
 // the standard paper it matches (else A4) in a single combined PDF,
 // returning the assembled bytes.

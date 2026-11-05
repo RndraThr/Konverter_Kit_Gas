@@ -38,7 +38,8 @@ test('asks for the signed page with the document code before finalizing', async 
   expect(await screen.findByText('Kode ABCD1234')).toBeVisible()
   expect(screen.getByText('Belum diunggah')).toBeVisible()
   expect(screen.getByRole('button', { name: 'Cetak halaman tanda tangan' })).toBeEnabled()
-  expect(screen.getByText('Unggah hasil pindai')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Pindai' })).toBeVisible();
+  expect(screen.getByText('Unggah berkas')).toBeVisible()
 })
 
 test('flags a scan made for older content', async () => {
