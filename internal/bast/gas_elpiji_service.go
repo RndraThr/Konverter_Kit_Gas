@@ -8,12 +8,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"konkit/internal/auth"
 	"konkit/internal/media"
 
 	"github.com/google/uuid"
+	pdfapi "github.com/pdfcpu/pdfcpu/pkg/api"
 )
 
 const gasElpijiFolder = "13. GAS ELPIJI"
@@ -108,6 +110,8 @@ func (s *GasElpijiService) Preview(ctx context.Context, input GasElpijiInput, sc
 	if err != nil {
 		return AggregatePreview{}, err
 	}
+	// Pindai lengkap: preview menampilkan pindaian yang cocok bila ada.
+	rendered.PDF, rendered.PageCount = fullScanPreview(snapshot.Wet, rendered.PDF, rendered.PageCount)
 	hash := sha256.Sum256(rendered.PDF)
 	return AggregatePreview{PDF: rendered.PDF, Filename: formatGasElpijiFilename(ctxData.RegencyName, snapshot.DocumentDate, 1), RecipientCount: snapshot.CylinderCount, PageCount: rendered.PageCount, Checksum: hex.EncodeToString(hash[:])}, nil
 }
@@ -126,10 +130,16 @@ func (s *GasElpijiService) Finalize(ctx context.Context, actor auth.Principal, i
 	if snapshot.Wet.Enabled && !snapshot.Wet.Scanned {
 		return AggregateDocument{}, ErrWetSignatureRequired
 	}
+	wet := snapshot.Wet
 	rendered, err := s.render(ctx, []GasElpijiSnapshot{snapshot}, images)
 	if err != nil {
 		return AggregateDocument{}, err
 	}
+	// Pindai lengkap: PDF final adalah hasil pindaian BA yang ditandatangani.
+	if rendered.PDF, err = fullScanFinalPDF(wet, rendered.PDF); err != nil {
+		return AggregateDocument{}, err
+	}
+	rendered.PDF, rendered.PageCount = fullScanPreview(wet, rendered.PDF, rendered.PageCount)
 	doc, err := s.store(ctx, actor, ctxData, AggregateDocumentGasElpiji, snapshot.DocumentDate, snapshot, rendered, snapshot.CylinderCount, scope, meta,
 		func(version int) string {
 			return formatGasElpijiFilename(ctxData.RegencyName, snapshot.DocumentDate, version)
@@ -191,7 +201,7 @@ func (s *GasElpijiService) MergedPreview(ctx context.Context, scheduleID string,
 	if err != nil {
 		return AggregatePreview{}, err
 	}
-	rendered, err := s.render(ctx, merged.pages(), images)
+	rendered, err := s.renderMerged(ctx, merged, images)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
@@ -210,7 +220,7 @@ func (s *GasElpijiService) FinalizeMerged(ctx context.Context, actor auth.Princi
 	if err != nil {
 		return AggregateDocument{}, err
 	}
-	rendered, err := s.render(ctx, merged.pages(), images)
+	rendered, err := s.renderMerged(ctx, merged, images)
 	if err != nil {
 		return AggregateDocument{}, err
 	}
@@ -274,7 +284,7 @@ func (s *GasElpijiService) receipts(ctx context.Context, scheduleID string, scop
 		if err := json.Unmarshal(row.Snapshot, &snapshot); err != nil {
 			return nil, fmt.Errorf("decode gas elpiji snapshot %s: %w", row.Document.ID, err)
 		}
-		receipts = append(receipts, GasElpijiReceipt{Document: row.Document, Input: snapshot.input(scheduleID), WetScanned: snapshot.Wet.Scanned, snapshot: snapshot})
+		receipts = append(receipts, GasElpijiReceipt{Document: row.Document, Input: snapshot.input(scheduleID), WetScanned: snapshot.Wet.Scanned, FullScanned: snapshot.Wet.Full, snapshot: snapshot})
 	}
 	return receipts, nil
 }
@@ -331,7 +341,7 @@ func (s *GasElpijiService) mergedSnapshot(ctx context.Context, scheduleID string
 	}
 	merged := GasElpijiMergedSnapshot{DocumentType: AggregateDocumentGasElpijiMerged}
 	for _, receipt := range receipts {
-		merged.Receipts = append(merged.Receipts, GasElpijiMergedReceipt{DocumentID: receipt.Document.ID, Checksum: receipt.Document.Checksum, Snapshot: receipt.snapshot})
+		merged.Receipts = append(merged.Receipts, GasElpijiMergedReceipt{DocumentID: receipt.Document.ID, Checksum: receipt.Document.Checksum, Snapshot: receipt.snapshot, storageKey: receipt.Document.StorageKey})
 		merged.TotalCylinders += receipt.snapshot.CylinderCount
 	}
 	return merged, ctxData, nil
@@ -343,6 +353,83 @@ func (m GasElpijiMergedSnapshot) pages() []GasElpijiSnapshot {
 		pages[i] = receipt.Snapshot
 	}
 	return pages
+}
+
+// renderMerged merender BA gabungan. Penerimaan yang dipindai lengkap ikut
+// sebagai PDF finalnya (pindaian) apa adanya; penerimaan lain dirender dari
+// snapshot, lalu semuanya disambung berurutan.
+func (s *GasElpijiService) renderMerged(ctx context.Context, merged GasElpijiMergedSnapshot, images map[string][]byte) (RenderedAggregate, error) {
+	full := false
+	for _, receipt := range merged.Receipts {
+		full = full || receipt.Snapshot.Wet.Full
+	}
+	if !full {
+		return s.render(ctx, merged.pages(), images)
+	}
+	var parts [][]byte
+	var pending []GasElpijiSnapshot
+	flush := func() error {
+		if len(pending) == 0 {
+			return nil
+		}
+		rendered, err := s.render(ctx, pending, images)
+		if err != nil {
+			return err
+		}
+		parts, pending = append(parts, rendered.PDF), nil
+		return nil
+	}
+	for _, receipt := range merged.Receipts {
+		if !receipt.Snapshot.Wet.Full {
+			pending = append(pending, receipt.Snapshot)
+			continue
+		}
+		if err := flush(); err != nil {
+			return RenderedAggregate{}, err
+		}
+		pdf, err := s.readStored(ctx, receipt.storageKey)
+		if err != nil {
+			return RenderedAggregate{}, err
+		}
+		parts = append(parts, pdf)
+	}
+	if err := flush(); err != nil {
+		return RenderedAggregate{}, err
+	}
+	return mergePDFs(parts)
+}
+
+func (s *GasElpijiService) readStored(ctx context.Context, key string) ([]byte, error) {
+	if key == "" {
+		return nil, ErrNotFound
+	}
+	reader, err := s.storage.Open(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+	return io.ReadAll(reader)
+}
+
+// mergePDFs menyambung beberapa PDF menjadi satu.
+func mergePDFs(parts [][]byte) (RenderedAggregate, error) {
+	if len(parts) == 1 {
+		pages, err := pdfPageCount(parts[0])
+		return RenderedAggregate{PDF: parts[0], PageCount: pages}, err
+	}
+	readers := make([]io.ReadSeeker, len(parts))
+	for i, part := range parts {
+		readers[i] = bytes.NewReader(part)
+	}
+	var out bytes.Buffer
+	if err := pdfapi.MergeRaw(readers, &out, false, nil); err != nil {
+		return RenderedAggregate{}, fmt.Errorf("merge gas elpiji pdf: %w", err)
+	}
+	pages, err := pdfPageCount(out.Bytes())
+	if err != nil {
+		return RenderedAggregate{}, err
+	}
+	return RenderedAggregate{PDF: out.Bytes(), PageCount: pages}, nil
 }
 
 func (s *GasElpijiService) render(ctx context.Context, snapshots []GasElpijiSnapshot, images map[string][]byte) (RenderedAggregate, error) {
@@ -398,6 +485,10 @@ func (s *GasElpijiService) mergedImages(ctx context.Context, scheduleID string, 
 	}
 	for i := range merged.Receipts {
 		page := &merged.Receipts[i].Snapshot
+		if page.Wet.Full {
+			// Dipindai lengkap: PDF finalnya disambung apa adanya.
+			continue
+		}
 		if !page.Wet.Scanned {
 			if wetEnabled && strict {
 				return nil, ErrWetSignatureRequired

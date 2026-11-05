@@ -14,7 +14,9 @@ import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
 import { SignatureSettingsPanel } from './SignatureSettingsPanel';
 import type { AggregateDocument, GasElpijiInput, GasElpijiReceipt, GasElpijiSummary, ScheduleSettings } from './types';
-import { useWetSignatureStatus, WetSignatureHint } from './WetSignatureBar';
+import { FullScanCard } from './FullScanBar';
+import { useWetSignatureBlocked, useWetSignatureStatus, WetSignatureHint } from './WetSignatureBar';
+import { fullScanKey } from './fullScan';
 import { wetSignatureKey } from './wetScan';
 
 type Props = { scheduleID: string; regencyName: string; programType: ProgramType; defaultDate: string };
@@ -41,7 +43,8 @@ const documentKey = 'gas-elpiji';
 
 // GasElpijiPanel: LPG satu kabupaten biasanya datang beberapa kali. Tiap
 // penerimaan difinalisasi per tanggal, lalu semuanya digabung menjadi satu BA
-// Gas LPG (urut tanggal) yang disimpan ke 13. GAS ELPIJI.
+// Gas LPG (urut tanggal) yang disimpan ke 13. GAS ELPIJI. Penerimaan yang
+// dipindai lengkap ikut digabung sebagai pindaiannya.
 export function GasElpijiPanel({ scheduleID, regencyName, programType, defaultDate }: Props) {
   const canManage = useCan('bast.manage');
   const queryClient = useQueryClient();
@@ -66,8 +69,8 @@ export function GasElpijiPanel({ scheduleID, regencyName, programType, defaultDa
     queryFn: () => apiRequest<DataResponse<ScheduleSettings>>(`/api/v1/bast/schedules/${encodeURIComponent(scheduleID)}/settings`),
     enabled: programType === 'farmer',
   });
-  const wetStatus = useWetSignatureStatus(scheduleID, documentKey, documentDate).data?.data;
-  const wetEnabled = Boolean(wetStatus?.enabled);
+  const wetEnabled = Boolean(useWetSignatureStatus(scheduleID, documentKey, documentDate).data?.data?.enabled);
+  const wetBlocked = useWetSignatureBlocked(scheduleID, documentKey, documentDate);
   const receipts = summary.data?.data.receipts ?? [];
   const current = receipts.find((receipt) => receipt.document.document_date === documentDate);
 
@@ -98,14 +101,18 @@ export function GasElpijiPanel({ scheduleID, regencyName, programType, defaultDa
     return () => clearTimeout(timer);
   }, [inputKey]);
 
-  // Mode tanda tangan basah: halaman yang dicetak dirender dari isian tersimpan,
-  // jadi isian yang berubah disimpan sebagai draf (setelah jeda mengetik).
+  // Halaman tanda tangan basah dan BA yang dicetak untuk pindai lengkap
+  // dirender dari isian tersimpan, jadi isian yang berubah disimpan sebagai
+  // draf (setelah jeda mengetik).
   useEffect(() => {
-    if (!canManage || !wetEnabled || !edited || previewInput.document_date === '' || JSON.stringify(previewInput) !== inputKey) return;
+    if (!canManage || !edited || previewInput.document_date === '' || JSON.stringify(previewInput) !== inputKey) return;
     apiRequest('/api/v1/bast/gas-elpiji/draft', { method: 'PUT', body: JSON.stringify(previewInput) })
-      .then(() => queryClient.invalidateQueries({ queryKey: wetSignatureKey(scheduleID, documentKey, previewInput.document_date) }))
+      .then(() => Promise.all([
+        queryClient.invalidateQueries({ queryKey: wetSignatureKey(scheduleID, documentKey, previewInput.document_date) }),
+        queryClient.invalidateQueries({ queryKey: fullScanKey(scheduleID, documentKey, previewInput.document_date) }),
+      ]))
       .catch((error) => toast.error(`Draf belum tersimpan: ${errorMessage(error)}`));
-  }, [canManage, wetEnabled, edited, previewInput, inputKey, queryClient, scheduleID]);
+  }, [canManage, edited, previewInput, inputKey, queryClient, scheduleID]);
 
   const preview = useQuery({
     queryKey: ['bast', 'gas-elpiji', 'preview', previewInput],
@@ -150,8 +157,7 @@ export function GasElpijiPanel({ scheduleID, regencyName, programType, defaultDa
   const pertaminaDefault = defaults?.pertamina_rep_name?.trim() ?? '';
   const complete = form.warehouse_location.trim() !== '' && form.warehouse_address.trim() !== '' && form.pic.trim() !== '' && input.cylinder_count > 0
     && (form.receiver_name.trim() !== '' || receiverDefault !== '') && (form.pertamina_name.trim() !== '' || pertaminaDefault !== '');
-  const wetBlocked = wetEnabled && !wetStatus?.scan?.valid;
-  const unsignedReceipts = wetEnabled ? receipts.filter((receipt) => !receipt.wet_scanned).length : 0;
+  const unsignedReceipts = wetEnabled ? receipts.filter((receipt) => !receipt.wet_scanned && !receipt.full_scanned).length : 0;
   const versions = documents.data?.data ?? [];
   const setField = (key: keyof ReceiptForm) => (event: { target: { value: string } }) => {
     setEdited(true);
@@ -197,6 +203,8 @@ export function GasElpijiPanel({ scheduleID, regencyName, programType, defaultDa
       </Card>
     </div>
 
+    {documentDate !== '' && <FullScanCard scheduleID={scheduleID} document={documentKey} date={documentDate} label={`BA Gas Elpiji ${formatDate(documentDate)}`} />}
+
     <Card>
       <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle className="flex items-center gap-2 text-base"><Files className="size-4 text-primary" aria-hidden="true" />Daftar penerimaan & BA gabungan</CardTitle><p className="mt-1 text-sm text-muted-foreground">Semua penerimaan final digabung urut tanggal menjadi satu BA Gas LPG.</p></div><Badge variant="outline">{receipts.length} penerimaan · {formatCount(totalCylinders)} tabung</Badge></div></CardHeader>
       <CardContent className="grid gap-4 pt-5">
@@ -205,7 +213,7 @@ export function GasElpijiPanel({ scheduleID, regencyName, programType, defaultDa
           : <ul className="grid gap-2" aria-label="Penerimaan LPG">
             {receipts.map((receipt) => <li key={receipt.document.id} className="grid gap-2 rounded-lg border p-3 data-active:border-primary sm:grid-cols-[1fr_auto] sm:items-center" data-active={receipt.document.document_date === documentDate || undefined}>
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2"><FileCheck2 className="size-4 text-emerald-600" aria-hidden="true" /><strong className="text-sm">{formatDate(receipt.document.document_date)}</strong><span className="text-sm text-muted-foreground">· {formatCount(receipt.input.cylinder_count)} tabung · v{receipt.document.version}</span>{receipt.wet_scanned && <Badge variant="secondary">TTD basah</Badge>}</div>
+                <div className="flex flex-wrap items-center gap-2"><FileCheck2 className="size-4 text-emerald-600" aria-hidden="true" /><strong className="text-sm">{formatDate(receipt.document.document_date)}</strong><span className="text-sm text-muted-foreground">· {formatCount(receipt.input.cylinder_count)} tabung · v{receipt.document.version}</span>{receipt.full_scanned ? <Badge variant="secondary">Dipindai lengkap</Badge> : receipt.wet_scanned && <Badge variant="secondary">TTD basah</Badge>}</div>
                 <p className="mt-1 truncate text-xs text-muted-foreground">{receipt.input.warehouse_location}</p>
               </div>
               <div className="flex flex-wrap gap-1">

@@ -23,7 +23,8 @@ function renderBar() {
 beforeEach(() => {
   vi.clearAllMocks()
   status = { supported: true, enabled: true, code: 'ABCD1234' }
-  vi.mocked(apiRequest).mockImplementation(async () => ({ data: status }))
+  // Pindai lengkap tidak aktif: hanya status tanda tangan basah yang berlaku.
+  vi.mocked(apiRequest).mockImplementation(async (path: string) => ({ data: path.includes('/full-scan') ? { supported: true } : status }))
 })
 
 test('renders nothing while wet-signature mode is off', async () => {
@@ -55,6 +56,5 @@ test('finalize stays blocked until a matching scan exists', async () => {
 
   status = { ...status, scan: { uploaded_at: '2026-10-12T01:00:00Z', valid: true } }
   const ready = renderHook(() => useWetSignatureBlocked('schedule-1', 'dp3', '2026-10-12'), { wrapper })
-  await waitFor(() => expect(apiRequest).toHaveBeenCalledTimes(2))
-  expect(ready.result.current).toBe(false)
+  await waitFor(() => expect(ready.result.current).toBe(false))
 })

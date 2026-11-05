@@ -14,6 +14,7 @@ import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
 import { SignatureSettingsPanel } from './SignatureSettingsPanel';
+import { FullScanCard } from './FullScanBar';
 import { useWetSignatureBlocked, WetSignatureHint } from './WetSignatureBar';
 import { handoverQueryKey, HandoverLocationsEditor } from './HandoverLocationsEditor';
 import type { AggregateDocument, ClosingRow, HandoverStatus, HandoverView } from './types';
@@ -114,10 +115,10 @@ export function ClosingTitikSerahPanel({ scheduleID, regencyName, programType, d
           <CardContent className="grid gap-2 pt-3">
             {view && view.unassigned.length > 0 && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-2.5 text-xs text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">{view.unassigned.length} penerima selesai belum ada titik serah.</div>}
             {locations.length === 0 && <p className="text-sm text-muted-foreground">Belum ada penerima dengan titik serah. Petugas memilih titik serah di POS Dokumen.</p>}
-            <nav className="grid gap-1.5">
+            <nav className="grid min-w-0 gap-1.5">
               {locations.map((item) => <button type="button" key={item.id} onClick={() => setPickedLocation(item.id)} aria-pressed={item.id === locationID}
-                className={`grid gap-0.5 rounded-lg border px-3 py-2 text-left text-sm transition-colors hover:bg-muted/50 ${item.id === locationID ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'border-transparent'}`}>
-                <span className="flex items-start justify-between gap-2"><span className="flex min-w-0 items-center gap-2 font-semibold"><MapPin className="size-4 shrink-0 text-primary" aria-hidden="true" /><span className="truncate">{item.name}</span></span><Badge className={`shrink-0 ${statusBadge[item.status].className}`}>{statusBadge[item.status].label}</Badge></span>
+                className={`grid w-full min-w-0 gap-0.5 rounded-lg border px-3 py-2 text-left text-sm transition-colors hover:bg-muted/50 ${item.id === locationID ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'border-transparent'}`}>
+                <span className="flex min-w-0 items-start justify-between gap-2"><span className="flex min-w-0 items-start gap-2 font-semibold"><MapPin className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" /><span className="min-w-0 break-words">{item.name}</span></span><Badge className={`shrink-0 ${statusBadge[item.status].className}`}>{statusBadge[item.status].label}</Badge></span>
                 <span className="pl-6 text-xs text-muted-foreground">{item.recipients} penerima{item.assigned > item.recipients ? ` dari ${item.assigned}` : ''} · {item.dates.length} hari</span>
               </button>)}
             </nav>
@@ -138,34 +139,37 @@ export function ClosingTitikSerahPanel({ scheduleID, regencyName, programType, d
         </Card>
       </aside>
 
-      <Card>
-        <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><CardTitle className="text-base">BA Serah Terima{location ? ` · ${location.name}` : ''}</CardTitle><Badge variant="outline">Petani</Badge></div></CardHeader>
-        <CardContent className="grid gap-4 pt-5">
-          <div className="grid gap-3 sm:items-end sm:grid-cols-[12rem_minmax(0,1fr)]">
-            <FormField label="Tanggal BA" type="date" value={documentDate} onChange={(e) => setDocumentDate(e.target.value)} />
-            <p className="text-xs text-muted-foreground">Satu BA per titik serah, merangkum semua tanggal distribusi penerima lokasi ini.</p>
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
-            <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>
-            {canManage && <Button disabled={busy || status !== 'ready' || wetBlocked} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
-          </div>
-          {locationID !== '' && <WetSignatureHint scheduleID={scheduleID} document={wetDocument} date={documentDate} open={showSignatures} onOpen={() => setShowSignatures(true)} />}
+      <div className="grid min-w-0 content-start gap-4">
+        <Card>
+          <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><CardTitle className="text-base">BA Serah Terima{location ? ` · ${location.name}` : ''}</CardTitle><Badge variant="outline">Petani</Badge></div></CardHeader>
+          <CardContent className="grid gap-4 pt-5">
+            <div className="grid gap-3 sm:items-end sm:grid-cols-[12rem_minmax(0,1fr)]">
+              <FormField label="Tanggal BA" type="date" value={documentDate} onChange={(e) => setDocumentDate(e.target.value)} />
+              <p className="text-xs text-muted-foreground">Satu BA per titik serah, merangkum semua tanggal distribusi penerima lokasi ini.</p>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
+              <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>
+              {canManage && <Button disabled={busy || status !== 'ready' || wetBlocked} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
+            </div>
+            {locationID !== '' && <WetSignatureHint scheduleID={scheduleID} document={wetDocument} date={documentDate} open={showSignatures} onOpen={() => setShowSignatures(true)} />}
 
-          {activeDoc && <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center">
-            <div><div className="flex items-center gap-2"><FileCheck2 className="size-4 text-emerald-600" /><strong className="text-sm">{activeDoc.filename}</strong></div><p className="mt-1 text-xs text-muted-foreground">Versi {activeDoc.version} · {activeDoc.page_count} halaman · {activeDoc.recipient_count} paket</p></div>
-            <Button nativeButton={false} render={<a href={`/api/v1/bast/closing-titik-serah/documents/${activeDoc.id}/content`} />} variant="outline"><Download />Unduh PDF</Button>
-          </div>}
+            {activeDoc && <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center">
+              <div><div className="flex items-center gap-2"><FileCheck2 className="size-4 text-emerald-600" /><strong className="text-sm">{activeDoc.filename}</strong></div><p className="mt-1 text-xs text-muted-foreground">Versi {activeDoc.version} · {activeDoc.page_count} halaman · {activeDoc.recipient_count} paket</p></div>
+              <Button nativeButton={false} render={<a href={`/api/v1/bast/closing-titik-serah/documents/${activeDoc.id}/content`} />} variant="outline"><Download />Unduh PDF</Button>
+            </div>}
 
-          {historicalDocs.length > 0 && <div className="grid gap-2 rounded-lg border p-3">
-            <strong className="text-sm">Riwayat versi</strong>
-            {historicalDocs.map((doc) => <div className="flex items-center justify-between gap-3 text-sm" key={doc.id}><span className="flex flex-wrap items-center gap-2 text-muted-foreground">Versi {doc.version} · {doc.document_date}{doc.status === 'stale' && <Badge variant="destructive">Perlu dibuat ulang</Badge>}</span><Button nativeButton={false} render={<a href={`/api/v1/bast/closing-titik-serah/documents/${doc.id}/content`} />} variant="ghost" size="sm"><Download />Unduh</Button></div>)}
-          </div>}
+            {historicalDocs.length > 0 && <div className="grid gap-2 rounded-lg border p-3">
+              <strong className="text-sm">Riwayat versi</strong>
+              {historicalDocs.map((doc) => <div className="flex items-center justify-between gap-3 text-sm" key={doc.id}><span className="flex flex-wrap items-center gap-2 text-muted-foreground">Versi {doc.version} · {doc.document_date}{doc.status === 'stale' && <Badge variant="destructive">Perlu dibuat ulang</Badge>}</span><Button nativeButton={false} render={<a href={`/api/v1/bast/closing-titik-serah/documents/${doc.id}/content`} />} variant="ghost" size="sm"><Download />Unduh</Button></div>)}
+            </div>}
 
-          {status === 'ready' && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="Closing Titik Serah" />}
+            {status === 'ready' && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="Closing Titik Serah" />}
 
-          <Button className="justify-start" variant="ghost" onClick={() => setShowRows((value) => !value)}>{showRows ? 'Sembunyikan rincian' : `Lihat ${rowItems.length} baris closing harian`}</Button>
-        </CardContent>
-      </Card>
+            <Button className="justify-start" variant="ghost" onClick={() => setShowRows((value) => !value)}>{showRows ? 'Sembunyikan rincian' : `Lihat ${rowItems.length} baris closing harian`}</Button>
+          </CardContent>
+        </Card>
+        {locationID !== '' && <FullScanCard scheduleID={scheduleID} document={wetDocument} date={documentDate} label="BA Serah Terima" />}
+      </div>
     </div>
 
     {showRows && <DataTable label={`Closing Titik Serah ${regencyName}`} minimumWidth={680}>

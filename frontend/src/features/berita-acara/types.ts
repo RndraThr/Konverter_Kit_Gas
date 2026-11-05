@@ -153,7 +153,7 @@ export type GasElpijiInput = {
   pertamina_name: string;
 };
 
-export type GasElpijiReceipt = { document: AggregateDocument; input: GasElpijiInput; wet_scanned: boolean };
+export type GasElpijiReceipt = { document: AggregateDocument; input: GasElpijiInput; wet_scanned: boolean; full_scanned?: boolean };
 
 export type GasElpijiSummary = {
   receipts: GasElpijiReceipt[];

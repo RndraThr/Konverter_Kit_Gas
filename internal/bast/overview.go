@@ -28,6 +28,10 @@ type OverviewEntry struct {
 	WetEnabled   bool `json:"wet_enabled"`
 	// WetScans: tanggal yang sudah punya pindaian tanda tangan basah.
 	WetScans []string `json:"wet_scans"`
+	// FullScanSupported: BA ini bisa dipindai lengkap; FullScans: tanggal
+	// yang punya pindaian BA lengkap (menjadi PDF final).
+	FullScanSupported bool     `json:"full_scan_supported"`
+	FullScans         []string `json:"full_scans"`
 }
 
 // Overview adalah ringkasan seluruh BA satu jadwal, dikunci dengan kunci
@@ -73,6 +77,18 @@ var overviewWetKeys = map[string]string{
 	"training-10":         "training-10",
 	"training-100":        "training-100",
 	"pemeriksaan":         "ba-pemeriksaan",
+}
+
+// overviewFullScanKeys memetakan jenis BA ke kunci dokumen pindai lengkap.
+var overviewFullScanKeys = map[string]string{
+	"dp3":                 "dp3",
+	"individual":          "ba-perorangan",
+	"daily-recap":         "rekap-harian",
+	"closing-titik-serah": "closing-titik-serah",
+	"closing-kabupaten":   "closing-kabupaten",
+	"servis-berkala":      "servis-berkala",
+	"tkdn":                "tkdn",
+	"gas-elpiji":          "gas-elpiji",
 }
 
 // Overview mengembalikan status final, perlu dibuat ulang, arsip, dan tanda
@@ -202,6 +218,35 @@ func (r *Repository) Overview(ctx context.Context, scheduleID string, scope auth
 	rows.Close()
 	if err := rows.Err(); err != nil {
 		return Overview{}, fmt.Errorf("overview wet scans: %w", err)
+	}
+
+	// Pindai lengkap: tanggal yang sudah dipindai.
+	fullTypes := map[string]string{}
+	for key, documentKey := range overviewFullScanKeys {
+		entry(key).FullScanSupported = true
+		fullTypes[documentKey] = key
+	}
+	rows, err = r.pool.Query(ctx, `
+		SELECT document_key, document_date::text FROM bast_full_scans
+		WHERE schedule_id::text=$1 ORDER BY document_date
+	`, scheduleID)
+	if err != nil {
+		return Overview{}, fmt.Errorf("overview full scans: %w", err)
+	}
+	for rows.Next() {
+		var documentKey, date string
+		if err := rows.Scan(&documentKey, &date); err != nil {
+			rows.Close()
+			return Overview{}, fmt.Errorf("scan overview full scan: %w", err)
+		}
+		if key, ok := fullTypes[wetBaseKey(documentKey)]; ok {
+			item := entry(key)
+			item.FullScans = append(item.FullScans, date)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return Overview{}, fmt.Errorf("overview full scans: %w", err)
 	}
 	return result, nil
 }

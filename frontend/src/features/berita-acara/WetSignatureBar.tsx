@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { apiBlobRequest, ApiError, apiRequest } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
+import { useFullScanStatus } from './FullScanBar';
 import { wetScanFileToPNGBase64, wetSignatureKey, wetSignaturePath, type WetSignatureStatus } from './wetScan';
 
 type DataResponse<T> = { data: T };
@@ -21,9 +22,15 @@ export function useWetSignatureStatus(scheduleID: string, document: string, date
   });
 }
 
-/** Finalisasi ditahan bila mode tanda tangan basah aktif tanpa pindaian yang cocok. */
+/**
+ * Finalisasi ditahan bila mode tanda tangan basah aktif tanpa pindaian yang
+ * cocok, atau bila pindaian lengkap dibuat untuk isi lama.
+ */
 export function useWetSignatureBlocked(scheduleID: string, document: string, date: string) {
   const status = useWetSignatureStatus(scheduleID, document, date).data?.data;
+  const full = useFullScanStatus(scheduleID, document, date).data?.data;
+  // Pindaian lengkap yang cocok menggantikan halaman tanda tangan basah.
+  if (full?.scan) return !full.scan.valid;
   return Boolean(status?.enabled && !status.scan?.valid);
 }
 
@@ -137,10 +144,16 @@ type HintProps = { scheduleID: string; document: string; date: string; open: boo
  */
 export function WetSignatureHint({ scheduleID, document, date, open, onOpen }: HintProps) {
   const data = useWetSignatureStatus(scheduleID, document, date).data?.data;
+  const full = useFullScanStatus(scheduleID, document, date).data?.data;
   // Panel Penandatangan terbuka: langkahnya sudah tampil di sana.
-  if (open || !data?.enabled || data.scan?.valid) return null;
+  if (open) return null;
+  const fullPending = Boolean(full?.scan && !full.scan.valid);
+  if (!fullPending && (full?.scan || !data?.enabled || data.scan?.valid)) return null;
+  const text = fullPending
+    ? 'Isi dokumen berubah setelah dipindai lengkap: pindai ulang BA terbaru, atau hapus pindaian agar BA dibuat sistem.'
+    : data?.scan ? 'Isi dokumen berubah: halaman tanda tangan basah perlu ditandatangani dan diunggah ulang.' : 'Tanda tangan basah: unggah halaman bertanda tangan sebelum finalisasi.';
   return <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">
-    <span>{data.scan ? 'Isi dokumen berubah: halaman tanda tangan basah perlu ditandatangani dan diunggah ulang.' : 'Tanda tangan basah: unggah halaman bertanda tangan sebelum finalisasi.'}</span>
+    <span>{text}</span>
     <Button type="button" size="sm" variant="outline" onClick={onOpen}>Buka penandatangan</Button>
   </div>;
 }

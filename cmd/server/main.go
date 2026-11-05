@@ -174,6 +174,16 @@ func run(ctx context.Context, cfg config.Config) error {
 		}),
 		BASTOverview: bastRepository,
 		BASTHandover: bast.NewHandoverService(bastRepository),
+		BASTFullScan: bast.NewFullScanService(bastRepository, map[string]bast.FullScanDocument{
+			"dp3":                 {Preview: bastDP3Service.Preview, Code: bast.WetPageCode(bastDP3Service)},
+			"rekap-harian":        {Preview: bastDailyRecapService.Preview, Code: bast.WetPageCode(bastDailyRecapService)},
+			"closing-titik-serah": {Preview: bastClosingService.Preview, Code: bast.WetPageCode(bastClosingService)},
+			"closing-kabupaten":   {Preview: bastClosingKabupatenService.Preview, Code: bast.WetPageCode(bastClosingKabupatenService)},
+			"servis-berkala":      {Preview: bastServisBerkalaService.Preview, Code: bast.WetPageCode(bastServisBerkalaService)},
+			"tkdn":                {Preview: bastTKDNService.Preview, Code: bast.WetPageCode(bastTKDNService)},
+			"ba-perorangan":       {Preview: bastService.SchedulePreview, Code: bastService.ScheduleFingerprint},
+			"gas-elpiji":          {Preview: bastGasElpijiService.SignaturePreview, Code: bast.WetPageCode(bast.PreviewFunc(bastGasElpijiService.SignaturePreview))},
+		}),
 		BASTWetSignature: bast.NewWetSignatureService(bastRepository, map[string]bast.WetPreviewer{
 			"dp3":                 bastDP3Service,
 			"rekap-harian":        bastDailyRecapService,

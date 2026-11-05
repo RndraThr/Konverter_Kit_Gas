@@ -13,6 +13,7 @@ import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
 import { SignatureSettingsPanel } from './SignatureSettingsPanel';
+import { FullScanCard } from './FullScanBar';
 import { useWetSignatureBlocked, WetSignatureHint } from './WetSignatureBar';
 import type { AggregateDocument, ClosingKabupatenRow } from './types';
 
@@ -90,34 +91,37 @@ export function ClosingKabupatenPanel({ scheduleID, regencyName, programType, de
         </CardContent>
       </Card>
 
-      <Card className="lg:col-span-2">
-        <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><CardTitle className="text-base">Dokumen Closing Kabupaten</CardTitle><Badge variant="outline">Petani</Badge></div></CardHeader>
-        <CardContent className="grid gap-4 pt-5">
-          <div className="grid gap-3 sm:items-end sm:grid-cols-[12rem_minmax(0,1fr)]">
-            <FormField label="Tanggal closing" type="date" value={documentDate} onChange={(e) => setDocumentDate(e.target.value)} />
-            <p className="text-xs text-muted-foreground">Baris diambil otomatis dari BA Serah Terima final setiap titik serah.</p>
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
-            <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>
-            {canManage && <Button disabled={busy || status !== 'ready' || pendingLocations.length > 0 || wetBlocked} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
-          </div>
-          <WetSignatureHint scheduleID={scheduleID} document="closing-kabupaten" date={documentDate} open={showSignatures} onOpen={() => setShowSignatures(true)} />
+      <div className="grid min-w-0 content-start gap-4 lg:col-span-2">
+        <Card>
+          <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><CardTitle className="text-base">Dokumen Closing Kabupaten</CardTitle><Badge variant="outline">Petani</Badge></div></CardHeader>
+          <CardContent className="grid gap-4 pt-5">
+            <div className="grid gap-3 sm:items-end sm:grid-cols-[12rem_minmax(0,1fr)]">
+              <FormField label="Tanggal closing" type="date" value={documentDate} onChange={(e) => setDocumentDate(e.target.value)} />
+              <p className="text-xs text-muted-foreground">Baris diambil otomatis dari BA Serah Terima final setiap titik serah.</p>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
+              <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>
+              {canManage && <Button disabled={busy || status !== 'ready' || pendingLocations.length > 0 || wetBlocked} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
+            </div>
+            <WetSignatureHint scheduleID={scheduleID} document="closing-kabupaten" date={documentDate} open={showSignatures} onOpen={() => setShowSignatures(true)} />
 
-          {activeDoc && <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center">
-            <div><div className="flex items-center gap-2"><FileCheck2 className="size-4 text-emerald-600" /><strong className="text-sm">{activeDoc.filename}</strong></div><p className="mt-1 text-xs text-muted-foreground">Versi {activeDoc.version} · {activeDoc.page_count} halaman · {activeDoc.recipient_count} paket</p></div>
-            <Button nativeButton={false} render={<a href={`/api/v1/bast/closing-kabupaten/documents/${activeDoc.id}/content`} />} variant="outline"><Download />Unduh PDF</Button>
-          </div>}
+            {activeDoc && <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center">
+              <div><div className="flex items-center gap-2"><FileCheck2 className="size-4 text-emerald-600" /><strong className="text-sm">{activeDoc.filename}</strong></div><p className="mt-1 text-xs text-muted-foreground">Versi {activeDoc.version} · {activeDoc.page_count} halaman · {activeDoc.recipient_count} paket</p></div>
+              <Button nativeButton={false} render={<a href={`/api/v1/bast/closing-kabupaten/documents/${activeDoc.id}/content`} />} variant="outline"><Download />Unduh PDF</Button>
+            </div>}
 
-          {historicalDocs.length > 0 && <div className="grid gap-2 rounded-lg border p-3">
-            <strong className="text-sm">Riwayat versi</strong>
-            {historicalDocs.map((doc) => <div className="flex items-center justify-between gap-3 text-sm" key={doc.id}><span className="flex flex-wrap items-center gap-2 text-muted-foreground">Versi {doc.version} · {doc.document_date}{doc.status === 'stale' && <Badge variant="destructive">Perlu dibuat ulang</Badge>}</span><Button nativeButton={false} render={<a href={`/api/v1/bast/closing-kabupaten/documents/${doc.id}/content`} />} variant="ghost" size="sm"><Download />Unduh</Button></div>)}
-          </div>}
+            {historicalDocs.length > 0 && <div className="grid gap-2 rounded-lg border p-3">
+              <strong className="text-sm">Riwayat versi</strong>
+              {historicalDocs.map((doc) => <div className="flex items-center justify-between gap-3 text-sm" key={doc.id}><span className="flex flex-wrap items-center gap-2 text-muted-foreground">Versi {doc.version} · {doc.document_date}{doc.status === 'stale' && <Badge variant="destructive">Perlu dibuat ulang</Badge>}</span><Button nativeButton={false} render={<a href={`/api/v1/bast/closing-kabupaten/documents/${doc.id}/content`} />} variant="ghost" size="sm"><Download />Unduh</Button></div>)}
+            </div>}
 
-          {status === 'ready' && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="Closing Kabupaten" />}
+            {status === 'ready' && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="Closing Kabupaten" />}
 
-          <Button className="justify-start" variant="ghost" onClick={() => setShowRows((value) => !value)}>{showRows ? 'Sembunyikan rincian' : `Lihat ${rowItems.length} baris titik serah`}</Button>
-        </CardContent>
-      </Card>
+            <Button className="justify-start" variant="ghost" onClick={() => setShowRows((value) => !value)}>{showRows ? 'Sembunyikan rincian' : `Lihat ${rowItems.length} baris titik serah`}</Button>
+          </CardContent>
+        </Card>
+        <FullScanCard scheduleID={scheduleID} document="closing-kabupaten" date={documentDate} label="Closing Kabupaten" />
+      </div>
     </div>
 
     {showRows && <DataTable label={`Closing Kabupaten ${regencyName}`} minimumWidth={680}>

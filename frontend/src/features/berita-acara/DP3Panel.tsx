@@ -12,6 +12,7 @@ import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
 import { SignatureSettingsPanel } from './SignatureSettingsPanel';
+import { FullScanCard } from './FullScanBar';
 import { useWetSignatureBlocked, WetSignatureHint } from './WetSignatureBar';
 import { incompletePreviewNote, previewBlockingStatus } from './previewStatus';
 import { DocumentInfoFields } from './DocumentInfoFields';
@@ -146,6 +147,7 @@ export function DP3Panel({ scheduleID, regencyName, programType }: Props) {
             <Button className="justify-start" variant="ghost" onClick={() => setShowRecipients((value) => !value)}><Users />{showRecipients ? 'Sembunyikan rincian' : `Lihat ${selected?.recipient_count ?? 0} penerima`}</Button>
           </CardContent>
         </Card>
+        <FullScanCard scheduleID={scheduleID} document="dp3" date={selectedDate} label="DP3" />
 
         {showRecipients && (recipients.isPending ? <DataState kind="loading" title="Memuat penerima" description="Mengurutkan berdasarkan nomor bagi." /> : recipients.isError ? <DataState kind="error" title="Daftar penerima gagal dimuat" description="Coba muat ulang." action={{ label: 'Coba lagi', onClick: () => recipients.refetch() }} /> : <>
           <DataTable label={`Penerima DP3 ${selectedDate}`} minimumWidth={840}>
