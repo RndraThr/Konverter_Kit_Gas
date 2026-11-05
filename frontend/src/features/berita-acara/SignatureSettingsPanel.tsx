@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eraser, ImageUp, PenLine, Printer, RotateCcw, Save, Signature, Trash2, Undo2, ZoomIn, ZoomOut } from 'lucide-react';
-import { useEffect, useId, useMemo, useState } from 'react';
+import { Eraser, ImageUp, PenLine, Printer, RotateCcw, Save, ScanLine, Signature, Trash2, Undo2, ZoomIn, ZoomOut } from 'lucide-react';
+import { lazy, Suspense, useEffect, useId, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { DataState } from '@/components/DataState';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,9 @@ import { uppercaseBusinessText } from '@/lib/text';
 import { InlineSignatureCanvas } from './InlineSignatureCanvas';
 import { SignatureTableEditor, type EditorDrawing, type EditorItem, type EditorSelection } from './SignatureTableEditor';
 import { WetSignatureBar } from './WetSignatureBar';
+
+// The camera scanner loads OpenCV.js: only when a scan opens.
+const DocumentScanner = lazy(() => import('../activities/DocumentScanner'));
 import {
   defaultSignaturePlacement, defaultStampOpacity, defaultStampPlacement, imageFileToPNGBase64, minStampOpacity, samePlacement, signatoryHeadings, signatoryPath, sizeLimits,
   type MarkPlacement, type SignatoryCard, type SignatoryKind, type SignatoryRole, type SignatureLayout, type SignatureRule, type SignatureRules, type SignatureSettings,
@@ -116,7 +119,7 @@ export function SignatureSettingsPanel({ scheduleID, document, documentLabel, da
     if (kind === 'stamp') return rule.stamp_placement ?? defaultStampPlacement;
     if (rule.signature_placement) return rule.signature_placement;
     const box = layoutData?.boxes.find((item) => item.role === role);
-    return defaultSignaturePlacement(aspects[`${role}:signature`] ?? 3, box?.w ?? 47.5, box?.h ?? 28);
+    return defaultSignaturePlacement(aspects[`${role}:signature`] ?? 3, box?.w ?? 47.5, box?.h ?? 28, box?.unit || undefined);
   };
 
   const items: Partial<Record<SignatoryRole, EditorItem>> = {};
@@ -295,7 +298,7 @@ export function SignatureSettingsPanel({ scheduleID, document, documentLabel, da
                   : `Tabel tanda tangan belum dapat ditampilkan untuk tanggal ini${layout.error ? `: ${errorMessage(layout.error)}` : '.'} Nama, tanda tangan, dan stempel tetap bisa diatur di samping.`}
             </div>}
           {!layoutData && editorDrawing && <div className="relative mx-auto mb-10" style={{ width: 288, height: 181 }}>
-            <InlineSignatureCanvas width={288} height={181} label={`Kanvas tanda tangan ${signatoryHeadings[editorDrawing.role]}`} onDone={editorDrawing.onDone} onCancel={editorDrawing.onCancel} />
+            <InlineSignatureCanvas width={288} height={181} unit={181} label={`Kanvas tanda tangan ${signatoryHeadings[editorDrawing.role]}`} onDone={editorDrawing.onDone} onCancel={editorDrawing.onCancel} />
           </div>}
           {layoutData && canManage && <p className="text-xs text-muted-foreground">{drawing ? `Coret tanda tangan langsung di kolom ${signatoryHeadings[drawing]}, lalu klik Selesai. Tanda tangan dicetak tepat di tempat dicoret.` : <>Klik tanda tangan atau stempel untuk memilih, lalu geser, tarik sudut untuk ukuran, atau tarik tombol bulat untuk memutar. Tombol panah menggeser sedikit demi sedikit. Kolom kosong dibiarkan untuk ditandatangani basah.</>}</p>}
         </div>
@@ -346,6 +349,7 @@ type EditorProps = {
 function SignatoryEditor({ card, draft, sources, canManage, placement, onDraft, onRule, onPlacement, drawing, onDraw, onSelectMark }: EditorProps) {
   const id = useId();
   const [removeWhite, setRemoveWhite] = useState(true);
+  const [scanning, setScanning] = useState(false);
   const heading = signatoryHeadings[card.role];
 
   const chooseStamp = async (file: File) => {
@@ -392,6 +396,7 @@ function SignatoryEditor({ card, draft, sources, canManage, placement, onDraft, 
       </div>
       {draft.rule.stamp && canManage && <>
         <div className="flex flex-wrap gap-2">
+          <Button type="button" size="sm" variant="outline" onClick={() => setScanning(true)}><ScanLine aria-hidden="true" />Pindai stempel</Button>
           <Button type="button" size="sm" variant="outline" nativeButton={false} render={<label htmlFor={`${id}-stamp-file`} />}><ImageUp aria-hidden="true" />{sources.stamp ? 'Ganti stempel' : 'Unggah stempel'}</Button>
           <input id={`${id}-stamp-file`} type="file" accept="image/png,image/jpeg" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void chooseStamp(file); }} />
           {sources.stamp && <Button type="button" size="sm" variant="ghost" onClick={() => onDraft({ stamp: card.stamp_updated_at ? 'removed' : 'keep' })}><Trash2 aria-hidden="true" />Hapus stempel</Button>}
@@ -404,6 +409,18 @@ function SignatoryEditor({ card, draft, sources, canManage, placement, onDraft, 
         {sources.stamp && <StampLook heading={heading} opacity={draft.rule.stamp_opacity ?? defaultStampOpacity} below={Boolean(draft.rule.stamp_below)} onOpacity={(value) => onRule({ stamp_opacity: value })} onBelow={(value) => onRule({ stamp_below: value })} />}
       </>}
     </div>
+    {scanning && <Suspense fallback={null}>
+      <DocumentScanner
+        title={`Pindai stempel ${heading}`}
+        description="Cap stempel di kertas putih, arahkan kamera dari atas dengan cahaya merata."
+        maxPages={1}
+        onSubmit={async ([page]) => {
+          await chooseStamp(new File([page], 'stempel.jpg', { type: 'image/jpeg' }));
+          setScanning(false);
+        }}
+        onClose={() => setScanning(false)}
+      />
+    </Suspense>}
   </section>;
 }
 

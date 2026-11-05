@@ -7,9 +7,11 @@ type Props = {
   src: string;
   alt: string;
   placement: MarkPlacement;
-  /** Ukuran kotak tanda tangan (CSS px); posisi memakai satuan tinggi kotak, sama seperti PDF. */
+  /** Ukuran kotak tanda tangan (CSS px). */
   boxWidth: number;
   boxHeight: number;
+  /** Satu satuan posisi (markUnitMM) dalam CSS px, sama seperti PDF. */
+  unit: number;
   /** 1 mm dalam CSS px: jarak minimal gambar dari garis kolom (sama dengan PDF). */
   insetPx?: number;
   /** Kepekatan gambar (stempel); 1 = penuh. */
@@ -31,15 +33,15 @@ const round3 = (value: number) => Math.round(value * 1000) / 1000;
 
 /**
  * Tanda tangan atau stempel di atas kotak tanda tangan editor. Ukuran gambar
- * mengikuti aturan cetak: sisi terpanjang = size x tinggi kotak, rasio gambar
+ * mengikuti aturan cetak: sisi terpanjang = size x satuan posisi, rasio gambar
  * dipertahankan. Saat dipilih, gambar bisa digeser, diubah ukurannya (handle
  * sudut), diputar (handle atas), atau digeser dengan tombol panah.
  */
-export function PlacedMark({ kind, src, alt, placement, boxWidth, boxHeight, insetPx = 0, opacity = 1, layer = 1, editable, selected, onSelect, onChange, onAspect }: Props) {
+export function PlacedMark({ kind, src, alt, placement, boxWidth, boxHeight, unit, insetPx = 0, opacity = 1, layer = 1, editable, selected, onSelect, onChange, onAspect }: Props) {
   const element = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
   const [aspect, setAspect] = useState(1);
-  const side = placement.size * boxHeight;
+  const side = placement.size * unit;
   let width = aspect >= 1 ? side : side * aspect;
   let height = aspect >= 1 ? side / aspect : side;
   // Sama dengan PDF (fitMarkInColumn): gambar lebih lebar dari kolom
@@ -51,8 +53,10 @@ export function PlacedMark({ kind, src, alt, placement, boxWidth, boxHeight, ins
   }
   const half = width / 2 + insetPx;
   const centerLimit = 2 * half <= boxWidth ? boxWidth / 2 - half : boxWidth / 2;
-  const maxX = Math.min(placementLimits.maxX, centerLimit / boxHeight);
-  const centerX = clamp(placement.x * boxHeight, -centerLimit, centerLimit);
+  const maxX = Math.min(placementLimits.maxX, centerLimit / unit);
+  const centerX = clamp(placement.x * unit, -centerLimit, centerLimit);
+  // Sama dengan PDF: pusat gambar tetap di dalam kotak.
+  const centerY = clamp(placement.y * unit, -boxHeight / 2, boxHeight / 2);
   const active = editable && selected;
 
   const begin = (mode: Drag['mode']) => (event: ReactPointerEvent<HTMLElement>) => {
@@ -75,14 +79,14 @@ export function PlacedMark({ kind, src, alt, placement, boxWidth, boxHeight, ins
     if (current.mode === 'move') {
       onChange({
         ...start,
-        x: round3(clamp(clamp(start.x, -maxX, maxX) + (event.clientX - current.startX) / boxHeight, -maxX, maxX)),
-        y: round3(clamp(start.y + (event.clientY - current.startY) / boxHeight, -placementLimits.maxY, placementLimits.maxY)),
+        x: round3(clamp(clamp(start.x, -maxX, maxX) + (event.clientX - current.startX) / unit, -maxX, maxX)),
+        y: round3(clamp(start.y + (event.clientY - current.startY) / unit, -placementLimits.maxY, placementLimits.maxY)),
       });
     } else if (current.mode === 'resize') {
       // Jarak pusat ke sudut = setengah diagonal gambar.
       const distance = Math.hypot(event.clientX - current.centerX, event.clientY - current.centerY);
       const diagonalPerSide = Math.hypot(width, height) / Math.max(width, height, 1);
-      onChange({ ...start, size: round3(clamp((2 * distance) / diagonalPerSide / boxHeight, sizeLimits[kind].min, sizeLimits[kind].max)) });
+      onChange({ ...start, size: round3(clamp((2 * distance) / diagonalPerSide / unit, sizeLimits[kind].min, sizeLimits[kind].max)) });
     } else {
       const angle = (Math.atan2(event.clientY - current.centerY, event.clientX - current.centerX) * 180) / Math.PI + 90;
       onChange({ ...start, rotation: Math.round(((angle + 540) % 360) - 180) });
@@ -115,7 +119,7 @@ export function PlacedMark({ kind, src, alt, placement, boxWidth, boxHeight, ins
     className={`pointer-events-auto absolute touch-none select-none focus-visible:outline-none ${editable ? 'cursor-move' : 'cursor-pointer'} ${active ? 'outline-2 outline-dashed outline-primary' : 'hover:outline-1 hover:outline-dashed hover:outline-primary/50'}`}
     style={{
       left: `calc(50% + ${centerX}px)`,
-      top: `calc(50% + ${placement.y * boxHeight}px)`,
+      top: `calc(50% + ${centerY}px)`,
       width,
       height,
       transform: `translate(-50%, -50%) rotate(${placement.rotation}deg)`,

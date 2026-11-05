@@ -112,7 +112,7 @@ export const persiapanProgram: GuideTopic = {
         { name: 'Jenis program', meaning: 'Petani atau Nelayan; template hanya bisa dipakai jadwal dengan jenis yang sama.', example: 'Petani', required: true },
         { name: 'Status', meaning: 'Draf (masih disusun), Terbit (dipakai jadwal), Diarsipkan (tidak dipakai lagi). Mengubah template terbit membuat versi draf baru, jadi jadwal lama tetap memakai versi lama.', example: 'Terbit', required: true },
         { name: 'Opsi mesin', meaning: 'Merk, tipe, daya, jenis BBM, dan % TKDN mesin.', example: 'Shark · SPWP 80-30/3" · 5,5 HP · Bensin · 61,42%', required: true },
-        { name: 'Opsi selang', meaning: 'Pasangan selang hisap dan selang buang yang diserahkan bersama, beserta spesifikasi dan % TKDN.', example: 'Triliunhose 6 m / Yamakoyo 10 m', required: true },
+        { name: 'Opsi selang', meaning: 'Pasangan selang hisap dan selang buang yang diserahkan bersama, beserta spesifikasi dan % TKDN.', example: 'Trilliunhose 6 m / Yamakoyo 10 m', required: true },
         { name: 'Opsi konkit/reducer', meaning: 'Merk konkit/reducer dan % TKDN.', example: 'Ergas · 93,27%', required: true },
         { name: 'Komponen paket', meaning: 'Kelengkapan lain: nama, jumlah, satuan, merk, % TKDN. Muncul di checklist BA serah terima kecuali disembunyikan.', example: 'Tabung LPG 3 kg · 1 Tabung · Pertamina · 58,47%', required: false },
       ],

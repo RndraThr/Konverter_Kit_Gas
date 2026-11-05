@@ -9,7 +9,7 @@ func TestBuildEquipmentVerificationSnapshotResolvesSelectedTemplateValues(t *tes
 	packageJSON := []byte(`{
 		"machine_options":[{"code":"machine-1","brand":"SHARK","type":"SPWP","power":"5.5 HP","fuel_type":"Bensin"}],
 		"hose_options":[{"code":"hose-1","suction_brand":"TRILLIUNHOSE","suction_spec":"6 M","discharge_brand":"YAMAKOYO","discharge_spec":"10 M"}],
-		"converter_options":[{"code":"converter-1","brand":"ERGAS"}]
+		"converter_options":[{"code":"converter-1","brand":"ERGAS","spec":"ECK-300"}]
 	}`)
 
 	got, err := buildEquipmentVerificationSnapshot(packageJSON, UpdateEquipmentInput{
@@ -29,7 +29,7 @@ func TestBuildEquipmentVerificationSnapshotResolvesSelectedTemplateValues(t *tes
 	if got.HoseOptionCode != "hose-1" || got.HoseBrand != "TRILLIUNHOSE\nYAMAKOYO" || got.HoseSpec != "6 M\n10 M" || got.HoseSerial != "H-001" {
 		t.Fatalf("hose snapshot=%+v", got)
 	}
-	if got.ConverterOptionCode != "converter-1" || got.ConverterBrand != "ERGAS" || got.ConverterSerial != "C-001" {
+	if got.ConverterOptionCode != "converter-1" || got.ConverterBrand != "ERGAS" || got.ConverterType != "ECK-300" || got.ConverterSerial != "C-001" {
 		t.Fatalf("converter snapshot=%+v", got)
 	}
 }

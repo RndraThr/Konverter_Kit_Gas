@@ -66,6 +66,9 @@ func TestTrainingPhotoWorkerCopiesDistributionTrainingPhotos(t *testing.T) {
 	if got, want := count("training_10"), 2; got != want {
 		t.Fatalf("training_10 copies = %d, want %d", got, want)
 	}
+	if got, want := count("pelatihan_teknis"), 11; got != want {
+		t.Fatalf("pelatihan_teknis copies = %d, want %d", got, want)
+	}
 	var tenFirst string
 	must(t, pool.QueryRow(ctx, `SELECT distribution_media_id::text FROM activity_media WHERE distribution_media_id = ANY($1::uuid[]) AND activity_type='training_10' AND status='active' ORDER BY display_name LIMIT 1`, mediaIDs).Scan(&tenFirst))
 	if tenFirst != mediaIDs[0] {
@@ -81,6 +84,9 @@ func TestTrainingPhotoWorkerCopiesDistributionTrainingPhotos(t *testing.T) {
 	}
 	if got := count("training_10"); got != 1 {
 		t.Fatalf("training_10 after delete = %d, want 1", got)
+	}
+	if got := count("pelatihan_teknis"); got != 10 {
+		t.Fatalf("pelatihan_teknis after delete = %d, want 10", got)
 	}
 
 	// A copy the user deletes stays deleted.

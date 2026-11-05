@@ -107,9 +107,10 @@ func formatServisBerkalaFilename(regencyName, documentDate string, version int) 
 	return fmt.Sprintf("SERVIS BERKALA - %s - %s - V%d.pdf", name, documentDate, version)
 }
 
-// formatServisRange menulis "12 Mei 2026 s/d 20 Mei 2026" seperti referensi.
+// formatServisRange menulis "12 Mei 2026 s/d 20 Mei 2026 (tentatif)": jadwal
+// servis masih perkiraan.
 func formatServisRange(period ServisPeriod) string {
-	return formatTitleDate(period.Start) + " s/d " + formatTitleDate(period.End)
+	return formatTitleDate(period.Start) + " s/d " + formatTitleDate(period.End) + " (tentatif)"
 }
 
 func formatTitleDate(value string) string {

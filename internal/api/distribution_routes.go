@@ -254,6 +254,10 @@ func (h *Handler) handleDistributionSlot(w http.ResponseWriter, r *http.Request,
 		h.handleDistributionSlotCatalog(w, r, rc)
 		return
 	}
+	if len(parts) == 1 && parts[0] == "export" {
+		h.handleDistributionSlotExport(w, r, rc)
+		return
+	}
 	if len(parts) == 2 && parts[1] == "media" && r.Method == http.MethodPost {
 		h.handleDistributionSlotMediaUpload(w, r, rc, parts[0])
 		return
@@ -692,6 +696,51 @@ func (h *Handler) handleDistributionMyActivity(w http.ResponseWriter, r *http.Re
 		return
 	}
 	writeData(w, http.StatusOK, result)
+}
+
+// distributionExport is the Excel export of the distribution service
+// (optional so test doubles need not implement it).
+type distributionExport interface {
+	ExportMachineSerials(context.Context, string, []int, auth.RegencyScope) (distribution.ExportFile, error)
+}
+
+// handleDistributionSlotExport: POST {"schedule_id","slot_numbers"} downloads
+// an Excel of the chosen slots' nomor bagi and nomor mesin.
+func (h *Handler) handleDistributionSlotExport(w http.ResponseWriter, r *http.Request, rc requestContext) {
+	service, ok := h.deps.Distribution.(distributionExport)
+	if !ok {
+		writeUnavailable(w)
+		return
+	}
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if !h.authorize(w, r, rc.principal, "distribution.view") {
+		return
+	}
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	var input struct {
+		ScheduleID  string `json:"schedule_id"`
+		SlotNumbers []int  `json:"slot_numbers"`
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	file, err := service.ExportMachineSerials(r.Context(), input.ScheduleID, input.SlotNumbers, scope)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Length", strconv.Itoa(len(file.Data)))
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": file.Filename}))
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(file.Data)
 }
 
 // distributionHandover is the titik serah part of the distribution service

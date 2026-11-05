@@ -68,7 +68,7 @@ type packageValues struct {
 		DischargeBrand string `json:"discharge_brand"`
 		DischargeSpec  string `json:"discharge_spec"`
 	} `json:"hose_options"`
-	ConverterOptions []struct{ Code, Brand string } `json:"converter_options"`
+	ConverterOptions []struct{ Code, Brand, Spec string } `json:"converter_options"`
 	Components       []struct {
 		Code, Label string
 		Quantity    int
@@ -134,7 +134,16 @@ func (r *Repository) LoadSourceData(ctx context.Context, recipient RecipientDocu
 		}
 		for _, option := range values.ConverterOptions {
 			if option.Code == converterCode {
-				source.Equipment.ConverterBrand = option.Brand
+				source.Equipment.ConverterBrand, source.Equipment.ConverterType = option.Brand, option.Spec
+				break
+			}
+		}
+	}
+	// Snapshots taken before the type was recorded take it from the template.
+	if strings.TrimSpace(source.Equipment.ConverterType) == "" {
+		for _, option := range values.ConverterOptions {
+			if option.Code == converterCode {
+				source.Equipment.ConverterType = option.Spec
 				break
 			}
 		}

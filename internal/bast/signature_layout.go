@@ -22,6 +22,9 @@ type SignatureBox struct {
 	Y    float64 `json:"y"`
 	W    float64 `json:"w"`
 	H    float64 `json:"h"`
+	// Unit: satu satuan posisi tanda tangan/stempel di kotak ini (mm);
+	// markUnitMM, lebih kecil di BA yang mencetak tanda lebih kecil.
+	Unit float64 `json:"unit"`
 }
 
 // SignatureLayout adalah isi editor tanda tangan satu BA: PDF halaman tanda
@@ -40,14 +43,14 @@ type signatureLayoutRecorder struct {
 	sizes map[int][2]float64
 }
 
-func (r *signatureLayoutRecorder) record(pdf *fpdf.Fpdf, role string, x, y, w, h float64) {
+func (r *signatureLayoutRecorder) record(pdf *fpdf.Fpdf, role string, x, y, w, h, unit float64) {
 	page := pdf.PageNo()
 	if r.sizes == nil {
 		r.sizes = map[int][2]float64{}
 	}
 	width, height := pdf.GetPageSize()
 	r.sizes[page] = [2]float64{width, height}
-	r.boxes = append(r.boxes, SignatureBox{Role: role, Page: page, X: x, Y: y, W: w, H: h})
+	r.boxes = append(r.boxes, SignatureBox{Role: role, Page: page, X: x, Y: y, W: w, H: h, Unit: unit})
 }
 
 type signatureLayoutKey struct{}

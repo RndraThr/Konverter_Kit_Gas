@@ -137,7 +137,7 @@ describe('AppShell', () => {
     await screen.findByText('Admin Konkit');
 
     expect(screen.getByRole('button', { name: 'Dokumentasi' })).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.queryByText('Kegiatan')).not.toBeInTheDocument();
+    expect(within(screen.getByRole('group', { name: 'Konteks halaman' })).queryByText('Kegiatan')).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Unloading' })).toHaveClass('bg-sidebar-accent');
     expect(within(screen.getByRole('group', { name: 'Konteks halaman' })).getByText('Unloading', { selector: 'p' })).toBeInTheDocument();
   });

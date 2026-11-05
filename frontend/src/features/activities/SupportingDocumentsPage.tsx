@@ -140,11 +140,17 @@ export function SupportingDocumentsPage({ programId, regencyId }: { programId: s
 
     {scannerOpen && <Suspense fallback={null}>
       <DocumentScanner
-        programId={programId}
-        regencyId={regencyId}
-        slotId={useCustomName ? '' : slotId}
-        customName={useCustomName ? customName.trim() : ''}
-        onDone={() => { setScannerOpen(false); resetPicker(); void client.invalidateQueries({ queryKey: ['activities', 'media', 'dokumen_pendukung', regencyId] }); toast.success('Dokumen hasil scan berhasil disimpan.'); }}
+        title="Scan Dokumen Pendukung"
+        onSubmit={async (pages) => {
+          const form = new FormData();
+          form.append('program_id', programId);
+          form.append('regency_id', regencyId);
+          if (useCustomName) form.append('custom_name', customName.trim());
+          else form.append('slot_id', slotId);
+          pages.forEach((page, index) => form.append('page', page, `page-${index}.jpg`));
+          await apiRequest('/api/v1/activities/supporting-documents/scan', { method: 'POST', body: form });
+          setScannerOpen(false); resetPicker(); void client.invalidateQueries({ queryKey: ['activities', 'media', 'dokumen_pendukung', regencyId] }); toast.success('Dokumen hasil scan berhasil disimpan.');
+        }}
         onClose={() => setScannerOpen(false)}
       />
     </Suspense>}

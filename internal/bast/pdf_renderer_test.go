@@ -281,3 +281,46 @@ func decodedPDFStreams(t *testing.T, data []byte) string {
 	joined := regexp.MustCompile(`\)\s*-?[0-9.]*\s*\(`).ReplaceAllString(text, "")
 	return decoded.String() + "\n" + text + "\n" + joined
 }
+
+func TestRenderPetaniBundlePrintsTheKonkitType(t *testing.T) {
+	document := makeRenderDocument(1, 10)
+	document.Snapshot.Equipment.ConverterType = "ECK-300"
+	result, err := RenderPetaniBundle(BundleRenderInput{LocalDate: "2024-12-10", Documents: []RecipientDocument{document}, LogoBytes: map[string][]byte{"logo": testPNG(t)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := decodedPDFStreams(t, result.PDF)
+	for _, text := range []string{"(Tipe Konkit)", "(ECK-300)"} {
+		if !strings.Contains(content, text) {
+			t.Fatalf("PDF does not contain %s", text)
+		}
+	}
+
+	// A BA without the type (finalized before it was recorded) keeps its table.
+	old, err := RenderPetaniBundle(BundleRenderInput{LocalDate: "2024-12-10", Documents: []RecipientDocument{makeRenderDocument(1, 10)}, LogoBytes: map[string][]byte{"logo": testPNG(t)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(decodedPDFStreams(t, old.PDF), "(Tipe Konkit)") {
+		t.Fatal("BA without a konkit type gained the Tipe Konkit column")
+	}
+}
+
+func TestRenderPetaniBundleFitsOnePageWithTallSignatureRow(t *testing.T) {
+	document := makeRenderDocument(1, 10)
+	document.Snapshot.Recipient.Address = "DUSUN III JALAN PERSATUAN GANG MAWAR NOMOR 12 RT 004 RW 002"
+	document.Snapshot.Equipment.HoseBrand = "FIGO DELUXE\nFIGO DELUXE"
+	document.Snapshot.Equipment.HoseSpec = "6 m\n10 m"
+	document.Snapshot.Equipment.ConverterType = "ECK-300"
+	document.Snapshot.Components = nil
+	for _, label := range []string{"Tabung LPG 3 kg", "Regulator", "Selang, Clamp & Aksesorisnya", "Buku Manual", "Mixer Nipple", "Kartu Garansi Mesin", "Kartu Garansi Konkit/Reducer", "Oli", "Braket"} {
+		document.Snapshot.Components = append(document.Snapshot.Components, ComponentSnapshot{Label: label, Quantity: 1, Unit: "Buah", Checked: true})
+	}
+	result, err := RenderPetaniBundle(BundleRenderInput{LocalDate: "2024-12-10", Documents: []RecipientDocument{document}, LogoBytes: map[string][]byte{"logo": testPNG(t)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.PageCount != 1 {
+		t.Fatalf("BA Perorangan takes %d pages, want 1", result.PageCount)
+	}
+}

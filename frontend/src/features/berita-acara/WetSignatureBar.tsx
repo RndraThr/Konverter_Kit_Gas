@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eye, FileUp, Printer, Trash2 } from 'lucide-react';
-import { useId, useState } from 'react';
+import { Eye, FileUp, Printer, ScanLine, Trash2 } from 'lucide-react';
+import { lazy, Suspense, useId, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,9 @@ import { useCan } from '@/lib/permissions';
 import { wetScanFileToPNGBase64, wetSignatureKey, wetSignaturePath, type WetSignatureStatus } from './wetScan';
 
 type DataResponse<T> = { data: T };
+
+// The camera scanner loads OpenCV.js: only when a scan opens.
+const DocumentScanner = lazy(() => import('../activities/DocumentScanner'));
 
 export function useWetSignatureStatus(scheduleID: string, document: string, date: string) {
   return useQuery({
@@ -37,6 +40,7 @@ export function WetSignatureBar({ scheduleID, document, date, label }: Props) {
   const queryClient = useQueryClient();
   const inputID = useId();
   const [printing, setPrinting] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const status = useWetSignatureStatus(scheduleID, document, date);
 
   const refresh = () => queryClient.invalidateQueries({ predicate: (query) => query.queryKey.includes('preview') });
@@ -92,7 +96,8 @@ export function WetSignatureBar({ scheduleID, document, date, label }: Props) {
       <div className="flex flex-wrap items-center gap-2">
         <Button type="button" size="sm" variant="outline" disabled={printing} onClick={() => void openPDF('page')}><Printer aria-hidden="true" />{printing ? 'Menyiapkan...' : 'Cetak halaman tanda tangan'}</Button>
         {canManage && <>
-          <Button type="button" size="sm" disabled={busy} nativeButton={false} render={<label htmlFor={inputID} />}><FileUp aria-hidden="true" />{upload.isPending ? 'Mengunggah...' : scan ? 'Unggah ulang' : 'Unggah hasil pindai'}</Button>
+          <Button type="button" size="sm" disabled={busy} onClick={() => setScanning(true)}><ScanLine aria-hidden="true" />{scan ? 'Pindai ulang' : 'Pindai'}</Button>
+          <Button type="button" size="sm" variant="outline" disabled={busy} nativeButton={false} render={<label htmlFor={inputID} />}><FileUp aria-hidden="true" />{upload.isPending ? 'Mengunggah...' : scan ? 'Unggah ulang' : 'Unggah berkas'}</Button>
           <input id={inputID} type="file" accept="application/pdf,image/png,image/jpeg" className="sr-only" disabled={busy} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) upload.mutate(file); }} />
         </>}
         {scan && <Button type="button" size="sm" variant="ghost" onClick={viewScan}><Eye aria-hidden="true" />Lihat</Button>}
@@ -103,7 +108,19 @@ export function WetSignatureBar({ scheduleID, document, date, label }: Props) {
       ? `Isi ${label} berubah setelah halaman dipindai. Cetak ulang halaman tanda tangan, tandatangani, lalu unggah lagi.`
       : scan
         ? `Halaman pindaian menggantikan halaman tanda tangan di preview dan PDF final ${label}.`
-        : `Cetak halaman tanda tangan, tandatangani dan stempel basah, lalu unggah hasil pindai (PDF/JPG/PNG atau foto). Finalisasi menunggu halaman ini.`}</p>
+        : `Cetak halaman tanda tangan, tandatangani dan stempel basah, lalu pindai dengan kamera atau unggah berkasnya (PDF/JPG/PNG). Finalisasi menunggu halaman ini.`}</p>
+    {scanning && <Suspense fallback={null}>
+      <DocumentScanner
+        title={`Pindai halaman tanda tangan ${label}`}
+        description="Arahkan kamera ke halaman yang sudah ditandatangani — tepi terdeteksi otomatis."
+        maxPages={1}
+        onSubmit={async ([page]) => {
+          await upload.mutateAsync(new File([page], 'halaman-tanda-tangan.jpg', { type: 'image/jpeg' }));
+          setScanning(false);
+        }}
+        onClose={() => setScanning(false)}
+      />
+    </Suspense>}
   </div>;
 }
 

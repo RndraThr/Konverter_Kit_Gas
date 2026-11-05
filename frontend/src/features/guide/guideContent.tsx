@@ -1,6 +1,6 @@
 import {
   ArrowRight, Download, FileSpreadsheet, FileText, ImagePlus, Camera, PenLine, Plus, Printer,
-  RefreshCw, Save, ScanBarcode, Signature, Upload, Video,
+  RefreshCw, Save, ScanBarcode, ScanLine, Signature, Upload, Video,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { ButtonSample, FieldSample } from './GuideExamples';
@@ -174,7 +174,7 @@ export const guideSteps: GuideStep[] = [
       { n: 1, text: <>Pilih jadwal kabupaten, lalu <b>tab jenis BA</b> yang akan dibuat.</> },
       { n: 3, text: <>Isi tanggal dokumen dan informasi yang diminta (mis. Lokasi/Titik Serah). Preview langsung diperbarui.</> },
       { n: 4, text: <>Klik <ButtonSample variant="ghost" icon={<Signature />}>Penandatangan</ButtonSample>: tabel tanda tangan tampil persis seperti cetak. Pilih kolom pihak, isi nama/NIP, <ButtonSample variant="outline" icon={<PenLine />}>Gambar tanda tangan</ButtonSample> langsung di kolomnya, unggah stempel, geser/putar/ubah ukuran, lalu <ButtonSample icon={<Save />}>Simpan</ButtonSample></>, permissions: ['bast.manage'] },
-      { text: <>Tanda tangan basah: nyalakan switch <b>Tanda tangan basah</b>, <ButtonSample variant="outline" icon={<Printer />}>Cetak halaman tanda tangan</ButtonSample>, tandatangani & stempel, lalu <ButtonSample icon={<Upload />}>Unggah hasil pindai</ButtonSample> (PDF/JPG/foto).</>, permissions: ['bast.manage'] },
+      { text: <>Tanda tangan basah: nyalakan switch <b>Tanda tangan basah</b>, <ButtonSample variant="outline" icon={<Printer />}>Cetak halaman tanda tangan</ButtonSample>, tandatangani & stempel, lalu <ButtonSample icon={<ScanLine />}>Pindai</ButtonSample> dengan kamera atau <ButtonSample variant="outline" icon={<Upload />}>Unggah berkas</ButtonSample> (PDF/JPG/PNG).</>, permissions: ['bast.manage'] },
       { n: 5, text: <>Periksa preview, lalu <ButtonSample icon={<RefreshCw />}>Finalisasi & sinkronkan</ButtonSample>. Versi final bisa diunduh dengan <ButtonSample variant="outline" icon={<Download />}>Unduh PDF</ButtonSample></>, permissions: ['bast.manage'] },
     ],
     doneWhen: 'BA sudah difinalisasi: muncul kotak nama file PDF dengan tombol Unduh PDF, dan versinya tercatat.',

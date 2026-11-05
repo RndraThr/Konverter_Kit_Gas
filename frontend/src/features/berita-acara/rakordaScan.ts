@@ -151,7 +151,9 @@ export async function processScanImage(file: File, options: ScanPageOptions): Pr
   outputContext.translate(output.width / 2, output.height / 2);
   outputContext.rotate((options.rotation * Math.PI) / 180);
   outputContext.drawImage(cropCanvas, -cropWidth / 2, -cropHeight / 2);
-  const blob = await new Promise<Blob>((resolve, reject) => output.toBlob((value) => value ? resolve(value) : reject(new Error('Foto gagal diproses')), 'image/jpeg', 0.9));
+  // Smaller PDF: grey pages lose nothing visible at a lower JPEG quality.
+  const quality = options.colorMode === 'grayscale' || options.colorMode === 'black-white' ? 0.75 : 0.82;
+  const blob = await new Promise<Blob>((resolve, reject) => output.toBlob((value) => value ? resolve(value) : reject(new Error('Foto gagal diproses')), 'image/jpeg', quality));
   return { blob, width: output.width, height: output.height };
 }
 

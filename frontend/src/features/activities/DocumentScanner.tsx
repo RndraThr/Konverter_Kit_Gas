@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 // @ts-expect-error -- jscanify ships no TypeScript typings for either entry point.
 import jscanify from 'jscanify/client';
 import { LoaderCircle, RefreshCw, X } from 'lucide-react';
-import { apiRequest, ApiError } from '../../lib/api';
+import { ApiError } from '../../lib/api';
 import { Button } from '../../components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '../../components/ui/dialog';
 
@@ -107,14 +107,15 @@ function loadOpenCv(): Promise<void> {
   return openCvLoad;
 }
 
-// Document scan for Dokumen Pendukung: live camera with an auto-detected-edge
-// overlay (jscanify, built on OpenCV.js — this is why the component is
-// lazy-loaded from SupportingDocumentsPage, not imported eagerly), capture +
-// perspective-crop to a flat rectangle, a quick sharpen/contrast pass, then
-// accumulate pages until "Selesai" assembles them server-side into one PDF.
+// Document scan (Dokumen Pendukung, tanda tangan basah BA, tanda tangan dan
+// stempel penandatangan): live camera with an auto-detected-edge overlay
+// (jscanify, built on OpenCV.js — this is why the component is lazy-loaded,
+// not imported eagerly), capture + perspective-crop to a flat rectangle, a
+// quick sharpen/contrast pass, then accumulate pages until "Selesai" hands
+// them to onSubmit. With maxPages, capturing stops at that many pages.
 // No color-mode picker (spec §2) — the enhance step always runs, unconditionally.
-export default function DocumentScanner({ programId, regencyId, slotId, customName, onDone, onClose }: {
-  programId: string; regencyId: string; slotId: string; customName: string; onDone: () => void; onClose: () => void;
+export default function DocumentScanner({ title, description = 'Arahkan kamera ke dokumen — tepi terdeteksi otomatis.', maxPages, onSubmit, onClose }: {
+  title: string; description?: string; maxPages?: number; onSubmit: (pages: Blob[]) => Promise<void>; onClose: () => void;
 }) {
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -236,17 +237,12 @@ export default function DocumentScanner({ programId, regencyId, slotId, customNa
     });
   };
 
+  const full = maxPages != null && pages.length >= maxPages;
+
   const finish = async () => {
     setSubmitting(true);
     try {
-      const form = new FormData();
-      form.append('program_id', programId);
-      form.append('regency_id', regencyId);
-      if (customName) form.append('custom_name', customName);
-      else form.append('slot_id', slotId);
-      pages.forEach((page, index) => form.append('page', page.blob, `page-${index}.jpg`));
-      await apiRequest('/api/v1/activities/supporting-documents/scan', { method: 'POST', body: form });
-      onDone();
+      await onSubmit(pages.map((page) => page.blob));
     } catch (cause) {
       setError(cause instanceof ApiError ? cause.message : 'Scan belum dapat disimpan.');
     } finally {
@@ -255,10 +251,10 @@ export default function DocumentScanner({ programId, regencyId, slotId, customNa
   };
 
   return <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
-    <DialogContent aria-label="Scan Dokumen Pendukung" className="max-w-md">
+    <DialogContent aria-label={title} className="max-w-md">
       <DialogHeader>
-        <DialogTitle>Scan Dokumen Pendukung</DialogTitle>
-        <DialogDescription>Arahkan kamera ke dokumen — tepi terdeteksi otomatis.</DialogDescription>
+        <DialogTitle>{title}</DialogTitle>
+        <DialogDescription>{description}</DialogDescription>
       </DialogHeader>
       {error ? <div className="space-y-3">
         <p className="text-sm text-destructive" role="alert">{error}</p>
@@ -270,7 +266,7 @@ export default function DocumentScanner({ programId, regencyId, slotId, customNa
           {starting && <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-white"><LoaderCircle className="size-6 animate-spin" aria-hidden="true" /></div>}
         </div>
         {captureError && <p className="text-sm text-destructive" role="alert">{captureError}</p>}
-        <p className="text-sm text-muted-foreground">{pages.length} halaman terkumpul.</p>
+        <p className="text-sm text-muted-foreground">{maxPages === 1 ? (full ? 'Halaman sudah diambil. Hapus untuk mengambil ulang.' : 'Ambil satu halaman.') : `${pages.length} halaman terkumpul.`}</p>
         {pages.length > 0 && <ul className="flex flex-wrap gap-2">
           {pages.map((page, index) => <li key={page.id} className="relative">
             <img src={page.previewUrl} alt={`Halaman ${index + 1}`} className="h-20 w-16 rounded border object-cover" />
@@ -280,7 +276,7 @@ export default function DocumentScanner({ programId, regencyId, slotId, customNa
           </li>)}
         </ul>}
         <div className="flex flex-wrap gap-2">
-          <Button type="button" onClick={capture} disabled={starting}>Ambil Halaman</Button>
+          <Button type="button" onClick={capture} disabled={starting || full}>Ambil Halaman</Button>
           <Button type="button" variant="outline" disabled={!pages.length || submitting} onClick={finish}>{submitting ? 'Menyimpan...' : 'Selesai'}</Button>
         </div>
       </div>}

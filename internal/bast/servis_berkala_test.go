@@ -32,7 +32,7 @@ func TestFormatServisBerkalaDocumentNumberFollowsReference(t *testing.T) {
 }
 
 func TestFormatServisRangeUsesIndonesianTitleCaseDates(t *testing.T) {
-	if got := formatServisRange(ServisPeriod{Start: "2027-05-03", End: "2027-05-08"}); got != "3 Mei 2027 s/d 8 Mei 2027" {
+	if got := formatServisRange(ServisPeriod{Start: "2027-05-03", End: "2027-05-08"}); got != "3 Mei 2027 s/d 8 Mei 2027 (tentatif)" {
 		t.Fatalf("range=%q", got)
 	}
 }
@@ -80,7 +80,7 @@ func TestRenderServisBerkalaProducesSinglePage(t *testing.T) {
 	if _, err := RenderServisBerkala(snapshot, map[string][]byte{"logo-1": testPNG(t)}); err != nil {
 		t.Fatalf("blank schedule err=%v", err)
 	}
-	if got := formatServisRange(ServisPeriod{End: "2027-11-06"}); got != " s/d 6 November 2027" {
+	if got := formatServisRange(ServisPeriod{End: "2027-11-06"}); got != " s/d 6 November 2027 (tentatif)" {
 		t.Fatalf("range=%q", got)
 	}
 	if formatTKDNTotal(0) != "" || formatTKDNTotal(68.53) != "68,53%" {

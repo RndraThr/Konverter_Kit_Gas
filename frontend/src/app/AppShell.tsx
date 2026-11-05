@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { UploadQueueIndicator } from '@/components/UploadQueueIndicator';
 import {
   Activity, BookOpen, BookOpenCheck, BookOpenText, CalendarClock, CalendarRange, Camera, ChevronDown, FileClock,
-  FileCheck2, Files, FileSpreadsheet, FileText, GraduationCap, ListFilter, MapPinned, Menu, PackageOpen, PanelLeftClose, PanelLeftOpen,
+  FileCheck2, Files, FileSpreadsheet, FileText, GraduationCap, Images, ListFilter, MapPinned, Menu, PackageOpen, PanelLeftClose, PanelLeftOpen,
   PartyPopper, Presentation, Settings, ShieldCheck, Users, UsersRound, X,
 } from 'lucide-react';
 import { ReactNode, useEffect, useId, useState } from 'react';
@@ -43,6 +43,7 @@ const groups: NavGroup[] = [
     { label: 'Rakor', to: '/dokumentasi/rakor', permission: 'activities.view', icon: <Users /> },
     { label: 'Training 10%', to: '/dokumentasi/training-10', permission: 'activities.view', icon: <BookOpen /> },
     { label: 'Training 100%', to: '/dokumentasi/training-100', permission: 'activities.view', icon: <BookOpenCheck /> },
+    { label: 'Kegiatan', to: '/dokumentasi/kegiatan', permission: 'activities.view', icon: <Images /> },
     { label: 'Unloading', to: '/dokumentasi/unloading', permission: 'activities.view', icon: <PackageOpen /> },
   ] },
   { label: 'Dokumen Pendukung', items: [

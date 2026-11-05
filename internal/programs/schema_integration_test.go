@@ -134,7 +134,7 @@ func TestKonkitPackageSeparatesSuctionAndDischargeHoseDetails(t *testing.T) {
 	if err := json.Unmarshal(raw, &options); err != nil {
 		t.Fatal(err)
 	}
-	if len(options) != 1 || options[0].SuctionBrand != "Triliunhose" || options[0].SuctionSpec != "6 m" || options[0].DischargeBrand != "Yamakoyo" || options[0].DischargeSpec != "10 m" {
+	if len(options) != 1 || options[0].SuctionBrand != "Trilliunhose" || options[0].SuctionSpec != "6 m" || options[0].DischargeBrand != "Yamakoyo" || options[0].DischargeSpec != "10 m" {
 		t.Fatalf("hose_options=%s", raw)
 	}
 }

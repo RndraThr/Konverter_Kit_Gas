@@ -88,8 +88,9 @@ func normalizedOpacity(value *float64) *float64 {
 }
 
 // MarkPlacement adalah posisi tanda tangan atau stempel di kotak tanda
-// tangan, dalam satuan tinggi kotak agar sama di semua BA walau lebar
-// kotaknya berbeda: X/Y adalah geseran pusat gambar dari tengah kotak, Size
+// tangan, dalam satuan tetap markUnitMM (bukan tinggi kotak) agar ukuran dan
+// geserannya sama di semua BA walau kotaknya berbeda (BA Perorangan 30 mm,
+// BA lain 28-29 mm): X/Y adalah geseran pusat gambar dari tengah kotak, Size
 // sisi terpanjang gambar, dan Rotation kemiringan dalam derajat (positif
 // searah jarum jam). Pusat gambar selalu di dalam kotak; gambar boleh keluar
 // sedikit dari kotak.
@@ -101,13 +102,16 @@ type MarkPlacement struct {
 }
 
 const (
+	// markUnitMM: satu satuan posisi, sama dengan tinggi kotak tanda tangan
+	// sebagian besar BA.
+	markUnitMM    = 28.0
 	placementMaxX = 3.0
 	placementMaxY = 0.5
-	// markOverflow: batas gambar boleh keluar dari kotak, satuan tinggi kotak.
+	// markOverflow: batas gambar boleh keluar dari kotak, satuan posisi.
 	markOverflow = 0.75
 )
 
-// placementSizeLimits: batas ukuran (sisi terpanjang, satuan tinggi kotak).
+// placementSizeLimits: batas ukuran (sisi terpanjang, satuan posisi).
 // Tanda tangan umumnya melebar sehingga boleh jauh lebih panjang dari stempel.
 var placementSizeLimits = map[string][2]float64{
 	SignatoryKindSignature: {0.2, 4},
@@ -236,20 +240,28 @@ func registerSignatoryImages(pdf *fpdf.Fpdf, images map[string][]byte) {
 // sedikit miring. Stempel memakai mode campur Multiply agar tanda tangan
 // tetap terlihat. Keduanya dipotong sedikit di luar batas kotak.
 func drawSignatoryMark(pdf *fpdf.Fpdf, role string, mark SignatureMark, x, y, w, h float64) {
+	drawSignatoryMarkScaled(pdf, role, mark, x, y, w, h, 1)
+}
+
+// drawSignatoryMarkScaled seperti drawSignatoryMark dengan tanda dicetak
+// scale kali ukurannya (BA Perorangan sedikit lebih kecil); posisi dan
+// ukuran tersimpan tetap sama untuk semua BA.
+func drawSignatoryMarkScaled(pdf *fpdf.Fpdf, role string, mark SignatureMark, x, y, w, h, scale float64) {
+	unit := markUnitMM * scale
 	if mark.layout != nil {
-		mark.layout.record(pdf, role, x, y, w, h)
+		mark.layout.record(pdf, role, x, y, w, h, unit)
 		return
 	}
 	if mark.StampBelow {
-		drawStampMark(pdf, role, mark, x, y, w, h)
-		drawSignatureMark(pdf, role, mark, x, y, w, h)
+		drawStampMark(pdf, role, mark, x, y, w, h, unit)
+		drawSignatureMark(pdf, role, mark, x, y, w, h, unit)
 		return
 	}
-	drawSignatureMark(pdf, role, mark, x, y, w, h)
-	drawStampMark(pdf, role, mark, x, y, w, h)
+	drawSignatureMark(pdf, role, mark, x, y, w, h, unit)
+	drawStampMark(pdf, role, mark, x, y, w, h, unit)
 }
 
-func drawSignatureMark(pdf *fpdf.Fpdf, role string, mark SignatureMark, x, y, w, h float64) {
+func drawSignatureMark(pdf *fpdf.Fpdf, role string, mark SignatureMark, x, y, w, h, unit float64) {
 	if !mark.Signature {
 		return
 	}
@@ -259,10 +271,10 @@ func drawSignatureMark(pdf *fpdf.Fpdf, role string, mark SignatureMark, x, y, w,
 		return
 	}
 	if mark.SignaturePlacement != nil {
-		drawPlacedImage(pdf, key, info, mark.SignaturePlacement.normalized(SignatoryKindSignature), x, y, w, h, 1)
+		drawPlacedImage(pdf, key, info, mark.SignaturePlacement.normalized(SignatoryKindSignature), x, y, w, h, unit, 1)
 		return
 	}
-	boxW, boxH := minFloat(w-6, signatureDefaultMaxWidthMM), h-4
+	boxW, boxH := minFloat(w-6, signatureDefaultMaxWidthMM*unit/markUnitMM), h-4
 	ratio := info.Width() / info.Height()
 	drawW, drawH := boxW, boxW/ratio
 	if drawH > boxH {
@@ -271,7 +283,7 @@ func drawSignatureMark(pdf *fpdf.Fpdf, role string, mark SignatureMark, x, y, w,
 	pdf.ImageOptions(key, x+(w-drawW)/2, y+(h-drawH)/2, drawW, drawH, false, fpdf.ImageOptions{ImageType: "PNG"}, 0, "")
 }
 
-func drawStampMark(pdf *fpdf.Fpdf, role string, mark SignatureMark, x, y, w, h float64) {
+func drawStampMark(pdf *fpdf.Fpdf, role string, mark SignatureMark, x, y, w, h, unit float64) {
 	if !mark.Stamp {
 		return
 	}
@@ -288,7 +300,7 @@ func drawStampMark(pdf *fpdf.Fpdf, role string, mark SignatureMark, x, y, w, h f
 	if value := normalizedOpacity(mark.StampOpacity); value != nil {
 		opacity = *value
 	}
-	drawPlacedImage(pdf, key, info, placement, x, y, w, h, opacity)
+	drawPlacedImage(pdf, key, info, placement, x, y, w, h, unit, opacity)
 }
 
 // signatureDefaultMaxWidthMM: lebar tanda tangan tanpa posisi tersimpan,
@@ -316,20 +328,29 @@ func fitMarkInColumn(drawW, drawH, cx, x, w float64) (float64, float64, float64)
 	return drawW, drawH, clampFloat(cx, x, x+w)
 }
 
+// placedGeometry: ukuran dan pusat gambar (rasio lebar/tinggi aspect) di
+// kotak (x, y, w, h) menurut placement dalam satuan unit mm (markUnitMM,
+// atau lebih kecil di BA yang mencetak tanda lebih kecil); pusatnya dijaga
+// di dalam kotak.
+func placedGeometry(placement MarkPlacement, aspect, x, y, w, h, unit float64) (drawW, drawH, cx, cy float64) {
+	size := placement.Size * unit
+	drawW, drawH = size, size/aspect
+	if drawH > size {
+		drawH, drawW = size, size*aspect
+	}
+	drawW, drawH, cx = fitMarkInColumn(drawW, drawH, x+w/2+placement.X*unit, x, w)
+	cy = clampFloat(y+h/2+placement.Y*unit, y, y+h)
+	return drawW, drawH, cx, cy
+}
+
 // drawPlacedImage menggambar gambar terdaftar pada posisi placement di kotak
 // (x, y, w, h), dipotong markOverflow di luar batas kotak.
 // opacity < 1 menggambar dengan mode campur Multiply (stempel): tinta di
 // bawahnya tetap terlihat.
-func drawPlacedImage(pdf *fpdf.Fpdf, key string, info *fpdf.ImageInfoType, placement MarkPlacement, x, y, w, h float64, opacity float64) {
+func drawPlacedImage(pdf *fpdf.Fpdf, key string, info *fpdf.ImageInfoType, placement MarkPlacement, x, y, w, h, unit, opacity float64) {
 	multiply := opacity < 1
-	size := placement.Size * h
-	drawW, drawH := size, size*info.Height()/info.Width()
-	if drawH > size {
-		drawH, drawW = size, size*info.Width()/info.Height()
-	}
-	drawW, drawH, cx := fitMarkInColumn(drawW, drawH, x+w/2+placement.X*h, x, w)
-	cy := y + h/2 + placement.Y*h
-	margin := markOverflow * h
+	drawW, drawH, cx, cy := placedGeometry(placement, info.Width()/info.Height(), x, y, w, h, unit)
+	margin := markOverflow * unit
 	pdf.ClipRect(x-margin, y-margin, w+2*margin, h+2*margin, false)
 	if multiply {
 		pdf.SetAlpha(opacity, "Multiply")

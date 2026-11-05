@@ -66,11 +66,11 @@ export const beritaAcara: GuideTopic = {
       id: 'tanda-tangan-basah',
       title: 'Tanda tangan basah',
       summary: 'Untuk BA yang harus ditandatangani dan distempel asli: cetak halaman tanda tangan, tandatangani, lalu unggah hasil pindainya. Pindaian menggantikan halaman tanda tangan di PDF final.',
-      shots: [{ id: 'ba-basah', title: 'Langkah tanda tangan basah', legend: ['Kode dokumen untuk mencocokkan pindaian', 'Status: belum diunggah / sudah ditandatangani / perlu ditandatangani ulang', 'Cetak halaman tanda tangan', 'Unggah hasil pindai (PDF, JPG, PNG, atau foto)'] }],
+      shots: [{ id: 'ba-basah', title: 'Langkah tanda tangan basah', legend: ['Kode dokumen untuk mencocokkan pindaian', 'Status: belum diunggah / sudah ditandatangani / perlu ditandatangani ulang', 'Cetak halaman tanda tangan', 'Pindai dengan kamera, atau Unggah berkas (PDF, JPG, PNG)'] }],
       steps: [
         { n: 2, text: <>Nyalakan switch <b>Tanda tangan basah</b> di panel Penandatangan (tersedia untuk DP3, Rekap Harian, Closing, Servis Berkala, TKDN).</>, permissions: ['bast.manage'] },
         { n: 3, text: <>Klik <ButtonSample variant="outline" icon={<Printer />}>Cetak halaman tanda tangan</ButtonSample>, cetak, minta tanda tangan dan stempel.</> },
-        { n: 4, text: <>Pindai atau foto halamannya, lalu <ButtonSample icon={<FileUp />}>Unggah hasil pindai</ButtonSample>. Status berubah menjadi <b>Sudah ditandatangani</b> dan Finalisasi terbuka.</>, permissions: ['bast.manage'] },
+        { n: 4, text: <><ButtonSample icon={<ScanLine />}>Pindai</ButtonSample> halamannya dengan kamera, atau <ButtonSample variant="outline" icon={<FileUp />}>Unggah berkas</ButtonSample> hasil pindai. Status berubah menjadi <b>Sudah ditandatangani</b> dan Finalisasi terbuka.</>, permissions: ['bast.manage'] },
       ],
       problems: [
         { q: 'Status "Perlu ditandatangani ulang"?', a: 'Isi BA berubah setelah halaman dipindai. Cetak ulang halaman tanda tangan, tandatangani, lalu unggah lagi.' },

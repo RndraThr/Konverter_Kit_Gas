@@ -7,6 +7,8 @@ type Props = {
   /** Ukuran kotak tanda tangan (CSS px). */
   width: number;
   height: number;
+  /** Satu satuan posisi (markUnitMM) dalam CSS px. */
+  unit: number;
   label: string;
   onDone: (png: string, placement: MarkPlacement) => void;
   onCancel: () => void;
@@ -18,18 +20,18 @@ const resolution = 4;
 /**
  * Kanvas tanda tangan langsung di kotak tanda tangan yang dipilih. Coretan
  * dipotong rapi lalu ditaruh tepat di tempat dicoret (posisi dalam satuan
- * tinggi kotak, sama seperti cetak).
+ * posisi tetap, sama seperti cetak).
  */
-export function InlineSignatureCanvas({ width, height, label, onDone, onCancel }: Props) {
+export function InlineSignatureCanvas({ width, height, unit, label, onDone, onCancel }: Props) {
   // Tebal garis mengikuti tinggi kotak agar hasil cetak sama di setiap zoom.
   const pad = useSignatureCanvas(height, undefined, { resolution, lineWidth: Math.max(1.5, height / 45) });
   const finish = () => {
     const crop = pad.exportCrop();
     if (!crop) return;
     onDone(crop.png, {
-      x: Math.round(((crop.left + crop.width / 2 - width / 2) / height) * 1000) / 1000,
-      y: Math.round(((crop.top + crop.height / 2 - height / 2) / height) * 1000) / 1000,
-      size: Math.round((Math.max(crop.width, crop.height) / height) * 1000) / 1000,
+      x: Math.round(((crop.left + crop.width / 2 - width / 2) / unit) * 1000) / 1000,
+      y: Math.round(((crop.top + crop.height / 2 - height / 2) / unit) * 1000) / 1000,
+      size: Math.round((Math.max(crop.width, crop.height) / unit) * 1000) / 1000,
       rotation: 0,
     });
   };

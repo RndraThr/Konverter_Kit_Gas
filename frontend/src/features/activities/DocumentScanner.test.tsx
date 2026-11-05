@@ -1,9 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { apiRequest } from '../../lib/api';
 import DocumentScanner from './DocumentScanner';
 
-vi.mock('../../lib/api');
 
 // jscanify's real browser entry point is the `jscanify/client` subpath (its
 // bare `jscanify` import resolves to a Node-only build) — see
@@ -63,11 +61,11 @@ afterEach(() => {
 });
 
 describe('DocumentScanner', () => {
-  it('accumulates pages across captures and posts them all on finish', async () => {
-    const onDone = vi.fn();
+  it('accumulates pages across captures and hands them all over on finish', async () => {
+    const onSubmit = vi.fn(async () => {});
     const onClose = vi.fn();
     render(
-      <DocumentScanner programId="p1" regencyId="r1" slotId="slot-1" customName="" onDone={onDone} onClose={onClose} />,
+      <DocumentScanner title="Scan Dokumen Pendukung" onSubmit={onSubmit} onClose={onClose} />,
     );
 
     const video = document.querySelector('video');
@@ -84,17 +82,17 @@ describe('DocumentScanner', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Selesai' }));
 
-    await waitFor(() => expect(apiRequest).toHaveBeenCalledTimes(1));
-    expect(apiRequest).toHaveBeenCalledWith(
-      '/api/v1/activities/supporting-documents/scan',
-      expect.objectContaining({ method: 'POST' }),
-    );
-    const body = (apiRequest as unknown as ReturnType<typeof vi.fn>).mock.calls[0][1].body as FormData;
-    expect(body.get('program_id')).toBe('p1');
-    expect(body.get('regency_id')).toBe('r1');
-    expect(body.get('slot_id')).toBe('slot-1');
-    expect(body.getAll('page')).toHaveLength(2);
-    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect((onSubmit.mock.calls[0] as unknown as [Blob[]])[0]).toHaveLength(2);
+  });
+
+  it('stops capturing at maxPages', async () => {
+    render(<DocumentScanner title="Pindai halaman tanda tangan" maxPages={1} onSubmit={vi.fn(async () => {})} onClose={vi.fn()} />);
+    attachStream(document.querySelector('video') as HTMLVideoElement);
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Ambil Halaman' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'Ambil Halaman' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Ambil Halaman' })).toBeDisabled());
+    expect(screen.getByText(/Halaman sudah diambil/)).toBeVisible();
   });
 
   it('shows the OpenCV-specific error on CDN load failure, then actually recovers on "Coba lagi" (not a stale cached rejection)', async () => {
@@ -110,10 +108,9 @@ describe('DocumentScanner', () => {
       return originalAppendChild(node);
     }) as typeof document.head.appendChild);
 
-    const onDone = vi.fn();
     const onClose = vi.fn();
     render(
-      <DocumentScanner programId="p1" regencyId="r1" slotId="slot-1" customName="" onDone={onDone} onClose={onClose} />,
+      <DocumentScanner title="Scan Dokumen Pendukung" onSubmit={vi.fn(async () => {})} onClose={onClose} />,
     );
 
     // First attempt: the CDN <script> fails to load.
