@@ -15,7 +15,8 @@ import (
 )
 
 // Foto Training dari distribusi: setiap foto slot recipient_training pada
-// penerimaan yang selesai disalin ke dokumentasi kegiatan Training 100%.
+// penerimaan yang selesai disalin ke dokumentasi kegiatan Training 100% dan
+// Pelatihan Teknis (fotonya diambil di depan banner pelatihan teknis).
 // Foto dari 10% penerima pertama tiap tanggal distribusi (urutan nomor bagi,
 // sama dengan peserta BA Training 10%) juga disalin ke Training 10%. Salinan
 // berupa berkas sendiri di folder kegiatan, sehingga tampil di halaman
@@ -67,8 +68,8 @@ WITH done AS (
 	FROM done
 	JOIN documentation_slots doc ON doc.distribution_slot_id = done.id AND doc.slot_code = '` + trainingPhotoSlotCode + `'
 	JOIN media_files mf ON mf.documentation_slot_id = doc.id AND mf.status = 'accepted'
-	CROSS JOIN (VALUES ('training_100'), ('training_10')) AS t(activity_type)
-	WHERE t.activity_type = 'training_100' OR done.rn <= ceil(done.n / 10.0)
+	CROSS JOIN (VALUES ('training_100'), ('pelatihan_teknis'), ('training_10')) AS t(activity_type)
+	WHERE t.activity_type <> 'training_10' OR done.rn <= ceil(done.n / 10.0)
 )
 `
 

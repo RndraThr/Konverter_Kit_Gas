@@ -45,6 +45,7 @@ export const dashboardRoutes: RouteObject[] = [{
     { path: 'dokumentasi/rakor', element: <ProtectedPage permission="activities.view"><ActivityDocumentationPage activityType="rakor" label="Rakor" /></ProtectedPage> },
     { path: 'dokumentasi/training-10', element: <ProtectedPage permission="activities.view"><ActivityDocumentationPage activityType="training_10" label="Training 10%" /></ProtectedPage> },
     { path: 'dokumentasi/training-100', element: <ProtectedPage permission="activities.view"><ActivityDocumentationPage activityType="training_100" label="Training 100%" /></ProtectedPage> },
+    { path: 'dokumentasi/kegiatan', element: <ProtectedPage permission="activities.view"><ActivityDocumentationPage activityType="kegiatan" label="Kegiatan" /></ProtectedPage> },
     { path: 'dokumentasi/unloading', element: <ProtectedPage permission="activities.view"><ActivityDocumentationPage label="Unloading" activityTypes={[
       { value: 'unloading_konkit', label: 'Konkit' },
       { value: 'unloading_mesin_pompa', label: 'Mesin Pompa' },

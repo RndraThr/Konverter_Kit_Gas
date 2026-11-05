@@ -32,6 +32,7 @@ var activityTypeCodes = map[string]string{
 	"unloading_selang":      "UNLOADSELANG",
 	"unloading_tabung_gas":  "UNLOADTABUNG",
 	"dokumen_pendukung":     "DOKPEND",
+	"kegiatan":              "KEGIATAN",
 }
 
 // activityTypeFolderNames are the exact Google Drive folder names under
@@ -47,6 +48,7 @@ var activityTypeFolderNames = map[string]string{
 	"unloading_oli":         "Unloading Oli",
 	"unloading_selang":      "Unloading Selang Hisap & Buang",
 	"unloading_tabung_gas":  "Unloading Tabung Gas",
+	"kegiatan":              "Kegiatan",
 }
 
 func isValidActivityType(activityType string) bool {

@@ -6,7 +6,7 @@ export const dokumentasiKegiatan: GuideTopic = {
   slug: 'dokumentasi-kegiatan',
   stepId: 'kegiatan',
   title: 'Dokumentasi kegiatan',
-  intro: 'Foto dan video kegiatan di luar serah terima per penerima: Ceremony & Sosialisasi, Pelatihan Teknis, Rakor, Training 10%, Training 100%, dan Unloading barang. Dokumentasi dicatat per program dan kabupaten, tidak terikat jadwal, dan disimpan ke folder dokumen kabupaten.',
+  intro: 'Foto dan video kegiatan di luar serah terima per penerima: Ceremony & Sosialisasi, Pelatihan Teknis, Rakor, Training 10%, Training 100%, Kegiatan, dan Unloading barang. Foto Training dari pendistribusian otomatis tersalin ke Training 100%, Pelatihan Teknis, dan (10% penerima pertama tiap tanggal) Training 10%. Dokumentasi dicatat per program dan kabupaten, tidak terikat jadwal, dan disimpan ke folder dokumen kabupaten.',
   manage: ['activities.manage'],
   view: ['activities.view'],
   route: '/dokumentasi/ceremony-sosialisasi',

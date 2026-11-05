@@ -9,7 +9,8 @@ export type ActivityType =
   | 'unloading_oli'
   | 'unloading_selang'
   | 'unloading_tabung_gas'
-  | 'dokumen_pendukung';
+  | 'dokumen_pendukung'
+  | 'kegiatan';
 
 export type ActivityMedia = {
   id: string;
@@ -63,4 +64,5 @@ export const activityTypeLabels: Record<ActivityType, string> = {
   unloading_selang: 'Unloading Selang Hisap & Buang',
   unloading_tabung_gas: 'Unloading Tabung Gas',
   dokumen_pendukung: 'Dokumen Pendukung',
+  kegiatan: 'Kegiatan',
 };
