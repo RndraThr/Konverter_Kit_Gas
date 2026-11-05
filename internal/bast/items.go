@@ -281,21 +281,23 @@ type TKDNRow struct {
 	Ref   string `json:"ref"`
 }
 
-// defaultTKDNRows mengikuti Komponen Biaya Barang pada perhitungan TKDN
-// Konverter Kit 2026 (Jumlah Biaya Barang 80,87%).
+// defaultTKDNRows: susunan Realisasi TKDN versi singkat (nama dan urutan
+// sama dengan profil yang dipakai di lapangan); nilai % TKDN dari template
+// paket, Jumlah 80,87%.
 func defaultTKDNRows() []TKDNRow {
-	const converter, hose = "Konverter Kit dan aksesoris kelengkapannya", "Selang Pompa Air untuk selang hisap dan Selang Buang (termasuk Klem)"
+	const converter, tank = "Konverter Kit dan kelengkapannya", "Tabung LPG 3 kg beserta isinya"
 	return []TKDNRow{
-		{Name: "Mesin Pompa Air range 5.5 HP - 6.5 HP", Ref: ItemKindMachine},
+		{Name: "Pompa Air Irigasi", Ref: ItemKindMachine},
 		{Name: "Konverter Kit", Group: converter, Ref: ItemKindConverter},
-		{Name: "Selang Karet LPG", Group: converter, Ref: "component:hose_clamp_accessories"},
+		{Name: "Selang LPG", Group: converter, Ref: "component:hose_clamp_accessories"},
 		{Name: "Regulator LPG", Group: converter, Ref: "component:regulator"},
-		{Name: "1 (satu) buah tabung LPG 3 kg beserta isinya", Ref: "component:lpg_tank"},
-		{Name: "Bracket pegangan tabung LPG dan pegangan Konverter Kit", Ref: "component:bracket"},
-		{Name: "Selang Hisap", Group: hose, Ref: ItemKindHoseSuction},
-		{Name: "Selang Buang", Group: hose, Ref: ItemKindHoseDischarge},
-		{Name: "Plat anti karat bertuliskan “Bantuan Pemerintah Tidak untuk Diperjualbelikan”", Ref: "component:anti_rust_plate"},
-		{Name: "Pelumas (oli) sejumlah 2 (dua) buah dengan volume kemasan masing masing 0,8 liter", Ref: "component:oil"},
+		{Name: "Minyak Pelumas (Oli)", Ref: "component:oil"},
+		{Name: "Tabung LPG 3 kg", Group: tank, Ref: "component:lpg_tank"},
+		{Name: "Isi LPG 3 kg", Group: tank, Ref: "component:lpg_refill"},
+		{Name: "Bracket", Ref: "component:bracket"},
+		{Name: "Selang Hisap", Ref: ItemKindHoseSuction},
+		{Name: "Selang Buang", Ref: ItemKindHoseDischarge},
+		{Name: "Plat Anti Karat", Ref: "component:anti_rust_plate"},
 	}
 }
 

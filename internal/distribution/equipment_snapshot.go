@@ -26,6 +26,7 @@ type packageEquipmentValues struct {
 	ConverterOptions []struct {
 		Code  string `json:"code"`
 		Brand string `json:"brand"`
+		Spec  string `json:"spec"`
 	} `json:"converter_options"`
 }
 
@@ -42,6 +43,7 @@ type equipmentVerificationSnapshot struct {
 	HoseSerial          string `json:"hose_serial"`
 	ConverterOptionCode string `json:"converter_option_code"`
 	ConverterBrand      string `json:"converter_brand"`
+	ConverterType       string `json:"converter_type"`
 	ConverterSerial     string `json:"converter_serial"`
 }
 
@@ -81,7 +83,7 @@ func buildEquipmentVerificationSnapshot(packageJSON []byte, selected UpdateEquip
 	}
 	for _, option := range values.ConverterOptions {
 		if option.Code == result.ConverterOptionCode {
-			result.ConverterBrand = option.Brand
+			result.ConverterBrand, result.ConverterType = option.Brand, option.Spec
 			converterFound = true
 			break
 		}

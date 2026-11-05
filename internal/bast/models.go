@@ -133,6 +133,7 @@ type EquipmentSnapshot struct {
 	HoseSpec        string `json:"hose_spec"`
 	HoseSerial      string `json:"hose_serial"`
 	ConverterBrand  string `json:"converter_brand"`
+	ConverterType   string `json:"converter_type"`
 	ConverterSerial string `json:"converter_serial"`
 }
 type ComponentSnapshot struct {
