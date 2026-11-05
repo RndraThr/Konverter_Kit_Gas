@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { InlineSignatureCanvas } from './InlineSignatureCanvas';
 import { PlacedMark } from './PlacedMark';
 import { base64ToBytes, renderPdfRegion, type RegionMM } from './pdfRegion';
-import { defaultStampOpacity, markOverflow, signatoryHeadings, type MarkPlacement, type SignatoryKind, type SignatoryRole, type SignatureLayout } from './signatures';
+import { defaultStampOpacity, markOverflow, markUnitMM, signatoryHeadings, type MarkPlacement, type SignatoryKind, type SignatoryRole, type SignatureLayout } from './signatures';
 
 const minPxPerMM = 2.2;
 
@@ -83,7 +83,9 @@ export function SignatureTableEditor({ layout, items, selection, editable, zoom,
         const item = items[box.role] ?? {};
         const boxWidth = box.w * pxPerMM;
         const boxHeight = box.h * pxPerMM;
-        const margin = markOverflow * boxHeight;
+        // BA Perorangan mencetak tanda sedikit lebih kecil (satuan kotaknya).
+        const unit = (box.unit || markUnitMM) * pxPerMM;
+        const margin = markOverflow * unit;
         const isSelected = selection?.role === box.role;
         const isDrawing = drawing?.role === box.role;
         return <div
@@ -109,6 +111,7 @@ export function SignatureTableEditor({ layout, items, selection, editable, zoom,
                 placement={mark.placement}
                 boxWidth={boxWidth}
                 boxHeight={boxHeight}
+                unit={unit}
                 insetPx={pxPerMM}
                 opacity={kind === 'stamp' ? item.stampOpacity ?? defaultStampOpacity : 1}
                 layer={(kind === 'stamp') === !item.stampBelow ? 2 : 1}
@@ -123,6 +126,7 @@ export function SignatureTableEditor({ layout, items, selection, editable, zoom,
           {isDrawing && drawing && <InlineSignatureCanvas
             width={boxWidth}
             height={boxHeight}
+            unit={unit}
             label={`Kanvas tanda tangan ${signatoryHeadings[box.role]}`}
             onDone={drawing.onDone}
             onCancel={drawing.onCancel}

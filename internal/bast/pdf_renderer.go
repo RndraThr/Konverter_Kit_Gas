@@ -26,14 +26,28 @@ const (
 	tableLineMM = 3.6
 	cellPadMM   = 1.6
 	minRowMM    = 5.8
+	// dataRowMM: tinggi minimal baris isi tabel (satu baris teks 3,6 mm);
+	// judul tabel tetap minRowMM karena bisa dua baris.
+	dataRowMM = 5.0
 	// cellMinFontPt adalah ukuran huruf terkecil sel bertinggi tetap.
 	cellMinFontPt = 5.0
-	infoRowMM     = 4.9
+	infoRowMM     = 4.5
 	// infoLineMM adalah jarak baris lanjutan nilai Data Penerima yang dibungkus.
-	infoLineMM    = 4.0
-	signatureHMM  = 36.0
-	checkToken    = "\u2713"
-	hoseLabelPair = "Panjang Selang Hisap"
+	infoLineMM = 4.0
+	// signatureBoxMM: tinggi ruang tanda tangan, sama dengan BA lain (28 mm).
+	signatureBoxMM = 28.0
+	// Judul kolom (2 baris) dan nama penanda tangan (1 baris) setinggi
+	// teksnya ditambah sedikit ruang, agar ruang tanda tangan bisa setinggi
+	// mungkin di satu halaman.
+	signatureHeadMM = 8.0
+	signatureNameMM = 6.0
+	signatureGapMM  = 3.0
+	// peroranganMarkScale: tanda tangan dan stempel di BA Perorangan dicetak
+	// sedikit lebih kecil daripada di BA lain (posisi tersimpan tetap sama).
+	peroranganMarkScale = 0.85
+	signatureHMM        = signatureGapMM + signatureHeadMM + signatureBoxMM + signatureNameMM
+	checkToken          = "\u2713"
+	hoseLabelPair       = "Panjang Selang Hisap"
 )
 
 type BundleRenderInput struct {
@@ -246,7 +260,7 @@ func renderRecipient(pdf *fpdf.Fpdf, document RecipientDocument, logos []registe
 
 	pdf.SetFont(arialFamily, "", 9)
 	declLines := len(pdf.SplitLines([]byte(declarationText), pageWidthMM-2*marginMM))
-	needed := 3 + float64(declLines)*4.1 + signatureHMM
+	needed := 2 + float64(declLines)*4.1 + signatureHMM
 	if pdf.GetY()+needed > pageHeightMM-bottomMarginMM {
 		addContinuationPage(pdf, document.SlotNumber, logos, events)
 	}
@@ -347,7 +361,12 @@ func renderEquipmentTables(pdf *fpdf.Fpdf, equipment EquipmentSnapshot) {
 	pdf.Ln(1.5)
 	renderHoseTable(pdf, equipment)
 	pdf.Ln(1.5)
-	renderTable(pdf, []float64{53.4, 103.2, 21.4}, []string{"Merek Konkit / Reducer", "Serial Number", "Checklist"}, [][]string{{equipment.ConverterBrand, equipment.ConverterSerial, checkMark(true)}})
+	if strings.TrimSpace(equipment.ConverterType) == "" {
+		// BA finalized before the konkit type was recorded keep their layout.
+		renderTable(pdf, []float64{53.4, 103.2, 21.4}, []string{"Merek Konkit / Reducer", "Serial Number", "Checklist"}, [][]string{{equipment.ConverterBrand, equipment.ConverterSerial, checkMark(true)}})
+		return
+	}
+	renderTable(pdf, []float64{53.4, 53.4, 49.8, 21.4}, []string{"Merek Konkit / Reducer", "Tipe Konkit", "Serial Number", "Checklist"}, [][]string{{equipment.ConverterBrand, equipment.ConverterType, equipment.ConverterSerial, checkMark(true)}})
 }
 
 func renderHoseTable(pdf *fpdf.Fpdf, equipment EquipmentSnapshot) {
@@ -362,7 +381,7 @@ func renderHoseTable(pdf *fpdf.Fpdf, equipment EquipmentSnapshot) {
 	labels := [2]string{"Panjang Selang Hisap", "Panjang Selang Buang"}
 	specWidth := widths[1] - 2*cellPadMM - labelWidth
 
-	// Setiap baris setinggi isinya (minimal minRowMM): merek dan spesifikasi
+	// Setiap baris setinggi isinya (minimal dataRowMM): merek dan spesifikasi
 	// yang panjang dibungkus di dalam selnya.
 	// Spesifikasi yang muat ditulis sesudah labelnya seperti acuan; yang tidak
 	// muat ditulis "label : spesifikasi" dan dibungkus selebar sel.
@@ -377,7 +396,7 @@ func renderHoseTable(pdf *fpdf.Fpdf, equipment EquipmentSnapshot) {
 	var rowHeights [2]float64
 	for row := 0; row < 2; row++ {
 		brandLines := len(pdf.SplitLines([]byte(brands[row]), widths[0]-2*cellPadMM))
-		rowHeights[row] = maxFloat(minRowMM, float64(maxInt(brandLines, specLineCount(row)))*tableLineMM+2)
+		rowHeights[row] = maxFloat(dataRowMM, float64(maxInt(brandLines, specLineCount(row)))*tableLineMM+2)
 	}
 	rowY := y
 	for row := 0; row < 2; row++ {
@@ -418,7 +437,7 @@ func renderTable(pdf *fpdf.Fpdf, widths []float64, headers []string, rows [][]st
 	renderFixedRow(pdf, widths, headers, nil, minRowMM, true)
 	for _, row := range rows {
 		pdf.SetFont(arialFamily, "", tableFontPt)
-		height := minRowMM
+		height := dataRowMM
 		for i, value := range row {
 			lines := len(pdf.SplitLines([]byte(value), widths[i]-2*cellPadMM))
 			height = maxFloat(height, float64(lines)*tableLineMM+2)
@@ -481,7 +500,7 @@ func renderComponentHeader(pdf *fpdf.Fpdf) {
 func componentRowHeight(pdf *fpdf.Fpdf, component ComponentSnapshot) float64 {
 	pdf.SetFont(arialFamily, "", tableFontPt)
 	lines := len(pdf.SplitLines([]byte(component.Label), componentWidths[0]-2*cellPadMM))
-	return maxFloat(minRowMM, float64(lines)*tableLineMM+2)
+	return maxFloat(dataRowMM, float64(lines)*tableLineMM+2)
 }
 
 func renderComponentRow(pdf *fpdf.Fpdf, component ComponentSnapshot, height float64) {
@@ -491,24 +510,23 @@ func renderComponentRow(pdf *fpdf.Fpdf, component ComponentSnapshot, height floa
 }
 
 func renderDeclarationAndSignatures(pdf *fpdf.Fpdf, signatures SignatureSnapshot) {
-	pdf.Ln(3)
+	pdf.Ln(2)
 	pdf.SetFont(arialFamily, "", 9)
 	pdf.SetX(marginMM)
 	pdf.MultiCell(pageWidthMM-2*marginMM, 4.1, declarationText, "", "J", false)
 
-	sigTop := pageHeightMM - bottomMarginMM - signatureHMM
-	if pdf.GetY() < sigTop {
-		pdf.SetY(sigTop)
-	}
+	// Tabel tanda tangan langsung di bawah pernyataan, tidak didorong ke kaki
+	// halaman.
+	pdf.Ln(signatureGapMM)
 
 	widths := []float64{57, 64, 57}
-	renderFixedRow(pdf, widths, []string{"PENERIMA PAKET / PETANI", "PELAKSANA PEMASANGAN\nDAN PENDISTRIBUSIAN", "KONSULTAN\nPENGAWAS"}, nil, 11, true)
+	renderFixedRow(pdf, widths, []string{"PENERIMA PAKET / PETANI", "PELAKSANA PEMASANGAN\nDAN PENDISTRIBUSIAN", "KONSULTAN\nPENGAWAS"}, nil, signatureHeadMM, true)
 	signatureTop := pdf.GetY()
-	renderFixedRow(pdf, widths, []string{"", "", ""}, nil, 15.5, false)
-	drawSignature(pdf, marginMM, signatureTop, widths[0], 15.5, signatures.ReceiverSignatureKey)
-	drawSignatoryMark(pdf, SignatoryInstaller, signatures.Marks[SignatoryInstaller], marginMM+widths[0], signatureTop, widths[1], 15.5)
-	drawSignatoryMark(pdf, SignatorySupervisor, signatures.Marks[SignatorySupervisor], marginMM+widths[0]+widths[1], signatureTop, widths[2], 15.5)
-	renderFixedRow(pdf, widths, []string{textnorm.DisplayTitle(signatures.ReceiverName), textnorm.DisplayTitle(signatures.ExecutorName), textnorm.DisplayTitle(signatures.SupervisorName)}, nil, 9.5, true)
+	renderFixedRow(pdf, widths, []string{"", "", ""}, nil, signatureBoxMM, false)
+	drawSignature(pdf, marginMM, signatureTop, widths[0], signatureBoxMM, signatures.ReceiverSignatureKey)
+	drawSignatoryMarkScaled(pdf, SignatoryInstaller, signatures.Marks[SignatoryInstaller], marginMM+widths[0], signatureTop, widths[1], signatureBoxMM, peroranganMarkScale)
+	drawSignatoryMarkScaled(pdf, SignatorySupervisor, signatures.Marks[SignatorySupervisor], marginMM+widths[0]+widths[1], signatureTop, widths[2], signatureBoxMM, peroranganMarkScale)
+	renderFixedRow(pdf, widths, []string{textnorm.DisplayTitle(signatures.ReceiverName), textnorm.DisplayTitle(signatures.ExecutorName), textnorm.DisplayTitle(signatures.SupervisorName)}, nil, signatureNameMM, true)
 }
 
 // formatIndonesianDate mencetak "Selasa, 10 Desember 2024" (huruf judul, KBBI).
