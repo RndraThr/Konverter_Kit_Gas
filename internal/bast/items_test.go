@@ -68,10 +68,10 @@ func TestDefaultTKDNRowsMatchReferenceFromTemplate(t *testing.T) {
 	}
 }
 
-func TestTKDNConverterBrandCarriesItsType(t *testing.T) {
+func TestTKDNConverterShowsTheBrandOnly(t *testing.T) {
 	entries := mustEntries(`{"converter_options":[{"code":"ergas","brand":"ERGAS","spec":"ECK-300","tkdn_percent":93.72}]}`)
 	items := tkdnItemsFor(defaultTKDNRows(), resolveEntries(entries, nil, "", nil))
-	if len(items) != 1 || items[0].Brand != "ERGAS ECK-300" || items[0].TKDNPercent != 93.72 {
+	if len(items) != 1 || items[0].Brand != "ERGAS" || items[0].TKDNPercent != 93.72 {
 		t.Fatalf("items=%+v", items)
 	}
 }
