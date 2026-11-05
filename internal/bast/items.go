@@ -325,12 +325,9 @@ func tkdnItemsFor(rows []TKDNRow, resolved map[string]ResolvedEntry) []TKDNItem 
 		if !ok {
 			continue
 		}
-		brand := r.Variant.Brand
-		if r.Entry.Kind == ItemKindConverter && r.Variant.Spec != "" {
-			// The converter's type follows its brand: "ERGAS ECK-300".
-			brand = brand + " " + r.Variant.Spec
-		}
-		items = append(items, TKDNItem{Group: row.Group, Name: row.Name, Brand: brand, QuantityPerPackage: r.Entry.QuantityPerPackage, TKDNPercent: r.Variant.TKDNPercent})
+		// Merek saja, seperti sertifikat TKDN ("ERGAS"); tipe konkit dicetak
+		// di BA Perorangan.
+		items = append(items, TKDNItem{Group: row.Group, Name: row.Name, Brand: r.Variant.Brand, QuantityPerPackage: r.Entry.QuantityPerPackage, TKDNPercent: r.Variant.TKDNPercent})
 	}
 	return items
 }
