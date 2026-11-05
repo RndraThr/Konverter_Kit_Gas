@@ -168,3 +168,11 @@ jobs:
       - name: Run Playwright E2E
         working-directory: frontend
         run: npm run e2e
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: frontend/test-results
+          retention-days: 7

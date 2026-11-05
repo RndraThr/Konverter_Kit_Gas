@@ -20,7 +20,7 @@ const maxSignatoryImageBytes = 2 << 20
 
 type signatoryRepository interface {
 	GetSignatureSettings(context.Context, string, string, auth.RegencyScope) (SignatureSettingsView, error)
-	SaveSignatureRules(context.Context, auth.Principal, string, string, bool, SignatureRules, bool, auth.RegencyScope, auth.ClientMeta) error
+	SaveSignatureRules(context.Context, auth.Principal, string, string, bool, SignatureRules, WetMode, auth.RegencyScope, auth.ClientMeta) error
 	SaveSignatoryName(context.Context, auth.Principal, string, string, string, string, auth.RegencyScope, auth.ClientMeta) error
 	PutSignatoryAsset(context.Context, auth.Principal, string, string, string, []byte, auth.RegencyScope, auth.ClientMeta) error
 	DeleteSignatoryAsset(context.Context, auth.Principal, string, string, string, auth.RegencyScope, auth.ClientMeta) error
@@ -52,7 +52,7 @@ func (s *SignatoryService) Settings(ctx context.Context, scheduleID, documentKey
 }
 
 // SaveRules menyimpan aturan dari panel BA lalu mengembalikan isi panel terbaru.
-func (s *SignatoryService) SaveRules(ctx context.Context, actor auth.Principal, scheduleID, documentKey string, override bool, rules SignatureRules, wet bool, scope auth.RegencyScope, meta auth.ClientMeta) (SignatureSettingsView, error) {
+func (s *SignatoryService) SaveRules(ctx context.Context, actor auth.Principal, scheduleID, documentKey string, override bool, rules SignatureRules, mode WetMode, scope auth.RegencyScope, meta auth.ClientMeta) (SignatureSettingsView, error) {
 	scheduleID, documentKey = strings.TrimSpace(scheduleID), strings.TrimSpace(documentKey)
 	if scheduleID == "" || !validSignatureDocument(documentKey) {
 		return SignatureSettingsView{}, ErrInvalidInput
@@ -63,8 +63,8 @@ func (s *SignatoryService) SaveRules(ctx context.Context, actor auth.Principal, 
 		}
 	}
 	// Mode tanda tangan basah hanya untuk BA yang mendukungnya.
-	wet = wet && wetSignatureDocuments[documentKey]
-	if err := s.repository.SaveSignatureRules(ctx, actor, scheduleID, documentKey, override, rules, wet, scope, meta); err != nil {
+	mode.Wet = mode.Wet && wetSignatureDocuments[documentKey]
+	if err := s.repository.SaveSignatureRules(ctx, actor, scheduleID, documentKey, override, rules, mode, scope, meta); err != nil {
 		return SignatureSettingsView{}, err
 	}
 	return s.repository.GetSignatureSettings(ctx, scheduleID, documentKey, scope)

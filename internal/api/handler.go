@@ -307,6 +307,7 @@ type Dependencies struct {
 	BASTSettings        BASTScheduleSettingsService
 	BASTSignatory       BASTSignatoryService
 	BASTWetSignature    BASTWetSignatureService
+	BASTFullScan        BASTFullScanService
 	BASTOverview        BASTOverviewService
 	BASTHandover        BASTHandoverService
 	BASTSignatureLayout BASTSignatureLayoutService
@@ -545,6 +546,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleBASTRakorda(w, r, rc, h.deps.Training10, strings.TrimPrefix(path, "bast/training-10/"))
 	case strings.HasPrefix(path, "bast/training-100/"):
 		h.handleBASTRakorda(w, r, rc, h.deps.Training100, strings.TrimPrefix(path, "bast/training-100/"))
+	case path == "bast/full-scan" || strings.HasPrefix(path, "bast/full-scan/"):
+		h.handleBASTFullScan(w, r, rc, strings.TrimPrefix(strings.TrimPrefix(path, "bast/full-scan"), "/"))
 	case path == "bast/wet-signature" || strings.HasPrefix(path, "bast/wet-signature/"):
 		h.handleBASTWetSignature(w, r, rc, strings.TrimPrefix(strings.TrimPrefix(path, "bast/wet-signature"), "/"))
 	case path == "bast/signatures" || strings.HasPrefix(path, "bast/signatures/"):

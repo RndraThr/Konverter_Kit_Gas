@@ -139,7 +139,34 @@ func (s *BundleService) PreviewBundle(ctx context.Context, request BundleRequest
 	if err != nil {
 		return BundlePreview{}, err
 	}
+	// Pindai lengkap: preview satu tanggal menampilkan pindaian yang cocok.
+	if request.SlotID == "" && !systemRender(ctx) {
+		if scan := s.matchingFullScan(ctx, request, scope); scan != nil {
+			if pages, err := pdfPageCount(scan); err == nil {
+				hash := sha256.Sum256(scan)
+				return BundlePreview{PDF: scan, Filename: rendered.Filename, RecipientCount: len(documents), PageCount: pages, Checksum: hex.EncodeToString(hash[:])}, nil
+			}
+		}
+	}
 	return BundlePreview{PDF: rendered.PDF, Filename: rendered.Filename, RecipientCount: len(documents), PageCount: rendered.PageCount, Checksum: checksum}, nil
+}
+
+// matchingFullScan: pindaian BA Perorangan tanggal ini yang cocok dengan
+// datanya sekarang, atau nil.
+func (s *BundleService) matchingFullScan(ctx context.Context, request BundleRequest, scope auth.RegencyScope) []byte {
+	sources, err := s.loadFingerprintSources(ctx, request.ProgramID, request.RegencyID, scope)
+	if err != nil {
+		return nil
+	}
+	fingerprint, err := s.dateFingerprint(ctx, request, scope, sources)
+	if err != nil {
+		return nil
+	}
+	scan, err := s.fullScanFor(ctx, request, fingerprint)
+	if err != nil {
+		return nil
+	}
+	return scan
 }
 
 // FinalizeBundle syncs one date: it writes the current BA Perorangan to the BA folder in Drive
@@ -160,6 +187,10 @@ func (s *BundleService) FinalizeBundle(ctx context.Context, actor auth.Principal
 	if err != nil {
 		return DailyBundle{}, err
 	}
+	fullScan, err := s.fullScanFor(ctx, request, fingerprint)
+	if err != nil {
+		return DailyBundle{}, err
+	}
 	documents, documentIDs, sourceContext, err := s.prepareDocuments(ctx, actor, request, scope, meta, true)
 	if err != nil {
 		return DailyBundle{}, err
@@ -167,6 +198,13 @@ func (s *BundleService) FinalizeBundle(ctx context.Context, actor auth.Principal
 	rendered, checksum, err := s.render(ctx, request.ProgramID, request.RegencyID, request.LocalDate, documents)
 	if err != nil {
 		return DailyBundle{}, err
+	}
+	// Pindai lengkap: PDF yang disimpan adalah pindaian BA yang ditandatangani
+	// (jumlah halamannya sama, jadi halaman tiap penerima tetap berlaku).
+	if fullScan != nil {
+		rendered.PDF = fullScan
+		hash := sha256.Sum256(fullScan)
+		checksum = hex.EncodeToString(hash[:])
 	}
 
 	active, activeErr := s.repository.GetActiveBundle(ctx, request.ProgramID, request.RegencyID, request.LocalDate, scope)
@@ -473,4 +511,60 @@ func (s *BundleService) dateFingerprint(ctx context.Context, request BundleReque
 func checksumHex(data []byte) string {
 	hash := sha256.Sum256(data)
 	return hex.EncodeToString(hash[:])
+}
+
+// fullScanFor: PDF pindaian lengkap BA Perorangan tanggal ini (nil bila
+// belum dipindai); galat bila data tanggal itu berubah sejak dipindai.
+func (s *BundleService) fullScanFor(ctx context.Context, request BundleRequest, fingerprint string) ([]byte, error) {
+	loader, ok := s.repository.(fullScanLoader)
+	if !ok {
+		return nil, nil
+	}
+	scheduleID, err := s.scheduleFor(ctx, request.ProgramID, request.RegencyID)
+	if err != nil || scheduleID == "" {
+		return nil, err
+	}
+	exists, pdf, code, err := loader.ResolveFullScan(ctx, scheduleID, peroranganDocumentKey, request.LocalDate)
+	if err != nil || !exists {
+		return nil, err
+	}
+	if len(pdf) == 0 || code != shortFingerprint(fingerprint) {
+		return nil, ErrFullScanRequired
+	}
+	return pdf, nil
+}
+
+// peroranganDocumentKey adalah kunci BA Perorangan di aturan tanda tangan.
+const peroranganDocumentKey = "ba-perorangan"
+
+// ScheduleFingerprint adalah kode isi BA Perorangan satu tanggal jadwal
+// (untuk pindai lengkap): berubah bila data penerima tanggal itu berubah.
+func (s *BundleService) ScheduleFingerprint(ctx context.Context, scheduleID, date string, scope auth.RegencyScope) (string, error) {
+	finder, ok := s.repository.(interface {
+		ScheduleProgramRegency(context.Context, string, auth.RegencyScope) (string, string, error)
+	})
+	if !ok {
+		return "", ErrInvalidInput
+	}
+	programID, regencyID, err := finder.ScheduleProgramRegency(ctx, scheduleID, scope)
+	if err != nil {
+		return "", err
+	}
+	sources, err := s.loadFingerprintSources(ctx, programID, regencyID, scope)
+	if err != nil {
+		return "", err
+	}
+	fingerprint, err := s.dateFingerprint(ctx, normalizedBundleRequest(BundleRequest{ProgramID: programID, RegencyID: regencyID, LocalDate: date}), scope, sources)
+	if err != nil {
+		return "", err
+	}
+	return shortFingerprint(fingerprint), nil
+}
+
+// shortFingerprint: kode isi 8 karakter, sama bentuknya dengan BA lain.
+func shortFingerprint(fingerprint string) string {
+	if len(fingerprint) > 8 {
+		fingerprint = fingerprint[:8]
+	}
+	return strings.ToUpper(fingerprint)
 }

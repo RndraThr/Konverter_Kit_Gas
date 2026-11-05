@@ -44,6 +44,10 @@ type WetSignature struct {
 	Code     string `json:"code,omitempty"`
 	Scanned  bool   `json:"scanned,omitempty"`
 	PageOnly bool   `json:"-"`
+	// Full: mode pindai lengkap; FullPDF adalah pindaian yang cocok dengan
+	// isi saat ini (kosong bila belum diunggah atau isinya berubah).
+	Full    bool   `json:"full,omitempty"`
+	FullPDF []byte `json:"-"`
 }
 
 // wetPageRequest menandai permintaan "cetak halaman tanda tangan": Preview BA
@@ -102,6 +106,9 @@ func loadWetSignature(ctx context.Context, repository any, scheduleID, documentK
 	if request := wetPageFrom(ctx); request != nil {
 		request.code = code
 		return WetSignature{Enabled: true, Code: code, PageOnly: true}, nil, nil
+	}
+	if full, ok, err := loadFullScan(ctx, repository, scheduleID, documentKey, date, code); err != nil || ok {
+		return full, nil, err
 	}
 	loader, ok := repository.(wetSignatureLoader)
 	if !ok {

@@ -114,7 +114,7 @@ func (r *Repository) effectiveSignatureRules(ctx context.Context, scheduleID, do
 	return result, nil
 }
 
-func upsertSignatureRules(ctx context.Context, tx pgx.Tx, actor auth.Principal, scheduleID, documentKey string, override bool, rules SignatureRules, wet bool) error {
+func upsertSignatureRules(ctx context.Context, tx pgx.Tx, actor auth.Principal, scheduleID, documentKey string, override bool, rules SignatureRules, mode WetMode) error {
 	raw, err := json.Marshal(rules.normalized())
 	if err != nil {
 		return err
@@ -123,7 +123,7 @@ func upsertSignatureRules(ctx context.Context, tx pgx.Tx, actor auth.Principal, 
 		INSERT INTO bast_signature_rules(schedule_id, document_key, override, rules, wet_signature, updated_by)
 		VALUES ($1::uuid, $2, $3, $4, $5, NULLIF($6,'')::uuid)
 		ON CONFLICT (schedule_id, document_key) DO UPDATE SET override=EXCLUDED.override, rules=EXCLUDED.rules, wet_signature=EXCLUDED.wet_signature, updated_by=EXCLUDED.updated_by, updated_at=now()
-	`, scheduleID, documentKey, override, raw, wet, actor.UserID)
+	`, scheduleID, documentKey, override, raw, mode.Wet, actor.UserID)
 	if err != nil {
 		return fmt.Errorf("upsert signature rules: %w", err)
 	}
@@ -133,7 +133,7 @@ func upsertSignatureRules(ctx context.Context, tx pgx.Tx, actor auth.Principal, 
 // SaveSignatureRules menyimpan aturan cetak dari panel satu BA. override=false
 // berarti BA mengikuti global: aturan yang dikirim disimpan sebagai global
 // jadwal dan aturan khusus BA yang sudah ada dipertahankan (hanya nonaktif).
-func (r *Repository) SaveSignatureRules(ctx context.Context, actor auth.Principal, scheduleID, documentKey string, override bool, rules SignatureRules, wet bool, scope auth.RegencyScope, meta auth.ClientMeta) error {
+func (r *Repository) SaveSignatureRules(ctx context.Context, actor auth.Principal, scheduleID, documentKey string, override bool, rules SignatureRules, mode WetMode, scope auth.RegencyScope, meta auth.ClientMeta) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin signature rules: %w", err)
@@ -143,18 +143,18 @@ func (r *Repository) SaveSignatureRules(ctx context.Context, actor auth.Principa
 		return err
 	}
 	if override {
-		if err := upsertSignatureRules(ctx, tx, actor, scheduleID, documentKey, true, rules, wet); err != nil {
+		if err := upsertSignatureRules(ctx, tx, actor, scheduleID, documentKey, true, rules, mode); err != nil {
 			return err
 		}
 	} else {
-		if err := upsertSignatureRules(ctx, tx, actor, scheduleID, SignatureRulesGlobal, false, rules, wet); err != nil {
+		if err := upsertSignatureRules(ctx, tx, actor, scheduleID, SignatureRulesGlobal, false, rules, mode); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE bast_signature_rules SET override=false, updated_by=NULLIF($3,'')::uuid, updated_at=now() WHERE schedule_id::text=$1 AND document_key=$2`, scheduleID, documentKey, actor.UserID); err != nil {
 			return fmt.Errorf("disable signature override: %w", err)
 		}
 	}
-	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "bast.signature_rules_updated", ResourceType: "bast_signature_rules", ResourceID: scheduleID, Metadata: map[string]any{"document_key": documentKey, "override": override, "wet_signature": wet}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "bast.signature_rules_updated", ResourceType: "bast_signature_rules", ResourceID: scheduleID, Metadata: map[string]any{"document_key": documentKey, "override": override, "wet_signature": mode.Wet}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -312,6 +312,10 @@ func (r *Repository) ResolveSignatoryMarks(ctx context.Context, scheduleID, docu
 	effective, err := r.effectiveSignatureRules(ctx, scheduleID, documentKey)
 	if err != nil {
 		return nil, nil, err
+	}
+	// Cetak untuk pindai lengkap: BA bersih, ditandatangani di kertas.
+	if blankPrint(ctx) {
+		return SignatureMarks{}, nil, nil
 	}
 	rules := effective.rules
 	rows, err := r.pool.Query(ctx, `SELECT role, kind, image_png FROM bast_signatory_assets WHERE schedule_id::text=$1`, scheduleID)

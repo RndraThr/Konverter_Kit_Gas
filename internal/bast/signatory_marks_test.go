@@ -24,7 +24,7 @@ type signatoryRepositoryStub struct {
 func (s *signatoryRepositoryStub) GetSignatureSettings(context.Context, string, string, auth.RegencyScope) (SignatureSettingsView, error) {
 	return SignatureSettingsView{Override: s.override, Rules: s.saved}, nil
 }
-func (s *signatoryRepositoryStub) SaveSignatureRules(_ context.Context, _ auth.Principal, _, _ string, override bool, rules SignatureRules, _ bool, _ auth.RegencyScope, _ auth.ClientMeta) error {
+func (s *signatoryRepositoryStub) SaveSignatureRules(_ context.Context, _ auth.Principal, _, _ string, override bool, rules SignatureRules, _ WetMode, _ auth.RegencyScope, _ auth.ClientMeta) error {
 	s.saved, s.override = rules, override
 	return nil
 }
@@ -51,10 +51,10 @@ func TestSignatoryServiceValidatesInput(t *testing.T) {
 	if _, err := service.Settings(ctx, "schedule-1", "rakorda", scope); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("RAKORDA has no signature table, err=%v", err)
 	}
-	if _, err := service.SaveRules(ctx, actor, "schedule-1", "dp3", true, SignatureRules{"penerima": {Signature: true}}, false, scope, meta); !errors.Is(err, ErrInvalidInput) {
+	if _, err := service.SaveRules(ctx, actor, "schedule-1", "dp3", true, SignatureRules{"penerima": {Signature: true}}, WetMode{}, scope, meta); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("unknown role err=%v", err)
 	}
-	if _, err := service.SaveRules(ctx, actor, "schedule-1", "dp3", true, SignatureRules{SignatoryInstaller: {Signature: true, Stamp: true}}, false, scope, meta); err != nil || !repository.override || !repository.saved[SignatoryInstaller].Stamp {
+	if _, err := service.SaveRules(ctx, actor, "schedule-1", "dp3", true, SignatureRules{SignatoryInstaller: {Signature: true, Stamp: true}}, WetMode{}, scope, meta); err != nil || !repository.override || !repository.saved[SignatoryInstaller].Stamp {
 		t.Fatalf("save rules err=%v override=%v rules=%v", err, repository.override, repository.saved)
 	}
 	if err := service.SaveName(ctx, actor, "schedule-1", SignatoryAgricultureOffice, "  ir.  haryanto ", " 1972 ", scope, meta); err != nil || repository.name != "IR. HARYANTO" || repository.nip != "1972" {

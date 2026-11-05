@@ -133,6 +133,8 @@ func (s *DailyRecapService) Preview(ctx context.Context, scheduleID, localDate s
 	if err != nil {
 		return AggregatePreview{}, err
 	}
+	// Pindai lengkap: preview menampilkan pindaian yang cocok bila ada.
+	rendered.PDF, rendered.PageCount = fullScanPreview(wet, rendered.PDF, rendered.PageCount)
 	hash := sha256.Sum256(rendered.PDF)
 	return AggregatePreview{PDF: rendered.PDF, Filename: formatDailyRecapFilename(ctxData.RegencyName, localDate, 1), RecipientCount: len(recipients), PageCount: rendered.PageCount, Checksum: hex.EncodeToString(hash[:])}, nil
 }
@@ -161,6 +163,9 @@ func (s *DailyRecapService) Finalize(ctx context.Context, actor auth.Principal, 
 	if wet.Enabled && !wet.Scanned {
 		return AggregateDocument{}, ErrWetSignatureRequired
 	}
+	if wet.Full && len(wet.FullPDF) == 0 {
+		return AggregateDocument{}, ErrFullScanRequired
+	}
 	snapshot.Wet = wet
 	snapshotJSON, err := json.Marshal(snapshot)
 	if err != nil {
@@ -174,6 +179,10 @@ func (s *DailyRecapService) Finalize(ctx context.Context, actor auth.Principal, 
 	mergeImages(logoBytes, wetImages)
 	rendered, err := RenderDailyRecap(snapshot, logoBytes)
 	if err != nil {
+		return AggregateDocument{}, err
+	}
+	// Pindai lengkap: PDF final adalah hasil pindaian BA yang ditandatangani.
+	if rendered.PDF, err = fullScanFinalPDF(wet, rendered.PDF); err != nil {
 		return AggregateDocument{}, err
 	}
 	hash := sha256.Sum256(rendered.PDF)

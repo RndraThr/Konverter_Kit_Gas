@@ -203,8 +203,9 @@ export function SignatureSettingsPanel({ scheduleID, document, documentLabel, da
   // Saat diaktifkan, aturan khusus dimulai dari aturan global; saat dimatikan
   // BA kembali memakai global (aturan khusus tetap tersimpan, tidak aktif).
   const toggleOverride = () => saveRules.mutate({ override: !data.override, rules: data.global_rules, wet_signature: data.wet_signature });
-  const setWet = (wet: boolean) => { if (wet !== data.wet_signature) saveRules.mutate({ override: data.override, rules: data.rules, wet_signature: wet }); };
-  const wet = data.wet_supported && data.wet_signature;
+  const mode: SigningMode = data.wet_supported && data.wet_signature ? 'wet' : 'digital';
+  const setMode = (next: SigningMode) => { if (next !== mode) saveRules.mutate({ override: data.override, rules: data.rules, wet_signature: next === 'wet' }); };
+  const wet = mode !== 'digital';
 
   const selectedCard = cards.find((card) => card.role === selection?.role) ?? cards[0];
   const selectedDraft = selectedCard ? drafts[selectedCard.role] : undefined;
@@ -214,7 +215,7 @@ export function SignatureSettingsPanel({ scheduleID, document, documentLabel, da
   return <Card>
     <CardHeader className="border-b"><CardTitle className="flex items-center gap-2 text-base"><Signature className="size-4 text-primary" aria-hidden="true" />Penandatangan</CardTitle></CardHeader>
     <CardContent className="grid gap-4 pt-5">
-      {data.wet_supported && <ModeTabs wet={data.wet_signature} disabled={!canManage || saveRules.isPending} onChange={setWet} />}
+      {data.wet_supported && <ModeTabs mode={mode} wetSupported={data.wet_supported} fullSupported={false} disabled={!canManage || saveRules.isPending} onChange={setMode} />}
       <SwitchRow
         id={switchID}
         checked={data.override}
@@ -240,7 +241,7 @@ export function SignatureSettingsPanel({ scheduleID, document, documentLabel, da
             </li>;
           })}
         </ol>
-        {date !== '' && <WetSignatureBar scheduleID={scheduleID} document={wetDocument} date={date} label={documentLabel} />}
+        {date !== '' && mode === 'wet' && <WetSignatureBar scheduleID={scheduleID} document={wetDocument} date={date} label={documentLabel} />}
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {cards.map((card) => {
             const draft = drafts[card.role];
@@ -349,19 +350,27 @@ type EditorProps = {
 function SignatoryEditor({ card, draft, sources, canManage, placement, onDraft, onRule, onPlacement, drawing, onDraw, onSelectMark }: EditorProps) {
   const id = useId();
   const [removeWhite, setRemoveWhite] = useState(true);
-  const [scanning, setScanning] = useState(false);
+  // Gambar yang sedang dipindai dengan kamera (tanda tangan atau stempel).
+  const [scanning, setScanning] = useState<SignatoryKind | null>(null);
   const heading = signatoryHeadings[card.role];
 
-  const chooseStamp = async (file: File) => {
+  // Gambar tanda tangan atau stempel dari foto/pindaian kertas: latar putih
+  // dan kertas kosong di sekitarnya dibuang, posisinya kembali bawaan.
+  const chooseImage = async (kind: SignatoryKind, file: File) => {
     try {
       const image = await imageFileToPNGBase64(file, removeWhite);
-      onDraft({ stamp: { image, preview: `data:image/png;base64,${image}` } });
-      onRule({ stamp: true });
-      onSelectMark('stamp');
+      onDraft({ [kind]: { image, preview: `data:image/png;base64,${image}` } });
+      onRule({ [kind]: true });
+      onPlacement(kind, null);
+      onSelectMark(kind);
     } catch (error) {
       toast.error(errorMessage(error));
     }
   };
+  const whiteToggle = (kind: SignatoryKind) => <div className="flex items-center gap-2">
+    <Checkbox id={`${id}-${kind}-white`} checked={removeWhite} onCheckedChange={(value) => setRemoveWhite(value === true)} />
+    <Label htmlFor={`${id}-${kind}-white`} className="text-xs font-normal">Hapus latar putih hasil pindai/foto</Label>
+  </div>;
 
   return <section aria-label={heading} className="grid content-start gap-4 rounded-lg border p-4">
     <h3 className="text-sm font-semibold">{heading}</h3>
@@ -383,8 +392,12 @@ function SignatoryEditor({ card, draft, sources, canManage, placement, onDraft, 
       </div>
       {canManage && <div className="flex flex-wrap gap-2">
         <Button type="button" size="sm" variant="outline" disabled={drawing} onClick={onDraw}><PenLine aria-hidden="true" />{drawing ? 'Sedang mencoret...' : sources.signature ? 'Gambar ulang' : 'Gambar tanda tangan'}</Button>
+        <Button type="button" size="sm" variant="outline" disabled={drawing} onClick={() => setScanning('signature')}><ScanLine aria-hidden="true" />Pindai tanda tangan</Button>
+        <Button type="button" size="sm" variant="outline" disabled={drawing} nativeButton={false} render={<label htmlFor={`${id}-signature-file`} />}><ImageUp aria-hidden="true" />Unggah gambar</Button>
+        <input id={`${id}-signature-file`} type="file" accept="image/png,image/jpeg" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void chooseImage('signature', file); }} />
         {sources.signature && <Button type="button" size="sm" variant="ghost" onClick={() => onDraft({ signature: card.signature_updated_at ? 'removed' : 'keep' })}><Eraser aria-hidden="true" />Hapus tanda tangan</Button>}
       </div>}
+      {canManage && whiteToggle('signature')}
       {!sources.signature && <p className="text-xs text-muted-foreground">Belum ada tanda tangan digital.</p>}
       {canManage && draft.rule.signature && sources.signature && <PlacementControls kind="signature" heading={heading} placement={placement('signature')} custom={Boolean(draft.rule.signature_placement)} onChange={(value) => onPlacement('signature', value)} />}
     </div>
@@ -396,29 +409,26 @@ function SignatoryEditor({ card, draft, sources, canManage, placement, onDraft, 
       </div>
       {draft.rule.stamp && canManage && <>
         <div className="flex flex-wrap gap-2">
-          <Button type="button" size="sm" variant="outline" onClick={() => setScanning(true)}><ScanLine aria-hidden="true" />Pindai stempel</Button>
+          <Button type="button" size="sm" variant="outline" onClick={() => setScanning('stamp')}><ScanLine aria-hidden="true" />Pindai stempel</Button>
           <Button type="button" size="sm" variant="outline" nativeButton={false} render={<label htmlFor={`${id}-stamp-file`} />}><ImageUp aria-hidden="true" />{sources.stamp ? 'Ganti stempel' : 'Unggah stempel'}</Button>
-          <input id={`${id}-stamp-file`} type="file" accept="image/png,image/jpeg" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void chooseStamp(file); }} />
+          <input id={`${id}-stamp-file`} type="file" accept="image/png,image/jpeg" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; if (file) void chooseImage('stamp', file); }} />
           {sources.stamp && <Button type="button" size="sm" variant="ghost" onClick={() => onDraft({ stamp: card.stamp_updated_at ? 'removed' : 'keep' })}><Trash2 aria-hidden="true" />Hapus stempel</Button>}
         </div>
-        <div className="flex items-center gap-2">
-          <Checkbox id={`${id}-white`} checked={removeWhite} onCheckedChange={(value) => setRemoveWhite(value === true)} />
-          <Label htmlFor={`${id}-white`} className="text-xs font-normal">Hapus latar putih hasil pindai</Label>
-        </div>
+        {whiteToggle('stamp')}
         {sources.stamp && <PlacementControls kind="stamp" heading={heading} placement={placement('stamp')} custom={Boolean(draft.rule.stamp_placement)} onChange={(value) => onPlacement('stamp', value)} />}
         {sources.stamp && <StampLook heading={heading} opacity={draft.rule.stamp_opacity ?? defaultStampOpacity} below={Boolean(draft.rule.stamp_below)} onOpacity={(value) => onRule({ stamp_opacity: value })} onBelow={(value) => onRule({ stamp_below: value })} />}
       </>}
     </div>
     {scanning && <Suspense fallback={null}>
       <DocumentScanner
-        title={`Pindai stempel ${heading}`}
-        description="Cap stempel di kertas putih, arahkan kamera dari atas dengan cahaya merata."
+        title={`Pindai ${scanning === 'stamp' ? 'stempel' : 'tanda tangan'} ${heading}`}
+        description={scanning === 'stamp' ? 'Cap stempel di kertas putih, arahkan kamera dari atas dengan cahaya merata.' : 'Tanda tangan di kertas putih, arahkan kamera dari atas dengan cahaya merata.'}
         maxPages={1}
         onSubmit={async ([page]) => {
-          await chooseStamp(new File([page], 'stempel.jpg', { type: 'image/jpeg' }));
-          setScanning(false);
+          await chooseImage(scanning, new File([page], `${scanning}.jpg`, { type: 'image/jpeg' }));
+          setScanning(null);
         }}
-        onClose={() => setScanning(false)}
+        onClose={() => setScanning(null)}
       />
     </Suspense>}
   </section>;
@@ -500,21 +510,25 @@ function ExactNumber({ label, unit, value, min, max, onCommit }: ExactNumberProp
   </span>;
 }
 
-type ModeTabsProps = { wet: boolean; disabled: boolean; onChange: (wet: boolean) => void };
+type SigningMode = 'digital' | 'wet' | 'full';
+
+type ModeTabsProps = { mode: SigningMode; wetSupported: boolean; fullSupported: boolean; disabled: boolean; onChange: (mode: SigningMode) => void };
 
 /**
  * Pilih cara tanda tangan BA: digital (gambar tanda tangan dan stempel
- * dicetak sistem) atau basah (halaman dicetak, ditandatangani di kertas,
- * lalu hasil pindainya diunggah). Hanya satu yang berlaku.
+ * dicetak sistem), basah (halaman tanda tangan dicetak, ditandatangani di
+ * kertas, lalu hasil pindainya diunggah), atau pindai lengkap (seluruh BA
+ * ditandatangani di kertas dan dipindai). Hanya satu yang berlaku.
  */
-function ModeTabs({ wet, disabled, onChange }: ModeTabsProps) {
-  const options = [
-    { value: false, label: 'Tanda tangan digital', description: 'Tanda tangan dan stempel digital dicetak langsung di BA.' },
-    { value: true, label: 'Tanda tangan basah', description: 'Cetak halaman tanda tangan, tandatangani di kertas, lalu unggah hasil pindai.' },
+function ModeTabs({ mode, wetSupported, fullSupported, disabled, onChange }: ModeTabsProps) {
+  const options: { value: SigningMode; label: string; description: string }[] = [
+    { value: 'digital', label: 'Tanda tangan digital', description: 'Tanda tangan dan stempel digital dicetak langsung di BA.' },
+    ...(wetSupported ? [{ value: 'wet' as const, label: 'Tanda tangan basah', description: 'Cetak halaman tanda tangan, tandatangani di kertas, lalu unggah hasil pindai.' }] : []),
+    ...(fullSupported ? [{ value: 'full' as const, label: 'Pindai lengkap', description: 'Cetak seluruh BA, tandatangani dan paraf di kertas, lalu pindai semua halamannya.' }] : []),
   ];
-  return <div role="tablist" aria-label="Cara tanda tangan" className="grid gap-2 rounded-xl bg-muted p-1 sm:grid-cols-2">
+  return <div role="tablist" aria-label="Cara tanda tangan" className={`grid gap-2 rounded-xl bg-muted p-1 ${options.length > 2 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
     {options.map((option) => {
-      const active = option.value === wet;
+      const active = option.value === mode;
       return <button
         key={option.label}
         type="button"

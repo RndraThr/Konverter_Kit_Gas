@@ -12,6 +12,7 @@ import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
 import { SignatureSettingsPanel } from './SignatureSettingsPanel';
+import { FullScanCard } from './FullScanBar';
 import { useWetSignatureBlocked, WetSignatureHint } from './WetSignatureBar';
 import { DocumentInfoFields } from './DocumentInfoFields';
 import type { AggregateDocument, ScheduleSettings, ServisBerkalaSummary } from './types';
@@ -120,35 +121,38 @@ export function ServisBerkalaPanel({ scheduleID, regencyName, programType, defau
         </CardContent>
       </Card>
 
-      <Card className="min-w-0">
-        <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle className="text-base">BA Agenda Servis Berkala</CardTitle><p className="mt-1 text-sm text-muted-foreground">{regencyName} · disimpan ke 11. SERVIS BERKALA</p></div><Badge variant="outline">{totalPackages} paket</Badge></div></CardHeader>
-        <CardContent className="grid gap-4 pt-5">
-          <div className="grid gap-3 sm:items-start sm:grid-cols-[12rem_minmax(0,1fr)]">
-            <FormField label="Tanggal dokumen" name="servis_document_date" type="date" value={documentDate} onChange={(e) => setDocumentDate(e.target.value)} />
-            <DocumentInfoFields scheduleID={scheduleID} fields={[{ key: 'consultant_company_name', label: 'Perusahaan Pelaksana' }]} />
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
-            <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>
-            {canManage && <Button disabled={finalize.isPending || status !== 'ready' || documentDate === '' || wetBlocked} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
-          </div>
-          <WetSignatureHint scheduleID={scheduleID} document="servis-berkala" date={documentDate} open={showSignatures} onOpen={() => setShowSignatures(true)} />
+      <div className="grid min-w-0 content-start gap-4">
+        <Card className="min-w-0">
+          <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle className="text-base">BA Agenda Servis Berkala</CardTitle><p className="mt-1 text-sm text-muted-foreground">{regencyName} · disimpan ke 11. SERVIS BERKALA</p></div><Badge variant="outline">{totalPackages} paket</Badge></div></CardHeader>
+          <CardContent className="grid gap-4 pt-5">
+            <div className="grid gap-3 sm:items-start sm:grid-cols-[12rem_minmax(0,1fr)]">
+              <FormField label="Tanggal dokumen" name="servis_document_date" type="date" value={documentDate} onChange={(e) => setDocumentDate(e.target.value)} />
+              <DocumentInfoFields scheduleID={scheduleID} fields={[{ key: 'consultant_company_name', label: 'Perusahaan Pelaksana' }]} />
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
+              <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>
+              {canManage && <Button disabled={finalize.isPending || status !== 'ready' || documentDate === '' || wetBlocked} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi & sinkronkan'}</Button>}
+            </div>
+            <WetSignatureHint scheduleID={scheduleID} document="servis-berkala" date={documentDate} open={showSignatures} onOpen={() => setShowSignatures(true)} />
 
-          {status === 'no_recipients' && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">Belum ada distribusi selesai pada jadwal ini.</div>}
-          {status === 'servis_schedule_required' && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">Tanggal servis belum lengkap: dibiarkan kosong di preview. Lengkapi dan simpan jadwal servis sebelum finalisasi.</p>}
+            {status === 'no_recipients' && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">Belum ada distribusi selesai pada jadwal ini.</div>}
+            {status === 'servis_schedule_required' && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">Tanggal servis belum lengkap: dibiarkan kosong di preview. Lengkapi dan simpan jadwal servis sebelum finalisasi.</p>}
 
-          {activeDoc && <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center">
-            <div><div className="flex items-center gap-2"><FileCheck2 className="size-4 text-emerald-600" /><strong className="text-sm">{activeDoc.filename}</strong></div><p className="mt-1 text-xs text-muted-foreground">Versi {activeDoc.version} · {activeDoc.page_count} halaman · {activeDoc.recipient_count} paket</p></div>
-            <Button nativeButton={false} render={<a href={`/api/v1/bast/servis-berkala/documents/${activeDoc.id}/content`} />} variant="outline"><Download />Unduh PDF</Button>
-          </div>}
+            {activeDoc && <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center">
+              <div><div className="flex items-center gap-2"><FileCheck2 className="size-4 text-emerald-600" /><strong className="text-sm">{activeDoc.filename}</strong></div><p className="mt-1 text-xs text-muted-foreground">Versi {activeDoc.version} · {activeDoc.page_count} halaman · {activeDoc.recipient_count} paket</p></div>
+              <Button nativeButton={false} render={<a href={`/api/v1/bast/servis-berkala/documents/${activeDoc.id}/content`} />} variant="outline"><Download />Unduh PDF</Button>
+            </div>}
 
-          {versions.length > 1 && <div className="grid gap-2 rounded-lg border p-3">
-            <strong className="text-sm">Riwayat versi</strong>
-            {versions.filter((doc) => doc.status === 'superseded').map((doc) => <div className="flex items-center justify-between gap-3 text-sm" key={doc.id}><span className="text-muted-foreground">Versi {doc.version} · {doc.document_date}</span><Button nativeButton={false} render={<a href={`/api/v1/bast/servis-berkala/documents/${doc.id}/content`} />} variant="ghost" size="sm"><Download />Unduh</Button></div>)}
-          </div>}
+            {versions.length > 1 && <div className="grid gap-2 rounded-lg border p-3">
+              <strong className="text-sm">Riwayat versi</strong>
+              {versions.filter((doc) => doc.status === 'superseded').map((doc) => <div className="flex items-center justify-between gap-3 text-sm" key={doc.id}><span className="text-muted-foreground">Versi {doc.version} · {doc.document_date}</span><Button nativeButton={false} render={<a href={`/api/v1/bast/servis-berkala/documents/${doc.id}/content`} />} variant="ghost" size="sm"><Download />Unduh</Button></div>)}
+            </div>}
 
-          {status !== 'no_recipients' && documentDate !== '' && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="BA Servis Berkala" />}
-        </CardContent>
-      </Card>
+            {status !== 'no_recipients' && documentDate !== '' && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="BA Servis Berkala" />}
+          </CardContent>
+        </Card>
+        <FullScanCard scheduleID={scheduleID} document="servis-berkala" date={documentDate} label="BA Servis Berkala" />
+      </div>
     </div>
   </div>;
 }

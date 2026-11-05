@@ -12,7 +12,7 @@ import (
 
 type BASTSignatoryService interface {
 	Settings(context.Context, string, string, auth.RegencyScope) (bast.SignatureSettingsView, error)
-	SaveRules(context.Context, auth.Principal, string, string, bool, bast.SignatureRules, bool, auth.RegencyScope, auth.ClientMeta) (bast.SignatureSettingsView, error)
+	SaveRules(context.Context, auth.Principal, string, string, bool, bast.SignatureRules, bast.WetMode, auth.RegencyScope, auth.ClientMeta) (bast.SignatureSettingsView, error)
 	SaveName(context.Context, auth.Principal, string, string, string, string, auth.RegencyScope, auth.ClientMeta) error
 	PutAsset(context.Context, auth.Principal, string, string, string, []byte, auth.RegencyScope, auth.ClientMeta) error
 	DeleteAsset(context.Context, auth.Principal, string, string, string, auth.RegencyScope, auth.ClientMeta) error
@@ -152,7 +152,7 @@ func (h *Handler) handleBASTSignatureRules(w http.ResponseWriter, r *http.Reques
 		if !decodeJSON(w, r, &input) {
 			return
 		}
-		view, err := service.SaveRules(r.Context(), rc.principal, input.ScheduleID, input.Document, input.Override, input.Rules, input.Wet, scope, clientMeta(r))
+		view, err := service.SaveRules(r.Context(), rc.principal, input.ScheduleID, input.Document, input.Override, input.Rules, bast.WetMode{Wet: input.Wet}, scope, clientMeta(r))
 		if err != nil {
 			writeServiceError(w, err)
 			return

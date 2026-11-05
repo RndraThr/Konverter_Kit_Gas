@@ -106,6 +106,9 @@ type GasElpijiMergedReceipt struct {
 	DocumentID string            `json:"document_id"`
 	Checksum   string            `json:"checksum"`
 	Snapshot   GasElpijiSnapshot `json:"snapshot"`
+	// storageKey: PDF final penerimaan, disambung apa adanya bila penerimaan
+	// itu dipindai lengkap.
+	storageKey string
 }
 
 // GasElpijiMergedSnapshot adalah snapshot_json BA Gas LPG gabungan.
@@ -121,7 +124,9 @@ type GasElpijiReceipt struct {
 	Input    GasElpijiInput    `json:"input"`
 	// WetScanned: halaman penerimaan ini memakai pindaian tanda tangan basah.
 	WetScanned bool `json:"wet_scanned"`
-	snapshot   GasElpijiSnapshot
+	// FullScanned: PDF penerimaan ini adalah pindaian lengkap BA basah.
+	FullScanned bool `json:"full_scanned,omitempty"`
+	snapshot    GasElpijiSnapshot
 }
 
 // GasElpijiSummary memberi panel daftar penerimaan dan status gabungan.

@@ -15,6 +15,7 @@ import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
 import { SignatureSettingsPanel } from './SignatureSettingsPanel';
+import { FullScanCard } from './FullScanBar';
 import { useWetSignatureBlocked, WetSignatureHint } from './WetSignatureBar';
 import { DocumentInfoFields } from './DocumentInfoFields';
 import { TemplateEntrySelect } from './TemplateEntrySelect';
@@ -129,6 +130,7 @@ export function TKDNPanel({ scheduleID, programID, regencyName, programType, def
         {ready && documentDate !== '' && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="Realisasi TKDN" />}
       </CardContent>
     </Card>
+    <FullScanCard scheduleID={scheduleID} document="tkdn" date={documentDate} label="TKDN" />
 
     {showEditor && <Card>
       <CardHeader className="border-b"><CardTitle className="text-base">Susunan Realisasi TKDN</CardTitle><p className="text-sm text-muted-foreground">Nama baris dan kelompok di dokumen. Setiap baris menunjuk barang Template Paket; merk, jumlah per paket, dan % TKDN diambil dari template jadwal. Baris berurutan dengan kelompok sama dicetak sebagai satu nomor.</p></CardHeader>

@@ -22,8 +22,13 @@ const sidebarGroupByItem: Record<string, string> = {
 
 export async function navigateDashboard(page: Page, label: string, mobile: boolean) {
   if (label === 'Profil saya') {
-    await page.getByRole('button', { name: 'Menu akun' }).click();
-    await page.getByRole('menuitem', { name: 'Profil saya', exact: true }).click();
+    // On CI the menu item sometimes takes the click without navigating, so the
+    // whole step is retried until the profile URL is reached.
+    await expect(async () => {
+      await page.getByRole('button', { name: 'Menu akun' }).click({ timeout: 3_000 });
+      await page.getByRole('menuitem', { name: 'Profil saya', exact: true }).click({ timeout: 3_000 });
+      await expect(page).toHaveURL(/\/profil/, { timeout: 3_000 });
+    }).toPass({ timeout: 20_000 });
     return;
   }
 

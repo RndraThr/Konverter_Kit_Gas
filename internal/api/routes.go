@@ -603,6 +603,10 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "signatory_image_invalid", "Gambar harus PNG dengan ukuran maksimal 2 MB")
 	case errors.Is(err, bast.ErrWetScanInvalid):
 		writeError(w, http.StatusBadRequest, "wet_scan_invalid", "Berkas pindaian harus gambar (PNG/JPG) atau PDF dengan ukuran maksimal 8 MB")
+	case errors.Is(err, bast.ErrFullScanRequired):
+		writeError(w, http.StatusConflict, "full_scan_required", "Pindaian BA lengkap dibuat untuk isi lama. Pindai ulang BA terbaru, atau hapus pindaian agar BA dibuat sistem.")
+	case errors.Is(err, bast.ErrFullScanInvalid):
+		writeError(w, http.StatusBadRequest, "full_scan_invalid", "Pindaian harus PDF yang dapat dibaca atau foto halaman JPG/PNG, maksimal 30 MB")
 	case errors.Is(err, bast.ErrWetSignatureRequired):
 		writeError(w, http.StatusConflict, "wet_signature_required", "Unggah halaman tanda tangan basah sebelum finalisasi")
 	case errors.Is(err, bast.ErrSignatoryRequired):

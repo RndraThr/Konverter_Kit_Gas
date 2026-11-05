@@ -11,7 +11,9 @@ import { ApiError, apiBlobRequest, apiRequest } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
+import { FullScanCard, useFullScanStatus } from './FullScanBar';
 import { SignatureSettingsPanel } from './SignatureSettingsPanel';
+import { WetSignatureHint } from './WetSignatureBar';
 import type { BundleRequest, DailyBundle, DateSummary, RecipientDocument } from './types';
 
 // scheduleID: jadwal kabupaten ini, dipakai panel tanda tangan Pelaksana/Konsultan.
@@ -58,6 +60,12 @@ export function BAIndividualPanel({ programID, regencyID, regencyName, programTy
     queryFn: () => apiBlobRequest('/api/v1/bast/individual/bundles/preview', { method: 'POST', body: JSON.stringify(request(selectedDate)) }),
     enabled: programType === 'farmer' && selectedDate !== '' && canPreview,
   });
+
+  // Pindai lengkap: sinkron menunggu pindaian BA tanggal ini, lalu PDF di
+  // Drive diganti hasil pindaian (walau data tidak berubah).
+  const fullScan = useFullScanStatus(scheduleID ?? '', 'ba-perorangan', selectedDate).data?.data;
+  const fullScanReady = Boolean(fullScan?.scan?.valid);
+  const fullScanBlocked = Boolean(fullScan?.scan && !fullScan.scan.valid);
 
   // Sinkron ditulis per tanggal; "Sinkronkan semua" menjalankannya berurutan
   // agar Drive tidak menerima banyak unggahan sekaligus.
@@ -138,10 +146,11 @@ export function BAIndividualPanel({ programID, regencyID, regencyName, programTy
               : <p className="text-sm text-muted-foreground">Belum ada PDF di Drive.</p>}
             <div className="flex flex-wrap gap-2">
               {bundle && <Button nativeButton={false} render={<a href={`/api/v1/bast/individual/bundles/${bundle.id}/content`} />} variant="outline"><Download />Unduh PDF</Button>}
-              {canManage && <Button disabled={sync.isPending || selected?.sync_status === 'synced'} onClick={() => sync.mutate([selectedDate])}><CloudUpload />{sync.isPending ? 'Menyinkronkan...' : selected?.sync_status === 'synced' ? 'Sudah sinkron' : 'Sinkronkan ke Drive'}</Button>}
+              {canManage && <Button disabled={sync.isPending || fullScanBlocked || (selected?.sync_status === 'synced' && !fullScanReady)} onClick={() => sync.mutate([selectedDate])}><CloudUpload />{sync.isPending ? 'Menyinkronkan...' : fullScanReady ? 'Sinkronkan pindaian' : selected?.sync_status === 'synced' ? 'Sudah sinkron' : 'Sinkronkan ke Drive'}</Button>}
             </div>
           </div>}
           {syncError && <p className="text-sm text-destructive" role="alert">{syncError}</p>}
+          {ready && scheduleID && !emptied && <WetSignatureHint scheduleID={scheduleID} document="ba-perorangan" date={selectedDate} open={showSignatures} onOpen={() => setShowSignatures(true)} />}
           {ready && scheduleID && !emptied && <div className="flex flex-wrap gap-2">
             <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>
           </div>}
@@ -149,6 +158,7 @@ export function BAIndividualPanel({ programID, regencyID, regencyName, programTy
           {ready && !emptied && <Button className="justify-start" onClick={() => setShowRecipients((value) => !value)} variant="ghost"><Users />{showRecipients ? 'Sembunyikan penerima' : `Lihat ${selected?.recipient_count ?? 0} penerima`}</Button>}
         </CardContent>
       </Card>
+      {scheduleID && <FullScanCard scheduleID={scheduleID} document="ba-perorangan" date={selectedDate} label="BA Perorangan" />}
 
       {showRecipients && (recipients.isPending ? <DataState kind="loading" title="Memuat penerima" description="Mengurutkan berdasarkan nomor pembagian." /> : recipients.isError ? <DataState kind="error" title="Daftar penerima gagal dimuat" description="Coba muat ulang daftar penerima." action={{ label: 'Coba lagi', onClick: () => recipients.refetch() }} /> : <DataTable label={`Penerima ${selectedDate}`} minimumWidth={680}>
         <thead><tr><th>No. pembagian</th><th>Nomor dokumen</th><th>Total kabupaten</th></tr></thead>
