@@ -5,14 +5,14 @@ import { DataState } from '@/components/DataState';
 
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
-type Props = { blob: Blob; label: string; page?: number };
+type Props = { blob: Blob; label: string; page?: number; className?: string };
 
 /**
  * Preview PDF untuk browser tanpa penampil PDF bawaan (mis. Chrome Android):
  * setiap halaman digambar ke canvas selebar wadah memakai pdf.js. Dimuat
  * terpisah (lazy) agar bundle desktop tidak bertambah.
  */
-export default function PdfCanvasPreview({ blob, label, page }: Props) {
+export default function PdfCanvasPreview({ blob, label, page, className = 'grid max-h-[75vh] gap-3 overflow-y-auto rounded-lg border bg-muted/30 p-2' }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
 
@@ -59,6 +59,6 @@ export default function PdfCanvasPreview({ blob, label, page }: Props) {
   return <div className="grid gap-2">
     {state === 'loading' && <DataState kind="loading" title="Menyiapkan preview" description={`Menggambar halaman ${label}.`} />}
     {state === 'error' && <DataState kind="error" title="Preview belum dapat ditampilkan" description="Unduh PDF untuk melihat dokumen." />}
-    <div ref={container} title={`Preview ${label}`} className="grid max-h-[75vh] gap-3 overflow-y-auto rounded-lg border bg-muted/30 p-2" />
+    <div ref={container} title={`Preview ${label}`} className={className} />
   </div>;
 }

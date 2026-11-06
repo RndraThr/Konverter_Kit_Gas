@@ -40,7 +40,7 @@ func (h *Handler) handleRealtime(w http.ResponseWriter, r *http.Request, rc requ
 	}
 	defer conn.CloseNow()
 
-	subscriber := h.deps.Realtime.Subscribe(scope)
+	subscriber := h.deps.Realtime.SubscribeUser(scope, rc.principal.UserID)
 	defer h.deps.Realtime.Unsubscribe(subscriber)
 	// Incoming messages are not used; CloseRead answers pings and ends ctx on close.
 	ctx := conn.CloseRead(r.Context())

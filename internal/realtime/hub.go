@@ -30,20 +30,26 @@ type Event struct {
 	ScheduleID string `json:"schedule_id,omitempty"`
 	ProgramID  string `json:"program_id,omitempty"`
 	RegencyID  string `json:"regency_id,omitempty"`
+	// UserID limits a "notification" signal to its owner.
+	UserID string `json:"user_id,omitempty"`
 }
 
 // Subscriber receives the events its regency scope allows.
 type Subscriber struct {
 	scope  auth.RegencyScope
+	userID string
 	events chan Event
 }
 
 // Events delivers signals; it is closed when the subscriber is removed.
 func (s *Subscriber) Events() <-chan Event { return s.events }
 
-// allows: a new app release concerns every phone; other signals only the
-// regencies the account sees.
+// allows: a notification concerns its owner, a new app release every phone,
+// and other signals only the regencies the account sees.
 func (s *Subscriber) allows(e Event) bool {
+	if e.Kind == "notification" {
+		return s.userID != "" && s.userID == e.UserID
+	}
 	return e.Kind == "app_release" || s.scope.Unrestricted || slices.Contains(s.scope.RegencyIDs, e.RegencyID)
 }
 
@@ -62,6 +68,15 @@ func (h *Hub) Subscribe(scope auth.RegencyScope) *Subscriber {
 	s := &Subscriber{scope: scope, events: make(chan Event, 64)}
 	h.mu.Lock()
 	h.subscribers[s] = struct{}{}
+	h.mu.Unlock()
+	return s
+}
+
+// SubscribeUser is Subscribe that also receives the user's notifications.
+func (h *Hub) SubscribeUser(scope auth.RegencyScope, userID string) *Subscriber {
+	s := h.Subscribe(scope)
+	h.mu.Lock()
+	s.userID = userID
 	h.mu.Unlock()
 	return s
 }

@@ -26,9 +26,11 @@ import (
 	"konkit/internal/distribution"
 	"konkit/internal/finalreport"
 	finalreporttemplate "konkit/internal/finalreport/template"
+	"konkit/internal/finance"
 	"konkit/internal/geo"
 	"konkit/internal/health"
 	"konkit/internal/media"
+	"konkit/internal/notifications"
 	"konkit/internal/profile"
 	"konkit/internal/programs"
 	"konkit/internal/realtime"
@@ -49,6 +51,26 @@ func main() {
 	if err := run(ctx, cfg); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// pushSender reads the FCM key. Without one the inbox and realtime still work,
+// only pushes to closed apps do not.
+func pushSender(ctx context.Context, cfg config.Config) notifications.Sender {
+	if cfg.FCMServiceAccountFile == "" {
+		log.Printf("notifications: FCM_SERVICE_ACCOUNT_FILE not set, pushes are off")
+		return nil
+	}
+	key, err := os.ReadFile(cfg.FCMServiceAccountFile)
+	if err != nil {
+		log.Printf("notifications: read FCM key: %v", err)
+		return nil
+	}
+	sender, err := notifications.NewFCMSender(ctx, key)
+	if err != nil {
+		log.Printf("notifications: %v", err)
+		return nil
+	}
+	return sender
 }
 
 func run(ctx context.Context, cfg config.Config) error {
@@ -129,6 +151,10 @@ func run(ctx context.Context, cfg config.Config) error {
 	}
 	appReleaseService := appreleases.NewService(pool, appReleaseStorage)
 	go appReleaseService.RunPatches(ctx)
+	notificationService := notifications.NewService(pool, pushSender(ctx, cfg))
+	financeService := finance.NewService(pool, mediaStorage, notificationService)
+	go notificationService.RunPush(ctx)
+	go financeService.RunReminders(ctx)
 	// Change signals for the mobile app: Postgres NOTIFY -> WebSocket clients.
 	realtimeHub := realtime.NewHub()
 	go realtime.Listen(ctx, cfg.DatabaseURL, realtimeHub)
@@ -203,6 +229,8 @@ func run(ctx context.Context, cfg config.Config) error {
 		ClosingKabupaten:  bastClosingKabupatenService,
 		ServisBerkala:     bastServisBerkalaService,
 		GasElpiji:         bastGasElpijiService,
+		Finance:           financeService,
+		Notifications:     notificationService,
 		TKDN:              bastTKDNService,
 		Pemeriksaan:       bastPemeriksaanService,
 		Items:             bastItemService,

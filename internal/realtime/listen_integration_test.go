@@ -175,3 +175,31 @@ func TestIntegrationScheduleTemplateChangeSignalsSchedules(t *testing.T) {
 		t.Fatal("no realtime event for the template change")
 	}
 }
+
+// A new notification reaches its owner through the trigger and the listener.
+func TestIntegrationNotificationReachesItsOwner(t *testing.T) {
+	pool, databaseURL := realtimeIntegrationPool(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var userID string
+	suffix := fmt.Sprint(time.Now().UnixNano())
+	if err := pool.QueryRow(ctx, `INSERT INTO users (username, email, password_hash) VALUES ($1, $2, 'x') RETURNING id::text`, "notify"+suffix, "notify"+suffix+"@test.local").Scan(&userID); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM users WHERE id = $1::uuid`, userID) })
+	hub := NewHub()
+	owner := hub.SubscribeUser(auth.RegencyScope{}, userID)
+	go Listen(ctx, databaseURL, hub)
+	time.Sleep(500 * time.Millisecond)
+	if _, err := pool.Exec(ctx, `INSERT INTO notifications (user_id, category, title) VALUES ($1::uuid, 'finance_review', 'Tes')`, userID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-owner.Events():
+		if event.Kind != "notification" || event.UserID != userID {
+			t.Fatalf("event=%+v", event)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no signal")
+	}
+}

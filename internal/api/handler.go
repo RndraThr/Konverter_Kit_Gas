@@ -317,6 +317,8 @@ type Dependencies struct {
 	ClosingKabupaten    ClosingKabupatenService
 	ServisBerkala       ServisBerkalaService
 	GasElpiji           GasElpijiService
+	Finance             FinanceService
+	Notifications       NotificationService
 	TKDN                TKDNService
 	Pemeriksaan         PemeriksaanService
 	Items               ItemService
@@ -404,6 +406,10 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleGeoReverse(w, r, rc)
 	case path == "realtime":
 		h.handleRealtime(w, r, rc)
+	case strings.HasPrefix(path, "finance/"):
+		h.handleFinance(w, r, rc, strings.TrimPrefix(path, "finance/"))
+	case path == "notifications", strings.HasPrefix(path, "notifications/"):
+		h.handleNotifications(w, r, rc, strings.TrimPrefix(strings.TrimPrefix(path, "notifications"), "/"))
 	case path == "me":
 		h.handleMe(w, r, rc)
 	case path == "me/password":

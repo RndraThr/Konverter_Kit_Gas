@@ -26,20 +26,22 @@ var (
 )
 
 type Config struct {
-	Env                       string
-	Addr                      string
-	BaseURL                   string
-	DatabaseURL               string
-	SessionSecret             []byte
-	SessionCookieSecure       bool
-	SessionTTL                time.Duration
-	RememberTTL               time.Duration
-	StoragePath               string
-	StorageBackend            string
-	GDriveOAuthClientID       string
-	GDriveOAuthClientSecret   string
-	GDriveOAuthTokenJSON      string
-	GDriveRootFolderID        string
+	Env                     string
+	Addr                    string
+	BaseURL                 string
+	DatabaseURL             string
+	SessionSecret           []byte
+	SessionCookieSecure     bool
+	SessionTTL              time.Duration
+	RememberTTL             time.Duration
+	StoragePath             string
+	StorageBackend          string
+	GDriveOAuthClientID     string
+	GDriveOAuthClientSecret string
+	GDriveOAuthTokenJSON    string
+	GDriveRootFolderID      string
+	// FCMServiceAccountFile is the Firebase service account key; empty turns pushes off.
+	FCMServiceAccountFile     string
 	MaxConcurrentVideoUploads int
 	GeocoderURL               string
 	// Map tile sources handed to the browser by /api/v1/map/config. The API key is a public client key.
@@ -108,6 +110,7 @@ func loadFrom(lookup lookupFunc) (Config, error) {
 		return Config{}, ErrStoragePathAbsolute
 	}
 
+	cfg.FCMServiceAccountFile, _ = lookup("FCM_SERVICE_ACCOUNT_FILE")
 	if cfg.StorageBackend != "local" && cfg.StorageBackend != "gdrive" {
 		return Config{}, ErrStorageBackendInvalid
 	}
