@@ -2,8 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { UploadQueueIndicator } from '@/components/UploadQueueIndicator';
 import {
   Activity, BookOpen, BookOpenCheck, BookOpenText, CalendarClock, CalendarRange, Camera, ChevronDown, FileClock,
-  FileCheck2, Files, FileSpreadsheet, FileText, GraduationCap, Images, ListFilter, MapPinned, Menu, PackageOpen, PanelLeftClose, PanelLeftOpen,
-  PartyPopper, Presentation, Settings, ShieldCheck, Users, UsersRound, X,
+  ClipboardCheck, ReceiptText, FileCheck2, Files, FileSpreadsheet, FileText, GraduationCap, Images, ListFilter, MapPinned, Menu, PackageOpen, PanelLeftClose, PanelLeftOpen,
+  PartyPopper, Presentation, Settings, ShieldCheck, Users, UsersRound, Wallet, WalletCards, X,
 } from 'lucide-react';
 import { ReactNode, useEffect, useId, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
@@ -19,6 +19,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { cn } from '@/lib/utils';
 import { apiRequest, getBootstrap, type BootstrapUser } from '../lib/api';
 import { PermissionsProvider } from '../lib/permissions';
+import { NotificationBell } from '../features/finance/NotificationBell';
 import { PageHelp } from '../features/guide/PageHelp';
 
 type NavItem = { label: string; pageTitle?: string; to: string; permission?: string; icon: ReactNode };
@@ -51,6 +52,13 @@ const groups: NavGroup[] = [
   ] },
   { label: 'Berita Acara', items: [
     { label: 'Berita Acara', to: '/berita-acara', permission: 'bast.view', icon: <Files /> },
+  ] },
+  { label: 'Keuangan', items: [
+    { label: 'Pengajuan', pageTitle: 'Pengajuan keuangan', to: '/keuangan', permission: 'finance.request', icon: <Wallet /> },
+    { label: 'Review keuangan', to: '/keuangan-review', permission: 'finance.review', icon: <ClipboardCheck /> },
+    { label: 'Voucher', pageTitle: 'Voucher keuangan', to: '/keuangan-voucher', permission: 'finance.review', icon: <ReceiptText /> },
+    { label: 'Monitoring keuangan', to: '/keuangan-monitoring', permission: 'finance.monitor', icon: <WalletCards /> },
+    { label: 'Tim keuangan', to: '/keuangan-tim', permission: 'finance.manage', icon: <UsersRound /> },
   ] },
   { label: 'Laporan', items: [
     { label: 'Laporan', to: '/laporan', permission: 'distribution.view', icon: <FileText /> },
@@ -375,6 +383,7 @@ export function AppShell() {
           <MobileNavigation permissions={user.permissions} connectionState={connectionState} />
           <PageContext />
           <UploadQueueIndicator userId={user.id} />
+          <NotificationBell />
           <LiveClock />
           <PageHelp permissions={user.permissions} />
           <AccountMenu user={user} csrfToken={bootstrap.data.meta.csrf_token} />

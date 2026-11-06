@@ -19,16 +19,25 @@ import { ReportsPage } from '../features/reports/ReportsPage';
 import { ActivityDocumentationPage } from '../features/activities/ActivityDocumentationPage';
 import SupportingDocumentsRoute from '../features/activities/SupportingDocumentsPage';
 import { BeritaAcaraPage } from '../features/berita-acara/BeritaAcaraPage';
+import { RequestsPage } from '../features/finance/RequestsPage';
+import { RequestDetailPage } from '../features/finance/RequestDetailPage';
+import { ReviewPage } from '../features/finance/ReviewPage';
+import { VoucherPage } from '../features/finance/VoucherPage';
+import { MonitoringPage } from '../features/finance/MonitoringPage';
+import { TeamsPage } from '../features/finance/TeamsPage';
 import { GuidePage } from '../features/guide/GuidePage';
 import { GuideTopicPage } from '../features/guide/GuideTopicPage';
 import FinalReportRoute from '../features/finalreport/FinalReportPage';
 import { PresentationPage } from '../features/guide/presentation/PresentationPage';
 
-function ProtectedPage({ permission, children }: { permission: string; children: ReactNode }) {
+function ProtectedPage({ permission, children }: { permission: string | string[]; children: ReactNode }) {
   const bootstrap = useQuery({ queryKey: ['bootstrap'], queryFn: getBootstrap });
   if (!bootstrap.data) return null;
   const permissions = bootstrap.data.data.permissions;
-  return permissions.includes('*') || permissions.includes(permission) ? children : <Navigate to="/profil" replace />;
+  const allowed = [permission].flat().some((code) => permissions.includes(code));
+  if (permissions.includes('*') || allowed) return children;
+  // Finance tidak punya halaman awal Data Penerima.
+  return <Navigate to={permissions.includes('finance.review') ? '/keuangan-review' : '/profil'} replace />;
 }
 
 export const dashboardRoutes: RouteObject[] = [{
@@ -57,6 +66,12 @@ export const dashboardRoutes: RouteObject[] = [{
     { path: 'berita-acara', element: <ProtectedPage permission="bast.view"><BeritaAcaraPage /></ProtectedPage> },
     { path: 'laporan', element: <ProtectedPage permission="distribution.view"><ReportsPage /></ProtectedPage> },
     { path: 'laporan-akhir', element: <ProtectedPage permission="final_report.view"><FinalReportRoute /></ProtectedPage> },
+    { path: 'keuangan', element: <ProtectedPage permission="finance.request"><RequestsPage /></ProtectedPage> },
+    { path: 'keuangan/:id', element: <ProtectedPage permission={['finance.request', 'finance.review', 'finance.monitor']}><RequestDetailPage /></ProtectedPage> },
+    { path: 'keuangan-review', element: <ProtectedPage permission="finance.review"><ReviewPage /></ProtectedPage> },
+    { path: 'keuangan-voucher', element: <ProtectedPage permission="finance.review"><VoucherPage /></ProtectedPage> },
+    { path: 'keuangan-monitoring', element: <ProtectedPage permission="finance.monitor"><MonitoringPage /></ProtectedPage> },
+    { path: 'keuangan-tim', element: <ProtectedPage permission="finance.manage"><TeamsPage /></ProtectedPage> },
     { path: 'pengguna', element: <ProtectedPage permission="users.view"><UsersPage /></ProtectedPage> },
     { path: 'role', element: <ProtectedPage permission="roles.view"><RolesPage /></ProtectedPage> },
     { path: 'pengaturan', element: <ProtectedPage permission="settings.view"><SettingsPage /></ProtectedPage> },

@@ -17,3 +17,6 @@ services:
   app:
     volumes:
       - ${GDRIVE_OAUTH_TOKEN_HOST_PATH:?GDRIVE_OAUTH_TOKEN_HOST_PATH wajib diisi di .env.compose saat memakai gdrive}:/run/secrets/gdrive-oauth-token.json:ro
+      # Kunci Firebase untuk notifikasi saat aplikasi ditutup. Tanpa nilai ini
+      # /dev/null terpasang: server tetap jalan, hanya push yang mati.
+      - ${FCM_SERVICE_ACCOUNT_HOST_PATH:-/dev/null}:/run/secrets/fcm-service-account.json:ro

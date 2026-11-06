@@ -73,3 +73,19 @@ func TestHubDropsWhenSubscriberIsFull(t *testing.T) {
 		t.Fatalf("buffered %d, want full buffer %d without blocking", got, cap(s.events))
 	}
 }
+
+func TestHubDeliversNotificationsOnlyToTheirOwner(t *testing.T) {
+	hub := NewHub()
+	owner := hub.SubscribeUser(auth.RegencyScope{}, "user-1")
+	other := hub.SubscribeUser(auth.RegencyScope{Unrestricted: true}, "user-2")
+	anonymous := hub.Subscribe(auth.RegencyScope{Unrestricted: true})
+
+	hub.Publish(Event{Kind: "notification", UserID: "user-1"})
+
+	if event, ok := receive(t, owner); !ok || event.UserID != "user-1" {
+		t.Fatalf("owner got %+v %v", event, ok)
+	}
+	if len(other.events) != 0 || len(anonymous.events) != 0 {
+		t.Fatal("another client got the notification")
+	}
+}
