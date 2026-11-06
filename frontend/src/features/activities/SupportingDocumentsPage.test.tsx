@@ -2,15 +2,20 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, expect, test, vi } from 'vitest';
-import { apiRequest, ApiError } from '../../lib/api';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { apiBlobRequest, apiRequest, ApiError } from '../../lib/api';
 import { PermissionsProvider } from '../../lib/permissions';
 import { SupportingDocumentsPage } from './SupportingDocumentsPage';
 import type { ActivityMediaPage, SupportingDocumentSlot } from './types';
 
 vi.mock('../../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../../lib/api')>('../../lib/api');
-  return { ...actual, apiRequest: vi.fn() };
+  return { ...actual, apiRequest: vi.fn(), apiBlobRequest: vi.fn() };
+});
+
+beforeEach(() => {
+  Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:preview') });
+  Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
 });
 
 afterEach(() => { vi.restoreAllMocks(); });
@@ -201,4 +206,38 @@ test('upload and scan buttons stay enabled when no slots are configured — cust
 test('lists only the chosen program’s documents, 100 per page', async () => {
   renderPage(['activities.view']);
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith(expect.stringContaining('activity_type=dokumen_pendukung&regency_id=regency-1&program_id=program-1&page=1&page_size=100')));
+});
+
+test('lists documents one per row and previews a PDF inline when its row is opened', async () => {
+  vi.mocked(apiBlobRequest).mockResolvedValue(new Blob(['%PDF-1.4'], { type: 'application/pdf' }));
+  renderPage(['activities.view'], { gallery: { items: [docMedia('media-1', 'WJO-SK-20260916'), docMedia('media-2', 'WJO-ST-20260917')], page: 1, page_size: 100, total: 2 } });
+
+  const first = await screen.findByRole('button', { name: /^WJO-SK-20260916/ });
+  const second = screen.getByRole('button', { name: /^WJO-ST-20260917/ });
+  expect(first).toHaveAttribute('aria-expanded', 'false');
+  // Nothing is downloaded until a row is opened.
+  expect(apiBlobRequest).not.toHaveBeenCalled();
+
+  await userEvent.click(first);
+  expect(first).toHaveAttribute('aria-expanded', 'true');
+  expect(await screen.findByTitle('Preview WJO-SK-20260916')).toHaveAttribute('src', 'blob:preview');
+  expect(apiBlobRequest).toHaveBeenCalledWith('/api/v1/activities/media/media-1/content');
+
+  // Opening another row closes the first one.
+  await userEvent.click(second);
+  expect(first).toHaveAttribute('aria-expanded', 'false');
+  expect(await screen.findByTitle('Preview WJO-ST-20260917')).toBeVisible();
+  expect(screen.queryByTitle('Preview WJO-SK-20260916')).not.toBeInTheDocument();
+
+  await userEvent.click(second);
+  expect(screen.queryByTitle('Preview WJO-ST-20260917')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Buka WJO-SK-20260916 di tab baru' })).toHaveAttribute('href', '/api/v1/activities/media/media-1/content');
+});
+
+test('shows an error in the row when the PDF cannot be loaded', async () => {
+  vi.mocked(apiBlobRequest).mockRejectedValue(new ApiError(404, 'not_found', 'Dokumen tidak ditemukan.'));
+  renderPage(['activities.view'], { gallery: { items: [docMedia('media-1', 'WJO-SK-20260916')], page: 1, page_size: 100, total: 1 } });
+
+  await userEvent.click(await screen.findByRole('button', { name: /^WJO-SK-20260916/ }));
+  expect(await screen.findByText('Dokumen tidak ditemukan.')).toBeVisible();
 });

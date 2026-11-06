@@ -1,11 +1,11 @@
 import { lazy, Suspense, useState } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Camera, FileText, LoaderCircle, Trash2, Upload } from 'lucide-react';
+import { Camera, ChevronDown, ExternalLink, FileText, LoaderCircle, Trash2, Upload } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { DataState } from '../../components/DataState';
 import { PageHeader } from '../../components/PageHeader';
-import { apiRequest, ApiError } from '../../lib/api';
+import { apiBlobRequest, apiRequest, ApiError } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
 import { Button } from '../../components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '../../components/ui/alert-dialog';
@@ -14,6 +14,7 @@ import { FormField } from '../../components/FormField';
 import { Label } from '../../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Tabs, TabsList, TabsTrigger } from '../../components/ui/tabs';
+import { PdfPreview } from '../berita-acara/PdfPreview';
 import type { DataResponse } from '../programs/types';
 import type { ActivityMedia, ActivityMediaPage, ProgramOption, ProgramZone, SupportingDocumentSlot } from './types';
 
@@ -33,6 +34,7 @@ export function SupportingDocumentsPage({ programId, regencyId }: { programId: s
   const [scannerOpen, setScannerOpen] = useState(false);
   const [selectedFileName, setSelectedFileName] = useState('');
   const [deleting, setDeleting] = useState<ActivityMedia | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const slots = useQuery({
     queryKey: ['supporting-document-slots', regencyId],
@@ -69,7 +71,7 @@ export function SupportingDocumentsPage({ programId, regencyId }: { programId: s
   });
   const remove = useMutation({
     mutationFn: (id: string) => apiRequest<void>(`/api/v1/activities/media/${id}`, { method: 'DELETE' }),
-    onSuccess: () => { setDeleting(null); void client.invalidateQueries({ queryKey: ['activities', 'media', 'dokumen_pendukung', regencyId] }); toast.success('Dokumen dihapus.'); },
+    onSuccess: (_, id) => { setDeleting(null); setExpandedId((current) => (current === id ? null : current)); void client.invalidateQueries({ queryKey: ['activities', 'media', 'dokumen_pendukung', regencyId] }); toast.success('Dokumen dihapus.'); },
     onError: (error) => toast.error(error instanceof ApiError ? error.message : 'Dokumen belum dapat dihapus.'),
   });
 
@@ -94,11 +96,23 @@ export function SupportingDocumentsPage({ programId, regencyId }: { programId: s
           ? <DataState kind="empty" title="Belum ada dokumen pendukung" description={canManage ? 'Unggah atau scan dokumen PDF pertama untuk kabupaten ini.' : 'Belum ada dokumen pendukung yang diunggah.'} />
           : <div className="space-y-3">
         <p className="text-sm text-muted-foreground">{total} dokumen</p>
-        <ul className="grid gap-2 sm:grid-cols-2">
-          {items.map((item) => <li key={item.id} className="flex items-center justify-between gap-2 rounded-lg border p-3">
-            <a href={item.content_url} target="_blank" rel="noreferrer" className="flex min-w-0 items-center gap-2 text-sm"><FileText aria-hidden="true" className="shrink-0 text-primary" /><span className="min-w-0"><span className="block truncate font-medium" title={item.display_name}>{item.display_name}</span><span className="block text-xs text-muted-foreground">{uploadedAt(item.uploaded_at)}</span></span></a>
-            {canManage && <Button type="button" size="icon" variant="ghost" aria-label={`Hapus ${item.display_name}`} onClick={() => setDeleting(item)}><Trash2 aria-hidden="true" /></Button>}
-          </li>)}
+        <ul className="divide-y rounded-lg border">
+          {items.map((item) => {
+            const expanded = expandedId === item.id;
+            const panelId = `dokumen-pendukung-preview-${item.id}`;
+            return <li key={item.id}>
+              <div className="flex items-center gap-2 p-2 sm:p-3">
+                <button type="button" aria-expanded={expanded} aria-controls={panelId} onClick={() => setExpandedId(expanded ? null : item.id)} className="flex min-w-0 flex-1 items-center gap-2 rounded-md p-1 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring">
+                  <FileText aria-hidden="true" className="shrink-0 text-primary" />
+                  <span className="min-w-0 flex-1"><span className="block truncate font-medium" title={item.display_name}>{item.display_name}</span><span className="block text-xs text-muted-foreground">{uploadedAt(item.uploaded_at)}</span></span>
+                  <ChevronDown aria-hidden="true" className={`size-4 shrink-0 text-muted-foreground transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                </button>
+                <Button nativeButton={false} size="icon" variant="ghost" aria-label={`Buka ${item.display_name} di tab baru`} render={<a href={item.content_url} target="_blank" rel="noreferrer" />}><ExternalLink aria-hidden="true" /></Button>
+                {canManage && <Button type="button" size="icon" variant="ghost" aria-label={`Hapus ${item.display_name}`} onClick={() => setDeleting(item)}><Trash2 aria-hidden="true" /></Button>}
+              </div>
+              {expanded && <div id={panelId} className="border-t p-2 sm:p-3"><DocumentPreview item={item} /></div>}
+            </li>;
+          })}
         </ul>
         {documents.hasNextPage && <Button type="button" variant="outline" disabled={documents.isFetchingNextPage} onClick={() => void documents.fetchNextPage()}>{documents.isFetchingNextPage ? 'Memuat...' : `Muat lebih banyak (${items.length} dari ${total})`}</Button>}
       </div>}
@@ -155,6 +169,17 @@ export function SupportingDocumentsPage({ programId, regencyId }: { programId: s
       />
     </Suspense>}
   </div>;
+}
+
+// Pratinjau baru diambil saat baris dibuka, jadi daftar panjang tidak
+// mengunduh semua PDF sekaligus.
+function DocumentPreview({ item }: { item: ActivityMedia }) {
+  const content = useQuery({
+    queryKey: ['activities', 'media', item.id, 'content'],
+    queryFn: () => apiBlobRequest(item.content_url),
+    staleTime: Infinity,
+  });
+  return <PdfPreview blob={content.data} isPending={content.isPending} isError={content.isError} label={item.display_name} errorDescription={content.error instanceof ApiError ? content.error.message : 'Dokumen belum dapat dimuat. Coba lagi.'} />;
 }
 
 // Route-level wrapper: Program then Kabupaten, the same two-step filter the
