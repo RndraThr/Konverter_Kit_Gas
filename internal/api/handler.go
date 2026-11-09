@@ -193,6 +193,12 @@ type DP3Service interface {
 	Open(context.Context, string, auth.RegencyScope) (bast.AggregateContent, error)
 }
 
+type DP3ExcelService interface {
+	Status(context.Context, string, auth.RegencyScope) (bast.DP3ExcelStatus, error)
+	Open(context.Context, string, auth.RegencyScope) (bast.DP3ExcelContent, error)
+	Sync(context.Context, string, auth.RegencyScope) (bast.DP3ExcelStatus, error)
+}
+
 type DailyRecapService interface {
 	Dates(context.Context, string, auth.RegencyScope) ([]bast.DailyRecapDate, error)
 	Recipients(context.Context, string, string, auth.RegencyScope) ([]bast.DailyRecapRecipient, error)
@@ -312,6 +318,7 @@ type Dependencies struct {
 	BASTHandover        BASTHandoverService
 	BASTSignatureLayout BASTSignatureLayoutService
 	DP3                 DP3Service
+	DP3Excel            DP3ExcelService
 	DailyRecap          DailyRecapService
 	ClosingTitikSerah   ClosingTitikSerahService
 	ClosingKabupaten    ClosingKabupatenService
@@ -524,6 +531,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleBASTIndividual(w, r, rc, strings.TrimPrefix(path, "bast/individual/"))
 	case strings.HasPrefix(path, "bast/schedules/"):
 		h.handleBASTScheduleSettings(w, r, rc, strings.TrimPrefix(path, "bast/schedules/"))
+	case path == "bast/dp3/excel" || strings.HasPrefix(path, "bast/dp3/excel/"):
+		h.handleDP3Excel(w, r, rc, strings.TrimPrefix(strings.TrimPrefix(path, "bast/dp3/excel"), "/"))
 	case strings.HasPrefix(path, "bast/dp3/"):
 		h.handleBASTDP3(w, r, rc, strings.TrimPrefix(path, "bast/dp3/"))
 	case strings.HasPrefix(path, "bast/daily-recap/"):
