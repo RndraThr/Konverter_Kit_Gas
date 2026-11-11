@@ -201,3 +201,27 @@ func workbookBytes(t *testing.T, setup func(*excelize.File)) []byte {
 	}
 	return buffer.Bytes()
 }
+
+func TestParseWorkbookUnwrapsQuotedTextFormulas(t *testing.T) {
+	data := workbookBytes(t, func(file *excelize.File) {
+		_ = file.SetSheetRow("Sheet1", "A1", &[]any{"Nama", "No Kartu Petani", "Catatan"})
+		_ = file.SetSheetRow("Sheet1", "A2", &[]any{"Siti Aminah"})
+		_ = file.SetCellFormula("Sheet1", "B2", `"6032988517402660"`)
+		_ = file.SetCellFormula("Sheet1", "C2", `"kata ""kutip"" di dalam"`)
+		_ = file.SetSheetRow("Sheet1", "A3", &[]any{"Hasan"})
+		_ = file.SetCellFormula("Sheet1", "B3", `"603"&"2988"`)
+	})
+	preview, err := ParseWorkbook(bytes.NewReader(data), ParseLimits{MaxBytes: 1 << 20, MaxRows: 10, MaxColumns: 10}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := preview.Rows[0].Values[1]; got != "6032988517402660" {
+		t.Fatalf("quoted card number = %q", got)
+	}
+	if got := preview.Rows[0].Values[2]; got != `kata "kutip" di dalam` {
+		t.Fatalf("escaped quotes = %q", got)
+	}
+	if got := preview.Rows[1].Values[1]; got != `="603"&"2988"` {
+		t.Fatalf("a computed formula must stay as written, got %q", got)
+	}
+}
