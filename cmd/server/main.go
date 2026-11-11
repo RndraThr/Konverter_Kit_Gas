@@ -128,6 +128,9 @@ func run(ctx context.Context, cfg config.Config) error {
 	bastBrandingService := bast.NewBrandingService(bastRepository, mediaStorage)
 	bastScheduleSettingsService := bast.NewScheduleSettingsService(bastRepository)
 	bastDP3Service := bast.NewDP3Service(bastRepository, mediaStorage, applicationLocation)
+	bastDP3ExcelService := bast.NewDP3ExcelService(bastRepository, mediaStorage, applicationLocation)
+	// Excel DP3 per kabupaten: dibangun ulang berkala dan disimpan di folder BA/1. DP3.
+	go bastDP3ExcelService.Run(ctx, bast.DP3ExcelSyncInterval)
 	bastDailyRecapService := bast.NewDailyRecapService(bastRepository, mediaStorage, applicationLocation)
 	bastClosingService := bast.NewClosingTitikSerahService(bastRepository, mediaStorage, applicationLocation)
 	bastClosingKabupatenService := bast.NewClosingKabupatenService(bastRepository, mediaStorage, applicationLocation)
@@ -224,6 +227,7 @@ func run(ctx context.Context, cfg config.Config) error {
 			"ba-pemeriksaan":      bast.PreviewFunc(bastPemeriksaanService.SignaturePreview),
 		}),
 		DP3:               bastDP3Service,
+		DP3Excel:          bastDP3ExcelService,
 		DailyRecap:        bastDailyRecapService,
 		ClosingTitikSerah: bastClosingService,
 		ClosingKabupaten:  bastClosingKabupatenService,
