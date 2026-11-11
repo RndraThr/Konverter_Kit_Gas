@@ -130,6 +130,16 @@ func BuildFolderPath(input FolderPathInput) ([]string, error) {
 	return path, nil
 }
 
+// BuildRegencyFolderPath returns the regency folder itself (program type,
+// zone, regency), for files that sit beside the category folders.
+func BuildRegencyFolderPath(programType, zoneName, regencyName string) ([]string, error) {
+	path, err := BuildFolderPath(FolderPathInput{ProgramType: programType, ZoneName: zoneName, RegencyName: regencyName, Category: FolderBA})
+	if err != nil {
+		return nil, err
+	}
+	return path[:3], nil
+}
+
 func validFolderCategory(category FolderCategory) bool {
 	switch category {
 	case FolderBA, FolderSupporting, FolderPhotos:

@@ -47,20 +47,6 @@ export const beritaAcara: GuideTopic = {
       ],
     },
     {
-      id: 'excel-dp3',
-      title: 'Excel data penerima DP3',
-      summary: 'Di atas panel DP3 tersedia satu file Excel berisi semua penerima kabupaten yang distribusinya selesai: identitas, kartu, nomor HP, alamat, tanggal dan titik serah, nomor bagi, mesin, serta nomor seri. Isinya hanya data penerima, tanpa status.',
-      steps: [
-        { text: <>File dibuat otomatis setelah ada distribusi selesai, lalu diperbarui sendiri tiap 10 menit bila datanya berubah. File disimpan di folder DP3 kabupaten di Drive dan menggantikan file sebelumnya.</> },
-        { text: <>Klik <ButtonSample variant="outline" icon={<Download />}>Unduh Excel</ButtonSample> untuk mengunduh file terbaru.</> },
-        { text: <>Perlu data paling baru sekarang juga? Klik <ButtonSample variant="ghost" icon={<RefreshCw />}>Perbarui sekarang</ButtonSample>.</>, permissions: ['bast.manage'] },
-      ],
-      problems: [
-        { q: 'Tombol Unduh Excel belum muncul?', a: 'File baru dibuat setelah minimal satu distribusi diselesaikan. Tunggu paling lama 10 menit atau klik Perbarui sekarang.' },
-        { q: 'Muncul "Pembaruan terakhir gagal"?', a: 'Biasanya karena koneksi ke Drive terputus. Sistem mencoba lagi otomatis pada putaran berikutnya; file lama tetap bisa diunduh.' },
-      ],
-    },
-    {
       id: 'penandatangan',
       title: 'Penandatangan',
       summary: 'Tabel tanda tangan ditampilkan persis seperti cetak. Tanda tangan digital dan stempel bisa diletakkan, diubah ukurannya, dan diputar langsung di tabel.',

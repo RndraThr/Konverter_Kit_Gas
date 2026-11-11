@@ -128,9 +128,9 @@ func run(ctx context.Context, cfg config.Config) error {
 	bastBrandingService := bast.NewBrandingService(bastRepository, mediaStorage)
 	bastScheduleSettingsService := bast.NewScheduleSettingsService(bastRepository)
 	bastDP3Service := bast.NewDP3Service(bastRepository, mediaStorage, applicationLocation)
-	bastDP3ExcelService := bast.NewDP3ExcelService(bastRepository, mediaStorage, applicationLocation)
-	// Excel DP3 per kabupaten: dibangun ulang berkala dan disimpan di folder BA/1. DP3.
-	go bastDP3ExcelService.Run(ctx, bast.DP3ExcelSyncInterval)
+	// Laporan DP3 per kabupaten: workbook dibangun ulang berkala dan disimpan langsung di folder kabupaten.
+	reportsService := reports.NewService(reports.NewRepository(pool), bastRepository, mediaStorage, applicationLocation)
+	go reportsService.Run(ctx, reports.DriveSyncInterval)
 	bastDailyRecapService := bast.NewDailyRecapService(bastRepository, mediaStorage, applicationLocation)
 	bastClosingService := bast.NewClosingTitikSerahService(bastRepository, mediaStorage, applicationLocation)
 	bastClosingKabupatenService := bast.NewClosingKabupatenService(bastRepository, mediaStorage, applicationLocation)
@@ -175,7 +175,7 @@ func run(ctx context.Context, cfg config.Config) error {
 		Programs:        programService,
 		DCP3:            dcp3.NewImportService(dcp3.NewRepository(pool), dcp3.ParseLimits{MaxBytes: 10 << 20, MaxRows: 5000, MaxColumns: 100}),
 		Distribution:    distribution.NewService(distributionRepository, mediaStorage, videoLimiter),
-		Reports:         reports.NewService(reports.NewRepository(pool)),
+		Reports:         reportsService,
 		Recipients:      recipients.NewService(recipients.NewRepository(pool)),
 		DistributionMap: distmap.NewService(distmapRepository),
 		MapConfig: distmap.ClientConfig{
@@ -227,7 +227,6 @@ func run(ctx context.Context, cfg config.Config) error {
 			"ba-pemeriksaan":      bast.PreviewFunc(bastPemeriksaanService.SignaturePreview),
 		}),
 		DP3:               bastDP3Service,
-		DP3Excel:          bastDP3ExcelService,
 		DailyRecap:        bastDailyRecapService,
 		ClosingTitikSerah: bastClosingService,
 		ClosingKabupaten:  bastClosingKabupatenService,

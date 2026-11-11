@@ -4,66 +4,91 @@ import (
 	"mime"
 	"net/http"
 	"strings"
-
-	"konkit/internal/reports"
 )
 
+// Laporan DP3 (penerima selesai satu jadwal, tanpa status):
+//
+//	GET  reports/schedule/{id}/summary       total penerima jadwal, dipakai aplikasi HP (distribution.view)
+//	GET  reports/schedule/{id}/rows          isi laporan (distribution.view)
+//	GET  reports/schedule/{id}/export.xlsx   unduh Excel (distribution.view)
+//	GET  reports/schedule/{id}/export.pdf    unduh PDF (distribution.view)
+//	GET  reports/schedule/{id}/drive         status file di Drive (distribution.view)
+//	POST reports/schedule/{id}/drive/sync    perbarui file di Drive sekarang (distribution.manage)
 func (h *Handler) handleReportsSchedule(w http.ResponseWriter, r *http.Request, rc requestContext, path string) {
 	if h.deps.Reports == nil {
 		writeUnavailable(w)
 		return
 	}
-	if r.Method != http.MethodGet {
-		methodNotAllowed(w, http.MethodGet)
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) < 2 || parts[0] == "" {
+		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
 		return
 	}
-	if !h.authorize(w, r, rc.principal, "distribution.view") {
-		return
+	scheduleID, action := parts[0], strings.Join(parts[1:], "/")
+	if action == "drive/sync" {
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		if !h.authorize(w, r, rc.principal, "distribution.manage") {
+			return
+		}
+	} else {
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w, http.MethodGet)
+			return
+		}
+		if !h.authorize(w, r, rc.principal, "distribution.view") {
+			return
+		}
 	}
 	scope, ok := h.regencyScope(w, r, rc.principal)
 	if !ok {
 		return
 	}
-	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) != 2 {
-		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
-		return
-	}
-	scheduleID := parts[0]
-	filter := reports.Filter{
-		AllocationStatus:    strings.TrimSpace(r.URL.Query().Get("allocation_status")),
-		DistributionStatus:  strings.TrimSpace(r.URL.Query().Get("distribution_status")),
-		DocumentationStatus: strings.TrimSpace(r.URL.Query().Get("documentation_status")),
-	}
-	switch parts[1] {
+	switch action {
 	case "summary":
-		result, err := h.deps.Reports.Summary(r.Context(), scheduleID, filter, scope)
+		result, err := h.deps.Reports.Summary(r.Context(), scheduleID, scope)
 		if err != nil {
 			writeServiceError(w, err)
 			return
 		}
 		writeData(w, http.StatusOK, result)
 	case "rows":
-		result, err := h.deps.Reports.Rows(r.Context(), scheduleID, filter, scope)
+		result, err := h.deps.Reports.Report(r.Context(), scheduleID, scope)
 		if err != nil {
 			writeServiceError(w, err)
 			return
 		}
 		writeData(w, http.StatusOK, result)
 	case "export.xlsx":
-		data, err := h.deps.Reports.ExportExcel(r.Context(), rc.principal, scheduleID, filter, clientMeta(r), scope)
+		file, err := h.deps.Reports.ExportExcel(r.Context(), rc.principal, scheduleID, clientMeta(r), scope)
 		if err != nil {
 			writeServiceError(w, err)
 			return
 		}
-		writeAttachment(w, "laporan-distribusi.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", data)
+		writeAttachment(w, file.Filename, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", file.Data)
 	case "export.pdf":
-		data, err := h.deps.Reports.ExportPDF(r.Context(), rc.principal, scheduleID, filter, clientMeta(r), scope)
+		file, err := h.deps.Reports.ExportPDF(r.Context(), rc.principal, scheduleID, clientMeta(r), scope)
 		if err != nil {
 			writeServiceError(w, err)
 			return
 		}
-		writeAttachment(w, "laporan-distribusi.pdf", "application/pdf", data)
+		writeAttachment(w, file.Filename, "application/pdf", file.Data)
+	case "drive":
+		result, err := h.deps.Reports.DriveStatus(r.Context(), scheduleID, scope)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeData(w, http.StatusOK, result)
+	case "drive/sync":
+		result, err := h.deps.Reports.SyncDrive(r.Context(), scheduleID, scope)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		writeData(w, http.StatusOK, result)
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
 	}

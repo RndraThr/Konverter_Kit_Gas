@@ -16,7 +16,6 @@ import { FullScanCard } from './FullScanBar';
 import { useWetSignatureBlocked, WetSignatureHint } from './WetSignatureBar';
 import { incompletePreviewNote, previewBlockingStatus } from './previewStatus';
 import { DocumentInfoFields } from './DocumentInfoFields';
-import { DP3ExcelCard } from './DP3ExcelCard';
 import type { AggregateDocument, DailyRecapDate, DP3Recipient } from './types';
 
 type Props = { scheduleID: string; regencyName: string; programType: ProgramType };
@@ -99,7 +98,6 @@ export function DP3Panel({ scheduleID, regencyName, programType }: Props) {
 
   return <div className="grid gap-5">
     {showSignatures && <SignatureSettingsPanel scheduleID={scheduleID} date={selectedDate} document="dp3" documentLabel="DP3" />}
-    <DP3ExcelCard scheduleID={scheduleID} regencyName={regencyName} />
 
     <div className="grid gap-5 xl:grid-cols-[19rem_minmax(0,1fr)]">
       <Card className="self-start">

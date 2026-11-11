@@ -5,12 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"os"
-	"strings"
+	"slices"
 	"testing"
 	"time"
 
 	"konkit/internal/auth"
+	"konkit/internal/bast"
 	"konkit/internal/database"
 	"konkit/internal/database/migrations"
 
@@ -18,211 +20,6 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
 )
-
-func TestIntegrationSummaryAndRowsReflectAllocationsAndFilters(t *testing.T) {
-	pool := reportsIntegrationPool(t)
-	fixture := createReportsFixture(t, pool)
-	repository := NewRepository(pool)
-	ctx := context.Background()
-
-	summary, err := repository.Summary(ctx, fixture.scheduleID, Filter{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if summary.TotalAllocations != 3 {
-		t.Fatalf("total=%d summary=%+v", summary.TotalAllocations, summary)
-	}
-	if summary.DocumentationIncomplete != 2 {
-		t.Fatalf("documentation incomplete=%d summary=%+v", summary.DocumentationIncomplete, summary)
-	}
-
-	rows, err := repository.Rows(ctx, fixture.scheduleID, Filter{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 3 {
-		t.Fatalf("rows=%+v", rows)
-	}
-	if rows[0].DistributionNumber == nil || *rows[0].DistributionNumber != 1 || rows[0].NIK != fixture.primaryNIK {
-		t.Fatalf("first row=%+v want nik=%q", rows[0], fixture.primaryNIK)
-	}
-	if !rows[1].DocumentationComplete || rows[1].DistributionStatus != "completed" {
-		t.Fatalf("second row=%+v", rows[1])
-	}
-
-	filtered, err := repository.Rows(ctx, fixture.scheduleID, Filter{DocumentationStatus: "complete"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(filtered) != 1 || filtered[0].DistributionNumber == nil || *filtered[0].DistributionNumber != 2 {
-		t.Fatalf("filtered rows=%+v", filtered)
-	}
-
-	byAllocation, err := repository.Rows(ctx, fixture.scheduleID, Filter{AllocationStatus: "needs_review"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(byAllocation) != 1 || byAllocation[0].DistributionNumber == nil || *byAllocation[0].DistributionNumber != 3 {
-		t.Fatalf("allocation-filtered rows=%+v", byAllocation)
-	}
-}
-
-func TestIntegrationRecordExportWritesAuditEvent(t *testing.T) {
-	pool := reportsIntegrationPool(t)
-	fixture := createReportsFixture(t, pool)
-	repository := NewRepository(pool)
-	ctx := context.Background()
-
-	err := repository.RecordExport(ctx, auth.Principal{UserID: ""}, fixture.scheduleID, "xlsx", Filter{AllocationStatus: "ready"}, auth.ClientMeta{UserAgent: "reports-integration"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var action, metadata string
-	if err := pool.QueryRow(ctx, `SELECT action,metadata::text FROM audit_logs WHERE resource_id=$1 AND user_agent='reports-integration'`, fixture.scheduleID).Scan(&action, &metadata); err != nil {
-		t.Fatal(err)
-	}
-	if action != "reports.exported" || !containsAll(metadata, `"format": "xlsx"`, `"allocation_status": "ready"`) {
-		t.Fatalf("action=%q metadata=%q", action, metadata)
-	}
-}
-
-func TestIntegrationScopeEnforcementRejectsOutOfRegencyAccess(t *testing.T) {
-	pool := reportsIntegrationPool(t)
-	ctx := context.Background()
-	fixture := createReportsFixture(t, pool)
-	repository := NewRepository(pool)
-	service := NewService(repository)
-
-	inScope := auth.RegencyScope{RegencyIDs: []string{fixture.regencyID}}
-	outOfScope := auth.RegencyScope{RegencyIDs: []string{"00000000-0000-0000-0000-000000000000"}}
-
-	if _, err := service.Summary(ctx, fixture.scheduleID, Filter{}, outOfScope); !errors.Is(err, ErrScheduleNotFound) {
-		t.Fatalf("Summary err=%v", err)
-	}
-	if _, err := service.Summary(ctx, fixture.scheduleID, Filter{}, inScope); err != nil {
-		t.Fatalf("Summary in-scope err=%v", err)
-	}
-	if _, err := service.Rows(ctx, fixture.scheduleID, Filter{}, outOfScope); !errors.Is(err, ErrScheduleNotFound) {
-		t.Fatalf("Rows err=%v", err)
-	}
-	if _, err := service.Rows(ctx, fixture.scheduleID, Filter{}, inScope); err != nil {
-		t.Fatalf("Rows in-scope err=%v", err)
-	}
-	if _, err := service.ExportExcel(ctx, auth.Principal{}, fixture.scheduleID, Filter{}, auth.ClientMeta{}, outOfScope); !errors.Is(err, ErrScheduleNotFound) {
-		t.Fatalf("ExportExcel err=%v", err)
-	}
-}
-
-func containsAll(haystack string, needles ...string) bool {
-	for _, needle := range needles {
-		if !strings.Contains(haystack, needle) {
-			return false
-		}
-	}
-	return true
-}
-
-type reportsFixture struct {
-	scheduleID string
-	primaryNIK string
-	regencyID  string
-}
-
-// insertAllocation generates its own 16-digit NIK per call (rather than a
-// fixed literal) because internal/distribution's integration tests already
-// use fixed NIKs like "7306014101900001" against the same shared
-// konkit_test database, and Go runs different packages' tests in parallel
-// by default -- a hardcoded NIK here would intermittently collide with the
-// unique index on people.nik.
-func createReportsFixture(t *testing.T, pool *pgxpool.Pool) reportsFixture {
-	t.Helper()
-	ctx := context.Background()
-	suffix := fmt.Sprint(time.Now().UnixNano())
-
-	var packageID, documentationID string
-	if err := pool.QueryRow(ctx, `SELECT id::text FROM package_template_versions WHERE template_code='PETANI-LPG' AND version=1`).Scan(&packageID); err != nil {
-		t.Fatal(err)
-	}
-	if err := pool.QueryRow(ctx, `SELECT id::text FROM documentation_template_versions WHERE template_code='DOK-PETANI' AND version=1`).Scan(&documentationID); err != nil {
-		t.Fatal(err)
-	}
-
-	var programID, regencyID, scheduleID string
-	if err := pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES($1,'Program Laporan Test','farmer',2026,'active') RETURNING id::text`, "RPT-"+suffix).Scan(&programID); err != nil {
-		t.Fatal(err)
-	}
-	if err := pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code) VALUES('Sulawesi Selatan',$1,$2) RETURNING id::text`, "Wajo Laporan "+suffix, codeFromSuffix("R", suffix)).Scan(&regencyID); err != nil {
-		t.Fatal(err)
-	}
-	if err := pool.QueryRow(ctx, `INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status) VALUES($1,$2,$3,$4,'Wajo Tahap Laporan','2026-09-01','2026-09-30','active') RETURNING id::text`, programID, regencyID, packageID, documentationID).Scan(&scheduleID); err != nil {
-		t.Fatal(err)
-	}
-
-	personIDs := make([]string, 0, 3)
-	insertAllocation := func(number int, personName, allocationStatus, distributionStatus string, documentationComplete bool) (personID, nik string) {
-		nik = fmt.Sprintf("9%015d", time.Now().UnixNano()%1_000_000_000_000_000)
-		if err := pool.QueryRow(ctx, `INSERT INTO people(full_name,nik,village,district) VALUES($1,$2,'Tempe','Sabbangparu') RETURNING id::text`, personName, nik).Scan(&personID); err != nil {
-			t.Fatal(err)
-		}
-		personIDs = append(personIDs, personID)
-		var batchID, rowID, nominationID, allocationID string
-		if err := pool.QueryRow(ctx, `INSERT INTO dcp3_import_batches(schedule_id,original_filename,file_checksum,sheet_name,status) VALUES($1,$2,$3,'Penerima','imported') RETURNING id::text`, scheduleID, fmt.Sprintf("laporan-%d.xlsx", number), fmt.Sprintf("%064d", time.Now().UnixNano()+int64(number))).Scan(&batchID); err != nil {
-			t.Fatal(err)
-		}
-		if err := pool.QueryRow(ctx, `INSERT INTO dcp3_import_rows(batch_id,source_row_number,source_sequence_number,raw_data_json,validation_status) VALUES($1,2,$2,'{}','valid') RETURNING id::text`, batchID, number).Scan(&rowID); err != nil {
-			t.Fatal(err)
-		}
-		if err := pool.QueryRow(ctx, `INSERT INTO candidate_nominations(batch_id,import_row_id,person_id,program_type,source_snapshot_json,status) VALUES($1,$2,$3,'farmer','{}','ready') RETURNING id::text`, batchID, rowID, personID).Scan(&nominationID); err != nil {
-			t.Fatal(err)
-		}
-		if err := pool.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,distribution_number,status,package_snapshot_json) VALUES($1,$2,$3,$4,$5,'{}') RETURNING id::text`, scheduleID, nominationID, personID, number, allocationStatus).Scan(&allocationID); err != nil {
-			t.Fatal(err)
-		}
-		// distribution_slots.status has no 'draft' value (superseded by open/linked/completed/cancelled);
-		// "draft" here means "not yet completed," which reportsBaseCTE maps back to 'draft' for callers.
-		slotDBStatus := distributionStatus
-		if slotDBStatus == "draft" {
-			slotDBStatus = "linked"
-		}
-		var distributionID string
-		if err := pool.QueryRow(ctx, `INSERT INTO distribution_slots(allocation_id,recipient_person_id,schedule_id,slot_number,status) VALUES($1,$2,$3,$4,$5) RETURNING id::text`, allocationID, personID, scheduleID, number, slotDBStatus).Scan(&distributionID); err != nil {
-			t.Fatal(err)
-		}
-		slotStatus := "missing"
-		if documentationComplete {
-			slotStatus = "complete"
-		}
-		if _, err := pool.Exec(ctx, `INSERT INTO documentation_slots(distribution_slot_id,slot_code,label_snapshot,stage,is_required,min_files,max_files,input_source,status) VALUES($1,'recipient_package','Penerima dan paket','penyerahan',true,1,1,'both',$2)`, distributionID, slotStatus); err != nil {
-			t.Fatal(err)
-		}
-		return personID, nik
-	}
-
-	_, primaryNIK := insertAllocation(1, "Siti Aminah", "ready", "draft", false)
-	insertAllocation(2, "Siti Nur", "distributed", "completed", true)
-	insertAllocation(3, "Aminah Wati", "needs_review", "draft", false)
-
-	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM documentation_slots WHERE distribution_slot_id IN (SELECT d.id FROM distribution_slots d JOIN package_allocations a ON a.id=d.allocation_id WHERE a.schedule_id=$1)`, scheduleID)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM audit_logs WHERE resource_id=$1`, scheduleID)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM distribution_slots WHERE allocation_id IN (SELECT id FROM package_allocations WHERE schedule_id=$1)`, scheduleID)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM package_allocations WHERE schedule_id=$1`, scheduleID)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM candidate_nominations WHERE batch_id IN (SELECT id FROM dcp3_import_batches WHERE schedule_id=$1)`, scheduleID)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM dcp3_import_batches WHERE schedule_id=$1`, scheduleID)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM program_schedules WHERE id=$1`, scheduleID)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM people WHERE id=ANY($1)`, personIDs)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM regencies WHERE id=$1`, regencyID)
-		_, _ = pool.Exec(context.Background(), `DELETE FROM programs WHERE id=$1`, programID)
-	})
-
-	return reportsFixture{scheduleID: scheduleID, primaryNIK: primaryNIK, regencyID: regencyID}
-}
-
-func codeFromSuffix(prefix, suffix string) string {
-	return prefix + string(rune('A'+suffix[len(suffix)-2]%20)) + string(rune('A'+suffix[len(suffix)-1]%20))
-}
-
-func intPtr(v int) *int { return &v }
 
 func reportsIntegrationPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
@@ -255,4 +52,111 @@ func reportsIntegrationPool(t *testing.T) *pgxpool.Pool {
 	}
 	t.Cleanup(pool.Close)
 	return pool
+}
+
+// freeRegencyCode is a random three-letter document code no regency uses yet.
+func freeRegencyCode(t *testing.T, pool *pgxpool.Pool) string {
+	t.Helper()
+	for range 100 {
+		code := string([]byte{byte('A' + rand.IntN(26)), byte('A' + rand.IntN(26)), byte('A' + rand.IntN(26))})
+		var taken bool
+		if err := pool.QueryRow(context.Background(), `SELECT EXISTS (SELECT 1 FROM regencies WHERE document_code = $1)`, code).Scan(&taken); err != nil {
+			t.Fatal(err)
+		}
+		if !taken {
+			return code
+		}
+	}
+	t.Fatal("no free regency code")
+	return ""
+}
+
+func TestRepositoryReadsRecipientDetailsAndKeepsDriveState(t *testing.T) {
+	pool := reportsIntegrationPool(t)
+	ctx := context.Background()
+	repo := NewRepository(pool)
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	var programID, regencyID, packageID, documentationID, scheduleID, slotID, personID string
+	mustQuery := func(query string, args []any, dest *string) {
+		t.Helper()
+		if err := pool.QueryRow(ctx, query, args...).Scan(dest); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustQuery(`INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES($1,'Konkit Excel Test','farmer',2026,'active') RETURNING id::text`, []any{"DP3X-" + suffix}, &programID)
+	mustQuery(`INSERT INTO regencies(province_name,name,document_code,is_active) VALUES('Sulawesi Selatan',$1,$2,true) RETURNING id::text`, []any{"Wajo Excel " + suffix, freeRegencyCode(t, pool)}, &regencyID)
+	mustQuery(`INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES($1,1,'Paket','farmer','{}','published') RETURNING id::text`, []any{"DP3XPKG-" + suffix}, &packageID)
+	mustQuery(`INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES($1,1,'Dok','farmer','published') RETURNING id::text`, []any{"DP3XDOC-" + suffix}, &documentationID)
+	mustQuery(`INSERT INTO program_schedules(program_id,regency_id,package_template_version_id,documentation_template_version_id,name,start_date,end_date,status,slot_quota,receipt_policy_json) VALUES($1,$2,$3,$4,'Jadwal','2026-11-01','2026-11-30','active',10,'{}') RETURNING id::text`, []any{programID, regencyID, packageID, documentationID}, &scheduleID)
+	mustQuery(`INSERT INTO people(full_name,nik,address,village,district,phone_number,verification_status) VALUES('Siti Aminah',$1,'Jl. Poros','Tempe','Sabbangparu','081234567890','verified') RETURNING id::text`, []any{fmt.Sprintf("73%014d", time.Now().UnixNano()%1e14)}, &personID)
+	if _, err := pool.Exec(ctx, `INSERT INTO person_sector_identifiers(person_id,identifier_type,normalized_value,display_value) VALUES($1,'farmer_card',$2,'KT-01')`, personID, "KT01-"+suffix); err != nil {
+		t.Fatal(err)
+	}
+	mustQuery(`INSERT INTO distribution_slots(schedule_id,slot_number,status,distributed_at,completed_at,distribution_date,recipient_person_id,machine_serial_number,converter_serial_number,hose_serial_number,verification_snapshot_json)
+		VALUES($1,3,'completed',now(),now(),'2026-11-05',$2,'M-001','C-001','H-001','{"equipment":{"converter_brand":"ERGAS"}}') RETURNING id::text`, []any{scheduleID, personID}, &slotID)
+
+	ids, err := repo.ListDriveScheduleIDs(ctx)
+	if err != nil || !slices.Contains(ids, scheduleID) {
+		t.Fatalf("schedule with a completed slot not listed: %v err=%v", ids, err)
+	}
+	info, err := repo.GetScheduleInfo(ctx, scheduleID, auth.RegencyScope{RegencyIDs: []string{regencyID}})
+	if err != nil || info.ProgramName != "Konkit Excel Test" || info.FiscalYear != 2026 || info.ProvinceName != "Sulawesi Selatan" {
+		t.Fatalf("context: %+v err=%v", info, err)
+	}
+	if _, err := repo.GetScheduleInfo(ctx, scheduleID, auth.RegencyScope{RegencyIDs: []string{programID}}); !errors.Is(err, ErrScheduleNotFound) {
+		t.Fatalf("context outside scope: %v", err)
+	}
+	details, err := repo.ListSlotDetails(ctx, scheduleID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := SlotDetail{DistributionDate: "2026-11-05", CardNumber: "KT-01", PhoneNumber: "081234567890",
+		MachineSerial: "M-001", ConverterBrand: "ERGAS", ConverterSerial: "C-001", HoseSerial: "H-001"}
+	if details[slotID] != want {
+		t.Fatalf("details = %+v, want %+v", details[slotID], want)
+	}
+
+	report, err := NewService(repo, bast.NewRepository(pool), &memoryStorage{}, time.UTC).Report(ctx, scheduleID, auth.RegencyScope{RegencyIDs: []string{regencyID}})
+	if err != nil || len(report.Rows) != 1 {
+		t.Fatalf("report: %+v err=%v", report, err)
+	}
+	if row := report.Rows[0]; row.FullName != "Siti Aminah" || row.DistributionNumber != 3 || row.CardNumber != "KT-01" || row.MachineSerial != "M-001" || row.DistributionDate != "2026-11-05" {
+		t.Fatalf("report row: %+v", row)
+	}
+	if _, err := repo.GetScheduleInfo(ctx, "not-a-uuid", auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrScheduleNotFound) {
+		t.Fatalf("malformed schedule id: %v", err)
+	}
+
+	if err := repo.RecordDriveFailure(ctx, scheduleID, "drive down"); err != nil {
+		t.Fatal(err)
+	}
+	export, err := repo.GetDriveExport(ctx, scheduleID, auth.RegencyScope{Unrestricted: true})
+	if err != nil || export.StorageKey != "" || export.SyncedAt != nil || export.LastError != "drive down" {
+		t.Fatalf("failure before any upload: %+v err=%v", export, err)
+	}
+	old, err := repo.SaveDriveExport(ctx, DriveExport{ScheduleID: scheduleID, Filename: "a.xlsx", StorageKey: "key-1", ContentChecksum: "c1", RecipientCount: 1, ByteSize: 10})
+	if err != nil || old != "" {
+		t.Fatalf("first save: old=%q err=%v", old, err)
+	}
+	old, err = repo.SaveDriveExport(ctx, DriveExport{ScheduleID: scheduleID, Filename: "a.xlsx", StorageKey: "key-2", ContentChecksum: "c2", RecipientCount: 1, ByteSize: 12})
+	if err != nil || old != "key-1" {
+		t.Fatalf("second save must return the replaced key: old=%q err=%v", old, err)
+	}
+	export, err = repo.GetDriveExport(ctx, scheduleID, auth.RegencyScope{Unrestricted: true})
+	if err != nil || export.StorageKey != "key-2" || export.ContentChecksum != "c2" || export.SyncedAt == nil || export.LastError != "" {
+		t.Fatalf("export after save: %+v err=%v", export, err)
+	}
+	if err := repo.RecordDriveFailure(ctx, scheduleID, "again"); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.MarkDriveChecked(ctx, scheduleID); err != nil {
+		t.Fatal(err)
+	}
+	export, _ = repo.GetDriveExport(ctx, scheduleID, auth.RegencyScope{Unrestricted: true})
+	if export.LastError != "" || export.StorageKey != "key-2" {
+		t.Fatalf("check must clear the error and keep the file: %+v", export)
+	}
+	if _, err := repo.GetDriveExport(ctx, scheduleID, auth.RegencyScope{RegencyIDs: []string{programID}}); !errors.Is(err, ErrScheduleNotFound) {
+		t.Fatalf("export outside scope: %v", err)
+	}
 }

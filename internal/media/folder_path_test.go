@@ -204,3 +204,17 @@ func TestBuildFinalReportPathRejectsInvalidSegment(t *testing.T) {
 		t.Fatalf("expected ErrInvalidFolderPath, got %v", err)
 	}
 }
+
+func TestBuildRegencyFolderPathStopsAtRegency(t *testing.T) {
+	path, err := BuildRegencyFolderPath("farmer", "Zona 1", "Wajo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	full, _ := BuildFolderPath(FolderPathInput{ProgramType: "farmer", ZoneName: "Zona 1", RegencyName: "Wajo", Category: FolderBA})
+	if len(path) != 3 || path[2] != full[2] || path[0] != full[0] {
+		t.Fatalf("regency path = %v, full = %v", path, full)
+	}
+	if _, err := BuildRegencyFolderPath("farmer", "", "Wajo"); err == nil {
+		t.Fatal("a regency path without zone must fail")
+	}
+}

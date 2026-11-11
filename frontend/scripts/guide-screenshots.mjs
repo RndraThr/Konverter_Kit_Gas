@@ -1067,10 +1067,8 @@ shots.push(
     async setup(page) { await choose(page, page.getByRole('combobox').first(), schedule); await page.waitForTimeout(2500); },
     marks: (page) => [
       [1, page.getByRole('combobox').nth(0)],
-      [2, page.getByRole('combobox').nth(1)],
-      [3, page.getByRole('combobox').nth(2)],
-      [4, page.getByRole('combobox').nth(3)],
-      [5, page.getByLabel('Ringkasan laporan')],
+      [2, page.getByLabel('Ringkasan laporan')],
+      [3, page.getByLabel('File Drive')],
     ],
   },
   {

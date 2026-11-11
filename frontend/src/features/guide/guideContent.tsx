@@ -189,9 +189,8 @@ export const guideSteps: GuideStep[] = [
     view: ['distribution.view'],
     route: '/laporan',
     routes: ['/laporan', '/map-distribusi'],
-    shots: [{ id: 'laporan', title: 'Laporan', legend: ['Pilih jadwal dan filter status', 'Unduh laporan Excel atau PDF', 'Tabel laporan per penerima (disamarkan di contoh ini)'] }],
     tasks: [
-      { n: 1, text: <>Menu <b>Laporan</b>: pilih program, kabupaten, dan jadwal.</> },
+      { n: 1, text: <>Menu <b>Laporan DP3</b>: pilih kabupaten dan jadwal.</> },
       { n: 2, text: <>Unduh dengan <ButtonSample variant="outline" icon={<FileSpreadsheet />} trailingIcon={<Download />}>Export Excel</ButtonSample> atau <ButtonSample variant="outline" icon={<FileText />} trailingIcon={<Download />}>Export PDF</ButtonSample></> },
       { text: <>Menu <b>Map Distribusi</b> menampilkan sebaran penerima per wilayah.</> },
     ],

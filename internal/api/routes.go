@@ -700,7 +700,7 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeFieldError(w, http.StatusUnprocessableEntity, "validation_failed", err.Error(), map[string]string{"revision": err.Error()})
 	case errors.Is(err, distribution.ErrReplacementReasonRequired), errors.Is(err, distribution.ErrReplacementNameRequired):
 		writeFieldError(w, http.StatusUnprocessableEntity, "validation_failed", err.Error(), map[string]string{"replacement": err.Error()})
-	case errors.Is(err, reports.ErrScheduleRequired), errors.Is(err, reports.ErrFilterInvalid):
+	case errors.Is(err, reports.ErrScheduleRequired):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), map[string]string{"request": err.Error()})
 	case errors.Is(err, recipients.ErrFullNameRequired), errors.Is(err, recipients.ErrNIKInvalid):
 		writeFieldError(w, http.StatusBadRequest, "validation_failed", err.Error(), validationFields(err))
