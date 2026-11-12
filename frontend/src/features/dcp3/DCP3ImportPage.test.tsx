@@ -38,7 +38,7 @@ function renderPage(permissions = ['dcp3.view', 'dcp3.import']) {
     if (path === '/api/v1/dcp3/imports' && _init?.method === 'POST') return Promise.resolve({ data: {
       batch_id: 'batch-1', total_rows: 4, valid_rows: 1, warning_rows: 1, review_rows: 1, invalid_rows: 1,
       problems: [
-        { source_row_number: 3, full_name: 'BUDI', nik: '7301010101010002', status: 'warning', messages: ['Nomor kartu sektor 140/2024 sudah dipakai ANI, jadi tidak disimpan untuk penerima ini'] },
+        { source_row_number: 3, full_name: 'BUDI', nik: '7301010101010002', status: 'warning', messages: ['Nomor kartu sektor 140/2024 sudah dipakai penerima lain, jadi tidak disimpan untuk penerima ini'] },
         { source_row_number: 4, full_name: 'CICI', nik: '7301010101010003', status: 'needs_review', messages: ['NIK muncul lebih dari sekali dalam batch'] },
       ],
     } });
@@ -95,7 +95,7 @@ test('imports a DCP3 workbook through the four review steps', async () => {
   expect(screen.getByText('1 perlu ditinjau')).toBeVisible();
   expect(screen.getByText('1 tidak valid')).toBeVisible();
   const problems = screen.getByRole('table', { name: 'Baris yang perlu perhatian' });
-  expect(within(problems).getByText(/sudah dipakai ANI/)).toBeVisible();
+  expect(within(problems).getByText(/sudah dipakai penerima lain/)).toBeVisible();
   expect(within(problems).getByText('Perlu ditinjau')).toBeVisible();
 }, 15000);
 

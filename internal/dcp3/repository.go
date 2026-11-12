@@ -182,12 +182,14 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 				seenNIK[normalized.NIK] = struct{}{}
 			}
 		}
-		personID, cardOwner, err := r.matchOrCreatePerson(ctx, tx, normalized, duplicateIdentity)
+		personID, cardTaken, err := r.matchOrCreatePerson(ctx, tx, normalized, duplicateIdentity)
 		if err != nil {
 			return ImportResult{}, err
 		}
-		if cardOwner != "" {
-			normalized.raise(RowWarning, fmt.Sprintf("Nomor kartu sektor %s sudah dipakai %s, jadi tidak disimpan untuk penerima ini", normalized.SectorIdentifierDisplay, cardOwner))
+		// The holder may sit outside the importer's regency scope, so the
+		// message does not name them.
+		if cardTaken {
+			normalized.raise(RowWarning, fmt.Sprintf("Nomor kartu sektor %s sudah dipakai penerima lain, jadi tidak disimpan untuk penerima ini", normalized.SectorIdentifierDisplay))
 		}
 		if personID != "" {
 			var previouslyReceived bool
@@ -237,7 +239,7 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 		default:
 			result.WarningRows++
 		}
-		if allocationStatus == "needs_review" || cardOwner != "" {
+		if allocationStatus == "needs_review" || cardTaken {
 			result.Problems = append(result.Problems, ImportProblem{
 				SourceRowNumber: raw.SourceRowNumber, FullName: normalized.FullName, NIK: normalized.NIK,
 				Status: normalized.ValidationStatus, Messages: normalized.ValidationMessages,
@@ -270,20 +272,20 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 // number stays unique to one person, but DCP3 files often put a shared
 // group letter number in that column. When the card already belongs to
 // someone with another NIK, the row keeps its own person (identified by
-// NIK) without the card, and cardOwner names the card's holder.
-func (r *Repository) matchOrCreatePerson(ctx context.Context, tx pgx.Tx, row NormalizedRow, duplicateIdentity bool) (personID, cardOwner string, err error) {
+// NIK) without the card, and cardTaken reports it.
+func (r *Repository) matchOrCreatePerson(ctx context.Context, tx pgx.Tx, row NormalizedRow, duplicateIdentity bool) (personID string, cardTaken bool, err error) {
 	if row.ValidationStatus == RowInvalid || (row.NIK != "" && len(row.NIK) != 16) {
-		return "", "", nil
+		return "", false, nil
 	}
 	nikPersonID, err := personByNIK(ctx, tx, row.NIK)
 	if err != nil {
-		return "", "", fmt.Errorf("find person by NIK: %w", err)
+		return "", false, fmt.Errorf("find person by NIK: %w", err)
 	}
-	cardPersonID, cardPersonNIK, cardPersonName, err := personByIdentifier(ctx, tx, row.IdentifierType, row.SectorIdentifier)
+	cardPersonID, cardPersonNIK, err := personByIdentifier(ctx, tx, row.IdentifierType, row.SectorIdentifier)
 	if err != nil {
-		return "", "", fmt.Errorf("find person by sector card: %w", err)
+		return "", false, fmt.Errorf("find person by sector card: %w", err)
 	}
-	cardTaken := cardPersonID != "" && (nikPersonID != "" && nikPersonID != cardPersonID ||
+	cardTaken = cardPersonID != "" && (nikPersonID != "" && nikPersonID != cardPersonID ||
 		nikPersonID == "" && row.NIK != "" && cardPersonNIK != "" && cardPersonNIK != row.NIK)
 	personID = nikPersonID
 	if personID == "" && !cardTaken {
@@ -291,27 +293,21 @@ func (r *Repository) matchOrCreatePerson(ctx context.Context, tx pgx.Tx, row Nor
 	}
 	if personID == "" {
 		if err := tx.QueryRow(ctx, `INSERT INTO people(full_name,nik,address,village,district,phone_number,verification_status) VALUES($1,NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),$7) RETURNING id::text`, row.FullName, row.NIK, row.Address, row.Village, row.District, row.PhoneNumber, verificationStatus(row.ValidationStatus)).Scan(&personID); err != nil {
-			return "", "", fmt.Errorf("insert person: %w", err)
+			return "", false, fmt.Errorf("insert person: %w", err)
 		}
 	} else if !duplicateIdentity {
 		_, err := tx.Exec(ctx, `UPDATE people SET nik=COALESCE(nik,NULLIF($2,'')),address=COALESCE(address,NULLIF($3,'')),village=COALESCE(village,NULLIF($4,'')),district=COALESCE(district,NULLIF($5,'')),phone_number=COALESCE(phone_number,NULLIF($6,'')),updated_at=now() WHERE id=$1`, personID, row.NIK, row.Address, row.Village, row.District, row.PhoneNumber)
 		if err != nil {
-			return "", "", fmt.Errorf("complete person from DCP3: %w", err)
+			return "", false, fmt.Errorf("complete person from DCP3: %w", err)
 		}
-	}
-	if cardTaken {
-		if cardPersonName == "" {
-			cardPersonName = "penerima lain"
-		}
-		return personID, cardPersonName, nil
 	}
 	if row.SectorIdentifier != "" && cardPersonID == "" && !duplicateIdentity {
 		_, err := tx.Exec(ctx, `INSERT INTO person_sector_identifiers(person_id,identifier_type,normalized_value,display_value) VALUES($1,$2,$3,$4) ON CONFLICT (person_id,identifier_type) DO NOTHING`, personID, row.IdentifierType, row.SectorIdentifier, row.SectorIdentifierDisplay)
 		if err != nil {
-			return "", "", fmt.Errorf("insert sector identifier: %w", err)
+			return "", false, fmt.Errorf("insert sector identifier: %w", err)
 		}
 	}
-	return personID, "", nil
+	return personID, cardTaken, nil
 }
 
 func personByNIK(ctx context.Context, tx pgx.Tx, nik string) (string, error) {
@@ -326,15 +322,16 @@ func personByNIK(ctx context.Context, tx pgx.Tx, nik string) (string, error) {
 	return id, err
 }
 
-func personByIdentifier(ctx context.Context, tx pgx.Tx, identifierType, value string) (id, nik, fullName string, err error) {
+func personByIdentifier(ctx context.Context, tx pgx.Tx, identifierType, value string) (string, string, error) {
 	if value == "" {
-		return "", "", "", nil
+		return "", "", nil
 	}
-	err = tx.QueryRow(ctx, `SELECT p.id::text,COALESCE(p.nik,''),p.full_name FROM person_sector_identifiers i JOIN people p ON p.id=i.person_id WHERE i.identifier_type=$1 AND i.normalized_value=$2`, identifierType, value).Scan(&id, &nik, &fullName)
+	var id, nik string
+	err := tx.QueryRow(ctx, `SELECT p.id::text,COALESCE(p.nik,'') FROM person_sector_identifiers i JOIN people p ON p.id=i.person_id WHERE i.identifier_type=$1 AND i.normalized_value=$2`, identifierType, value).Scan(&id, &nik)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", "", "", nil
+		return "", "", nil
 	}
-	return id, nik, fullName, err
+	return id, nik, err
 }
 
 func verificationStatus(status RowStatus) string {
