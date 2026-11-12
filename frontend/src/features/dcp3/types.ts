@@ -24,7 +24,11 @@ export type DCP3Preview = {
   status: string;
   machine_options: MachineOption[];
 };
-export type ImportResult = { batch_id: string; total_rows: number; valid_rows: number; warning_rows: number; invalid_rows: number };
+export type ImportProblem = { source_row_number: number; full_name: string; nik: string; status: 'warning' | 'needs_review' | 'invalid'; messages: string[] };
+export type ImportResult = {
+  batch_id: string; total_rows: number; valid_rows: number; warning_rows: number; review_rows: number; invalid_rows: number;
+  problems: ImportProblem[];
+};
 export type ScheduleResponse = { data: Schedule[] };
 export type DataResponse<T> = { data: T };
 

@@ -169,7 +169,7 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 	}
 	rows.Close()
 
-	result := ImportResult{BatchID: batchID, TotalRows: len(rawRows)}
+	result := ImportResult{BatchID: batchID, TotalRows: len(rawRows), Problems: []ImportProblem{}}
 	seenNIK := map[string]struct{}{}
 	for _, raw := range rawRows {
 		normalized := NormalizeRow(programType, raw, mapping)
@@ -182,14 +182,16 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 				seenNIK[normalized.NIK] = struct{}{}
 			}
 		}
-		personID, identityConflict, err := r.matchOrCreatePerson(ctx, tx, normalized, duplicateIdentity)
+		personID, cardTaken, err := r.matchOrCreatePerson(ctx, tx, normalized, duplicateIdentity)
 		if err != nil {
 			return ImportResult{}, err
 		}
-		if identityConflict {
-			normalized.raise(RowNeedsReview, "Identitas NIK dan kartu sektor dimiliki orang yang berbeda")
+		// The holder may sit outside the importer's regency scope, so the
+		// message does not name them.
+		if cardTaken {
+			normalized.raise(RowWarning, fmt.Sprintf("Nomor kartu sektor %s sudah dipakai penerima lain, jadi tidak disimpan untuk penerima ini", normalized.SectorIdentifierDisplay))
 		}
-		if personID != "" && !identityConflict {
+		if personID != "" {
 			var previouslyReceived bool
 			if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM distribution_slots WHERE recipient_person_id=$1 AND status='completed')`, personID).Scan(&previouslyReceived); err != nil {
 				return ImportResult{}, fmt.Errorf("check prior distribution: %w", err)
@@ -232,8 +234,16 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 			result.ValidRows++
 		case RowInvalid:
 			result.InvalidRows++
+		case RowNeedsReview:
+			result.ReviewRows++
 		default:
 			result.WarningRows++
+		}
+		if allocationStatus == "needs_review" || cardTaken {
+			result.Problems = append(result.Problems, ImportProblem{
+				SourceRowNumber: raw.SourceRowNumber, FullName: normalized.FullName, NIK: normalized.NIK,
+				Status: normalized.ValidationStatus, Messages: normalized.ValidationMessages,
+			})
 		}
 	}
 	var previewEnvelope struct {
@@ -243,11 +253,12 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 		return ImportResult{}, fmt.Errorf("decode DCP3 preview metadata: %w", err)
 	}
 	mappingJSON, _ := json.Marshal(map[string]any{"headers": previewEnvelope.Headers, "mapping": mapping})
-	_, err = tx.Exec(ctx, `UPDATE dcp3_import_batches SET mapping_json=$2,status='imported',valid_rows=$3,warning_rows=$4,invalid_rows=$5,imported_by=NULLIF($6,'')::uuid,imported_at=now(),updated_at=now() WHERE id=$1`, batchID, mappingJSON, result.ValidRows, result.WarningRows, result.InvalidRows, actor.UserID)
+	// The batch keeps its three counters: warning_rows covers warning and review rows.
+	_, err = tx.Exec(ctx, `UPDATE dcp3_import_batches SET mapping_json=$2,status='imported',valid_rows=$3,warning_rows=$4,invalid_rows=$5,imported_by=NULLIF($6,'')::uuid,imported_at=now(),updated_at=now() WHERE id=$1`, batchID, mappingJSON, result.ValidRows, result.WarningRows+result.ReviewRows, result.InvalidRows, actor.UserID)
 	if err != nil {
 		return ImportResult{}, fmt.Errorf("complete DCP3 batch: %w", err)
 	}
-	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "dcp3.imported", ResourceType: "dcp3_import_batch", ResourceID: batchID, Metadata: map[string]any{"schedule_id": scheduleID, "total_rows": result.TotalRows, "valid_rows": result.ValidRows, "warning_rows": result.WarningRows, "invalid_rows": result.InvalidRows}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "dcp3.imported", ResourceType: "dcp3_import_batch", ResourceID: batchID, Metadata: map[string]any{"schedule_id": scheduleID, "total_rows": result.TotalRows, "valid_rows": result.ValidRows, "warning_rows": result.WarningRows, "review_rows": result.ReviewRows, "invalid_rows": result.InvalidRows}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
 		return ImportResult{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -256,20 +267,28 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 	return result, nil
 }
 
-func (r *Repository) matchOrCreatePerson(ctx context.Context, tx pgx.Tx, row NormalizedRow, duplicateIdentity bool) (string, bool, error) {
+// matchOrCreatePerson finds the row's person by NIK, or by sector card when
+// the row has no NIK, and creates one when neither exists. A sector card
+// number stays unique to one person, but DCP3 files often put a shared
+// group letter number in that column. When the card already belongs to
+// someone with another NIK, the row keeps its own person (identified by
+// NIK) without the card, and cardTaken reports it.
+func (r *Repository) matchOrCreatePerson(ctx context.Context, tx pgx.Tx, row NormalizedRow, duplicateIdentity bool) (personID string, cardTaken bool, err error) {
 	if row.ValidationStatus == RowInvalid || (row.NIK != "" && len(row.NIK) != 16) {
 		return "", false, nil
 	}
-	nikPersonID, _ := personByNIK(ctx, tx, row.NIK)
-	cardPersonID, cardPersonNIK, _ := personByIdentifier(ctx, tx, row.IdentifierType, row.SectorIdentifier)
-	if nikPersonID != "" && cardPersonID != "" && nikPersonID != cardPersonID {
-		return "", true, nil
+	nikPersonID, err := personByNIK(ctx, tx, row.NIK)
+	if err != nil {
+		return "", false, fmt.Errorf("find person by NIK: %w", err)
 	}
-	if cardPersonID != "" && row.NIK != "" && cardPersonNIK != "" && cardPersonNIK != row.NIK {
-		return "", true, nil
+	cardPersonID, cardPersonNIK, err := personByIdentifier(ctx, tx, row.IdentifierType, row.SectorIdentifier)
+	if err != nil {
+		return "", false, fmt.Errorf("find person by sector card: %w", err)
 	}
-	personID := nikPersonID
-	if personID == "" {
+	cardTaken = cardPersonID != "" && (nikPersonID != "" && nikPersonID != cardPersonID ||
+		nikPersonID == "" && row.NIK != "" && cardPersonNIK != "" && cardPersonNIK != row.NIK)
+	personID = nikPersonID
+	if personID == "" && !cardTaken {
 		personID = cardPersonID
 	}
 	if personID == "" {
@@ -288,7 +307,7 @@ func (r *Repository) matchOrCreatePerson(ctx context.Context, tx pgx.Tx, row Nor
 			return "", false, fmt.Errorf("insert sector identifier: %w", err)
 		}
 	}
-	return personID, false, nil
+	return personID, cardTaken, nil
 }
 
 func personByNIK(ctx context.Context, tx pgx.Tx, nik string) (string, error) {
