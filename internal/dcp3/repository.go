@@ -169,7 +169,7 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 	}
 	rows.Close()
 
-	result := ImportResult{BatchID: batchID, TotalRows: len(rawRows)}
+	result := ImportResult{BatchID: batchID, TotalRows: len(rawRows), Problems: []ImportProblem{}}
 	seenNIK := map[string]struct{}{}
 	for _, raw := range rawRows {
 		normalized := NormalizeRow(programType, raw, mapping)
@@ -182,14 +182,14 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 				seenNIK[normalized.NIK] = struct{}{}
 			}
 		}
-		personID, identityConflict, err := r.matchOrCreatePerson(ctx, tx, normalized, duplicateIdentity)
+		personID, cardOwner, err := r.matchOrCreatePerson(ctx, tx, normalized, duplicateIdentity)
 		if err != nil {
 			return ImportResult{}, err
 		}
-		if identityConflict {
-			normalized.raise(RowNeedsReview, "Identitas NIK dan kartu sektor dimiliki orang yang berbeda")
+		if cardOwner != "" {
+			normalized.raise(RowWarning, fmt.Sprintf("Nomor kartu sektor %s sudah dipakai %s, jadi tidak disimpan untuk penerima ini", normalized.SectorIdentifierDisplay, cardOwner))
 		}
-		if personID != "" && !identityConflict {
+		if personID != "" {
 			var previouslyReceived bool
 			if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM distribution_slots WHERE recipient_person_id=$1 AND status='completed')`, personID).Scan(&previouslyReceived); err != nil {
 				return ImportResult{}, fmt.Errorf("check prior distribution: %w", err)
@@ -232,8 +232,16 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 			result.ValidRows++
 		case RowInvalid:
 			result.InvalidRows++
+		case RowNeedsReview:
+			result.ReviewRows++
 		default:
 			result.WarningRows++
+		}
+		if allocationStatus == "needs_review" || cardOwner != "" {
+			result.Problems = append(result.Problems, ImportProblem{
+				SourceRowNumber: raw.SourceRowNumber, FullName: normalized.FullName, NIK: normalized.NIK,
+				Status: normalized.ValidationStatus, Messages: normalized.ValidationMessages,
+			})
 		}
 	}
 	var previewEnvelope struct {
@@ -243,11 +251,12 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 		return ImportResult{}, fmt.Errorf("decode DCP3 preview metadata: %w", err)
 	}
 	mappingJSON, _ := json.Marshal(map[string]any{"headers": previewEnvelope.Headers, "mapping": mapping})
-	_, err = tx.Exec(ctx, `UPDATE dcp3_import_batches SET mapping_json=$2,status='imported',valid_rows=$3,warning_rows=$4,invalid_rows=$5,imported_by=NULLIF($6,'')::uuid,imported_at=now(),updated_at=now() WHERE id=$1`, batchID, mappingJSON, result.ValidRows, result.WarningRows, result.InvalidRows, actor.UserID)
+	// The batch keeps its three counters: warning_rows covers warning and review rows.
+	_, err = tx.Exec(ctx, `UPDATE dcp3_import_batches SET mapping_json=$2,status='imported',valid_rows=$3,warning_rows=$4,invalid_rows=$5,imported_by=NULLIF($6,'')::uuid,imported_at=now(),updated_at=now() WHERE id=$1`, batchID, mappingJSON, result.ValidRows, result.WarningRows+result.ReviewRows, result.InvalidRows, actor.UserID)
 	if err != nil {
 		return ImportResult{}, fmt.Errorf("complete DCP3 batch: %w", err)
 	}
-	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "dcp3.imported", ResourceType: "dcp3_import_batch", ResourceID: batchID, Metadata: map[string]any{"schedule_id": scheduleID, "total_rows": result.TotalRows, "valid_rows": result.ValidRows, "warning_rows": result.WarningRows, "invalid_rows": result.InvalidRows}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "dcp3.imported", ResourceType: "dcp3_import_batch", ResourceID: batchID, Metadata: map[string]any{"schedule_id": scheduleID, "total_rows": result.TotalRows, "valid_rows": result.ValidRows, "warning_rows": result.WarningRows, "review_rows": result.ReviewRows, "invalid_rows": result.InvalidRows}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
 		return ImportResult{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -256,39 +265,53 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 	return result, nil
 }
 
-func (r *Repository) matchOrCreatePerson(ctx context.Context, tx pgx.Tx, row NormalizedRow, duplicateIdentity bool) (string, bool, error) {
+// matchOrCreatePerson finds the row's person by NIK, or by sector card when
+// the row has no NIK, and creates one when neither exists. A sector card
+// number stays unique to one person, but DCP3 files often put a shared
+// group letter number in that column. When the card already belongs to
+// someone with another NIK, the row keeps its own person (identified by
+// NIK) without the card, and cardOwner names the card's holder.
+func (r *Repository) matchOrCreatePerson(ctx context.Context, tx pgx.Tx, row NormalizedRow, duplicateIdentity bool) (personID, cardOwner string, err error) {
 	if row.ValidationStatus == RowInvalid || (row.NIK != "" && len(row.NIK) != 16) {
-		return "", false, nil
+		return "", "", nil
 	}
-	nikPersonID, _ := personByNIK(ctx, tx, row.NIK)
-	cardPersonID, cardPersonNIK, _ := personByIdentifier(ctx, tx, row.IdentifierType, row.SectorIdentifier)
-	if nikPersonID != "" && cardPersonID != "" && nikPersonID != cardPersonID {
-		return "", true, nil
+	nikPersonID, err := personByNIK(ctx, tx, row.NIK)
+	if err != nil {
+		return "", "", fmt.Errorf("find person by NIK: %w", err)
 	}
-	if cardPersonID != "" && row.NIK != "" && cardPersonNIK != "" && cardPersonNIK != row.NIK {
-		return "", true, nil
+	cardPersonID, cardPersonNIK, cardPersonName, err := personByIdentifier(ctx, tx, row.IdentifierType, row.SectorIdentifier)
+	if err != nil {
+		return "", "", fmt.Errorf("find person by sector card: %w", err)
 	}
-	personID := nikPersonID
-	if personID == "" {
+	cardTaken := cardPersonID != "" && (nikPersonID != "" && nikPersonID != cardPersonID ||
+		nikPersonID == "" && row.NIK != "" && cardPersonNIK != "" && cardPersonNIK != row.NIK)
+	personID = nikPersonID
+	if personID == "" && !cardTaken {
 		personID = cardPersonID
 	}
 	if personID == "" {
 		if err := tx.QueryRow(ctx, `INSERT INTO people(full_name,nik,address,village,district,phone_number,verification_status) VALUES($1,NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),$7) RETURNING id::text`, row.FullName, row.NIK, row.Address, row.Village, row.District, row.PhoneNumber, verificationStatus(row.ValidationStatus)).Scan(&personID); err != nil {
-			return "", false, fmt.Errorf("insert person: %w", err)
+			return "", "", fmt.Errorf("insert person: %w", err)
 		}
 	} else if !duplicateIdentity {
 		_, err := tx.Exec(ctx, `UPDATE people SET nik=COALESCE(nik,NULLIF($2,'')),address=COALESCE(address,NULLIF($3,'')),village=COALESCE(village,NULLIF($4,'')),district=COALESCE(district,NULLIF($5,'')),phone_number=COALESCE(phone_number,NULLIF($6,'')),updated_at=now() WHERE id=$1`, personID, row.NIK, row.Address, row.Village, row.District, row.PhoneNumber)
 		if err != nil {
-			return "", false, fmt.Errorf("complete person from DCP3: %w", err)
+			return "", "", fmt.Errorf("complete person from DCP3: %w", err)
 		}
+	}
+	if cardTaken {
+		if cardPersonName == "" {
+			cardPersonName = "penerima lain"
+		}
+		return personID, cardPersonName, nil
 	}
 	if row.SectorIdentifier != "" && cardPersonID == "" && !duplicateIdentity {
 		_, err := tx.Exec(ctx, `INSERT INTO person_sector_identifiers(person_id,identifier_type,normalized_value,display_value) VALUES($1,$2,$3,$4) ON CONFLICT (person_id,identifier_type) DO NOTHING`, personID, row.IdentifierType, row.SectorIdentifier, row.SectorIdentifierDisplay)
 		if err != nil {
-			return "", false, fmt.Errorf("insert sector identifier: %w", err)
+			return "", "", fmt.Errorf("insert sector identifier: %w", err)
 		}
 	}
-	return personID, false, nil
+	return personID, "", nil
 }
 
 func personByNIK(ctx context.Context, tx pgx.Tx, nik string) (string, error) {
@@ -303,16 +326,15 @@ func personByNIK(ctx context.Context, tx pgx.Tx, nik string) (string, error) {
 	return id, err
 }
 
-func personByIdentifier(ctx context.Context, tx pgx.Tx, identifierType, value string) (string, string, error) {
+func personByIdentifier(ctx context.Context, tx pgx.Tx, identifierType, value string) (id, nik, fullName string, err error) {
 	if value == "" {
-		return "", "", nil
+		return "", "", "", nil
 	}
-	var id, nik string
-	err := tx.QueryRow(ctx, `SELECT p.id::text,COALESCE(p.nik,'') FROM person_sector_identifiers i JOIN people p ON p.id=i.person_id WHERE i.identifier_type=$1 AND i.normalized_value=$2`, identifierType, value).Scan(&id, &nik)
+	err = tx.QueryRow(ctx, `SELECT p.id::text,COALESCE(p.nik,''),p.full_name FROM person_sector_identifiers i JOIN people p ON p.id=i.person_id WHERE i.identifier_type=$1 AND i.normalized_value=$2`, identifierType, value).Scan(&id, &nik, &fullName)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", "", nil
+		return "", "", "", nil
 	}
-	return id, nik, err
+	return id, nik, fullName, err
 }
 
 func verificationStatus(status RowStatus) string {
