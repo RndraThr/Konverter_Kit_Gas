@@ -1,39 +1,41 @@
-import { Download, FileSpreadsheet, FileText } from 'lucide-react';
+import { Download, FileSpreadsheet, FileText, RefreshCw } from 'lucide-react';
 import { ButtonSample, FieldSample } from '../GuideExamples';
 import type { GuideTopic } from '../guideTopics';
 
 export const laporan: GuideTopic = {
   slug: 'laporan',
   stepId: 'laporan',
-  title: 'Laporan & Map Distribusi',
-  intro: 'Laporan menampilkan progres alokasi, distribusi, dan dokumentasi per jadwal dan bisa diekspor ke Excel/PDF. Map Distribusi menampilkan setiap nomor bagi sebagai titik di peta, berwarna sesuai milestone penyaluran.',
+  title: 'Laporan DP3 & Map Distribusi',
+  intro: 'Laporan DP3 berisi data penerima yang distribusinya sudah selesai per kabupaten, tanpa status, dan bisa diunduh sebagai Excel atau PDF. Excel-nya juga tersimpan otomatis di folder kabupaten di Drive. Map Distribusi menampilkan setiap nomor bagi sebagai titik di peta, berwarna sesuai milestone penyaluran.',
   manage: ['distribution.manage'],
   view: ['distribution.view'],
   route: '/laporan',
   sections: [
     {
       id: 'laporan',
-      title: 'Laporan per jadwal',
-      summary: 'Pilih jadwal, lalu persempit dengan status.',
-      shots: [{ id: 'lp-filter', title: 'Filter dan ringkasan laporan', legend: ['Jadwal (kabupaten)', 'Status alokasi', 'Status distribusi', 'Kelengkapan dokumentasi', 'Ringkasan angka sesuai filter'] }],
+      title: 'Laporan DP3 per kabupaten',
+      summary: 'Pilih jadwal kabupaten. Laporan hanya memuat penerima yang distribusinya sudah selesai, bernomor sama dengan BA DP3.',
       steps: [
-        { n: 1, text: <>Buka menu <b>Laporan</b> dan pilih <FieldSample>Jadwal</FieldSample>.</> },
-        { n: 2, text: <>Saring berdasarkan status alokasi, status distribusi, atau dokumentasi. Ringkasan dan tabel mengikuti filter.</> },
+        { n: 1, text: <>Buka menu <b>Laporan DP3</b> dan pilih <FieldSample>Jadwal</FieldSample>.</> },
+        { n: 2, text: <>Tabel menampilkan identitas, nomor kartu, nomor HP, desa, tanggal dan titik serah, serta mesin tiap penerima. Penerima yang belum selesai diserahkan tidak ikut.</> },
       ],
       fields: [
-        { name: 'Alokasi candidate / ready / needs review / distributed', meaning: 'Status penerima: kandidat, siap, perlu ditinjau, sudah distribusi.' },
-        { name: 'Alokasi replaced / cancelled', meaning: 'Penerima digantikan atau dibatalkan.' },
-        { name: 'Distribusi draft / completed / cancelled', meaning: 'Nomor bagi masih berjalan, selesai diserahkan, atau dibatalkan.' },
-        { name: 'Dokumentasi belum lengkap', meaning: 'Penerima yang foto wajibnya belum lengkap.' },
+        { name: 'Penerima selesai', meaning: 'Jumlah penerima yang distribusinya sudah diselesaikan di POS Penyerahan.' },
+        { name: 'Hari distribusi / titik serah / desa', meaning: 'Banyaknya tanggal, lokasi penyerahan, dan desa yang tercakup di laporan.' },
+        { name: 'Excel di Drive', meaning: 'File Laporan DP3 di folder kabupaten. Diperbarui otomatis tiap 10 menit bila datanya berubah.' },
+      ],
+      problems: [
+        { q: 'Penerima belum muncul?', a: 'Laporan DP3 hanya memuat distribusi yang sudah selesai. Selesaikan nomor bagi di POS Penyerahan terlebih dahulu.' },
+        { q: 'Muncul "Pembaruan terakhir gagal"?', a: 'Biasanya karena koneksi ke Drive terputus. Sistem mencoba lagi otomatis; pengguna dengan akses kelola distribusi bisa menekan Perbarui sekarang.' },
       ],
     },
     {
       id: 'ekspor',
-      title: 'Ekspor laporan',
-      summary: 'Unduh laporan sesuai filter yang sedang aktif.',
-      shots: [{ id: 'lp-export', title: 'Ekspor dan tabel laporan (disamarkan)', legend: ['Unduh Excel', 'Unduh PDF', 'Tabel per penerima'] }],
+      title: 'Unduh Laporan DP3',
+      summary: 'Excel memuat data lengkap (termasuk nomor seri converter dan selang); PDF berisi ringkasan kolom utama, siap cetak A4 landscape.',
       steps: [
-        { n: 1, text: <>Klik <ButtonSample variant="outline" icon={<FileSpreadsheet />} trailingIcon={<Download />}>Export Excel</ButtonSample> untuk diolah lebih lanjut, atau <ButtonSample variant="outline" icon={<FileText />} trailingIcon={<Download />}>Export PDF</ButtonSample> untuk dikirim.</> },
+        { n: 1, text: <>Klik <ButtonSample variant="outline" icon={<FileSpreadsheet />} trailingIcon={<Download />}>Export Excel</ButtonSample> untuk diolah lebih lanjut, atau <ButtonSample variant="outline" icon={<FileText />} trailingIcon={<Download />}>Export PDF</ButtonSample> untuk dikirim atau dicetak.</> },
+        { text: <>Perlu file di Drive diperbarui sekarang juga? Klik <ButtonSample variant="ghost" icon={<RefreshCw />}>Perbarui sekarang</ButtonSample> di kartu Excel di Drive.</>, permissions: ['distribution.manage'] },
       ],
     },
     {

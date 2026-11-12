@@ -1,11 +1,12 @@
 .page { display: grid; gap: 1.5rem; min-width: 0; }
-.filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .875rem; padding: 1rem; border: 1px solid var(--border); border-radius: .75rem; background: color-mix(in srgb, var(--card) 96%, #f4e4a6); }
+.filters { display: grid; grid-template-columns: minmax(0, 28rem); gap: .875rem; padding: 1rem; border: 1px solid var(--border); border-radius: .75rem; background: color-mix(in srgb, var(--card) 96%, #f4e4a6); }
 .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .75rem; }
 .summary [data-slot="card"] { min-height: 6.5rem; border-color: color-mix(in srgb, var(--border) 76%, #b89b35); }
 .summary [data-slot="card-content"] { display: grid; align-content: center; gap: .25rem; height: 100%; }
 .summary strong { color: var(--primary); font-size: 1.7rem; font-variant-numeric: tabular-nums; }
 .summary span { color: var(--muted-foreground); font-size: .8rem; }
+.toolbar { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .75rem; align-items: center; }
 .exportBar { display: flex; flex-wrap: wrap; gap: .75rem; }
-.statusBadge { text-transform: capitalize; }
-@media (max-width: 850px) { .filters { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 560px) { .filters { grid-template-columns: 1fr; }.exportBar > * { width: 100%; } }
+.drive { min-width: 0; }
+@media (max-width: 850px) { .toolbar { grid-template-columns: 1fr; } }
+@media (max-width: 560px) { .filters { grid-template-columns: 1fr; } .exportBar > * { width: 100%; } }

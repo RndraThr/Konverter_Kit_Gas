@@ -74,7 +74,7 @@ const stepPoints: Record<string, string[]> = {
   ],
   laporan: [
     'Progres distribusi per kabupaten di peta',
-    'Laporan per penerima, export Excel / PDF',
+    'Laporan DP3: penerima selesai, Excel / PDF, otomatis ke Drive',
     'Pantau dari web atau HP (Monitoring)',
   ],
 };

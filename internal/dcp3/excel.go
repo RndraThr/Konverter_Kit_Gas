@@ -54,7 +54,11 @@ func ParseWorkbook(source io.Reader, limits ParseLimits, headerRowIndex int) (Wo
 				return WorkbookPreview{}, ErrWorkbookInvalid
 			}
 			if formula != "" {
-				values[columnIndex] = "=" + formula
+				if literal, ok := formulaStringLiteral(formula); ok {
+					values[columnIndex] = strings.TrimSpace(literal)
+				} else {
+					values[columnIndex] = "=" + formula
+				}
 			}
 		}
 		if allBlank(values) {
@@ -148,4 +152,20 @@ func allBlank(values []string) bool {
 		}
 	}
 	return true
+}
+
+// formulaStringLiteral unwraps a formula that is only a quoted text, such as
+// ="6032988517402660" (a common way to keep long numbers as text in Excel).
+// Its value is the text itself, so it is safe to import; any other formula is
+// kept as written rather than trusting the cached result.
+func formulaStringLiteral(formula string) (string, bool) {
+	formula = strings.TrimSpace(formula)
+	if len(formula) < 2 || formula[0] != '"' || formula[len(formula)-1] != '"' {
+		return "", false
+	}
+	inner := formula[1 : len(formula)-1]
+	if strings.Count(inner, `"`) != 2*strings.Count(inner, `""`) {
+		return "", false
+	}
+	return strings.ReplaceAll(inner, `""`, `"`), true
 }

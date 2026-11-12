@@ -19,7 +19,6 @@ beforeEach(() => {
   vi.mocked(apiRequest).mockImplementation(async (path) => {
     if (path.includes('/dates')) return { data: [{ local_date: '2026-10-03', recipient_count: 2, validation_status: 'ready' }] }
     if (path.includes('/documents')) return { data: [] }
-    if (path.includes('/dp3/excel')) return { data: { available: false, filename: '', recipient_count: 0, synced_at: null, last_error: '', last_attempt_at: null } }
     throw new Error(`unexpected ${path}`)
   })
   vi.mocked(apiBlobRequest).mockResolvedValue(new Blob(['%PDF-preview'], { type: 'application/pdf' }))

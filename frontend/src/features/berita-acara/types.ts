@@ -200,16 +200,6 @@ export type DP3Summary = {
   validation_status: string;
 };
 
-// DP3ExcelStatus: workbook data penerima satu jadwal (lihat DP3ExcelCard).
-export type DP3ExcelStatus = {
-  available: boolean;
-  filename: string;
-  recipient_count: number;
-  synced_at: string | null;
-  last_error: string;
-  last_attempt_at: string | null;
-};
-
 export type DP3Recipient = {
   row_number: number;
   slot_id: string;

@@ -61,7 +61,7 @@ const groups: NavGroup[] = [
     { label: 'Tim keuangan', to: '/keuangan-tim', permission: 'finance.manage', icon: <UsersRound /> },
   ] },
   { label: 'Laporan', items: [
-    { label: 'Laporan', to: '/laporan', permission: 'distribution.view', icon: <FileText /> },
+    { label: 'Laporan DP3', to: '/laporan', permission: 'distribution.view', icon: <FileText /> },
     { label: 'Laporan Akhir', to: '/laporan-akhir', permission: 'final_report.view', icon: <Presentation /> },
   ] },
   { label: 'Administrasi', items: [

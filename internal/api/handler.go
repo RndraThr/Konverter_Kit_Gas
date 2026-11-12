@@ -124,10 +124,12 @@ type DistributionService interface {
 }
 
 type ReportsService interface {
-	Summary(context.Context, string, reports.Filter, auth.RegencyScope) (reports.Summary, error)
-	Rows(context.Context, string, reports.Filter, auth.RegencyScope) ([]reports.Row, error)
-	ExportExcel(context.Context, auth.Principal, string, reports.Filter, auth.ClientMeta, auth.RegencyScope) ([]byte, error)
-	ExportPDF(context.Context, auth.Principal, string, reports.Filter, auth.ClientMeta, auth.RegencyScope) ([]byte, error)
+	Summary(context.Context, string, auth.RegencyScope) (reports.Summary, error)
+	Report(context.Context, string, auth.RegencyScope) (reports.Report, error)
+	ExportExcel(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) (reports.File, error)
+	ExportPDF(context.Context, auth.Principal, string, auth.ClientMeta, auth.RegencyScope) (reports.File, error)
+	DriveStatus(context.Context, string, auth.RegencyScope) (reports.DriveStatus, error)
+	SyncDrive(context.Context, string, auth.RegencyScope) (reports.DriveStatus, error)
 }
 
 type RecipientsService interface {
@@ -191,12 +193,6 @@ type DP3Service interface {
 	Finalize(context.Context, auth.Principal, string, string, auth.RegencyScope, auth.ClientMeta) (bast.AggregateDocument, error)
 	Documents(context.Context, string, string, auth.RegencyScope) ([]bast.AggregateDocument, error)
 	Open(context.Context, string, auth.RegencyScope) (bast.AggregateContent, error)
-}
-
-type DP3ExcelService interface {
-	Status(context.Context, string, auth.RegencyScope) (bast.DP3ExcelStatus, error)
-	Open(context.Context, string, auth.RegencyScope) (bast.DP3ExcelContent, error)
-	Sync(context.Context, string, auth.RegencyScope) (bast.DP3ExcelStatus, error)
 }
 
 type DailyRecapService interface {
@@ -318,7 +314,6 @@ type Dependencies struct {
 	BASTHandover        BASTHandoverService
 	BASTSignatureLayout BASTSignatureLayoutService
 	DP3                 DP3Service
-	DP3Excel            DP3ExcelService
 	DailyRecap          DailyRecapService
 	ClosingTitikSerah   ClosingTitikSerahService
 	ClosingKabupaten    ClosingKabupatenService
@@ -531,8 +526,6 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleBASTIndividual(w, r, rc, strings.TrimPrefix(path, "bast/individual/"))
 	case strings.HasPrefix(path, "bast/schedules/"):
 		h.handleBASTScheduleSettings(w, r, rc, strings.TrimPrefix(path, "bast/schedules/"))
-	case path == "bast/dp3/excel" || strings.HasPrefix(path, "bast/dp3/excel/"):
-		h.handleDP3Excel(w, r, rc, strings.TrimPrefix(strings.TrimPrefix(path, "bast/dp3/excel"), "/"))
 	case strings.HasPrefix(path, "bast/dp3/"):
 		h.handleBASTDP3(w, r, rc, strings.TrimPrefix(path, "bast/dp3/"))
 	case strings.HasPrefix(path, "bast/daily-recap/"):
