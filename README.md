@@ -279,6 +279,13 @@ Langkah di atas mengasumsikan VPS kosong/khusus, dengan Caddy sebagai reverse pr
    server {
        server_name konkit.ptkiansantang.com;
 
+       # Izinkan kamera (scan barcode, scan dokumen, foto) dan lokasi (geotag
+       # dokumentasi) untuk situs ini sendiri. Kalau server memasang
+       # Permissions-Policy yang lebih ketat (mis. dari snippet keamanan
+       # bersama), browser menolak kamera dan lokasi meskipun pengguna sudah
+       # memberi izin.
+       add_header Permissions-Policy "geolocation=(self), camera=(self)" always;
+
        # Upload dokumentasi diteruskan sebagai stream agar video besar tidak
        # dibuffer penuh ke disk sementara nginx sebelum mencapai aplikasi.
        location ~ ^/api/v1/(activities/media|distribution/slots/[^/]+/media)$ {

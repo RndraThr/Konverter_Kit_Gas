@@ -24,6 +24,9 @@ test('combines account identity, profile editing, and password security in one p
   expect(screen.getByRole('heading', { name: 'Keamanan akun' })).toBeInTheDocument();
   expect(screen.getByLabelText('Password saat ini')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Ubah password' })).toBeInTheDocument();
+  // The form fills from the account after the page renders; clearing before
+  // that lands lets the late fill prepend the old name to the typed one.
+  await waitFor(() => expect(name).toHaveValue('Admin Konkit'));
   await userEvent.clear(name);
   await userEvent.type(name, 'Admin Program');
   expect(name).toHaveValue('ADMIN PROGRAM');
