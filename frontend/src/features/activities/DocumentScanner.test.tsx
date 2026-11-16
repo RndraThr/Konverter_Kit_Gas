@@ -8,7 +8,6 @@ import DocumentScanner from './DocumentScanner';
 // DocumentScanner.tsx's header comment and the task report for why.
 vi.mock('jscanify/client', () => ({
   default: class {
-    highlightPaper(canvas: HTMLCanvasElement) { return canvas; }
     // A paper filling most of the 640x480 frame.
     findPaperContour() { return { delete() {} }; }
     getCornerPoints() { return { topLeftCorner: { x: 40, y: 20 }, topRightCorner: { x: 600, y: 20 }, bottomLeftCorner: { x: 40, y: 460 }, bottomRightCorner: { x: 600, y: 460 } }; }
@@ -16,15 +15,16 @@ vi.mock('jscanify/client', () => ({
   },
 }));
 
-function attachStream(video: HTMLVideoElement) {
+function attachStream(video: HTMLVideoElement, width = 640, height = 480) {
   // jsdom's `srcObject` is a getter-only no-op property; make it a plain
   // writable field so the component's own `video.srcObject = stream` works.
   Object.defineProperty(video, 'srcObject', { configurable: true, writable: true, value: null });
-  Object.defineProperty(video, 'videoWidth', { configurable: true, value: 640 });
-  Object.defineProperty(video, 'videoHeight', { configurable: true, value: 480 });
+  Object.defineProperty(video, 'videoWidth', { configurable: true, value: width });
+  Object.defineProperty(video, 'videoHeight', { configurable: true, value: height });
 }
 
 const getUserMedia = vi.fn();
+let context: Record<string, ReturnType<typeof vi.fn>>;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -45,12 +45,18 @@ beforeEach(() => {
   // HTMLVideoElement the way real browsers can, and has no usable toBlob —
   // this test only needs to prove page bookkeeping/upload wiring, not real
   // pixel manipulation, so canvas drawing is stubbed out entirely.
-  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+  context = {
     drawImage: vi.fn(),
     clearRect: vi.fn(),
     getImageData: vi.fn(() => ({ data: new Uint8ClampedArray(4) })),
     putImageData: vi.fn(),
-  } as unknown as CanvasRenderingContext2D);
+    beginPath: vi.fn(),
+    moveTo: vi.fn(),
+    lineTo: vi.fn(),
+    closePath: vi.fn(),
+    stroke: vi.fn(),
+  };
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as unknown as CanvasRenderingContext2D);
   vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((callback) => {
     callback(new Blob(['page'], { type: 'image/jpeg' }));
   });
@@ -84,6 +90,19 @@ describe('DocumentScanner', () => {
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect((onSubmit.mock.calls[0] as unknown as [Blob[]])[0]).toHaveLength(2);
+  });
+
+  it('detects edges on a downscaled frame and draws only the outline over the live video', async () => {
+    render(<DocumentScanner title="Scan Dokumen Pendukung" onSubmit={vi.fn(async () => {})} onClose={vi.fn()} />);
+    const video = document.querySelector('video') as HTMLVideoElement;
+    attachStream(video, 1920, 1080);
+    await waitFor(() => expect(context.stroke).toHaveBeenCalled());
+
+    // Every live-preview draw of the video is the 640px detection copy, never a full-frame repaint.
+    for (const call of context.drawImage.mock.calls) expect(call).toEqual([video, 0, 0, 640, 360]);
+    // Corners found on the 640px copy are scaled back to the 1920px overlay.
+    expect(context.moveTo).toHaveBeenCalledWith(120, 60);
+    expect(context.lineTo).toHaveBeenCalledWith(1800, 60);
   });
 
   it('stops capturing at maxPages', async () => {
@@ -132,7 +151,7 @@ describe('DocumentScanner', () => {
 
     // Second attempt succeeds: opencv.js's UMD wrapper assigns `window.cv` on script
     // `load`, then calls `onRuntimeInitialized` once its WASM finishes compiling.
-    (window as unknown as { cv?: { onRuntimeInitialized?: () => void } }).cv = {};
+    (window as unknown as { cv?: { onRuntimeInitialized?: () => void; imread?: () => unknown } }).cv = { imread: () => ({ delete() {} }) };
     appendedScripts[1].dispatchEvent(new Event('load'));
     await waitFor(() => expect(window.cv?.onRuntimeInitialized).toBeTypeOf('function'));
     window.cv!.onRuntimeInitialized!();

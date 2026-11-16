@@ -15,13 +15,18 @@ type Point = { x: number; y: number };
 type Corners = { topLeftCorner?: Point; topRightCorner?: Point; bottomLeftCorner?: Point; bottomRightCorner?: Point };
 type CvMat = { delete(): void };
 type JScanify = {
-  highlightPaper(image: HTMLCanvasElement, options?: { color?: string; thickness?: number }): HTMLCanvasElement;
   findPaperContour(image: CvMat): CvMat | null;
   getCornerPoints(contour: CvMat): Corners;
   extractPaper(image: HTMLCanvasElement, resultWidth: number, resultHeight: number, corners?: Corners): HTMLCanvasElement | null;
 };
 
 const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
+
+// Edge detection for the live outline runs on a copy of the frame no wider
+// than this. Finding a page's edges needs nowhere near Full HD, and OpenCV
+// on a 1920x1080 frame blocked the main thread long enough to stall the
+// camera preview. Captures still use the full-resolution frame.
+const DETECT_WIDTH = 640;
 
 /**
  * Finds the paper's corners and its real size in the frame, so the
@@ -148,16 +153,35 @@ export default function DocumentScanner({ title, description = 'Arahkan kamera k
         video.srcObject = activeStream;
         setStarting(false);
         const overlay = overlayRef.current;
+        const detectFrame = document.createElement('canvas');
+        // The overlay holds only the page outline on a transparent canvas, so
+        // the <video> underneath stays at the camera's own frame rate. It used
+        // to repaint the whole frame here, which made the preview look like 4 fps.
         const tick = () => {
           if (overlay && video.videoWidth) {
-            overlay.width = video.videoWidth; overlay.height = video.videoHeight;
+            if (overlay.width !== video.videoWidth || overlay.height !== video.videoHeight) {
+              overlay.width = video.videoWidth; overlay.height = video.videoHeight;
+            }
+            const scale = Math.min(1, DETECT_WIDTH / video.videoWidth);
+            detectFrame.width = Math.round(video.videoWidth * scale);
+            detectFrame.height = Math.round(video.videoHeight * scale);
             const ctx = overlay.getContext('2d');
-            if (ctx) {
-              ctx.drawImage(video, 0, 0);
+            const detectCtx = detectFrame.getContext('2d');
+            if (ctx && detectCtx) {
+              detectCtx.drawImage(video, 0, 0, detectFrame.width, detectFrame.height);
               try {
-                const highlighted = scannerRef.current.highlightPaper(overlay);
+                const paper = paperGeometry(scannerRef.current, detectFrame);
                 ctx.clearRect(0, 0, overlay.width, overlay.height);
-                ctx.drawImage(highlighted, 0, 0);
+                if (paper) {
+                  const { topLeftCorner, topRightCorner, bottomRightCorner, bottomLeftCorner } = paper.corners;
+                  ctx.strokeStyle = 'orange';
+                  ctx.lineWidth = 10;
+                  ctx.beginPath();
+                  ctx.moveTo(topLeftCorner.x / scale, topLeftCorner.y / scale);
+                  for (const corner of [topRightCorner, bottomRightCorner, bottomLeftCorner]) ctx.lineTo(corner.x / scale, corner.y / scale);
+                  ctx.closePath();
+                  ctx.stroke();
+                }
               } catch {
                 // jscanify's OpenCV.js WASM failed to init or threw mid-detection (e.g. weak
                 // connection in the field). Fail fast with a retry, per spec §10 — never fall
