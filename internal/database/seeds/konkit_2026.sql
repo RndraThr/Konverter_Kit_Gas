@@ -45,9 +45,9 @@ BEGIN
         ('WNG', 'ZONA-1', 320), ('BBS', 'ZONA-1', 230), ('TGL', 'ZONA-1', 110), ('JPR', 'ZONA-1', 300),
         ('KBM', 'ZONA-1', 200), ('PBG', 'ZONA-1', 120), ('PML', 'ZONA-1', 320),
         -- Zona 2: 23 kabupaten/kota, 4.770 unit.
-        ('OKI', 'ZONA-2', 170), ('OKU', 'ZONA-2', 100), ('OKT', 'ZONA-2', 50), ('TJT', 'ZONA-2', 170),
-        ('MJB', 'ZONA-2', 150), ('JMB', 'ZONA-2', 192), ('KRC', 'ZONA-2', 298), ('MRG', 'ZONA-2', 150),
-        ('LGS', 'ZONA-2', 300), ('LGT', 'ZONA-2', 293), ('LTM', 'ZONA-2', 27), ('BKA', 'ZONA-2', 300),
+        ('OKI', 'ZONA-2', 170), ('OKU', 'ZONA-2', 100), ('OKT', 'ZONA-2', 50), ('TJT', 'ZONA-2', 104),
+        ('MJB', 'ZONA-2', 216), ('JMB', 'ZONA-2', 192), ('KRC', 'ZONA-2', 298), ('MRG', 'ZONA-2', 150),
+        ('LGS', 'ZONA-2', 300), ('LGT', 'ZONA-2', 287), ('LTM', 'ZONA-2', 33), ('BKA', 'ZONA-2', 300),
         ('BKB', 'ZONA-2', 200), ('JBR', 'ZONA-2', 300), ('LMJ', 'ZONA-2', 150), ('PCT', 'ZONA-2', 470),
         ('PNG', 'ZONA-2', 170), ('BKL', 'ZONA-2', 320), ('NGJ', 'ZONA-2', 150), ('MJK', 'ZONA-2', 170),
         ('TBN', 'ZONA-2', 220), ('BJN', 'ZONA-2', 100), ('MLG', 'ZONA-2', 320);
