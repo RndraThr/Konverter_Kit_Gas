@@ -99,10 +99,24 @@ type ImportPreview struct {
 	CreatedAt        time.Time                    `json:"created_at"`
 }
 
+// ImportResult counts every committed row once. Warning rows are still ready
+// for distribution; review and invalid rows are not until someone fixes them.
 type ImportResult struct {
-	BatchID     string `json:"batch_id"`
-	TotalRows   int    `json:"total_rows"`
-	ValidRows   int    `json:"valid_rows"`
-	WarningRows int    `json:"warning_rows"`
-	InvalidRows int    `json:"invalid_rows"`
+	BatchID     string          `json:"batch_id"`
+	TotalRows   int             `json:"total_rows"`
+	ValidRows   int             `json:"valid_rows"`
+	WarningRows int             `json:"warning_rows"`
+	ReviewRows  int             `json:"review_rows"`
+	InvalidRows int             `json:"invalid_rows"`
+	Problems    []ImportProblem `json:"problems"`
+}
+
+// ImportProblem is a committed row that needs attention: it cannot be
+// distributed yet, or its sector card number was not saved.
+type ImportProblem struct {
+	SourceRowNumber int       `json:"source_row_number"`
+	FullName        string    `json:"full_name"`
+	NIK             string    `json:"nik"`
+	Status          RowStatus `json:"status"`
+	Messages        []string  `json:"messages"`
 }

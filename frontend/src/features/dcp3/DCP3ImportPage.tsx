@@ -168,9 +168,37 @@ export function DCP3ImportPage() {
 
       {result && <Card className={styles.success} aria-live="polite">
         <CheckCircle2 aria-hidden="true" />
-        <div><h2>{result.total_rows} data selesai diproses</h2><p>Data penerima dan nomor distribusi sudah dibuat untuk jadwal ini.</p><div><Badge variant="outline">{result.valid_rows} valid</Badge><Badge variant="outline">{result.warning_rows} peringatan</Badge><Badge variant="outline">{result.invalid_rows} konflik</Badge></div></div>
+        <div><h2>{result.total_rows} data selesai diproses</h2><p>{result.total_rows - result.review_rows - result.invalid_rows} penerima siap didistribusikan. Baris peringatan tetap masuk; baris perlu ditinjau dan tidak valid belum bisa didistribusikan.</p><div><Badge variant="outline">{result.valid_rows} valid</Badge><Badge variant="outline">{result.warning_rows} peringatan</Badge><Badge variant="outline">{result.review_rows} perlu ditinjau</Badge><Badge variant="outline">{result.invalid_rows} tidak valid</Badge></div></div>
         <Button type="button" variant="outline" onClick={() => { setStep(1); setScheduleID(''); setFile(null); setHeaderRow(1); setRawRows(null); setPreview(null); setMapping(emptyMapping); setResult(null); }}>Import file lain</Button>
+        {result.problems.length > 0 && <ImportProblems problems={result.problems} />}
       </Card>}
     </>}
+  </div>;
+}
+
+const problemStatus = {
+  warning: { label: 'Peringatan', className: styles.warning },
+  needs_review: { label: 'Perlu ditinjau', className: styles.conflict },
+  invalid: { label: 'Tidak valid', className: styles.conflict },
+};
+
+// ImportProblems lists the committed rows that cannot be distributed yet, or
+// whose sector card number was not saved, with the server's reasons.
+function ImportProblems({ problems }: { problems: ImportResult['problems'] }) {
+  return <div className={styles.problems}>
+    <h3>{problems.length} baris perlu perhatian</h3>
+    <DataTable label="Baris yang perlu perhatian">
+      <thead><tr><th>Baris Excel</th><th>Nama penerima</th><th>NIK</th><th>Status</th><th>Alasan</th></tr></thead>
+      <tbody>{problems.map((problem) => {
+        const status = problemStatus[problem.status] ?? problemStatus.warning;
+        return <tr key={problem.source_row_number}>
+          <td>{problem.source_row_number}</td>
+          <td><strong>{problem.full_name || 'Nama belum tersedia'}</strong></td>
+          <td>{problem.nik || '-'}</td>
+          <td><Badge variant="outline" className={`${styles.rowStatus} ${status.className}`}>{status.label}</Badge></td>
+          <td>{problem.messages.join('; ')}</td>
+        </tr>;
+      })}</tbody>
+    </DataTable>
   </div>;
 }

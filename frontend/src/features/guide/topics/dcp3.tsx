@@ -61,9 +61,10 @@ export const dcp3: GuideTopic = {
       steps: [
         { n: 1, text: <>Periksa ringkasan. <b>Valid</b> siap diimport, <b>Peringatan</b> tetap bisa diimport tetapi perlu ditinjau, <b>Konflik</b> perlu diperbaiki (mis. NIK sudah terdaftar di penerima lain).</> },
         { n: 3, text: <>Klik <ButtonSample>Import 120 data</ButtonSample> (angka sesuai jumlah baris).</>, permissions: ['dcp3.import'] },
-        { text: <>Setelah selesai, penerima muncul di <b>Data Penerima</b> dan siap dihubungkan ke nomor bagi di POS Dokumen.</> },
+        { text: <>Setelah selesai, penerima muncul di <b>Data Penerima</b> dan siap dihubungkan ke nomor bagi di POS Dokumen. Ringkasan hasil memisahkan <b>peringatan</b> (tetap masuk), <b>perlu ditinjau</b>, dan <b>tidak valid</b> (belum bisa didistribusikan), disertai daftar baris dan alasannya.</> },
       ],
       problems: [
+        { q: 'Peringatan "Nomor kartu sektor sudah dipakai"?', a: 'Nomor kartu di file sama dengan milik penerima lain (sering berupa nomor surat kelompok). Penerima tetap masuk dan bisa didistribusikan, tetapi nomor kartunya tidak disimpan. Isi nomor kartu yang benar di Data Penerima.' },
         { q: 'Banyak baris berstatus Peringatan?', a: 'Biasanya data opsional kosong (NIK, kartu tani, HP). Lengkapi di Data Penerima atau saat POS Dokumen.' },
         { q: 'Salah memetakan kolom?', a: 'Klik Kembali ke tahap Pemetaan sebelum menekan Import.' },
       ],

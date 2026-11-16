@@ -28,7 +28,11 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 	conflictingNIK := fmt.Sprintf("73%014d", (nikSeed+1)%100000000000000)
 	validCard := fmt.Sprintf("KP-%014d", nikSeed)
 	duplicateCard := fmt.Sprintf("KP-%014d", (nikSeed+2)%100000000000000)
-	scheduleID, conflictingPersonID, _ := createDCP3ScheduleFixture(t, pool, validNIK, conflictingNIK)
+	groupNIK1 := fmt.Sprintf("73%014d", (nikSeed+3)%100000000000000)
+	groupNIK2 := fmt.Sprintf("73%014d", (nikSeed+4)%100000000000000)
+	// DCP3 files often fill the card column with a group letter number shared by several farmers.
+	groupLetter := fmt.Sprintf("140/ /19.01.%d/2024", nikSeed)
+	scheduleID, conflictingPersonID, _ := createDCP3ScheduleFixture(t, pool, validNIK, conflictingNIK, groupNIK1, groupNIK2)
 	repository := NewRepository(pool)
 	service := NewImportService(repository, ParseLimits{MaxBytes: 10 << 20, MaxRows: 5000, MaxColumns: 100})
 	meta := auth.ClientMeta{IPAddress: "127.0.0.1", UserAgent: "dcp3-integration-test"}
@@ -38,6 +42,8 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 			{1, "Siti Aminah", validNIK, validCard, "Jalan Sawah", "Tempe", "Sabbangparu", "08121"},
 			{1, "Siti Duplikat", validNIK, duplicateCard, "Jalan Dua", "Tempe", "Sabbangparu", "08122"},
 			{3, "Hasan Konflik", conflictingNIK, "KP-99", "Jalan Tiga", "Tempe", "Sabbangparu", "08123"},
+			{4, "Ani Kelompok", groupNIK1, groupLetter, "Jalan Empat", "Tempe", "Sabbangparu", "08124"},
+			{5, "Budi Kelompok", groupNIK2, groupLetter, "Jalan Lima", "Tempe", "Sabbangparu", "08125"},
 		}
 		for index, row := range rows {
 			_ = file.SetSheetRow("Sheet1", fmt.Sprintf("A%d", index+1), &row)
@@ -49,7 +55,7 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if preview.ProgramType != "farmer" || len(preview.Rows) != 3 || len(preview.Headers) != 8 {
+	if preview.ProgramType != "farmer" || len(preview.Rows) != 5 || len(preview.Headers) != 8 {
 		t.Fatalf("unexpected preview: %+v", preview)
 	}
 	// Reading the same file again while it is only a draft replaces the draft.
@@ -69,8 +75,18 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.TotalRows != 3 || result.ValidRows != 1 || result.WarningRows != 2 || result.InvalidRows != 0 {
+	// Siti Aminah and Ani Kelompok are valid. Hasan Konflik and Budi Kelompok carry a card that
+	// already belongs to someone else: they still get their own person, without the card. The
+	// duplicated NIK needs review.
+	if result.TotalRows != 5 || result.ValidRows != 2 || result.WarningRows != 2 || result.ReviewRows != 1 || result.InvalidRows != 0 {
 		t.Fatalf("unexpected import result: %+v", result)
+	}
+	problemRows := map[int]RowStatus{}
+	for _, problem := range result.Problems {
+		problemRows[problem.SourceRowNumber] = problem.Status
+	}
+	if len(problemRows) != 3 || problemRows[3] != RowNeedsReview || problemRows[4] != RowWarning || problemRows[6] != RowWarning {
+		t.Fatalf("unexpected problems: %+v", result.Problems)
 	}
 	// Once imported, the same file is refused for this schedule.
 	if _, err := service.Preview(ctx, auth.Principal{}, scheduleID, "dcp3-petani-again.xlsx", bytes.NewReader(workbook), meta, unrestricted, 1); !errors.Is(err, ErrDuplicateImport) {
@@ -88,7 +104,7 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 	if err := pool.QueryRow(ctx, `SELECT count(*), count(distribution_number) FROM package_allocations WHERE schedule_id=$1`, scheduleID).Scan(&allocationCount, &numberedAllocations); err != nil {
 		t.Fatal(err)
 	}
-	if allocationCount != 3 || numberedAllocations != 0 {
+	if allocationCount != 5 || numberedAllocations != 0 {
 		t.Fatalf("allocations=%d numbered=%d (import must leave distribution_number NULL)", allocationCount, numberedAllocations)
 	}
 	var slotCount int
@@ -106,7 +122,7 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM package_allocations WHERE schedule_id=$1 AND package_snapshot_json->'selected_machine'->>'brand'='SHARK'`, scheduleID).Scan(&packageSnapshots); err != nil {
 		t.Fatal(err)
 	}
-	if reviewRows != 2 || packageSnapshots != 3 {
+	if reviewRows != 1 || packageSnapshots != 5 {
 		t.Fatalf("review_rows=%d package_snapshots=%d", reviewRows, packageSnapshots)
 	}
 
@@ -116,6 +132,34 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 	}
 	if conflictingOwner != conflictingPersonID {
 		t.Fatalf("conflicting identifier owner changed: %s", conflictingOwner)
+	}
+
+	// Every row with a usable NIK reaches a person and a ready allocation; the shared card stays
+	// with the first farmer only.
+	var readyWithPerson int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM package_allocations WHERE schedule_id=$1 AND status='ready' AND intended_person_id IS NOT NULL`, scheduleID).Scan(&readyWithPerson); err != nil {
+		t.Fatal(err)
+	}
+	if readyWithPerson != 4 {
+		t.Fatalf("ready allocations with a person = %d, want 4", readyWithPerson)
+	}
+	cards := map[string]string{}
+	cardRows, err := pool.Query(ctx, `SELECT p.nik, COALESCE(i.display_value,'') FROM people p LEFT JOIN person_sector_identifiers i ON i.person_id=p.id WHERE p.nik = ANY($1)`, []string{conflictingNIK, groupNIK1, groupNIK2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for cardRows.Next() {
+		var nik, card string
+		if err := cardRows.Scan(&nik, &card); err != nil {
+			t.Fatal(err)
+		}
+		cards[nik] = card
+	}
+	if err := cardRows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(cards) != 3 || cards[conflictingNIK] != "" || cards[groupNIK1] == "" || cards[groupNIK2] != "" {
+		t.Fatalf("people and cards = %+v", cards)
 	}
 }
 

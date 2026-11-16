@@ -204,6 +204,12 @@
 .previewTable td,
 .rawTable td { border-top: 1px solid var(--dashboard-line); }
 .rowStatus { font-size: 11px; font-weight: 750; }
+
+.problems { grid-column: 1 / -1; min-width: 0; display: grid; gap: 10px; }
+.problems h3 { margin: 0; font-size: 14px; }
+.problems :global([data-slot='table-container']) { max-width: 100%; max-height: 320px; overflow: auto; }
+.problems th { position: sticky; top: 0; z-index: 1; background: #f8faf8; }
+.problems td { border-top: 1px solid var(--dashboard-line); font-size: 13px; }
 .rowStatus svg { width: 13px; height: 13px; }
 
 .actions {
