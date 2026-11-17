@@ -168,7 +168,7 @@ export function DCP3ImportPage() {
 
       {result && <Card className={styles.success} aria-live="polite">
         <CheckCircle2 aria-hidden="true" />
-        <div><h2>{result.total_rows} data selesai diproses</h2><p>{result.total_rows - result.review_rows - result.invalid_rows} penerima siap didistribusikan. Baris peringatan tetap masuk; baris perlu ditinjau dan tidak valid belum bisa didistribusikan.</p><div><Badge variant="outline">{result.valid_rows} valid</Badge><Badge variant="outline">{result.warning_rows} peringatan</Badge><Badge variant="outline">{result.review_rows} perlu ditinjau</Badge><Badge variant="outline">{result.invalid_rows} tidak valid</Badge></div></div>
+        <div><h2>{result.total_rows} data selesai diproses</h2><p>{importOutcome(result)} Penerima yang distribusinya sudah berjalan tidak diubah. Baris perlu ditinjau belum bisa didistribusikan; baris tidak valid tidak dimasukkan.</p><div><Badge variant="outline">{result.valid_rows} valid</Badge><Badge variant="outline">{result.warning_rows} peringatan</Badge><Badge variant="outline">{result.review_rows} perlu ditinjau</Badge><Badge variant="outline">{result.invalid_rows} tidak valid</Badge></div></div>
         <Button type="button" variant="outline" onClick={() => { setStep(1); setScheduleID(''); setFile(null); setHeaderRow(1); setRawRows(null); setPreview(null); setMapping(emptyMapping); setResult(null); }}>Import file lain</Button>
         {result.problems.length > 0 && <ImportProblems problems={result.problems} />}
       </Card>}
@@ -184,6 +184,13 @@ const problemStatus = {
 
 // ImportProblems lists the committed rows that cannot be distributed yet, or
 // whose sector card number was not saved, with the server's reasons.
+function importOutcome(result: ImportResult) {
+  const parts = [`${result.created_rows} penerima baru`, `${result.updated_rows} diperbarui`];
+  if (result.kept_rows) parts.push(`${result.kept_rows} tidak diubah`);
+  if (result.skipped_rows) parts.push(`${result.skipped_rows} dilewati`);
+  return `${parts.join(', ')}.`;
+}
+
 function ImportProblems({ problems }: { problems: ImportResult['problems'] }) {
   return <div className={styles.problems}>
     <h3>{problems.length} baris perlu perhatian</h3>

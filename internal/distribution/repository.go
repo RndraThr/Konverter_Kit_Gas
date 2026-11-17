@@ -515,7 +515,8 @@ func (r *Repository) CreateSlot(ctx context.Context, actor auth.Principal, input
 
 	var documentationTemplateID string
 	var slotQuota *int
-	if err := tx.QueryRow(ctx, `SELECT documentation_template_version_id, slot_quota FROM program_schedules WHERE id=$1 AND ($2 OR regency_id::text = ANY($3)) FOR UPDATE`, input.ScheduleID, scope.Unrestricted, scope.RegencyIDs).Scan(&documentationTemplateID, &slotQuota); err != nil {
+	var packageValues []byte
+	if err := tx.QueryRow(ctx, `SELECT s.documentation_template_version_id, s.slot_quota, pt.values_json FROM program_schedules s LEFT JOIN package_template_versions pt ON pt.id=s.package_template_version_id WHERE s.id=$1 AND ($2 OR s.regency_id::text = ANY($3)) FOR UPDATE OF s`, input.ScheduleID, scope.Unrestricted, scope.RegencyIDs).Scan(&documentationTemplateID, &slotQuota, &packageValues); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return DistributionSlot{}, ErrScheduleRequired
 		}
@@ -544,12 +545,15 @@ func (r *Repository) CreateSlot(ctx context.Context, actor auth.Principal, input
 		return DistributionSlot{}, ErrSlotQuotaExceeded
 	}
 
+	// A new slot starts with the package template's default equipment, so
+	// the officer only changes it when this recipient gets something else.
+	machine, converter, hose := defaultEquipmentCodes(packageValues)
 	var slotID string
 	if err := tx.QueryRow(ctx, `
-		INSERT INTO distribution_slots (schedule_id, slot_number, distribution_date)
-		VALUES ($1,$2,NULL)
+		INSERT INTO distribution_slots (schedule_id, slot_number, distribution_date, machine_option_code, converter_option_code, hose_option_code)
+		VALUES ($1,$2,NULL,NULLIF($3,''),NULLIF($4,''),NULLIF($5,''))
 		RETURNING id::text
-	`, input.ScheduleID, slotNumber).Scan(&slotID); err != nil {
+	`, input.ScheduleID, slotNumber, machine, converter, hose).Scan(&slotID); err != nil {
 		return DistributionSlot{}, fmt.Errorf("insert distribution slot: %w", err)
 	}
 

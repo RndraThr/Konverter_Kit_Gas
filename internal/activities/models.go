@@ -33,6 +33,12 @@ var activityTypeCodes = map[string]string{
 	"unloading_tabung_gas":  "UNLOADTABUNG",
 	"dokumen_pendukung":     "DOKPEND",
 	"kegiatan":              "KEGIATAN",
+	"kunjungan_dinas":       "KUNJDINAS",
+	"gudang_titik_serah":    "GUDANG",
+	"perakitan_mesin":       "PERAKITAN",
+	"pemeriksaan_barang":    "PEMERIKSAAN",
+	"kegiatan_distribusi":   "DISTRIBUSI",
+	"closing_kabupaten":     "CLOSING",
 }
 
 // activityTypeFolderNames are the exact Google Drive folder names under
@@ -48,7 +54,14 @@ var activityTypeFolderNames = map[string]string{
 	"unloading_oli":         "Unloading Oli",
 	"unloading_selang":      "Unloading Selang Hisap & Buang",
 	"unloading_tabung_gas":  "Unloading Tabung Gas",
-	"kegiatan":              "Kegiatan",
+	// Kegiatan Lainnya keeps its first folder name so earlier photos stay together.
+	"kegiatan":            "Kegiatan",
+	"kunjungan_dinas":     "Kunjungan Kantor Dinas",
+	"gudang_titik_serah":  "Gudang Titik Serah",
+	"perakitan_mesin":     "Perakitan Mesin",
+	"pemeriksaan_barang":  "Pemeriksaan Barang",
+	"kegiatan_distribusi": "Kegiatan Pendistribusian",
+	"closing_kabupaten":   "Closing Kabupaten",
 }
 
 func isValidActivityType(activityType string) bool {

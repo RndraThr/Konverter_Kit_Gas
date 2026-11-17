@@ -171,18 +171,18 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 
 	result := ImportResult{BatchID: batchID, TotalRows: len(rawRows), Problems: []ImportProblem{}}
 	seenNIK := map[string]struct{}{}
+	seenPerson := map[string]struct{}{}
 	for _, raw := range rawRows {
 		normalized := NormalizeRow(programType, raw, mapping)
 		duplicateIdentity := false
 		if normalized.NIK != "" {
 			if _, exists := seenNIK[normalized.NIK]; exists {
-				normalized.raise(RowNeedsReview, "NIK muncul lebih dari sekali dalam batch")
 				duplicateIdentity = true
 			} else {
 				seenNIK[normalized.NIK] = struct{}{}
 			}
 		}
-		personID, cardTaken, err := r.matchOrCreatePerson(ctx, tx, normalized, duplicateIdentity)
+		personID, cardTaken, err := r.matchOrCreatePerson(ctx, tx, scheduleID, batchID, normalized, duplicateIdentity)
 		if err != nil {
 			return ImportResult{}, err
 		}
@@ -191,14 +191,39 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 		if cardTaken {
 			normalized.raise(RowWarning, fmt.Sprintf("Nomor kartu sektor %s sudah dipakai penerima lain, jadi tidak disimpan untuk penerima ini", normalized.SectorIdentifierDisplay))
 		}
+		// outcome is what the row did to the schedule: created, updated,
+		// kept or skipped.
+		outcome := "skipped"
+		existing := scheduleAllocation{}
 		if personID != "" {
-			var previouslyReceived bool
-			if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM distribution_slots WHERE recipient_person_id=$1 AND status='completed')`, personID).Scan(&previouslyReceived); err != nil {
-				return ImportResult{}, fmt.Errorf("check prior distribution: %w", err)
+			if _, exists := seenPerson[personID]; exists {
+				normalized.raise(RowNeedsReview, "Penerima muncul lebih dari sekali dalam file, baris ini dilewati")
+			} else {
+				seenPerson[personID] = struct{}{}
+				if existing, err = r.findScheduleAllocation(ctx, tx, scheduleID, personID); err != nil {
+					return ImportResult{}, err
+				}
+				switch {
+				case existing.progress:
+					outcome = "kept"
+					normalized.raise(RowWarning, "Distribusi penerima ini sudah berjalan, jadi datanya tidak diubah")
+				case existing.id != "":
+					outcome = "updated"
+				default:
+					outcome = "created"
+				}
 			}
-			if previouslyReceived {
-				normalized.raise(RowNeedsReview, "Penerima pernah menerima paket sebelumnya")
+			if outcome == "created" || outcome == "updated" {
+				var previouslyReceived bool
+				if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM distribution_slots WHERE recipient_person_id=$1 AND status='completed')`, personID).Scan(&previouslyReceived); err != nil {
+					return ImportResult{}, fmt.Errorf("check prior distribution: %w", err)
+				}
+				if previouslyReceived {
+					normalized.raise(RowNeedsReview, "Penerima pernah menerima paket sebelumnya")
+				}
 			}
+		} else if normalized.ValidationStatus != RowInvalid {
+			normalized.raise(RowInvalid, "Penerima belum dapat dibuat dari baris ini")
 		}
 		normalizedJSON, _ := json.Marshal(normalized)
 		messagesJSON, _ := json.Marshal(normalized.ValidationMessages)
@@ -207,27 +232,43 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 			return ImportResult{}, fmt.Errorf("update DCP3 row: %w", err)
 		}
 
-		nominationStatus := "ready"
-		allocationStatus := "ready"
-		if normalized.ValidationStatus == RowNeedsReview || normalized.ValidationStatus == RowInvalid || personID == "" {
-			nominationStatus, allocationStatus = "needs_review", "needs_review"
+		status := "ready"
+		if normalized.ValidationStatus == RowNeedsReview || normalized.ValidationStatus == RowInvalid {
+			status = "needs_review"
 		}
-		sourceSnapshot, _ := json.Marshal(normalized.SourceValues)
-		var nominationID string
-		if err := tx.QueryRow(ctx, `INSERT INTO candidate_nominations(batch_id,import_row_id,person_id,program_type,source_snapshot_json,status) VALUES($1,$2,NULLIF($3,'')::uuid,$4,$5,$6) RETURNING id::text`, batchID, raw.ID, personID, programType, sourceSnapshot, nominationStatus).Scan(&nominationID); err != nil {
-			return ImportResult{}, fmt.Errorf("insert candidate nomination: %w", err)
-		}
-		var allocationID string
-		machineCode := ""
-		if mapping.MachineOption != "" {
-			machineCode, _ = programs.ResolveMachineCodeFromCell(packageValuesJSON, normalized.SourceValues[mapping.MachineOption])
-		}
-		allocationSnapshot, err := programs.BuildAllocationSnapshot(packageValuesJSON, machineCode)
-		if err != nil {
-			return ImportResult{}, fmt.Errorf("build DCP3 allocation snapshot: %w", err)
-		}
-		if err := tx.QueryRow(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,status,package_snapshot_json) VALUES($1,$2,NULLIF($3,'')::uuid,$4,$5) RETURNING id::text`, scheduleID, nominationID, personID, allocationStatus, allocationSnapshot).Scan(&allocationID); err != nil {
-			return ImportResult{}, fmt.Errorf("insert package allocation: %w", err)
+		if outcome == "created" || outcome == "updated" {
+			if outcome == "updated" && !duplicateIdentity {
+				if err := overwritePerson(ctx, tx, personID, normalized); err != nil {
+					return ImportResult{}, err
+				}
+			}
+			machineCode := ""
+			if mapping.MachineOption != "" {
+				machineCode, _ = programs.ResolveMachineCodeFromCell(packageValuesJSON, normalized.SourceValues[mapping.MachineOption])
+			}
+			allocationSnapshot, err := programs.BuildAllocationSnapshot(packageValuesJSON, machineCode)
+			if err != nil {
+				return ImportResult{}, fmt.Errorf("build DCP3 allocation snapshot: %w", err)
+			}
+			sourceSnapshot, _ := json.Marshal(normalized.SourceValues)
+			if outcome == "updated" {
+				// The nomination now points at this file's row, so the
+				// recipient shows the latest DCP3 data.
+				if _, err := tx.Exec(ctx, `UPDATE candidate_nominations SET batch_id=$2,import_row_id=$3,person_id=$4,source_snapshot_json=$5,status=$6,updated_at=now() WHERE id=$1`, existing.nominationID, batchID, raw.ID, personID, sourceSnapshot, status); err != nil {
+					return ImportResult{}, fmt.Errorf("update candidate nomination: %w", err)
+				}
+				if _, err := tx.Exec(ctx, `UPDATE package_allocations SET intended_person_id=$2,status=$3,package_snapshot_json=$4,updated_at=now() WHERE id=$1`, existing.id, personID, status, allocationSnapshot); err != nil {
+					return ImportResult{}, fmt.Errorf("update package allocation: %w", err)
+				}
+			} else {
+				var nominationID string
+				if err := tx.QueryRow(ctx, `INSERT INTO candidate_nominations(batch_id,import_row_id,person_id,program_type,source_snapshot_json,status) VALUES($1,$2,$3,$4,$5,$6) RETURNING id::text`, batchID, raw.ID, personID, programType, sourceSnapshot, status).Scan(&nominationID); err != nil {
+					return ImportResult{}, fmt.Errorf("insert candidate nomination: %w", err)
+				}
+				if _, err := tx.Exec(ctx, `INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,status,package_snapshot_json) VALUES($1,$2,$3,$4,$5)`, scheduleID, nominationID, personID, status, allocationSnapshot); err != nil {
+					return ImportResult{}, fmt.Errorf("insert package allocation: %w", err)
+				}
+			}
 		}
 		switch normalized.ValidationStatus {
 		case RowValid:
@@ -239,7 +280,17 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 		default:
 			result.WarningRows++
 		}
-		if allocationStatus == "needs_review" || cardTaken {
+		switch outcome {
+		case "created":
+			result.CreatedRows++
+		case "updated":
+			result.UpdatedRows++
+		case "kept":
+			result.KeptRows++
+		default:
+			result.SkippedRows++
+		}
+		if status == "needs_review" || cardTaken || outcome == "kept" || outcome == "skipped" {
 			result.Problems = append(result.Problems, ImportProblem{
 				SourceRowNumber: raw.SourceRowNumber, FullName: normalized.FullName, NIK: normalized.NIK,
 				Status: normalized.ValidationStatus, Messages: normalized.ValidationMessages,
@@ -258,7 +309,7 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 	if err != nil {
 		return ImportResult{}, fmt.Errorf("complete DCP3 batch: %w", err)
 	}
-	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "dcp3.imported", ResourceType: "dcp3_import_batch", ResourceID: batchID, Metadata: map[string]any{"schedule_id": scheduleID, "total_rows": result.TotalRows, "valid_rows": result.ValidRows, "warning_rows": result.WarningRows, "review_rows": result.ReviewRows, "invalid_rows": result.InvalidRows}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "dcp3.imported", ResourceType: "dcp3_import_batch", ResourceID: batchID, Metadata: map[string]any{"schedule_id": scheduleID, "total_rows": result.TotalRows, "valid_rows": result.ValidRows, "warning_rows": result.WarningRows, "review_rows": result.ReviewRows, "invalid_rows": result.InvalidRows, "created_rows": result.CreatedRows, "updated_rows": result.UpdatedRows, "kept_rows": result.KeptRows, "skipped_rows": result.SkippedRows}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
 		return ImportResult{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -267,15 +318,63 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 	return result, nil
 }
 
+// scheduleAllocation is the schedule's current allocation for a person.
+// progress means its distribution has started (a distribution number, a
+// linked or completed slot, or a handover), so a new import must not change it.
+type scheduleAllocation struct {
+	id, nominationID string
+	progress         bool
+}
+
+func (r *Repository) findScheduleAllocation(ctx context.Context, tx pgx.Tx, scheduleID, personID string) (scheduleAllocation, error) {
+	var found scheduleAllocation
+	err := tx.QueryRow(ctx, `
+		SELECT pa.id::text, pa.nomination_id::text,
+			pa.distribution_number IS NOT NULL OR pa.actual_recipient_person_id IS NOT NULL OR pa.status IN ('distributed','replaced')
+				OR EXISTS(SELECT 1 FROM distribution_slots ds WHERE ds.allocation_id = pa.id)
+		FROM package_allocations pa JOIN candidate_nominations cn ON cn.id = pa.nomination_id
+		WHERE pa.schedule_id = $1 AND COALESCE(pa.intended_person_id, cn.person_id) = $2 AND pa.status <> 'cancelled'
+		ORDER BY 3 DESC, pa.created_at
+		LIMIT 1 FOR UPDATE OF pa`, scheduleID, personID).Scan(&found.id, &found.nominationID, &found.progress)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return scheduleAllocation{}, nil
+	}
+	if err != nil {
+		return scheduleAllocation{}, fmt.Errorf("find schedule allocation: %w", err)
+	}
+	return found, nil
+}
+
+// overwritePerson applies a newer DCP3 row to a recipient whose distribution
+// has not started. Blank cells keep the stored value.
+func overwritePerson(ctx context.Context, tx pgx.Tx, personID string, row NormalizedRow) error {
+	_, err := tx.Exec(ctx, `UPDATE people SET full_name=COALESCE(NULLIF($2,''),full_name),address=COALESCE(NULLIF($3,''),address),village=COALESCE(NULLIF($4,''),village),district=COALESCE(NULLIF($5,''),district),phone_number=COALESCE(NULLIF($6,''),phone_number),updated_at=now() WHERE id=$1`,
+		personID, row.FullName, row.Address, row.Village, row.District, row.PhoneNumber)
+	if err != nil {
+		return fmt.Errorf("overwrite person from DCP3: %w", err)
+	}
+	return nil
+}
+
 // matchOrCreatePerson finds the row's person by NIK, or by sector card when
 // the row has no NIK, and creates one when neither exists. A sector card
 // number stays unique to one person, but DCP3 files often put a shared
 // group letter number in that column. When the card already belongs to
 // someone with another NIK, the row keeps its own person (identified by
 // NIK) without the card, and cardTaken reports it.
-func (r *Repository) matchOrCreatePerson(ctx context.Context, tx pgx.Tx, row NormalizedRow, duplicateIdentity bool) (personID string, cardTaken bool, err error) {
-	if row.ValidationStatus == RowInvalid || (row.NIK != "" && len(row.NIK) != 16) {
+//
+// A NIK that is not 16 digits is not saved, but the row still gets a person
+// so it shows up in Data Penerima for review. A row with neither NIK nor
+// card match, or a NIK nobody has yet, matches a recipient without NIK of the
+// same name and village from an earlier import into this schedule. A revised
+// file that fills in or fixes the NIK then completes that recipient instead
+// of adding them twice.
+func (r *Repository) matchOrCreatePerson(ctx context.Context, tx pgx.Tx, scheduleID, batchID string, row NormalizedRow, duplicateIdentity bool) (personID string, cardTaken bool, err error) {
+	if row.ValidationStatus == RowInvalid {
 		return "", false, nil
+	}
+	if len(row.NIK) != 16 {
+		row.NIK = ""
 	}
 	nikPersonID, err := personByNIK(ctx, tx, row.NIK)
 	if err != nil {
@@ -290,6 +389,11 @@ func (r *Repository) matchOrCreatePerson(ctx context.Context, tx pgx.Tx, row Nor
 	personID = nikPersonID
 	if personID == "" && !cardTaken {
 		personID = cardPersonID
+	}
+	if personID == "" {
+		if personID, err = personInSchedule(ctx, tx, scheduleID, batchID, row); err != nil {
+			return "", false, err
+		}
 	}
 	if personID == "" {
 		if err := tx.QueryRow(ctx, `INSERT INTO people(full_name,nik,address,village,district,phone_number,verification_status) VALUES($1,NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),$7) RETURNING id::text`, row.FullName, row.NIK, row.Address, row.Village, row.District, row.PhoneNumber, verificationStatus(row.ValidationStatus)).Scan(&personID); err != nil {
@@ -308,6 +412,26 @@ func (r *Repository) matchOrCreatePerson(ctx context.Context, tx pgx.Tx, row Nor
 		}
 	}
 	return personID, cardTaken, nil
+}
+
+// personInSchedule finds a recipient without NIK of an earlier import into
+// the schedule by name and, when the row has one, village.
+func personInSchedule(ctx context.Context, tx pgx.Tx, scheduleID, batchID string, row NormalizedRow) (string, error) {
+	var id string
+	err := tx.QueryRow(ctx, `
+		SELECT p.id::text FROM package_allocations pa
+		JOIN candidate_nominations cn ON cn.id = pa.nomination_id
+		JOIN people p ON p.id = COALESCE(pa.intended_person_id, cn.person_id)
+		WHERE pa.schedule_id = $1 AND cn.batch_id <> $2 AND pa.status <> 'cancelled' AND p.nik IS NULL
+			AND p.full_name = $3 AND ($4 = '' OR COALESCE(p.village,'') = $4)
+		ORDER BY pa.created_at LIMIT 1`, scheduleID, batchID, row.FullName, row.Village).Scan(&id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("find recipient in schedule: %w", err)
+	}
+	return id, nil
 }
 
 func personByNIK(ctx context.Context, tx pgx.Tx, nik string) (string, error) {

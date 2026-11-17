@@ -27,6 +27,7 @@ export type DCP3Preview = {
 export type ImportProblem = { source_row_number: number; full_name: string; nik: string; status: 'warning' | 'needs_review' | 'invalid'; messages: string[] };
 export type ImportResult = {
   batch_id: string; total_rows: number; valid_rows: number; warning_rows: number; review_rows: number; invalid_rows: number;
+  created_rows: number; updated_rows: number; kept_rows: number; skipped_rows: number;
   problems: ImportProblem[];
 };
 export type ScheduleResponse = { data: Schedule[] };

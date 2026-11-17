@@ -77,8 +77,9 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 	}
 	// Siti Aminah and Ani Kelompok are valid. Hasan Konflik and Budi Kelompok carry a card that
 	// already belongs to someone else: they still get their own person, without the card. The
-	// duplicated NIK needs review.
-	if result.TotalRows != 5 || result.ValidRows != 2 || result.WarningRows != 2 || result.ReviewRows != 1 || result.InvalidRows != 0 {
+	// duplicated NIK needs review and adds no second allocation.
+	if result.TotalRows != 5 || result.ValidRows != 2 || result.WarningRows != 2 || result.ReviewRows != 1 || result.InvalidRows != 0 ||
+		result.CreatedRows != 4 || result.SkippedRows != 1 || result.UpdatedRows != 0 || result.KeptRows != 0 {
 		t.Fatalf("unexpected import result: %+v", result)
 	}
 	problemRows := map[int]RowStatus{}
@@ -104,7 +105,7 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 	if err := pool.QueryRow(ctx, `SELECT count(*), count(distribution_number) FROM package_allocations WHERE schedule_id=$1`, scheduleID).Scan(&allocationCount, &numberedAllocations); err != nil {
 		t.Fatal(err)
 	}
-	if allocationCount != 5 || numberedAllocations != 0 {
+	if allocationCount != 4 || numberedAllocations != 0 {
 		t.Fatalf("allocations=%d numbered=%d (import must leave distribution_number NULL)", allocationCount, numberedAllocations)
 	}
 	var slotCount int
@@ -122,7 +123,7 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM package_allocations WHERE schedule_id=$1 AND package_snapshot_json->'selected_machine'->>'brand'='SHARK'`, scheduleID).Scan(&packageSnapshots); err != nil {
 		t.Fatal(err)
 	}
-	if reviewRows != 1 || packageSnapshots != 5 {
+	if reviewRows != 1 || packageSnapshots != 4 {
 		t.Fatalf("review_rows=%d package_snapshots=%d", reviewRows, packageSnapshots)
 	}
 
@@ -160,6 +161,114 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 	}
 	if len(cards) != 3 || cards[conflictingNIK] != "" || cards[groupNIK1] == "" || cards[groupNIK2] != "" {
 		t.Fatalf("people and cards = %+v", cards)
+	}
+}
+
+// A revised DCP3 file imported into the same schedule overwrites recipients
+// whose distribution has not started, keeps the ones already in progress and
+// adds new ones, without listing anyone twice.
+func TestIntegrationReimportOverwritesRecipientsWithoutProgress(t *testing.T) {
+	pool := dcp3IntegrationPool(t)
+	ctx := context.Background()
+	seed := time.Now().UnixNano() % 100000000000000
+	nikA := fmt.Sprintf("74%014d", seed)
+	nikB := fmt.Sprintf("74%014d", (seed+1)%100000000000000)
+	nikE := fmt.Sprintf("74%014d", (seed+2)%100000000000000)
+	nikD := fmt.Sprintf("74%014d", (seed+3)%100000000000000)
+	shortNIK := fmt.Sprintf("74%013d", seed%10000000000000)
+	scheduleID, _, _ := createDCP3ScheduleFixture(t, pool, nikA, nikB, nikE, nikD)
+	t.Cleanup(func() {
+		ctx := context.Background()
+		rows, _ := pool.Query(ctx, `SELECT DISTINCT COALESCE(pa.intended_person_id, cn.person_id)::text FROM package_allocations pa JOIN candidate_nominations cn ON cn.id=pa.nomination_id WHERE pa.schedule_id=$1 AND COALESCE(pa.intended_person_id, cn.person_id) IS NOT NULL`, scheduleID)
+		people := []string{}
+		for rows != nil && rows.Next() {
+			var id string
+			if rows.Scan(&id) == nil {
+				people = append(people, id)
+			}
+		}
+		_, _ = pool.Exec(ctx, `DELETE FROM distribution_slots WHERE schedule_id=$1`, scheduleID)
+		_, _ = pool.Exec(ctx, `DELETE FROM package_allocations WHERE schedule_id=$1`, scheduleID)
+		_, _ = pool.Exec(ctx, `DELETE FROM candidate_nominations WHERE batch_id IN (SELECT id FROM dcp3_import_batches WHERE schedule_id=$1)`, scheduleID)
+		_, _ = pool.Exec(ctx, `DELETE FROM person_sector_identifiers WHERE person_id::text = ANY($1)`, people)
+		_, _ = pool.Exec(ctx, `DELETE FROM people WHERE id::text = ANY($1) AND nik IS NULL`, people)
+	})
+	service := NewImportService(NewRepository(pool), ParseLimits{MaxBytes: 10 << 20, MaxRows: 5000, MaxColumns: 100})
+	meta := auth.ClientMeta{IPAddress: "127.0.0.1", UserAgent: "dcp3-integration-test"}
+	scope := auth.RegencyScope{Unrestricted: true}
+	mapping := Mapping{FullName: "Nama", NIK: "NIK", Address: "Alamat", Village: "Desa", PhoneNumber: "No HP"}
+	importRows := func(name string, rows [][]any) ImportResult {
+		t.Helper()
+		workbook := workbookBytes(t, func(file *excelize.File) {
+			for index, row := range rows {
+				_ = file.SetSheetRow("Sheet1", fmt.Sprintf("A%d", index+1), &row)
+			}
+		})
+		preview, err := service.Preview(ctx, auth.Principal{}, scheduleID, name, bytes.NewReader(workbook), meta, scope, 1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := service.Commit(ctx, auth.Principal{}, preview.ID, mapping, meta, scope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return result
+	}
+	header := []any{"Nama", "NIK", "Alamat", "Desa", "No HP"}
+	first := importRows("dcp3-awal.xlsx", [][]any{header,
+		{"Ani", nikA, "Jalan Lama", "Tempe", "0811"},
+		{"Budi", nikB, "Jalan Lama", "Tempe", "0812"},
+		{"Cici", "", "Jalan Lama", "Tempe", "0813"},
+		// A NIK that is not 16 digits still gets a recipient, flagged for review.
+		{"Dodi", shortNIK, "Jalan Lama", "Tempe", "0814"},
+	})
+	if first.CreatedRows != 4 || first.ReviewRows != 1 {
+		t.Fatalf("first import: %+v", first)
+	}
+	var hidden int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM package_allocations WHERE schedule_id=$1 AND intended_person_id IS NULL`, scheduleID).Scan(&hidden); err != nil || hidden != 0 {
+		t.Fatalf("allocations without a person = %d, err=%v", hidden, err)
+	}
+	// Budi's distribution has started: a slot is linked to the allocation.
+	if _, err := pool.Exec(ctx, `INSERT INTO distribution_slots(schedule_id,slot_number,status,allocation_id,recipient_person_id)
+		SELECT pa.schedule_id, 1, 'linked', pa.id, pa.intended_person_id FROM package_allocations pa JOIN people p ON p.id=pa.intended_person_id
+		WHERE pa.schedule_id=$1 AND p.nik=$2`, scheduleID, nikB); err != nil {
+		t.Fatal(err)
+	}
+
+	second := importRows("dcp3-revisi.xlsx", [][]any{header,
+		{"Ani", nikA, "Jalan Baru", "Tempe", "0821"},
+		{"Budi", nikB, "Jalan Baru", "Tempe", "0822"},
+		{"Cici", "", "Jalan Baru", "Tempe", "0823"},
+		// Dodi's NIK is fixed: the recipient is completed, not added again.
+		{"Dodi", nikD, "Jalan Baru", "Tempe", "0824"},
+		{"Eka", nikE, "Jalan Baru", "Tempe", "0825"},
+		{"", "", "Catatan kaki", "", ""},
+	})
+	if second.CreatedRows != 1 || second.UpdatedRows != 3 || second.KeptRows != 1 || second.SkippedRows != 1 || second.InvalidRows != 1 {
+		t.Fatalf("second import: %+v", second)
+	}
+	var allocations, people int
+	if err := pool.QueryRow(ctx, `SELECT count(*), count(DISTINCT intended_person_id) FROM package_allocations WHERE schedule_id=$1`, scheduleID).Scan(&allocations, &people); err != nil {
+		t.Fatal(err)
+	}
+	if allocations != 5 || people != 5 {
+		t.Fatalf("allocations=%d people=%d, want 5 each", allocations, people)
+	}
+	addresses := map[string]string{}
+	rows, err := pool.Query(ctx, `SELECT p.full_name, p.address FROM package_allocations pa JOIN people p ON p.id=pa.intended_person_id WHERE pa.schedule_id=$1`, scheduleID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for rows.Next() {
+		var name, address string
+		if err := rows.Scan(&name, &address); err != nil {
+			t.Fatal(err)
+		}
+		addresses[name] = address
+	}
+	if addresses["ANI"] != "JALAN BARU" || addresses["CICI"] != "JALAN BARU" || addresses["BUDI"] != "JALAN LAMA" || addresses["EKA"] != "JALAN BARU" || addresses["DODI"] != "JALAN BARU" {
+		t.Fatalf("addresses after re-import = %+v", addresses)
 	}
 }
 

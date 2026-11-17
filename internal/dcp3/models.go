@@ -101,6 +101,12 @@ type ImportPreview struct {
 
 // ImportResult counts every committed row once. Warning rows are still ready
 // for distribution; review and invalid rows are not until someone fixes them.
+//
+// A DCP3 file can be imported again into the same schedule. Each row then
+// either adds a recipient (CreatedRows), overwrites a recipient that has no
+// distribution progress yet (UpdatedRows), or leaves a recipient whose
+// distribution has started untouched (KeptRows). SkippedRows are rows that
+// add nothing: no name, or a recipient already listed earlier in the file.
 type ImportResult struct {
 	BatchID     string          `json:"batch_id"`
 	TotalRows   int             `json:"total_rows"`
@@ -108,11 +114,15 @@ type ImportResult struct {
 	WarningRows int             `json:"warning_rows"`
 	ReviewRows  int             `json:"review_rows"`
 	InvalidRows int             `json:"invalid_rows"`
+	CreatedRows int             `json:"created_rows"`
+	UpdatedRows int             `json:"updated_rows"`
+	KeptRows    int             `json:"kept_rows"`
+	SkippedRows int             `json:"skipped_rows"`
 	Problems    []ImportProblem `json:"problems"`
 }
 
-// ImportProblem is a committed row that needs attention: it cannot be
-// distributed yet, or its sector card number was not saved.
+// ImportProblem is a row that needs attention: it cannot be distributed yet,
+// was skipped, kept its earlier data, or lost its sector card number.
 type ImportProblem struct {
 	SourceRowNumber int       `json:"source_row_number"`
 	FullName        string    `json:"full_name"`

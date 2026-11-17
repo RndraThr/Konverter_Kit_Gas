@@ -148,7 +148,7 @@ export const guideSteps: GuideStep[] = [
     manage: ['activities.manage'],
     view: ['activities.view'],
     route: '/dokumentasi/ceremony-sosialisasi',
-    routes: ['/dokumentasi/ceremony-sosialisasi', '/dokumentasi/pelatihan-teknis', '/dokumentasi/rakor', '/dokumentasi/training-10', '/dokumentasi/training-100', '/dokumentasi/unloading'],
+    routes: ['/dokumentasi/kunjungan-dinas', '/dokumentasi/gudang-titik-serah', '/dokumentasi/unloading', '/dokumentasi/perakitan-mesin', '/dokumentasi/rakor', '/dokumentasi/pemeriksaan-barang', '/dokumentasi/ceremony-sosialisasi', '/dokumentasi/training-10', '/dokumentasi/pelatihan-teknis', '/dokumentasi/kegiatan-pendistribusian', '/dokumentasi/training-100', '/dokumentasi/closing-kabupaten', '/dokumentasi/kegiatan'],
     shots: [{ id: 'kegiatan', title: 'Dokumentasi kegiatan', legend: ['Pilih program dan kabupaten', 'Unggah foto/video dari kamera atau galeri'] }],
     tasks: [
       { n: 1, text: <>Buka menu kegiatan di grup <b>Dokumentasi</b>, pilih program dan kabupaten.</> },

@@ -1525,7 +1525,7 @@ func TestRecipientStatsForwardsTheSameCombinedFiltersAsTheList(t *testing.T) {
 	}
 }
 
-func TestRecipientsCreateRequiresManagePermission(t *testing.T) {
+func TestRecipientsCreateRequiresManageOrPosDokumenPermission(t *testing.T) {
 	secret := []byte("01234567890123456789012345678901")
 	service := &fakeRecipientsService{created: recipients.Recipient{AllocationID: "allocation-1", FullName: "Budi"}}
 	manager := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"recipients.manage": true}}
@@ -1548,6 +1548,18 @@ func TestRecipientsCreateRequiresManagePermission(t *testing.T) {
 	NewHandler(Dependencies{Auth: viewer, Recipients: service, SessionSecret: secret}).ServeHTTP(deniedRecorder, denied)
 	if deniedRecorder.Code != http.StatusForbidden {
 		t.Fatalf("expected forbidden for viewer, got %d", deniedRecorder.Code)
+	}
+
+	// POS Dokumen adds a recipient missing from DCP3 while distributing.
+	posDokumen := &fakeAuthService{principal: auth.Principal{UserID: "user-3"}, allowedPermissions: map[string]bool{"distribution.pos_dokumen": true}}
+	field := httptest.NewRequest(http.MethodPost, "/api/v1/recipients", strings.NewReader(`{"schedule_id":"schedule-2","full_name":"Citra","nik":"7301010101010003"}`))
+	field.Header.Set("Content-Type", "application/json")
+	field.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+	field.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+	fieldRecorder := httptest.NewRecorder()
+	NewHandler(Dependencies{Auth: posDokumen, Recipients: service, SessionSecret: secret}).ServeHTTP(fieldRecorder, field)
+	if fieldRecorder.Code != http.StatusCreated || service.createInput.ScheduleID != "schedule-2" {
+		t.Fatalf("POS Dokumen create: status=%d body=%s", fieldRecorder.Code, fieldRecorder.Body.String())
 	}
 }
 

@@ -1,5 +1,5 @@
 import { type FormEvent, type KeyboardEvent, lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import { FileText, Pencil, ScanBarcode } from 'lucide-react';
+import { FileText, Pencil, ScanBarcode, UserPlus } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiRequest, ApiError } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
@@ -16,6 +16,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { uppercaseBusinessText } from '@/lib/text';
+import { RecipientDialog } from '../dashboard/RecipientDialog';
+import type { Recipient, RecipientInput } from '../dashboard/types';
 
 const emptyLinkInput = (scheduleID: string, slotNumber: number): LinkSlotInput => ({ schedule_id: scheduleID, slot_number: slotNumber, nik: '', address: '', village: '', district: '', phone_number: '', sector_identifier: '' });
 
@@ -85,6 +87,7 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
   const [replaceMode, setReplaceMode] = useState(false);
   const editable = canManage && currentSlot.status !== 'completed';
   const canCorrectHandover = useCan('bast.manage');
+  const [addOpen, setAddOpen] = useState(false);
 
   const [nik, setNik] = useState('');
   const [candidate, setCandidate] = useState<CandidateMatch | null>(null);
@@ -213,6 +216,17 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
     }),
   });
 
+  // A recipient missing from DCP3 is added here and selected right away, so
+  // the officer only has to confirm the link.
+  const addRecipient = useMutation({
+    mutationFn: (values: RecipientInput) => apiRequest<DataResponse<Recipient>>('/api/v1/recipients', { method: 'POST', body: JSON.stringify({ ...values, schedule_id: currentSlot.schedule_id }) }),
+    onSuccess: ({ data }) => {
+      setAddOpen(false);
+      selectCandidate({ allocation_id: data.allocation_id, full_name: data.full_name, nik: data.nik, sector_identifier: data.sector_identifier, sector_identifier_type: data.sector_identifier_type, address: data.address, village: data.village, district: data.district, phone_number: data.phone_number, program_type: programType ?? 'farmer' });
+    },
+  });
+  const addError = addRecipient.error as ApiError | null;
+
   const selectCandidate = (next: CandidateMatch) => {
     setNik(next.nik); setCandidate(next); setSuggestions([]); setActiveSuggestion(-1); setPickerOpen(false); setLinkAttempted(false);
     setLinkInput({ schedule_id: currentSlot.schedule_id, slot_number: currentSlot.slot_number, nik: next.nik, address: next.address, village: next.village, district: next.district, phone_number: normalizePhoneInput(next.phone_number), sector_identifier: next.sector_identifier });
@@ -259,6 +273,8 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
       {pickerOpen && suggestions.length > 0 && <div id={`nik-suggestions-${currentSlot.id}`} role="listbox" aria-label="Pilihan penerima" className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-md">{suggestions.map((item, index) => <button id={`nik-suggestion-${item.allocation_id}`} key={item.allocation_id} type="button" role="option" aria-label={`${item.nik} ${item.full_name}`} aria-selected={index === activeSuggestion} className="flex min-h-11 w-full flex-col items-start rounded-md px-3 py-2 text-left hover:bg-muted focus:bg-muted focus:outline-none aria-selected:bg-muted" onMouseEnter={() => setActiveSuggestion(index)} onMouseDown={(event) => event.preventDefault()} onClick={() => selectCandidate(item)}><span className="text-sm font-medium">{item.nik}</span><span className="text-xs text-muted-foreground">{item.full_name}</span></button>)}</div>}
     </div>
     {nik.length > 0 && hasSearched && !isSearching && !suggestions.length && !candidate && !suggestionError && !replaceMode && <p className="text-sm text-muted-foreground" role="status">Penerima dengan awalan NIK tersebut tidak ditemukan.</p>}
+    {!replacement && !candidate && <Button type="button" variant={nik.length > 0 && hasSearched && !isSearching && !suggestions.length ? 'default' : 'outline'} className="w-full sm:w-auto" onClick={() => { addRecipient.reset(); setAddOpen(true); }}><UserPlus />Tambah penerima baru</Button>}
+    {!replacement && <RecipientDialog open={addOpen} onOpenChange={setAddOpen} schedules={[]} fixedSchedule={`nomor bagi #${currentSlot.slot_number}`} requireNIK initial={{ nik }} description="Penerima yang tidak ada di DCP3. Setelah disimpan, penerima langsung dipilih untuk nomor bagi ini." pending={addRecipient.isPending} fields={addError?.fields ?? {}} error={addRecipient.isError && !Object.keys(addError?.fields ?? {}).length ? addRecipient.error.message : undefined} onSave={(values) => addRecipient.mutate(values)} />}
     {suggestionError && <Alert variant="destructive"><AlertDescription>{suggestionError instanceof ApiError ? suggestionError.message : 'Pencarian penerima belum dapat dilakukan.'}</AlertDescription></Alert>}
     {replacement && lookupPanel()}
     {substituteFormVisible && <form noValidate className="grid gap-3 sm:grid-cols-2" onSubmit={(event: FormEvent) => { event.preventDefault(); setLinkAttempted(true); if (hasErrors(linkErrors) || (replacement && !replacementReady)) return; replacement ? recipientReplace.mutate() : link.mutate(); }}>

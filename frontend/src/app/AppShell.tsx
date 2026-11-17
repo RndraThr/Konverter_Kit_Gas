@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { UploadQueueIndicator } from '@/components/UploadQueueIndicator';
 import {
-  Activity, BookOpen, BookOpenCheck, BookOpenText, CalendarClock, CalendarRange, Camera, ChevronDown, FileClock,
+  Activity, BookOpen, BookOpenCheck, BookOpenText, Building2, CalendarClock, CalendarRange, Camera, ChevronDown, ClipboardList, FileClock, Flag, Truck, Warehouse, Wrench,
   ClipboardCheck, ReceiptText, FileCheck2, Files, FileSpreadsheet, FileText, GraduationCap, Images, ListFilter, MapPinned, Menu, PackageOpen, PanelLeftClose, PanelLeftOpen,
   PartyPopper, Presentation, Settings, ShieldCheck, Users, UsersRound, Wallet, WalletCards, X,
 } from 'lucide-react';
@@ -37,15 +37,22 @@ const groups: NavGroup[] = [
     { label: 'Persiapan program', to: '/persiapan-program', permission: 'programs.view', icon: <CalendarRange /> },
     { label: 'DCP3', to: '/dcp3', permission: 'dcp3.view', icon: <FileSpreadsheet /> },
   ] },
+  // In the order of the Panduan Kegiatan Pendistribusian, Kegiatan Lainnya last.
   { label: 'Dokumentasi', items: [
-    { label: 'Pendistribusian', to: '/dokumentasi/pendistribusian', permission: 'distribution.view', icon: <Camera /> },
-    { label: 'Ceremony & Sosialisasi', to: '/dokumentasi/ceremony-sosialisasi', permission: 'activities.view', icon: <PartyPopper /> },
-    { label: 'Pelatihan Teknis', to: '/dokumentasi/pelatihan-teknis', permission: 'activities.view', icon: <GraduationCap /> },
-    { label: 'Rakor', to: '/dokumentasi/rakor', permission: 'activities.view', icon: <Users /> },
-    { label: 'Training 10%', to: '/dokumentasi/training-10', permission: 'activities.view', icon: <BookOpen /> },
-    { label: 'Training 100%', to: '/dokumentasi/training-100', permission: 'activities.view', icon: <BookOpenCheck /> },
-    { label: 'Kegiatan', to: '/dokumentasi/kegiatan', permission: 'activities.view', icon: <Images /> },
+    { label: 'Kunjungan Kantor Dinas', to: '/dokumentasi/kunjungan-dinas', permission: 'activities.view', icon: <Building2 /> },
+    { label: 'Gudang Titik Serah', to: '/dokumentasi/gudang-titik-serah', permission: 'activities.view', icon: <Warehouse /> },
     { label: 'Unloading', to: '/dokumentasi/unloading', permission: 'activities.view', icon: <PackageOpen /> },
+    { label: 'Perakitan Mesin', to: '/dokumentasi/perakitan-mesin', permission: 'activities.view', icon: <Wrench /> },
+    { label: 'Rakor', to: '/dokumentasi/rakor', permission: 'activities.view', icon: <Users /> },
+    { label: 'Pemeriksaan Barang', to: '/dokumentasi/pemeriksaan-barang', permission: 'activities.view', icon: <ClipboardList /> },
+    { label: 'Ceremony & Sosialisasi', to: '/dokumentasi/ceremony-sosialisasi', permission: 'activities.view', icon: <PartyPopper /> },
+    { label: 'Training 10%', to: '/dokumentasi/training-10', permission: 'activities.view', icon: <BookOpen /> },
+    { label: 'Pelatihan Teknis', to: '/dokumentasi/pelatihan-teknis', permission: 'activities.view', icon: <GraduationCap /> },
+    { label: 'Pendistribusian', to: '/dokumentasi/pendistribusian', permission: 'distribution.view', icon: <Camera /> },
+    { label: 'Kegiatan Pendistribusian', to: '/dokumentasi/kegiatan-pendistribusian', permission: 'activities.view', icon: <Truck /> },
+    { label: 'Training 100%', to: '/dokumentasi/training-100', permission: 'activities.view', icon: <BookOpenCheck /> },
+    { label: 'Closing Kabupaten', to: '/dokumentasi/closing-kabupaten', permission: 'activities.view', icon: <Flag /> },
+    { label: 'Kegiatan Lainnya', to: '/dokumentasi/kegiatan', permission: 'activities.view', icon: <Images /> },
   ] },
   { label: 'Dokumen Pendukung', items: [
     { label: 'Dokumen Pendukung', to: '/dokumen-pendukung', permission: 'activities.view', icon: <FileCheck2 /> },
