@@ -11,7 +11,7 @@ export type FinanceRequest = {
   id: string; number: string; type: RequestType; status: string;
   team_id: string; team_name: string; requester_id: string; requester_name: string; regency_id: string; regency_name: string;
   needed_date: string; category: string; description: string; total_amount: number;
-  payee_name: string; bank_name: string; account_number: string; account_name: string; invoice_number: string;
+  payee_name: string; bank_name: string; account_number: string; account_name: string; invoice_number: string; use_petty_cash: boolean;
   settlement_due: string; settlement_amount: number | null; settlement_note: string; review_note: string;
   reviewed_by_name: string; paid_by_name: string; submitted_at: string | null; reviewed_at: string | null; paid_at: string | null; done_at: string | null;
   created_at: string; updated_at: string;
@@ -31,7 +31,10 @@ export type SheetForm = { id: string; number: string; date: string; account_id: 
 export type Payee = { id: string; account_name: string; bank_name: string; account_number: string };
 export type VoucherSettings = { company_name: string; address_line1: string; address_line2: string; address_line3: string; has_logo: boolean; accounts: Account[] };
 
-export type DraftInput = Pick<FinanceRequest, 'type' | 'team_id' | 'regency_id' | 'needed_date' | 'category' | 'description' | 'payee_name' | 'bank_name' | 'account_number' | 'account_name' | 'invoice_number' | 'settlement_due'> & { items: Item[] };
+export type DraftInput = Pick<FinanceRequest, 'type' | 'team_id' | 'regency_id' | 'needed_date' | 'category' | 'description' | 'payee_name' | 'bank_name' | 'account_number' | 'account_name' | 'invoice_number' | 'use_petty_cash' | 'settlement_due'> & { items: Item[] };
+
+export type RegencyLimit = { regency_id: string; regency_name: string; kasbon_limit: number; kasbon_used: number; kasbon_available: number; petty_cash_limit: number; petty_cash_used: number; petty_cash_available: number };
+export type RegencyBalance = { regency_id: string; kasbon_limited: boolean; kasbon_available: number; petty_cash_available: number };
 
 export type Team = { id: string; name: string; is_active: boolean; leaders: Option[]; finance: Option[]; regencies: Option[] };
 export type TeamOptions = { leaders: Option[]; finance: Option[]; regencies: Option[] };
@@ -94,6 +97,10 @@ export const fetchPayees = (teamID: string) => apiRequest<DataResponse<Payee[]>>
 export const savePayee = (teamID: string, input: Omit<Payee, 'id'>) => apiRequest<DataResponse<Payee>>('/api/v1/finance/payees', { method: 'POST', body: JSON.stringify({ team_id: teamID, ...input }) });
 export const deletePayee = (id: string) => apiRequest(`/api/v1/finance/payees/${id}`, { method: 'DELETE' });
 
+export const fetchLimits = () => apiRequest<DataResponse<RegencyLimit[]>>('/api/v1/finance/limits');
+export const fetchBalances = () => apiRequest<DataResponse<RegencyBalance[]>>('/api/v1/finance/balances');
+export const saveLimit = (regencyID: string, kasbon: number, pettyCash: number) => apiRequest(`/api/v1/finance/limits/${regencyID}`, { method: 'PUT', body: JSON.stringify({ kasbon_limit: kasbon, petty_cash_limit: pettyCash }) });
+
 export const fetchVoucherSettings = () => apiRequest<DataResponse<VoucherSettings>>('/api/v1/finance/voucher-settings');
 export const fetchVouchers = () => apiRequest<DataResponse<Voucher[]>>('/api/v1/finance/vouchers');
 export const fetchVoucher = (id: string) => apiRequest<DataResponse<Voucher>>(`/api/v1/finance/vouchers/${id}`);
@@ -108,6 +115,7 @@ export function saveVoucher({ id, ...form }: SheetForm) {
 
 export const attachmentPath = (id: string, attachmentID: string) => `/api/v1/finance/requests/${id}/attachments/${attachmentID}`;
 export const voucherFilePath = (id: string) => `/api/v1/finance/vouchers/${id}/file`;
+export const voucherExcelPath = (id: string) => `/api/v1/finance/vouchers/${id}/excel`;
 export const fetchFile = (path: string) => apiBlobRequest(path);
 
 export async function downloadExcel(path: string, filename: string) {

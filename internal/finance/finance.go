@@ -152,6 +152,7 @@ type Request struct {
 	AccountNumber    string       `json:"account_number"`
 	AccountName      string       `json:"account_name"`
 	InvoiceNumber    string       `json:"invoice_number"`
+	UsePettyCash     bool         `json:"use_petty_cash"`
 	SettlementDue    string       `json:"settlement_due"`
 	SettlementAmount *int64       `json:"settlement_amount"`
 	SettlementNote   string       `json:"settlement_note"`
@@ -191,6 +192,7 @@ type DraftInput struct {
 	AccountNumber string `json:"account_number"`
 	AccountName   string `json:"account_name"`
 	InvoiceNumber string `json:"invoice_number"`
+	UsePettyCash  bool   `json:"use_petty_cash"`
 	SettlementDue string `json:"settlement_due"`
 	Items         []Item `json:"items"`
 }
@@ -218,6 +220,7 @@ func (input *DraftInput) normalize() error {
 		return ErrInvalidInput
 	}
 	input.AccountNumber = strings.NewReplacer(" ", "", "-", "").Replace(input.AccountNumber)
+	input.UsePettyCash = input.UsePettyCash && input.Type == TypeCashless
 	if !validDate(input.NeededDate) || !validDate(input.SettlementDue) {
 		return ErrInvalidInput
 	}

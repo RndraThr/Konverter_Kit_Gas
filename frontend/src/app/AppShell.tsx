@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { UploadQueueIndicator } from '@/components/UploadQueueIndicator';
 import {
   Activity, BookOpen, BookOpenCheck, BookOpenText, Building2, CalendarClock, CalendarRange, Camera, ChevronDown, ClipboardList, FileClock, Flag, Truck, Warehouse, Wrench,
-  ClipboardCheck, ReceiptText, FileCheck2, Files, FileSpreadsheet, FileText, GraduationCap, Images, ListFilter, MapPinned, Menu, PackageOpen, PanelLeftClose, PanelLeftOpen,
+  ClipboardCheck, Gauge, ReceiptText, FileCheck2, Files, FileSpreadsheet, FileText, GraduationCap, Images, ListFilter, MapPinned, Menu, PackageOpen, PanelLeftClose, PanelLeftOpen,
   PartyPopper, Presentation, Settings, ShieldCheck, Users, UsersRound, Wallet, WalletCards, X,
 } from 'lucide-react';
 import { ReactNode, useEffect, useId, useState } from 'react';
@@ -64,6 +64,7 @@ const groups: NavGroup[] = [
     { label: 'Pengajuan', pageTitle: 'Pengajuan keuangan', to: '/keuangan', permission: 'finance.request', icon: <Wallet /> },
     { label: 'Review keuangan', to: '/keuangan-review', permission: 'finance.review', icon: <ClipboardCheck /> },
     { label: 'Voucher', pageTitle: 'Voucher keuangan', to: '/keuangan-voucher', permission: 'finance.review', icon: <ReceiptText /> },
+    { label: 'Limit kabupaten', to: '/keuangan-limit', permission: 'finance.review', icon: <Gauge /> },
     { label: 'Monitoring keuangan', to: '/keuangan-monitoring', permission: 'finance.monitor', icon: <WalletCards /> },
     { label: 'Tim keuangan', to: '/keuangan-tim', permission: 'finance.manage', icon: <UsersRound /> },
   ] },

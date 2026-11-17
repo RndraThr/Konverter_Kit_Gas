@@ -10,6 +10,7 @@ import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogDescript
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList } from '@/components/ui/combobox';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -17,7 +18,7 @@ import { ApiError, apiRequest } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import {
-  actionLabels, attachmentPath, blankItem, deleteAttachment, earliestSettlement, fetchProfile, fetchRequest, formatDate, formatDateTime, formatRupiah, kindLabels, noteActions,
+  actionLabels, attachmentPath, blankItem, deleteAttachment, earliestSettlement, fetchBalances, fetchProfile, fetchRequest, formatDate, formatDateTime, formatRupiah, itemsTotal, kindLabels, noteActions,
   runAction, saveDraft, saveSettlement, stageIndex, stageLabels, statusLabels, today, typeLabels, uploadAttachment, type DraftInput, type FinanceRequest, type Item, type Option, type RequestType, type Team,
 } from './api';
 import { PayeePicker } from './PayeePicker';
@@ -37,12 +38,12 @@ const textarea = 'min-h-24 w-full rounded-lg border border-input bg-transparent 
 
 /** Tim dan kabupaten terisi sendiri bila pilihannya hanya satu. */
 function blankDraft(type: RequestType, team?: Team): DraftInput {
-  return { type, team_id: team?.id ?? '', regency_id: team?.regencies.length === 1 ? team.regencies[0].id : '', needed_date: today(), category: '', description: '', payee_name: '', bank_name: '', account_number: '', account_name: '', invoice_number: '', settlement_due: type === 'kasbon' ? earliestSettlement(today()) : '', items: [blankItem()] };
+  return { type, team_id: team?.id ?? '', regency_id: team?.regencies.length === 1 ? team.regencies[0].id : '', needed_date: today(), category: '', description: '', payee_name: '', bank_name: '', account_number: '', account_name: '', invoice_number: '', use_petty_cash: false, settlement_due: type === 'kasbon' ? earliestSettlement(today()) : '', items: [blankItem()] };
 }
 
 function draftFrom(request: FinanceRequest): DraftInput {
-  const { type, team_id, regency_id, needed_date, category, description, payee_name, bank_name, account_number, account_name, invoice_number, settlement_due } = request;
-  return { type, team_id, regency_id, needed_date, category, description, payee_name, bank_name, account_number, account_name, invoice_number, settlement_due, items: request.items?.length ? request.items : [blankItem()] };
+  const { type, team_id, regency_id, needed_date, category, description, payee_name, bank_name, account_number, account_name, invoice_number, use_petty_cash, settlement_due } = request;
+  return { type, team_id, regency_id, needed_date, category, description, payee_name, bank_name, account_number, account_name, invoice_number, use_petty_cash, settlement_due, items: request.items?.length ? request.items : [blankItem()] };
 }
 
 export function RequestDetailPage() {
@@ -80,6 +81,9 @@ function DraftForm({ id, initial, request }: DraftFormProps) {
   const profile = useQuery({ queryKey: ['finance', 'profile'], queryFn: fetchProfile });
   const teams = profile.data?.data.leader_teams ?? [];
   const team = teams.find((item) => item.id === form.team_id);
+  const balances = useQuery({ queryKey: ['finance', 'balances'], queryFn: fetchBalances });
+  const balance = balances.data?.data.find((item) => item.regency_id === form.regency_id);
+  const total = itemsTotal(form.items);
 
   const save = useMutation({
     mutationFn: (input: DraftInput) => saveDraft(id, input),
@@ -163,6 +167,14 @@ function DraftForm({ id, initial, request }: DraftFormProps) {
           set({ needed_date: needed, settlement_due: form.type === 'kasbon' && form.settlement_due < earliest ? earliest : form.settlement_due });
         }} />
         {form.type === 'kasbon' && <FormField label="Batas lapor kasbon" name="settlement_due" type="date" required min={form.needed_date ? earliestSettlement(form.needed_date) : undefined} hint="Minimal 3 hari setelah dana dibutuhkan." {...text('settlement_due')} />}
+        {form.type === 'kasbon' && balance?.kasbon_limited && <p className={cn('text-sm sm:col-span-2', total > balance.kasbon_available ? 'font-medium text-destructive' : 'text-muted-foreground')}>Sisa kasbon kabupaten ini: {formatRupiah(balance.kasbon_available)}{total > balance.kasbon_available ? '. Nominal pengajuan melebihi sisa.' : ''}</p>}
+        {form.type === 'cashless' && balance && (balance.petty_cash_available > 0 || form.use_petty_cash) && <label className="flex items-start gap-3 rounded-lg border p-3 sm:col-span-2">
+          <Checkbox className="mt-0.5" checked={form.use_petty_cash} onCheckedChange={(checked) => set({ use_petty_cash: Boolean(checked) })} />
+          <span className="text-sm">
+            <strong className="block">Gunakan petty cash</strong>
+            <span className={cn('block text-xs', form.use_petty_cash && total > balance.petty_cash_available ? 'font-medium text-destructive' : 'text-muted-foreground')}>Sisa {formatRupiah(balance.petty_cash_available)}. Biaya ditalangi dulu sambil menunggu pembayaran finance.</span>
+          </span>
+        </label>}
         <div className="grid gap-2 sm:col-span-2">
           <Label htmlFor="finance-description">Untuk keperluan apa?</Label>
           <textarea id="finance-description" className={textarea} maxLength={2000} placeholder="Contoh: sewa mobil untuk pengiriman ke Wonogiri" {...text('description')} />
@@ -267,6 +279,7 @@ function RequestView({ request }: { request: FinanceRequest }) {
               {request.type === 'cashless' && <>
                 <Line label="Pemilik rekening" value={request.account_name || request.payee_name} />
                 <Line label="Rekening tujuan" value={`${request.bank_name} ${request.account_number}`} />
+                {request.use_petty_cash && <Line label="Sumber dana" value="Petty cash" />}
               </>}
               <div className="sm:col-span-2"><Line label="Keperluan" value={request.description} /></div>
             </dl>
