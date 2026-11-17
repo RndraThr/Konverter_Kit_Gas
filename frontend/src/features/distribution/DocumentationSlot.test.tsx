@@ -65,7 +65,7 @@ test('offers camera and gallery then uploads an image preview', async () => {
   expect(await screen.findByAltText('Preview BAST bertanda tangan')).toHaveAttribute('src', 'blob:preview');
   await waitFor(() => expect(uploadRequest).toHaveBeenCalledOnce());
   finish();
-  expect(await screen.findByText('1 dari 1 foto wajib')).toBeVisible();
+  expect(await screen.findByText('1 foto · min. 1 · maks. 2')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Hapus bast.jpg' })).toBeVisible();
   const request = vi.mocked(uploadRequest).mock.calls[0];
   expect((request[1] as FormData).get('captured_at')).toBeTruthy();
@@ -274,9 +274,9 @@ test('shows progress and can cancel an active upload', async () => {
 test('does not describe an optional slot as mandatory', () => {
   renderSlot([], false);
   expect(screen.getByText('Opsional')).toBeVisible();
-  expect(screen.getByText('0 dari 1 foto')).toBeVisible();
+  expect(screen.getByText('0 foto · min. 1 · maks. 2')).toBeVisible();
   expect(screen.getByText('Belum diisi')).toBeVisible();
-  expect(screen.queryByText('0 dari 1 foto wajib')).not.toBeInTheDocument();
+  expect(screen.queryByText(/wajib/)).not.toBeInTheDocument();
 });
 
 test('associates camera and gallery inputs with visible focus controls', () => {
@@ -305,8 +305,9 @@ test.each([
 ] as const)('shows storage state %s while keeping preview available', (storageState, label, detail) => {
   renderSlot([{ id: `media-${storageState}`, slot_id: 'slot-1', original_filename: `${storageState}.jpg`, mime_type: 'image/jpeg', byte_size: 10, source: 'gallery', status: 'accepted', content_url: `/media/${storageState}.jpg`, storage_state: storageState }]);
 
-  expect(screen.getByText(label)).toBeVisible();
-  if (detail) expect(screen.getByText(detail)).toBeVisible();
+  // A corner mark per photo (its label for screen readers) and one summary line for the slot.
+  expect(screen.getAllByText(label)[0]).toBeInTheDocument();
+  if (detail) expect(screen.getByText(new RegExp(detail))).toBeVisible();
   expect(screen.getByRole('button', { name: `Lihat ${storageState}.jpg` })).toBeVisible();
 });
 
@@ -321,7 +322,7 @@ test('offers retry only for failed moves and publishes the returned media state'
   fireEvent.click(screen.getByRole('button', { name: 'Coba pindahkan lagi failed.jpg' }));
 
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/media/media-failed/retry-move', { method: 'POST' }));
-  expect(await screen.findByText('Sedang diunggah ke Drive')).toBeVisible();
+  expect((await screen.findAllByText('Sedang diunggah ke Drive')).length).toBeGreaterThan(0);
   expect(onRetryMove).toHaveBeenCalledWith(expect.objectContaining({ id: 'media-failed', storage_state: 'moving' }));
   expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ files: [expect.objectContaining({ storage_state: 'moving' })] }));
 });

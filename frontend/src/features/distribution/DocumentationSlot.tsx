@@ -1,6 +1,6 @@
-import { Camera, CheckCircle2, CircleAlert, ImagePlus, RefreshCw, Trash2, UploadCloud, Video, X } from 'lucide-react';
+import { Camera, CheckCircle2, CircleAlert, Clock3, ImagePlus, RefreshCw, Trash2, UploadCloud, Video, X } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { type DragEvent, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { apiRequest } from '../../lib/api';
 import { sameTarget, uploadQueue, useUploadCompletions, useUploadJobs, type UploadJob, type UploadTarget } from '../../lib/uploadQueue';
 import { useObjectURL } from '../../lib/useObjectURL';
@@ -157,6 +157,12 @@ export function DocumentationSlot({ slot, canManage, canRetryMove = false, onCha
     enqueue([{ file: photo.file, source: 'camera', capturedAt: photo.capturedAt, latitude: photo.latitude, longitude: photo.longitude }]);
   };
   const uploadError = queue.find((item) => item.status === 'error');
+  const dropHandlers = {
+    onDragEnter: (event: DragEvent) => { event.preventDefault(); setDragging(true); },
+    onDragOver: (event: DragEvent) => { event.preventDefault(); setDragging(true); },
+    onDragLeave: (event: DragEvent) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); },
+    onDrop: (event: DragEvent) => { event.preventDefault(); setDragging(false); chooseMany(event.dataTransfer.files, 'gallery'); },
+  };
 
   return <article
     aria-label={slot.label}
@@ -170,7 +176,9 @@ export function DocumentationSlot({ slot, canManage, canRetryMove = false, onCha
             ? <Badge className="bg-destructive/10 font-semibold uppercase tracking-wide text-destructive">Wajib</Badge>
             : <Badge variant="outline" className="uppercase tracking-wide text-muted-foreground">Opsional</Badge>}
         </div>
-        <p className="text-xs text-muted-foreground">{files.length} dari {required} {mediaLabel}{slot.required ? ' wajib' : ''}</p>
+        <p className="text-xs text-muted-foreground">{maxFiles > 1
+          ? `${files.length} ${mediaLabel}${required > 0 ? ` · min. ${required}` : ''} · maks. ${maxFiles}`
+          : `${files.length} dari ${required} ${mediaLabel}${slot.required ? ' wajib' : ''}`}</p>
       </div>
       <span className={cn('inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold', complete ? 'bg-primary/10 text-primary' : slot.required ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground')}>
         {complete ? <CheckCircle2 className="size-4" aria-hidden="true" /> : <CircleAlert className="size-4" aria-hidden="true" />}
@@ -178,48 +186,50 @@ export function DocumentationSlot({ slot, canManage, canRetryMove = false, onCha
       </span>
     </header>
 
-    {(files.length > 0 || queue.length > 0) && <div className="grid grid-cols-3 gap-2">
-      {files.map((file, index) => {
-        const storageCopy = storageStateCopy[file.storage_state];
-        return <div key={file.id} className="min-w-0 space-y-1.5">
-          <figure className="relative aspect-4/3 overflow-hidden rounded-md border bg-muted">
-            <button type="button" aria-label={`Lihat ${file.original_filename}`} className="absolute inset-0 size-full cursor-zoom-in focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring" onClick={() => setPreviewIndex(index)}>
-              {file.mime_type.startsWith('video/') ? <video src={file.content_url} preload="metadata" className="size-full object-cover" /> : <img src={file.content_url} alt="" className="size-full object-cover" />}
-            </button>
-            <figcaption className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex items-center justify-between gap-1 bg-black/70 px-2 py-1 text-[10px] text-white">
-              <span className="truncate">{file.original_filename}</span>
-              {canManage && <button className={cn(styles.removeMedia, 'pointer-events-auto')} type="button" aria-label={`Hapus ${file.original_filename}`} title="Hapus foto" onClick={() => remove.mutate(file.id)}><Trash2 className="size-3.5" aria-hidden="true" /></button>}
-            </figcaption>
-          </figure>
-          <div className="space-y-0.5 text-[11px] leading-tight">
-            <p className={cn('font-medium', file.storage_state === 'move_failed' ? 'text-destructive' : 'text-muted-foreground')}>{storageCopy.label}</p>
-            {storageCopy.detail && <p className="text-muted-foreground">{storageCopy.detail}</p>}
-            {file.storage_state === 'move_failed' && file.storage_last_error && <p className="text-destructive">{file.storage_last_error}</p>}
-            {canRetryMove && file.storage_state === 'move_failed' && <button type="button" className="inline-flex min-h-11 items-center gap-1 text-xs font-medium text-primary underline-offset-4 hover:underline disabled:opacity-50" aria-label={`Coba pindahkan lagi ${file.original_filename}`} disabled={retryMove.isPending} onClick={() => { setMoveError(''); retryMove.mutate(file.id); }}><RefreshCw className="size-3.5" aria-hidden="true" />Coba lagi</button>}
-          </div>
-        </div>;
-      })}
+    {(files.length > 0 || queue.length > 0) && <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+      {files.map((file, index) => <figure key={file.id} className="group relative aspect-square overflow-hidden rounded-lg border bg-muted">
+        <button type="button" aria-label={`Lihat ${file.original_filename}`} className="absolute inset-0 size-full cursor-zoom-in focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring" onClick={() => setPreviewIndex(index)}>
+          {file.mime_type.startsWith('video/') ? <video src={file.content_url} preload="metadata" className="size-full object-cover" /> : <img src={file.content_url} alt="" className="size-full object-cover transition-transform duration-200 group-hover:scale-105" />}
+        </button>
+        <StorageBadge state={file.storage_state} />
+        {canManage && <button className={cn(styles.removeMedia, 'absolute top-1 right-1 z-10 size-7! rounded-full! bg-black/60! backdrop-blur-sm hover:bg-destructive!')} type="button" aria-label={`Hapus ${file.original_filename}`} title="Hapus foto" onClick={() => remove.mutate(file.id)}><Trash2 className="size-3.5" aria-hidden="true" /></button>}
+      </figure>)}
       {queue.map((item) => <QueuedMedia key={item.id} job={item} slotLabel={slot.label} />)}
-    </div>}
-
-    {canAddMore && <div className="grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)]">
-      {inputSource !== 'gallery' && <div className="flex flex-wrap gap-2">
-        {allowsImages && <button type="button" className={cn(styles.captureControl, 'inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted')} onClick={() => { setFileError(''); setCameraOpen(true); }}><Camera className="size-4" aria-hidden="true" />Buka kamera</button>}
-        {allowsVideos && <label className={cn(styles.captureControl, 'inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted')}><Video className="size-4" aria-hidden="true" />Rekam video<input className="sr-only" aria-label="Rekam video" type="file" accept={videoAccept} capture="environment" onChange={(event) => { chooseMany(event.target.files, 'camera'); event.target.value = ''; }} /></label>}
-      </div>}
-      {inputSource !== 'camera' && <div
+      {canAddMore && files.length + queue.length > 0 && <div
         role="group"
-        aria-label={`Unggah ${mediaLabel} ${slot.label} melalui galeri`}
-        className={cn('flex min-h-24 flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-3 text-center transition-colors', dragging ? 'border-primary bg-primary/10' : 'border-border bg-muted/25')}
-        onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
-        onDragOver={(event) => { event.preventDefault(); setDragging(true); }}
-        onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false); }}
-        onDrop={(event) => { event.preventDefault(); setDragging(false); chooseMany(event.dataTransfer.files, 'gallery'); }}
+        aria-label={`Tambah ${mediaLabel} ${slot.label}`}
+        className={cn('flex aspect-square flex-col items-center justify-center gap-1.5 rounded-lg border-2 border-dashed p-1.5 text-muted-foreground transition-colors', dragging ? 'border-primary bg-primary/10' : 'border-border hover:border-primary/50')}
+        {...dropHandlers}
       >
-        <UploadCloud className="size-5 text-muted-foreground" aria-hidden="true" />
-        <span className="text-xs text-muted-foreground">Seret {mediaLabel} ke sini atau</span>
-        <label className={cn(styles.captureControl, 'inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted')}><ImagePlus className="size-4" aria-hidden="true" />Pilih galeri<input className="sr-only" aria-label="Pilih galeri" type="file" accept={acceptedTypes} multiple onChange={(event) => { chooseMany(event.target.files, 'gallery'); event.target.value = ''; }} /></label>
+        <span className="text-[11px] font-medium">Tambah</span>
+        <div className="flex gap-1">
+          {inputSource !== 'gallery' && allowsImages && <button type="button" aria-label="Buka kamera" title="Ambil dengan kamera" className={cn(styles.captureControl, 'inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90')} onClick={() => { setFileError(''); setCameraOpen(true); }}><Camera className="size-4" aria-hidden="true" /></button>}
+          {inputSource !== 'gallery' && allowsVideos && <label title="Rekam video" className={cn(styles.captureControl, 'inline-flex size-8 shrink-0 items-center justify-center rounded-md cursor-pointer border bg-background hover:bg-muted')}><Video className="size-4" aria-hidden="true" /><input className="sr-only" aria-label="Rekam video" type="file" accept={videoAccept} capture="environment" onChange={(event) => { chooseMany(event.target.files, 'camera'); event.target.value = ''; }} /></label>}
+          {inputSource !== 'camera' && <label title="Pilih dari galeri" className={cn(styles.captureControl, 'inline-flex size-8 shrink-0 items-center justify-center rounded-md cursor-pointer border bg-background hover:bg-muted')}><ImagePlus className="size-4" aria-hidden="true" /><input className="sr-only" aria-label="Pilih galeri" type="file" accept={acceptedTypes} multiple onChange={(event) => { chooseMany(event.target.files, 'gallery'); event.target.value = ''; }} /></label>}
+        </div>
+        <span className="text-[10px]">{remainingCapacity} lagi</span>
       </div>}
+    </div>}
+    {files.length > 0 && <StorageSummary files={files} />}
+    {files.filter((file) => file.storage_state === 'move_failed').map((file) => <div key={file.id} className="flex flex-wrap items-center gap-2 rounded-md bg-destructive/5 px-3 py-2 text-xs text-destructive">
+      <CircleAlert className="size-3.5 shrink-0" aria-hidden="true" />
+      <span className="min-w-0 flex-1">{file.original_filename}: {file.storage_last_error || storageStateCopy.move_failed.label}</span>
+      {canRetryMove && <button type="button" className="inline-flex min-h-11 items-center gap-1 font-medium text-primary underline-offset-4 hover:underline disabled:opacity-50" aria-label={`Coba pindahkan lagi ${file.original_filename}`} disabled={retryMove.isPending} onClick={() => { setMoveError(''); retryMove.mutate(file.id); }}><RefreshCw className="size-3.5" aria-hidden="true" />Coba lagi</button>}
+    </div>)}
+
+    {canAddMore && files.length + queue.length === 0 && <div
+      role="group"
+      aria-label={`Unggah ${mediaLabel} ${slot.label} melalui galeri`}
+      className={cn('flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed px-4 py-5 text-center transition-colors', dragging ? 'border-primary bg-primary/10' : 'border-border bg-muted/25')}
+      {...dropHandlers}
+    >
+      <UploadCloud className="size-6 text-muted-foreground" aria-hidden="true" />
+      <span className="text-xs text-muted-foreground">{inputSource === 'camera' ? `Ambil ${mediaLabel} dengan kamera` : `Ambil dengan kamera, pilih dari galeri, atau seret ${mediaLabel} ke sini`}</span>
+      <div className="flex flex-wrap justify-center gap-2">
+        {inputSource !== 'gallery' && allowsImages && <button type="button" className={cn(styles.captureControl, 'inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90')} onClick={() => { setFileError(''); setCameraOpen(true); }}><Camera className="size-4" aria-hidden="true" />Buka kamera</button>}
+        {inputSource !== 'gallery' && allowsVideos && <label className={cn(styles.captureControl, 'inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted')}><Video className="size-4" aria-hidden="true" />Rekam video<input className="sr-only" aria-label="Rekam video" type="file" accept={videoAccept} capture="environment" onChange={(event) => { chooseMany(event.target.files, 'camera'); event.target.value = ''; }} /></label>}
+        {inputSource !== 'camera' && <label className={cn(styles.captureControl, 'inline-flex h-11 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-sm font-medium transition-colors hover:bg-muted')}><ImagePlus className="size-4" aria-hidden="true" />Pilih galeri<input className="sr-only" aria-label="Pilih galeri" type="file" accept={acceptedTypes} multiple onChange={(event) => { chooseMany(event.target.files, 'gallery'); event.target.value = ''; }} /></label>}
+      </div>
     </div>}
     {uploadError && <p role="alert" className="text-sm text-destructive">{uploadError.file.name}: {uploadError.errorMessage ?? 'Foto belum dapat diunggah.'}</p>}
     {fileError && <p role="alert" className="text-sm text-destructive">{fileError}</p>}
@@ -229,9 +239,27 @@ export function DocumentationSlot({ slot, canManage, canRetryMove = false, onCha
   </article>;
 }
 
+/** Where a photo is: a small corner mark, the words are in the title and the summary below. */
+function StorageBadge({ state }: { state: MediaStorageState }) {
+  const copy = storageStateCopy[state];
+  const [Icon, tone] = state === 'final' ? [CheckCircle2, 'bg-primary text-primary-foreground'] : state === 'move_failed' ? [CircleAlert, 'bg-destructive text-white'] : [Clock3, 'bg-amber-500 text-white'];
+  return <span title={copy.detail ? `${copy.label} · ${copy.detail}` : copy.label} className={cn('pointer-events-none absolute bottom-1 left-1 z-10 grid size-5 place-items-center rounded-full shadow-sm', tone)}>
+    <Icon className="size-3" aria-hidden="true" /><span className="sr-only">{copy.label}</span>
+  </span>;
+}
+
+/** One line for the slot instead of a caption under every photo. */
+function StorageSummary({ files }: { files: MediaFile[] }) {
+  const counts = files.reduce<Record<string, number>>((acc, file) => ({ ...acc, [file.storage_state]: (acc[file.storage_state] ?? 0) + 1 }), {});
+  if (counts.final === files.length) return <p className="flex items-center gap-1 text-xs text-muted-foreground"><CheckCircle2 className="size-3.5 text-primary" aria-hidden="true" />{storageStateCopy.final.label}</p>;
+  const waiting = (counts.staging ?? 0) + (counts.moving ?? 0);
+  if (!waiting) return null;
+  return <p className="flex items-center gap-1 text-xs text-muted-foreground"><Clock3 className="size-3.5 text-amber-500" aria-hidden="true" />{counts.moving ? storageStateCopy.moving.label : `${storageStateCopy.staging.label} · ${storageStateCopy.staging.detail}`}</p>;
+}
+
 function QueuedMedia({ job, slotLabel }: { job: UploadJob; slotLabel: string }) {
   const previewURL = useObjectURL(job.file);
-  return <figure className="relative aspect-4/3 overflow-hidden rounded-md border bg-muted">
+  return <figure className="relative aspect-square overflow-hidden rounded-lg border bg-muted">
     {previewURL && (acceptedVideoTypes.has(job.file.type) ? <video src={previewURL} aria-label={`Preview ${slotLabel}`} preload="metadata" className="size-full object-cover opacity-50" /> : <img src={previewURL} alt={`Preview ${slotLabel}`} className="size-full object-cover opacity-50" />)}
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/40 text-center text-white">
       {job.status === 'uploading' && <UploadCloud className="size-5 animate-pulse" aria-hidden="true" />}
