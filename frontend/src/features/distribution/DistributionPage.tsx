@@ -36,7 +36,7 @@ import styles from './Distribution.module.css';
 import { DataState } from '@/components/DataState';
 import { PageHeader } from '@/components/PageHeader';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { SearchableSelect } from '@/components/SearchableSelect';
 import type { PackageTemplate } from '../programs/types';
 import { WatermarkProgramProvider } from '../camera/WatermarkProgramContext';
 
@@ -120,10 +120,7 @@ export function DistributionPage() {
     <PageHeader title="Pendistribusian" description="Pilih nomor bagi dari katalog, catat mesin, hubungkan penerima, dan selesaikan serah terima." context={selectedSchedule ? <span className={styles.context}><strong>{selectedSchedule.regency?.document_code}</strong>{selectedSchedule.name}</span> : undefined} />
     <section className="max-w-md space-y-1.5 py-5" aria-label="Pilih jadwal distribusi">
       <Label id="distribution-schedule-label">Jadwal distribusi</Label>
-      <Select value={scheduleID} onValueChange={(value) => changeSchedule(value ?? '')}>
-        <SelectTrigger className="w-full" aria-labelledby="distribution-schedule-label"><SelectValue placeholder="Pilih kabupaten dan jadwal" /></SelectTrigger>
-        <SelectContent>{schedules.data?.data.filter((schedule) => schedule.status === 'active').map((schedule) => <SelectItem key={schedule.id} value={schedule.id}>{schedule.regency?.name} / {schedule.name}</SelectItem>)}</SelectContent>
-      </Select>
+      <SearchableSelect value={scheduleID} onValueChange={changeSchedule} aria-labelledby="distribution-schedule-label" placeholder="Cari kabupaten atau jadwal" emptyText="Jadwal tidak ditemukan." options={(schedules.data?.data ?? []).filter((schedule) => schedule.status === 'active').map((schedule) => ({ value: schedule.id, label: `${schedule.regency?.name} / ${schedule.name}` }))} />
     </section>
     {scheduleID && <WatermarkProgramProvider programId={selectedSchedule?.program_id}><div className={styles.workspace}>
       <aside className={styles.catalogPanel} aria-label="Katalog nomor bagi">

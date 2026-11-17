@@ -8,7 +8,7 @@ import { Alert, AlertDescription } from '../../components/ui/alert';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader } from '../../components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
+import { SearchableSelect } from '../../components/SearchableSelect';
 import { Separator } from '../../components/ui/separator';
 import { ApiError, apiRequest } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
@@ -92,10 +92,7 @@ export function DCP3ImportPage() {
         <CardContent className={styles.workspaceContent}>
           <div className={styles.wideField}>
             <label id="dcp3-schedule-label">Jadwal distribusi</label>
-            <Select value={scheduleID} onValueChange={(value) => setScheduleID(value ?? '')} disabled={schedules.isPending || schedules.isError}>
-              <SelectTrigger className="w-full" aria-labelledby="dcp3-schedule-label"><SelectValue placeholder={schedules.isPending ? 'Memuat jadwal...' : 'Pilih jadwal'} /></SelectTrigger>
-              <SelectContent>{schedules.data?.data.filter((item) => item.status === 'active').map((schedule) => <SelectItem value={schedule.id} key={schedule.id}>{schedule.regency?.name} - {schedule.name}</SelectItem>)}</SelectContent>
-            </Select>
+            <SearchableSelect value={scheduleID} onValueChange={setScheduleID} disabled={schedules.isPending || schedules.isError} aria-labelledby="dcp3-schedule-label" placeholder={schedules.isPending ? 'Memuat jadwal...' : 'Cari kabupaten atau jadwal'} emptyText="Jadwal tidak ditemukan." options={(schedules.data?.data ?? []).filter((item) => item.status === 'active').map((schedule) => ({ value: schedule.id, label: `${schedule.regency?.name} - ${schedule.name}` }))} />
           </div>
           {schedules.isError ? <Alert variant="destructive"><AlertDescription>Jadwal aktif belum dapat dimuat. Muat ulang halaman untuk mencoba kembali.</AlertDescription></Alert> : null}
           {selectedSchedule ? <>

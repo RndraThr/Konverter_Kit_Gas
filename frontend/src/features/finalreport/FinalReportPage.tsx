@@ -14,6 +14,7 @@ import { Checkbox } from '../../components/ui/checkbox';
 import type { DataResponse } from '../programs/types';
 import type { ActivityMediaPage, ProgramOption, ProgramZone } from '../activities/types';
 import { SLIDE_KEYS, SLIDE_KEY_LABELS, SLIDE_KEY_ACTIVITY_TYPES, SLIDE_KEY_MAX_PICKS, type FinalReportSettings, type FinalReportPhotoPick, type FinalReportDocument } from './types';
+import { SearchableSelect } from '../../components/SearchableSelect';
 
 const FinalReportPresent = lazy(() => import('./FinalReportPresent'));
 
@@ -208,10 +209,7 @@ export default function FinalReportRoute() {
       </div>
       <div className="grid gap-1.5">
         <Label id="final-report-regency-label">Kabupaten</Label>
-        <Select disabled={!programID || zones.isPending} value={regencyID} onValueChange={setRegency}>
-          <SelectTrigger className="w-full" aria-labelledby="final-report-regency-label"><SelectValue placeholder={!programID ? 'Pilih program terlebih dahulu' : zones.isPending ? 'Memuat kabupaten...' : 'Pilih kabupaten'} /></SelectTrigger>
-          <SelectContent>{regencies.map((item) => <SelectItem key={item.id} value={item.id}>{item.document_code} - {item.name}</SelectItem>)}</SelectContent>
-        </Select>
+        <SearchableSelect disabled={!programID || zones.isPending} value={regencyID} onValueChange={setRegency} aria-labelledby="final-report-regency-label" placeholder={!programID ? 'Pilih program terlebih dahulu' : zones.isPending ? 'Memuat kabupaten...' : 'Pilih kabupaten'} emptyText="Kabupaten tidak ditemukan." options={regencies.map((item) => ({ value: item.id, label: `${item.document_code} - ${item.name}` }))} />
       </div>
     </section>
     {!programID || !regencyID
