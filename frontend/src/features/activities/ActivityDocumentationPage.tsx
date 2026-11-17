@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils';
 import { buildPageItems } from './pagination';
 import type { ActivityMedia, ActivityMediaPage, ActivityType, ProgramOption, ProgramZone } from './types';
 import { shrinkGalleryImage } from '../camera/shrinkGalleryImage';
+import { SearchableSelect } from '../../components/SearchableSelect';
 
 const WatermarkCamera = lazy(() => import('../camera/WatermarkCamera'));
 
@@ -144,10 +145,7 @@ export function ActivityDocumentationPage({ label, ...props }: Props) {
           </div>
           <div className="grid min-w-0 flex-1 gap-2">
             <Label id="filter-regency-label">Kabupaten / Kota</Label>
-            <Select disabled={!programID || zones.isPending} value={regencyID} onValueChange={setRegency}>
-              <SelectTrigger className="w-full" aria-labelledby="filter-regency-label"><SelectValue placeholder={!programID ? 'Pilih program terlebih dahulu' : zones.isPending ? 'Memuat kabupaten...' : 'Pilih kabupaten untuk melihat galeri'} /></SelectTrigger>
-              <SelectContent>{regencies.map((item) => <SelectItem key={item.id} value={item.id}>{item.document_code} - {item.name}</SelectItem>)}</SelectContent>
-            </Select>
+            <SearchableSelect disabled={!programID || zones.isPending} value={regencyID} onValueChange={setRegency} aria-labelledby="filter-regency-label" placeholder={!programID ? 'Pilih program terlebih dahulu' : zones.isPending ? 'Memuat kabupaten...' : 'Pilih kabupaten untuk melihat galeri'} emptyText="Kabupaten tidak ditemukan." options={regencies.map((item) => ({ value: item.id, label: `${item.document_code} - ${item.name}` }))} />
           </div>
         </div>
         {canManage && regencyID && <div

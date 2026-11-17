@@ -3,6 +3,7 @@ import { Button } from '../../../components/ui/button';
 import { Card, CardContent, CardHeader } from '../../../components/ui/card';
 import { Label } from '../../../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../components/ui/select';
+import { SearchableSelect } from '../../../components/SearchableSelect';
 import { allocationStatusLabel } from '../types';
 
 type Option = { value: string; label: string };
@@ -23,16 +24,17 @@ type Props = {
   activeCount: number;
 };
 
-function FilterSelect({ id, label, placeholder, value, options, onChange }: { id: string; label: string; placeholder: string; value: string; options: Option[]; onChange: (value: string) => void }) {
+/** `searchable` turns long lists (kabupaten, jadwal) into a type-to-filter select. */
+function FilterSelect({ id, label, placeholder, value, options, onChange, searchable }: { id: string; label: string; placeholder: string; value: string; options: Option[]; onChange: (value: string) => void; searchable?: boolean }) {
   return <div className="grid gap-2">
     <Label id={id}>{label}</Label>
-    <Select value={value} onValueChange={(next) => onChange(next ?? '')}>
+    {searchable ? <SearchableSelect aria-labelledby={id} placeholder={placeholder} value={value} onValueChange={onChange} options={[{ value: '', label: placeholder }, ...options]} /> : <Select value={value} onValueChange={(next) => onChange(next ?? '')}>
       <SelectTrigger className="w-full" aria-labelledby={id}><SelectValue placeholder={placeholder} /></SelectTrigger>
       <SelectContent>
         <SelectItem value="">{placeholder}</SelectItem>
         {options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
       </SelectContent>
-    </Select>
+    </Select>}
   </div>;
 }
 
@@ -44,8 +46,8 @@ export function MapFilters({ params, regencies, programs, schedules, zones, onCh
     <CardContent className="space-y-4 py-5">
       <FilterSelect id="map-filter-program" label="Program" placeholder="Semua program" options={programs} {...field('program_id')} />
       {zones.length > 0 && <FilterSelect id="map-filter-zone" label="Zona" placeholder="Semua zona" options={zones} {...field('zone_id')} />}
-      <FilterSelect id="map-filter-regency" label="Kabupaten" placeholder="Semua kabupaten" options={regencies} {...field('regency_id')} />
-      <FilterSelect id="map-filter-schedule" label="Jadwal" placeholder="Semua jadwal" options={schedules} {...field('schedule_id')} />
+      <FilterSelect id="map-filter-regency" label="Kabupaten" placeholder="Semua kabupaten" options={regencies} searchable {...field('regency_id')} />
+      <FilterSelect id="map-filter-schedule" label="Jadwal" placeholder="Semua jadwal" options={schedules} searchable {...field('schedule_id')} />
       <FilterSelect id="map-filter-evidence" label="Kelengkapan bukti" placeholder="Semua kelengkapan" options={Object.entries(evidenceLabels).map(([value, label]) => ({ value, label }))} {...field('evidence_status')} />
       <FilterSelect id="map-filter-allocation" label="Status alokasi" placeholder="Aktif (bukan dibatalkan)" options={Object.entries(allocationStatusLabel).map(([value, label]) => ({ value, label }))} {...field('allocation_status')} />
       <Button type="button" variant="outline" className="w-full" disabled={activeCount === 0} onClick={onReset}><RotateCcw aria-hidden="true" />Reset filter{activeCount > 0 ? ` (${activeCount})` : ''}</Button>

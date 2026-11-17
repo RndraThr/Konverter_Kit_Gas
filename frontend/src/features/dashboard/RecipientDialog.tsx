@@ -5,7 +5,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 import { Alert, AlertDescription } from '../../components/ui/alert';
 import { FormField } from '../../components/FormField';
 import { Label } from '../../components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
+import { SearchableSelect } from '../../components/SearchableSelect';
 import type { Recipient, RecipientInput } from './types';
 import { uppercaseBusinessText } from '../../lib/text';
 
@@ -43,10 +43,7 @@ export function RecipientDialog({ open, onOpenChange, recipient, schedules, pend
       <div className="grid gap-4 p-5 sm:grid-cols-2">
         <div className="grid min-w-0 gap-2 sm:col-span-2">
           <Label id="recipient-schedule-label">Jadwal</Label>
-          <Select required disabled={Boolean(recipient)} value={values.schedule_id} onValueChange={(value) => setValues({ ...values, schedule_id: value ?? '' })}>
-            <SelectTrigger className="w-full" aria-labelledby="recipient-schedule-label"><SelectValue placeholder="Pilih kabupaten dan jadwal" /></SelectTrigger>
-            <SelectContent>{schedules.map((item) => <SelectItem key={item.id} value={item.id}>{item.regency_name} / {item.name}</SelectItem>)}</SelectContent>
-          </Select>
+          <SearchableSelect required disabled={Boolean(recipient)} value={values.schedule_id ?? ''} onValueChange={(value) => setValues({ ...values, schedule_id: value })} aria-labelledby="recipient-schedule-label" placeholder="Cari kabupaten atau jadwal" emptyText="Jadwal tidak ditemukan." options={schedules.map((item) => ({ value: item.id, label: `${item.regency_name} / ${item.name}` }))} />
         </div>
         <FormField className="sm:col-span-2" error={fields.full_name} label="Nama lengkap" name="full_name" required value={values.full_name} onChange={(event) => setValues({ ...values, full_name: uppercaseBusinessText(event.target.value) })} />
         <FormField error={fields.nik} label="NIK" name="nik" maxLength={16} value={values.nik} onChange={(event) => setValues({ ...values, nik: event.target.value.replace(/\D/g, '') })} hint="16 digit, boleh dikosongkan." />

@@ -17,6 +17,7 @@ import { Tabs, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { PdfPreview } from '../berita-acara/PdfPreview';
 import type { DataResponse } from '../programs/types';
 import type { ActivityMedia, ActivityMediaPage, ProgramOption, ProgramZone, SupportingDocumentSlot } from './types';
+import { SearchableSelect } from '../../components/SearchableSelect';
 
 const DocumentScanner = lazy(() => import('./DocumentScanner'));
 
@@ -214,10 +215,7 @@ export default function SupportingDocumentsRoute() {
       </div>
       <div className="grid gap-1.5">
         <Label id="dokumen-pendukung-regency-label">Kabupaten</Label>
-        <Select disabled={!programID || zones.isPending} value={regencyID} onValueChange={setRegency}>
-          <SelectTrigger className="w-full" aria-labelledby="dokumen-pendukung-regency-label"><SelectValue placeholder={!programID ? 'Pilih program terlebih dahulu' : zones.isPending ? 'Memuat kabupaten...' : 'Pilih kabupaten'} /></SelectTrigger>
-          <SelectContent>{regencies.map((item) => <SelectItem key={item.id} value={item.id}>{item.document_code} - {item.name}</SelectItem>)}</SelectContent>
-        </Select>
+        <SearchableSelect disabled={!programID || zones.isPending} value={regencyID} onValueChange={setRegency} aria-labelledby="dokumen-pendukung-regency-label" placeholder={!programID ? 'Pilih program terlebih dahulu' : zones.isPending ? 'Memuat kabupaten...' : 'Pilih kabupaten'} emptyText="Kabupaten tidak ditemukan." options={regencies.map((item) => ({ value: item.id, label: `${item.document_code} - ${item.name}` }))} />
       </div>
     </section>
 

@@ -10,6 +10,7 @@ import { Button } from '../../components/ui/button';
 import { Alert, AlertDescription } from '../../components/ui/alert';
 import { Label } from '../../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
+import { SearchableSelect } from '../../components/SearchableSelect';
 import { apiRequest } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
 import { uppercaseBusinessText } from '../../lib/text';
@@ -59,7 +60,7 @@ export function SchedulesPanel() {
       </SetupFormSection>
       <SetupFormSection title="Program dan wilayah" description="Tentukan program bantuan serta kabupaten pelaksana.">
       <div className="grid min-w-0 gap-2"><Label id="schedule-program-label">Program</Label><Select required value={values.program_id} onValueChange={(value) => setValues({ ...values, program_id: value ?? '', package_template_version_id: '', documentation_template_version_id: '' })}><SelectTrigger className="w-full" aria-labelledby="schedule-program-label"><SelectValue placeholder="Pilih program" /></SelectTrigger><SelectContent>{programs.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div>
-      <div className="grid min-w-0 gap-2"><Label id="schedule-regency-label">Kabupaten</Label><Select required value={values.regency_id} onValueChange={(value) => setValues({ ...values, regency_id: value ?? '' })}><SelectTrigger className="w-full" aria-labelledby="schedule-regency-label"><SelectValue placeholder="Pilih kabupaten" /></SelectTrigger><SelectContent>{regencyOrphan && <SelectItem value={regencyOrphan.id}>{regencyOrphan.label}</SelectItem>}{activeRegencies.map((item) => <SelectItem key={item.id} value={item.id}>{item.document_code} - {item.name}</SelectItem>)}</SelectContent></Select></div>
+      <div className="grid min-w-0 gap-2"><Label id="schedule-regency-label">Kabupaten</Label><SearchableSelect required value={values.regency_id} onValueChange={(value) => setValues({ ...values, regency_id: value })} aria-labelledby="schedule-regency-label" placeholder="Pilih kabupaten" emptyText="Kabupaten tidak ditemukan." options={[...(regencyOrphan ? [{ value: regencyOrphan.id, label: regencyOrphan.label }] : []), ...activeRegencies.map((item) => ({ value: item.id, label: `${item.document_code} - ${item.name}` }))]} /></div>
       </SetupFormSection>
       <SetupFormSection title="Template distribusi" description="Template disaring otomatis sesuai jenis program.">
       <div className="grid min-w-0 gap-2"><Label id="schedule-package-label">Template paket</Label><Select required value={values.package_template_version_id} onValueChange={(value) => setValues({ ...values, package_template_version_id: value ?? '' })}><SelectTrigger className="w-full" aria-labelledby="schedule-package-label"><SelectValue placeholder="Pilih template" /></SelectTrigger><SelectContent>{packageOrphan && <SelectItem value={packageOrphan.id}>{packageOrphan.label}</SelectItem>}{compatiblePackages.map((item) => <SelectItem key={item.id} value={item.id}>{item.name} v{item.version}</SelectItem>)}</SelectContent></Select></div>

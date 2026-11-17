@@ -20,6 +20,7 @@ import type { ProgramZone } from '../programs/types';
 import { RecipientDialog, type ScheduleOption } from './RecipientDialog';
 import { RecipientMobileCard } from './RecipientMobileCard';
 import { buildPageItems, summarizeEvidence } from './recipientTable';
+import { SearchableSelect } from '../../components/SearchableSelect';
 import { allocationStatusLabel, distributionStatusLabel, type EvidenceSlot, type Recipient, type RecipientInput, type RecipientPage, type RecipientStats } from './types';
 
 type RegencyOption = { id: string; name: string; document_code: string };
@@ -274,7 +275,7 @@ export function DashboardPage() {
         </div>
         <div className="grid min-w-0 gap-2"><Label id="filter-program-label">Program</Label><Select value={selectedProgramID} onValueChange={(value) => setProgramFilter(value ?? '')}><SelectTrigger className="w-full" aria-labelledby="filter-program-label"><SelectValue placeholder="Semua program" /></SelectTrigger><SelectContent><SelectItem value="">Semua program</SelectItem>{programs.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}</SelectContent></Select></div>
         <div className="grid min-w-0 gap-2"><Label id="filter-zone-label">Zona</Label><Select disabled={!selectedProgramID || zones.isPending} value={params.get('zone_id') ?? ''} onValueChange={(value) => setFilter('zone_id', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="filter-zone-label"><SelectValue placeholder={!selectedProgramID ? 'Pilih program dahulu' : zones.isPending ? 'Memuat zona...' : 'Semua zona'} /></SelectTrigger><SelectContent><SelectItem value="">Semua zona</SelectItem>{zones.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.code} - {item.name}</SelectItem>)}</SelectContent></Select></div>
-        <div className="grid min-w-0 gap-2"><Label id="filter-regency-label">Kabupaten</Label><Select value={params.get('regency_id') ?? ''} onValueChange={(value) => setFilter('regency_id', value ?? '')}><SelectTrigger className="w-full" aria-labelledby="filter-regency-label"><SelectValue placeholder="Semua kabupaten" /></SelectTrigger><SelectContent><SelectItem value="">Semua kabupaten</SelectItem>{regencies.data?.data.map((item) => <SelectItem key={item.id} value={item.id}>{item.document_code} - {item.name}</SelectItem>)}</SelectContent></Select></div>
+        <div className="grid min-w-0 gap-2"><Label id="filter-regency-label">Kabupaten</Label><SearchableSelect value={params.get('regency_id') ?? ''} onValueChange={(value) => setFilter('regency_id', value)} aria-labelledby="filter-regency-label" placeholder="Semua kabupaten" emptyText="Kabupaten tidak ditemukan." options={[{ value: '', label: 'Semua kabupaten' }, ...(regencies.data?.data ?? []).map((item) => ({ value: item.id, label: `${item.document_code} - ${item.name}` }))]} /></div>
       </div>
 
       <Button type="button" variant="outline" className="w-full justify-between md:hidden" aria-expanded={filtersOpen} onClick={() => setFiltersOpen((value) => !value)}><span className="flex items-center gap-2"><SlidersHorizontal />Filter lainnya</span><ChevronDown className={filtersOpen ? 'rotate-180' : ''} /></Button>
