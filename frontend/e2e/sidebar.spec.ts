@@ -33,13 +33,14 @@ test('desktop sidebar collapses without moving its toggle', async ({ page }, tes
   const maximize = page.getByRole('button', { name: 'Maksimalkan sidebar' });
   await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
   await expect(maximize).toHaveAttribute('aria-controls', 'primary-sidebar');
-  await expect.poll(async () => (await sidebar.boundingBox())?.width).toBe(76);
+  await expect.poll(async () => (await sidebar.boundingBox())?.width).toBe(68);
   await expect.poll(async () => {
     const box = await maximize.boundingBox();
     return Math.abs((box?.y ?? 0) - (initialToggleBox?.y ?? 0));
   }).toBeLessThanOrEqual(1);
-  const [compactLogoBox, maximizeBox] = await Promise.all([sidebar.getByAltText('Ergas').boundingBox(), maximize.boundingBox()]);
-  expect((compactLogoBox?.x ?? 0) + (compactLogoBox?.width ?? 0)).toBeLessThanOrEqual((maximizeBox?.x ?? 0) - 2);
+  // Minimized, the top row only holds the toggle, centered in the rail.
+  const maximizeBox = await maximize.boundingBox();
+  expect(Math.abs((maximizeBox?.x ?? 0) + (maximizeBox?.width ?? 0) / 2 - 34)).toBeLessThanOrEqual(2);
 
   const recipientLabel = sidebar.getByRole('link', { name: 'Data Penerima' }).getByText('Data Penerima');
   await expect.poll(() => recipientLabel.evaluate((element) => getComputedStyle(element).opacity)).toBe('0');
