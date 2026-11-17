@@ -42,7 +42,7 @@ const requestColumns = `r.id::text, COALESCE(r.number, ''), r.request_type, r.st
 	COALESCE(r.needed_date::text, ''), r.category, r.description, r.total_amount, r.payee_name, r.bank_name, r.account_number, r.account_name,
 	r.invoice_number, COALESCE(r.settlement_due::text, ''), r.settlement_amount, r.settlement_note, r.review_note,
 	COALESCE(NULLIF(rv.full_name, ''), rv.username, ''), COALESCE(NULLIF(pd.full_name, ''), pd.username, ''),
-	r.submitted_at, r.reviewed_at, r.paid_at, r.done_at, r.created_at, r.updated_at`
+	r.submitted_at, r.reviewed_at, r.paid_at, r.done_at, r.created_at, r.updated_at, r.use_petty_cash`
 
 const requestJoins = ` FROM finance_requests r
 	JOIN users u ON u.id = r.requester_id
@@ -56,7 +56,7 @@ func scanRequest(row pgx.Row) (Request, error) {
 	err := row.Scan(&r.ID, &r.Number, &r.Type, &r.Status, &r.TeamID, &r.TeamName, &r.RequesterID, &r.RequesterName, &r.RegencyID, &r.RegencyName, &r.RegencyCode,
 		&r.NeededDate, &r.Category, &r.Description, &r.TotalAmount, &r.PayeeName, &r.BankName, &r.AccountNumber, &r.AccountName,
 		&r.InvoiceNumber, &r.SettlementDue, &r.SettlementAmount, &r.SettlementNote, &r.ReviewNote, &r.ReviewedByName, &r.PaidByName,
-		&r.SubmittedAt, &r.ReviewedAt, &r.PaidAt, &r.DoneAt, &r.CreatedAt, &r.UpdatedAt)
+		&r.SubmittedAt, &r.ReviewedAt, &r.PaidAt, &r.DoneAt, &r.CreatedAt, &r.UpdatedAt, &r.UsePettyCash)
 	return r, err
 }
 
@@ -230,9 +230,9 @@ func (s *Service) SaveDraft(ctx context.Context, actor auth.Principal, access Ac
 	}
 	if _, err := tx.Exec(ctx, `UPDATE finance_requests SET request_type = $2, team_id = NULLIF($3, '')::uuid, regency_id = NULLIF($4, '')::uuid,
 		needed_date = NULLIF($5, '')::date, category = $6, description = $7, total_amount = $8, payee_name = $9, bank_name = $10,
-		account_number = $11, account_name = $12, invoice_number = $13, settlement_due = NULLIF($14, '')::date, updated_at = now()
+		account_number = $11, account_name = $12, invoice_number = $13, settlement_due = NULLIF($14, '')::date, use_petty_cash = $15, updated_at = now()
 		WHERE id = $1::uuid`, id, input.Type, input.TeamID, input.RegencyID, input.NeededDate, input.Category, input.Description, total,
-		input.PayeeName, input.BankName, input.AccountNumber, input.AccountName, input.InvoiceNumber, input.SettlementDue); err != nil {
+		input.PayeeName, input.BankName, input.AccountNumber, input.AccountName, input.InvoiceNumber, input.SettlementDue, input.UsePettyCash); err != nil {
 		return Request{}, fmt.Errorf("save finance draft: %w", err)
 	}
 	orphans, err := replaceItems(ctx, tx, id, "request", input.Items)
@@ -426,6 +426,9 @@ func (s *Service) applyAction(ctx context.Context, tx pgx.Tx, r *Request, actor 
 	switch action {
 	case ActionSubmit:
 		if err := s.prepareSubmit(ctx, tx, r); err != nil {
+			return err
+		}
+		if err := checkLimits(ctx, tx, *r); err != nil {
 			return err
 		}
 		query = `UPDATE finance_requests SET status = $2, number = $3, submitted_at = now(), review_note = '', updated_at = now() WHERE id = $1::uuid`

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronDown, Eye, FilePlus2, FileUp, Landmark, Paperclip, Pencil, Wallet } from 'lucide-react';
+import { ChevronDown, Eye, FilePlus2, FileSpreadsheet, FileUp, Landmark, Paperclip, Pencil, Wallet } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { DataState } from '@/components/DataState';
@@ -11,8 +11,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import {
-  blankSheet, composeVoucher, fetchRequest, fetchVoucher, fetchVoucherCandidates, fetchVouchers, fetchVoucherSettings, financeKey, formatDate, formatDateTime, formatRupiah, kindLabels,
-  rebalance, saveVoucher, shiftDate, sheetLines, today, typeLabels, voucherFilePath, type FinanceRequest, type SheetForm,
+  blankSheet, composeVoucher, downloadExcel, fetchRequest, fetchVoucher, fetchVoucherCandidates, fetchVouchers, fetchVoucherSettings, financeKey, formatDate, formatDateTime, formatRupiah, kindLabels,
+  rebalance, saveVoucher, shiftDate, sheetLines, today, typeLabels, voucherExcelPath, voucherFilePath, type FinanceRequest, type Voucher, type SheetForm,
 } from './api';
 import { FilePreviewButton } from './FilePreviewDialog';
 import { errorMessage, ProofThumbs } from './shared';
@@ -97,6 +97,11 @@ export function VoucherPage() {
 
   const debit = form.lines.reduce((sum, line) => sum + line.debit, 0);
   const kredit = form.lines.reduce((sum, line) => sum + line.kredit, 0);
+  const excel = useMutation({
+    mutationFn: (voucher: Voucher) => downloadExcel(voucherExcelPath(voucher.id), `Voucher_${voucher.number}.xlsx`),
+    onError: (error) => toast.error(errorMessage(error)),
+  });
+
   const blocked = !form.account_id ? 'Pilih rekening.' : form.lines.some((line) => !line.is_bank && !line.description.trim()) ? 'Lengkapi Description tiap baris.'
     : debit === 0 ? 'Isi nominal baris.' : debit !== kredit ? 'Debit dan kredit belum sama.' : '';
   const missing = !form.number ? 'Isi nomor voucher.' : !form.pay_to.trim() ? 'Isi Pay To.' : blocked;
@@ -160,6 +165,7 @@ export function VoucherPage() {
           </span>
           <span className="flex gap-1">
             <FilePreviewButton path={voucherFilePath(voucher.id)} filename={`Voucher_Bundle_${voucher.number}.pdf`} variant="ghost" size="sm"><Eye />Lihat</FilePreviewButton>
+            <Button variant="ghost" size="sm" disabled={excel.isPending} onClick={() => excel.mutate(voucher)}><FileSpreadsheet />Excel</Button>
             <Button variant="ghost" size="sm" disabled={open.isPending} onClick={() => open.mutate(voucher.id)}><Pencil />Ubah</Button>
           </span>
         </div>)}

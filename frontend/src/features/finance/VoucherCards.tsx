@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Eye, FileText, ImageUp, Plus, Trash2 } from 'lucide-react';
+import { Eye, FileSpreadsheet, FileText, ImageUp, Plus, Trash2 } from 'lucide-react';
 import { useId, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { apiRequest } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
-import { fetchVoucherSettings, financeKey, formatDate, formatDateTime, voucherFilePath, type Account, type AccountKind, type DataResponse, type FinanceRequest, type VoucherSettings } from './api';
+import { downloadExcel, fetchVoucherSettings, financeKey, formatDate, formatDateTime, voucherExcelPath, voucherFilePath, type Account, type AccountKind, type DataResponse, type FinanceRequest, type VoucherSettings } from './api';
 import { FilePreviewButton } from './FilePreviewDialog';
 import { errorMessage } from './shared';
 
@@ -19,6 +19,10 @@ const settingsKey = [...financeKey, 'voucher-settings'];
 export function VoucherCard({ request }: { request: FinanceRequest }) {
   const canIssue = useCan('finance.review');
   const vouchers = request.vouchers ?? [];
+  const excel = useMutation({
+    mutationFn: ({ id, number }: { id: string; number: string }) => downloadExcel(voucherExcelPath(id), `Voucher_${number}.xlsx`),
+    onError: (error) => toast.error(errorMessage(error)),
+  });
   if (vouchers.length === 0 && !(canIssue && request.status === 'done')) return null;
 
   return <Card>
@@ -29,7 +33,10 @@ export function VoucherCard({ request }: { request: FinanceRequest }) {
           <strong className="text-sm">{voucher.number}</strong>
           <span className="block text-xs text-muted-foreground">{formatDate(voucher.date)} · dibuat {formatDateTime(voucher.created_at)}</span>
         </span>
-        <FilePreviewButton path={voucherFilePath(voucher.id)} filename={`Voucher_Bundle_${voucher.number}.pdf`} variant="ghost" size="sm"><Eye />Lihat</FilePreviewButton>
+        <span className="flex">
+          <FilePreviewButton path={voucherFilePath(voucher.id)} filename={`Voucher_Bundle_${voucher.number}.pdf`} variant="ghost" size="sm"><Eye />Lihat</FilePreviewButton>
+          <Button variant="ghost" size="sm" disabled={excel.isPending} onClick={() => excel.mutate(voucher)}><FileSpreadsheet />Excel</Button>
+        </span>
       </div>)}
       {canIssue && request.status === 'done' && <Button variant="outline" nativeButton={false} render={<Link to="/keuangan-voucher" />}>Buat voucher</Button>}
     </CardContent>

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-pdf/fpdf"
+	"github.com/xuri/excelize/v2"
 )
 
 func sampleJPEG(t *testing.T) []byte {
@@ -119,6 +120,57 @@ func TestVoucherInputRejectsWhatCannotPrint(t *testing.T) {
 	unbalanced.Lines[1].Debit = 90
 	if err := unbalanced.normalize(account); !errors.Is(err, ErrUnbalanced) {
 		t.Fatalf("unbalanced: %v", err)
+	}
+}
+
+func TestVoucherExcelFollowsThePrintedVoucher(t *testing.T) {
+	voucher := Voucher{Number: "BSK261007", Date: "2026-10-30", AccountID: "b1", PayTo: "=HYPERLINK(1)", Description: "Jasa Laporan", Lines: []VoucherLine{
+		{Description: "Bank BSI - 7185595751", Kredit: 14376839, ProjectCode: "KONKIT-BKA"},
+		{Description: "Jasa Laporan", Debit: 14640581, ProjectCode: "KONKIT-BKA"},
+		{Description: "PPh", Kredit: 263742, Note: "Jasa"},
+	}}
+	settings := VoucherSettings{CompanyName: "PT KIAN SANTANG MULIATAMA TBK", AddressLine1: "Jalan Wibawa Mukti II", Accounts: []Account{
+		{ID: "b1", Kind: AccountBank, Name: "BSI Operasional", AccountNumber: "7185595751", IsActive: true},
+		{ID: "b2", Kind: AccountBank, Name: "BRI", AccountNumber: "210801000370308", IsActive: true},
+		{ID: "b3", Kind: AccountBank, Name: "Tutup", AccountNumber: "1"},
+		{ID: "k1", Kind: AccountKas, Name: "GoPay", IsActive: true},
+	}}
+	data, err := buildVoucherExcel(voucher, settings, defaultVoucherLogo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out := os.Getenv("VOUCHER_EXCEL_SAMPLE"); out != "" {
+		if err := os.WriteFile(out, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	file, err := excelize.OpenReader(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	rows, err := file.GetRows(voucherSheet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := ""
+	for _, row := range rows {
+		text += strings.Join(row, "|") + "\n"
+	}
+	for _, want := range []string{"PAYMENT VOUCHER", "BSK261007", "30-10-2026", "[X] Bank BSI Operasional \u2014 7185595751", "[ ] Kas GoPay", "Rp14.640.581", "KONKIT-BKA", "TOTAL", "Prepared By,", "Admin/Accounting"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "Tutup") {
+		t.Fatal("inactive account printed")
+	}
+	if formula, _ := file.GetCellFormula(voucherSheet, "C16"); formula != "" {
+		t.Fatalf("formula kept: %s", formula)
+	}
+	pictures, err := file.GetPictures(voucherSheet, "A1")
+	if err != nil || len(pictures) != 1 {
+		t.Fatalf("logo pictures=%d err=%v", len(pictures), err)
 	}
 }
 

@@ -35,6 +35,10 @@ type FinanceService interface {
 	SaveVoucher(context.Context, auth.Principal, finance.Access, string, finance.VoucherInput, auth.ClientMeta) (finance.Voucher, error)
 	PreviewVoucher(context.Context, auth.Principal, finance.Access, finance.VoucherInput) ([]byte, error)
 	OpenVoucher(context.Context, auth.Principal, finance.Access, string) (finance.VoucherContent, error)
+	VoucherExcel(context.Context, auth.Principal, finance.Access, string) ([]byte, string, error)
+	Limits(context.Context, auth.Principal, finance.Access) ([]finance.RegencyLimit, error)
+	Balances(context.Context, auth.Principal, finance.Access) ([]finance.RegencyBalance, error)
+	SetLimit(context.Context, auth.Principal, finance.Access, string, finance.LimitInput, auth.ClientMeta) error
 	DeleteAttachment(context.Context, auth.Principal, finance.Access, string, string) error
 	OpenAttachment(context.Context, auth.Principal, finance.Access, string, string) (finance.AttachmentContent, error)
 	Summary(context.Context, auth.Principal, finance.Access, finance.Filter) (finance.Summary, error)
@@ -108,6 +112,12 @@ func writeFinanceError(w http.ResponseWriter, err error) {
 		status, code, message = http.StatusUnprocessableEntity, "finance_incomplete", "Lengkapi semua isian wajib, rincian, dan lampiran yang dibutuhkan"
 	case errors.Is(err, finance.ErrSettlementSoon):
 		status, code, message = http.StatusUnprocessableEntity, "finance_settlement_soon", "Batas lapor kasbon minimal 3 hari setelah tanggal dana dibutuhkan"
+	case errors.Is(err, finance.ErrRegencyRequired):
+		status, code, message = http.StatusUnprocessableEntity, "finance_regency_required", "Pilih kabupaten dulu"
+	case errors.Is(err, finance.ErrKasbonLimit):
+		status, code, message = http.StatusUnprocessableEntity, "finance_kasbon_limit", "Nominal melebihi sisa kasbon kabupaten ini"
+	case errors.Is(err, finance.ErrPettyCashLimit):
+		status, code, message = http.StatusUnprocessableEntity, "finance_petty_cash_limit", "Nominal melebihi sisa petty cash kabupaten ini"
 	case errors.Is(err, finance.ErrInvalidStatus):
 		status, code, message = http.StatusConflict, "finance_invalid_status", "Pengajuan sudah berubah. Muat ulang lalu coba lagi."
 	case errors.Is(err, finance.ErrNoHandler):
@@ -184,6 +194,22 @@ func (h *Handler) handleFinance(w http.ResponseWriter, r *http.Request, rc reque
 		h.handleFinanceRequest(w, r, rc, access, strings.Split(strings.TrimPrefix(path, "requests/"), "/"))
 	case path == "payees" || strings.HasPrefix(path, "payees/"):
 		h.financePayees(w, r, rc, access, strings.TrimPrefix(strings.TrimPrefix(path, "payees"), "/"))
+	case path == "balances" && r.Method == http.MethodGet:
+		result, err := h.deps.Finance.Balances(r.Context(), rc.principal, access)
+		writeFinanceResult(w, result, err)
+	case path == "limits" && r.Method == http.MethodGet:
+		result, err := h.deps.Finance.Limits(r.Context(), rc.principal, access)
+		writeFinanceResult(w, result, err)
+	case strings.HasPrefix(path, "limits/") && r.Method == http.MethodPut:
+		var input finance.LimitInput
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		if err := h.deps.Finance.SetLimit(r.Context(), rc.principal, access, strings.TrimPrefix(path, "limits/"), input, clientMeta(r)); err != nil {
+			writeFinanceError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	case path == "vouchers" || strings.HasPrefix(path, "vouchers/"):
 		h.financeVouchers(w, r, rc, access, strings.TrimPrefix(strings.TrimPrefix(path, "vouchers"), "/"))
 	case path == "voucher-settings":
@@ -403,6 +429,9 @@ func (h *Handler) financeVouchers(w http.ResponseWriter, r *http.Request, rc req
 		}
 		result, err := service.SaveVoucher(r.Context(), rc.principal, access, parts[0], input, clientMeta(r))
 		writeFinanceResult(w, result, err)
+	case len(parts) == 2 && parts[1] == "excel" && r.Method == http.MethodGet:
+		data, filename, err := service.VoucherExcel(r.Context(), rc.principal, access, parts[0])
+		writeFinanceExcel(w, data, err, filename)
 	case len(parts) == 2 && parts[1] == "file" && r.Method == http.MethodGet:
 		content, err := service.OpenVoucher(r.Context(), rc.principal, access, parts[0])
 		if err != nil {

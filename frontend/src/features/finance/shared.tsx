@@ -38,6 +38,7 @@ export function RequestRow({ request, queue = false }: { request: FinanceRequest
           <strong className="text-sm">{title}</strong>
           <Badge variant="outline">{typeLabels[request.type]}</Badge>
           <FinanceStatus status={request.status} />
+          {request.use_petty_cash && <Badge variant="secondary">Petty cash</Badge>}
           {overdue && <Badge className="border-transparent bg-destructive/10 text-destructive"><AlertTriangle aria-hidden="true" />Lewat batas lapor</Badge>}
         </span>
         <span className="mt-0.5 block truncate text-sm text-muted-foreground">{request.description || 'Belum ada keterangan'}</span>

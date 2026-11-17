@@ -475,6 +475,106 @@ func TestIntegrationManualVoucherHasNoRequests(t *testing.T) {
 		t.Fatalf("monitoring: %v", err)
 	}
 	content.Reader.Close()
+	data, filename, err := f.service.VoucherExcel(ctx, f.handler, handlerAccess, voucher.ID)
+	if err != nil || filename != "Voucher_"+number+".xlsx" || len(data) == 0 {
+		t.Fatalf("excel=%d name=%s err=%v", len(data), filename, err)
+	}
+	if _, _, err := f.service.VoucherExcel(ctx, f.other, handlerAccess, voucher.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("other finance exported: %v", err)
+	}
+}
+
+func TestIntegrationRegencyLimits(t *testing.T) {
+	f := integrationFixture(t)
+	ctx := context.Background()
+	meta := auth.ClientMeta{}
+	var regency string
+	if err := f.pool.QueryRow(ctx, `SELECT id::text FROM regencies WHERE id NOT IN (SELECT regency_id FROM finance_limits) ORDER BY name LIMIT 1`).Scan(&regency); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.pool.Exec(ctx, `INSERT INTO finance_team_regencies (team_id, regency_id) VALUES ($1::uuid, $2::uuid)`, f.teamID, regency); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = f.pool.Exec(context.Background(), `DELETE FROM finance_limits WHERE regency_id = $1::uuid`, regency)
+	})
+	due := time.Now().In(jakarta).AddDate(0, 0, minSettlementDays).Format(dateLayout)
+	today := time.Now().In(jakarta).Format(dateLayout)
+	submit := func(input DraftInput) (string, error) {
+		id := uuid.NewString()
+		if _, err := f.service.SaveDraft(ctx, f.leader, leaderAccess, id, input); err != nil {
+			t.Fatal(err)
+		}
+		_, err := f.service.Act(ctx, f.leader, leaderAccess, id, ActionSubmit, "", meta)
+		return id, err
+	}
+	kasbon := f.kasbon(today, due) // Rp250.000
+	if _, err := submit(kasbon); !errors.Is(err, ErrRegencyRequired) {
+		t.Fatalf("no regency: %v", err)
+	}
+	kasbon.RegencyID = regency
+	first, err := submit(kasbon) // No limit set: kasbon stays open.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.Act(ctx, f.leader, leaderAccess, first, ActionCancel, "", meta); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.SetLimit(ctx, f.leader, leaderAccess, regency, LimitInput{KasbonLimit: 1}, meta); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("leader set a limit: %v", err)
+	}
+	if err := f.service.SetLimit(ctx, f.other, handlerAccess, regency, LimitInput{KasbonLimit: 1}, meta); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("other finance set a limit: %v", err)
+	}
+	if err := f.service.SetLimit(ctx, f.handler, handlerAccess, regency, LimitInput{KasbonLimit: 400000, PettyCashLimit: 1000000}, meta); err != nil {
+		t.Fatal(err)
+	}
+	second, err := submit(kasbon)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := submit(kasbon); !errors.Is(err, ErrKasbonLimit) {
+		t.Fatalf("second kasbon: %v", err)
+	}
+	balances, err := f.service.Balances(ctx, f.leader, leaderAccess)
+	if err != nil || len(balances) != 1 || balances[0].KasbonAvailable != 150000 || balances[0].PettyCashAvailable != 1000000 || !balances[0].KasbonLimited {
+		t.Fatalf("balances=%+v err=%v", balances, err)
+	}
+	if _, err := f.service.Limits(ctx, f.leader, leaderAccess); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("leader read limits: %v", err)
+	}
+	// A rejected kasbon gives its amount back.
+	if _, err := f.service.Act(ctx, f.handler, handlerAccess, second, ActionReject, "kurang jelas", meta); err != nil {
+		t.Fatal(err)
+	}
+
+	petty := f.cashless(today) // Rp1.000.000
+	petty.RegencyID, petty.UsePettyCash = regency, true
+	held, err := submit(petty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	limits, err := f.service.Limits(ctx, f.handler, handlerAccess)
+	if err != nil || len(limits) != 1 || limits[0].PettyCashUsed != 1000000 || limits[0].PettyCashAvailable != 0 || limits[0].KasbonUsed != 0 {
+		t.Fatalf("limits=%+v err=%v", limits, err)
+	}
+	if _, err := submit(petty); !errors.Is(err, ErrPettyCashLimit) {
+		t.Fatalf("petty cash spent twice: %v", err)
+	}
+	// Paying the request refills the balance.
+	if _, err := f.service.Act(ctx, f.handler, handlerAccess, held, ActionApprove, "", meta); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.AddAttachment(ctx, f.handler, handlerAccess, held, KindPayment, "", "bukti.png", bytes.NewReader(pngBytes)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.Act(ctx, f.handler, handlerAccess, held, ActionPay, "", meta); err != nil {
+		t.Fatal(err)
+	}
+	balances, err = f.service.Balances(ctx, f.leader, leaderAccess)
+	if err != nil || balances[0].PettyCashAvailable != 1000000 {
+		t.Fatalf("after paying=%+v err=%v", balances, err)
+	}
 }
 
 func TestIntegrationPayees(t *testing.T) {
