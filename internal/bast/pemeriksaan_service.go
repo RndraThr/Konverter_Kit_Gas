@@ -20,7 +20,7 @@ const pemeriksaanFolder = "10. BA PEMERIKSAAN"
 
 type pemeriksaanRepository interface {
 	GetDP3Context(context.Context, string, auth.RegencyScope) (DP3Context, error)
-	ListClosingKabupatenRows(context.Context, string, auth.RegencyScope) ([]ClosingKabupatenRow, error)
+	ListPlannedPackageRows(context.Context, string, auth.RegencyScope) ([]ClosingKabupatenRow, int, error)
 	ListActiveLogos(context.Context, string) ([]LogoSnapshot, error)
 	GetScheduleSettings(context.Context, string, auth.RegencyScope) (ScheduleSettings, error)
 	GetPemeriksaanProfile(context.Context, string) (PemeriksaanProfile, error)
@@ -306,16 +306,10 @@ func (s *PemeriksaanService) snapshots(ctx context.Context, scheduleID, document
 	return snapshots, ctxData, nil
 }
 
+// closingRows memberi jumlah paket rencana pembagian: BA Pemeriksaan dibuat
+// di awal, sebelum distribusi berjalan, jadi tidak menunggu distribusi selesai.
 func (s *PemeriksaanService) closingRows(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]ClosingKabupatenRow, int, error) {
-	rows, err := s.repository.ListClosingKabupatenRows(ctx, scheduleID, scope)
-	if err != nil {
-		return nil, 0, err
-	}
-	total := 0
-	for _, row := range rows {
-		total += row.Count
-	}
-	return rows, total, nil
+	return s.repository.ListPlannedPackageRows(ctx, scheduleID, scope)
 }
 
 // wet menentukan tanda tangan basah BA Pemeriksaan satu tanggal. Kode isi

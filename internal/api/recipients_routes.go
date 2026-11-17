@@ -40,7 +40,9 @@ func (h *Handler) handleRecipients(w http.ResponseWriter, r *http.Request, rc re
 		}
 		writeData(w, http.StatusOK, page)
 	case http.MethodPost:
-		if !h.authorize(w, r, rc.principal, "recipients.manage") {
+		// POS Dokumen adds a recipient missing from DCP3 while distributing,
+		// so the NIK search can link them to the slot right away.
+		if !h.authorizeAny(w, r, rc.principal, "recipients.manage", "distribution.pos_dokumen") {
 			return
 		}
 		var input recipients.CreateInput

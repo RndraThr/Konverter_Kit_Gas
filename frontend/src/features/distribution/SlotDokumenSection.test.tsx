@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
 import { apiRequest } from '../../lib/api';
@@ -411,4 +411,27 @@ test('equipment not chosen yet starts at the template defaults (Shark, ERGAS, Fi
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/slots/7/equipment?schedule_id=schedule-1', expect.objectContaining({
     body: expect.stringContaining('"hose_option_code":"figo"'),
   })));
+});
+
+test('adds a recipient missing from DCP3 and selects it for the slot', async () => {
+  const created = { ...candidate, allocation_id: 'allocation-new', full_name: 'BARU SEKALI', nik: '7306014101909999', schedule_id: 'schedule-1' };
+  vi.mocked(apiRequest).mockImplementation((path, init) => {
+    if (path.includes('candidate-suggestions')) return Promise.resolve({ data: [] });
+    if (path === '/api/v1/recipients' && init?.method === 'POST') return Promise.resolve({ data: created });
+    return Promise.reject(new Error(`Unexpected request: ${path}`));
+  });
+  renderSection(openSlot);
+
+  fireEvent.change(screen.getByLabelText('NIK Penerima'), { target: { value: '7306014101909999' } });
+  expect(await screen.findByText('Penerima dengan awalan NIK tersebut tidak ditemukan.')).toBeVisible();
+  await userEvent.click(screen.getByRole('button', { name: 'Tambah penerima baru' }));
+  const dialog = await screen.findByRole('dialog');
+  expect(within(dialog).getByDisplayValue('7306014101909999')).toBeVisible();
+  fireEvent.change(within(dialog).getByRole('textbox', { name: /Nama lengkap/ }), { target: { value: 'baru sekali' } });
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Simpan' }));
+
+  await waitFor(() => expect(dialog).not.toBeInTheDocument());
+  expect(apiRequest).toHaveBeenCalledWith('/api/v1/recipients', expect.objectContaining({ method: 'POST', body: expect.stringContaining('"schedule_id":"schedule-1"') }));
+  expect(screen.getByDisplayValue('BARU SEKALI')).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Hubungkan ke Nomor Bagi Ini' })).toBeVisible();
 });

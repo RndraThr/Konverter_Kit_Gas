@@ -118,7 +118,7 @@ export function PemeriksaanPanel({ scheduleID, programID, regencyName, programTy
       </div>
 
       <Card className="min-w-0">
-        <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle className="text-base">BA Pemeriksaan Barang</CardTitle><p className="mt-1 text-sm text-muted-foreground">{regencyName} · 1 PDF per form, disimpan ke 10. BA PEMERIKSAAN</p></div><Badge variant="outline">{totalPackages} paket</Badge></div></CardHeader>
+        <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle className="text-base">BA Pemeriksaan Barang</CardTitle><p className="mt-1 text-sm text-muted-foreground">{regencyName} · 1 PDF per form, disimpan ke 10. BA PEMERIKSAAN</p><p className="mt-1 text-xs text-muted-foreground">Dibuat sebelum distribusi. Jumlah paket mengikuti kuota pembagian jadwal (atau jumlah penerima DCP3 bila kuota kosong).</p></div><Badge variant="outline">{totalPackages} paket</Badge></div></CardHeader>
         <CardContent className="grid gap-4 pt-5">
           <div className="grid gap-3 sm:items-start sm:grid-cols-[12rem_minmax(0,1fr)]">
             <div className="grid gap-1.5">

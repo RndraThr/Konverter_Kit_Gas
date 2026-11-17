@@ -61,12 +61,15 @@ export const dcp3: GuideTopic = {
       steps: [
         { n: 1, text: <>Periksa ringkasan. <b>Valid</b> siap diimport, <b>Peringatan</b> tetap bisa diimport tetapi perlu ditinjau, <b>Konflik</b> perlu diperbaiki (mis. NIK sudah terdaftar di penerima lain).</> },
         { n: 3, text: <>Klik <ButtonSample>Import 120 data</ButtonSample> (angka sesuai jumlah baris).</>, permissions: ['dcp3.import'] },
-        { text: <>Setelah selesai, penerima muncul di <b>Data Penerima</b> dan siap dihubungkan ke nomor bagi di POS Dokumen. Ringkasan hasil memisahkan <b>peringatan</b> (tetap masuk), <b>perlu ditinjau</b>, dan <b>tidak valid</b> (belum bisa didistribusikan), disertai daftar baris dan alasannya.</> },
+        { text: <>Setelah selesai, penerima muncul di <b>Data Penerima</b> dan siap dihubungkan ke nomor bagi di POS Dokumen. Ringkasan hasil memisahkan <b>peringatan</b> (tetap masuk), <b>perlu ditinjau</b> (belum bisa didistribusikan), dan <b>tidak valid</b> (tidak dimasukkan), disertai daftar baris dan alasannya.</> },
+        { text: <>File DCP3 revisi boleh diimport lagi ke jadwal yang sama. Penerima dicocokkan dengan NIK, lalu kartu tani, lalu nama dan desa bila keduanya kosong. Penerima yang belum dibagi diperbarui sesuai file baru. Penerima yang distribusinya sudah berjalan (sudah punya nomor bagi) <b>tidak diubah</b>, sehingga progresnya tetap tersimpan. Penerima yang tidak ada di file baru tetap dibiarkan.</> },
       ],
       problems: [
         { q: 'Peringatan "Nomor kartu sektor sudah dipakai"?', a: 'Nomor kartu di file sama dengan milik penerima lain (sering berupa nomor surat kelompok). Penerima tetap masuk dan bisa didistribusikan, tetapi nomor kartunya tidak disimpan. Isi nomor kartu yang benar di Data Penerima.' },
         { q: 'Banyak baris berstatus Peringatan?', a: 'Biasanya data opsional kosong (NIK, kartu tani, HP). Lengkapi di Data Penerima atau saat POS Dokumen.' },
         { q: 'Salah memetakan kolom?', a: 'Klik Kembali ke tahap Pemetaan sebelum menekan Import.' },
+        { q: 'Baris "tidak diubah" setelah import ulang?', a: 'Distribusi penerima itu sudah berjalan, jadi data lamanya dipertahankan. Ubah datanya lewat Data Penerima bila memang perlu.' },
+        { q: 'Baris "dilewati"?', a: 'Baris tanpa nama, atau penerima yang sudah muncul di baris sebelumnya dalam file yang sama. Periksa file bila baris itu seharusnya penerima lain.' },
       ],
       doneWhen: 'Jumlah penerima di Data Penerima untuk jadwal ini sesuai jumlah baris DCP3.',
     },

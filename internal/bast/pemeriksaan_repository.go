@@ -88,3 +88,78 @@ func (r *Repository) ListAggregatesByTypePrefix(ctx context.Context, scheduleID,
 	}
 	return items, rows.Err()
 }
+
+// ListPlannedPackageRows memberi jumlah paket yang AKAN dibagikan untuk BA
+// Pemeriksaan, yang dibuat sebelum distribusi: kuota nomor bagi jadwal, atau
+// bila kuota kosong, jumlah penerima DCP3 yang masih aktif. Baris per merk
+// mesin diambil dari paket tiap penerima; bila belum ada penerima, dari mesin
+// default template paket.
+func (r *Repository) ListPlannedPackageRows(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]ClosingKabupatenRow, int, error) {
+	var quota int
+	var packageValues []byte
+	err := r.pool.QueryRow(ctx, `
+		SELECT COALESCE(ps.slot_quota, 0), COALESCE(pt.values_json, '{}'::jsonb)
+		FROM program_schedules ps LEFT JOIN package_template_versions pt ON pt.id = ps.package_template_version_id
+		WHERE ps.id=$1 AND ($2 OR ps.regency_id::text = ANY($3))`, scheduleID, scope.Unrestricted, scope.RegencyIDs).Scan(&quota, &packageValues)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, 0, ErrNotFound
+	}
+	if err != nil {
+		return nil, 0, fmt.Errorf("get planned package count: %w", err)
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT COALESCE(pa.package_snapshot_json->'selected_machine'->>'brand',''), COALESCE(pa.package_snapshot_json->'selected_machine'->>'type',''), count(*)
+		FROM package_allocations pa
+		WHERE pa.schedule_id=$1 AND pa.status NOT IN ('cancelled','replaced')
+		GROUP BY 1, 2 ORDER BY 3 DESC, 1, 2`, scheduleID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list planned packages: %w", err)
+	}
+	defer rows.Close()
+	var planned []ClosingKabupatenRow
+	allocated := 0
+	for rows.Next() {
+		var row ClosingKabupatenRow
+		if err := rows.Scan(&row.MachineBrand, &row.MachineType, &row.Count); err != nil {
+			return nil, 0, err
+		}
+		allocated += row.Count
+		planned = append(planned, row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, err
+	}
+	total := quota
+	if total <= 0 {
+		total = allocated
+	}
+	if len(planned) == 0 && total > 0 {
+		brand, typ := defaultTemplateMachine(packageValues)
+		planned = []ClosingKabupatenRow{{MachineBrand: brand, MachineType: typ, Count: total}}
+	}
+	return planned, total, nil
+}
+
+// defaultTemplateMachine adalah mesin bertanda default di template paket,
+// atau satu-satunya mesin.
+func defaultTemplateMachine(packageValues []byte) (brand, typ string) {
+	var values struct {
+		Machines []struct {
+			Brand     string `json:"brand"`
+			Type      string `json:"type"`
+			IsDefault bool   `json:"is_default"`
+		} `json:"machine_options"`
+	}
+	if json.Unmarshal(packageValues, &values) != nil {
+		return "", ""
+	}
+	for _, machine := range values.Machines {
+		if machine.IsDefault {
+			return machine.Brand, machine.Type
+		}
+	}
+	if len(values.Machines) == 1 {
+		return values.Machines[0].Brand, values.Machines[0].Type
+	}
+	return "", ""
+}

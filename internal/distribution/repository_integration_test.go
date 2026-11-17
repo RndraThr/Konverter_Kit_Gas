@@ -108,7 +108,8 @@ func TestCreateSlotSnapshotsDocumentationStage(t *testing.T) {
 	var programID string
 	must(t, pool.QueryRow(ctx, `INSERT INTO programs(code,name,program_type,fiscal_year,status) VALUES($1,'Program Test Stage','farmer',2026,'active') RETURNING id::text`, "STG-TEST-"+suffix).Scan(&programID))
 	var packageTemplateID, docTemplateID string
-	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES($1,1,'Paket Test Stage','farmer','{}'::jsonb,'published') RETURNING id::text`, "PKG-STG-"+suffix).Scan(&packageTemplateID))
+	must(t, pool.QueryRow(ctx, `INSERT INTO package_template_versions(template_code,version,name,program_type,values_json,status) VALUES($1,1,'Paket Test Stage','farmer',$2::jsonb,'published') RETURNING id::text`, "PKG-STG-"+suffix,
+		`{"machine_options":[{"code":"shark","is_default":true},{"code":"honda"}],"converter_options":[{"code":"ergas"}],"hose_options":[{"code":"a"},{"code":"b"}]}`).Scan(&packageTemplateID))
 	must(t, pool.QueryRow(ctx, `INSERT INTO documentation_template_versions(template_code,version,name,program_type,status) VALUES($1,1,'Dok Test Stage','farmer','published') RETURNING id::text`, "DOC-STG-"+suffix).Scan(&docTemplateID))
 	must(t, pool.QueryRow(ctx, `
 		INSERT INTO documentation_template_slots(template_version_id,slot_code,label,stage,is_required,min_files,max_files,input_source,require_location,require_captured_at,media_kind,sort_order)
@@ -122,6 +123,10 @@ func TestCreateSlotSnapshotsDocumentationStage(t *testing.T) {
 	must(t, err)
 	if slot.DistributionDate != nil {
 		t.Fatalf("new POS Mesin slot distribution_date=%v, want nil", slot.DistributionDate)
+	}
+	// The template default and the only converter are filled in; two hoses without a default are not.
+	if slot.MachineOptionCode != "shark" || slot.ConverterOptionCode != "ergas" || slot.HoseOptionCode != "" {
+		t.Fatalf("new slot equipment = %q %q %q", slot.MachineOptionCode, slot.ConverterOptionCode, slot.HoseOptionCode)
 	}
 
 	if len(slot.Documentation) == 0 {

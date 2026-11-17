@@ -10,7 +10,13 @@ export type ActivityType =
   | 'unloading_selang'
   | 'unloading_tabung_gas'
   | 'dokumen_pendukung'
-  | 'kegiatan';
+  | 'kegiatan'
+  | 'kunjungan_dinas'
+  | 'gudang_titik_serah'
+  | 'perakitan_mesin'
+  | 'pemeriksaan_barang'
+  | 'kegiatan_distribusi'
+  | 'closing_kabupaten';
 
 export type ActivityMedia = {
   id: string;
@@ -64,5 +70,11 @@ export const activityTypeLabels: Record<ActivityType, string> = {
   unloading_selang: 'Unloading Selang Hisap & Buang',
   unloading_tabung_gas: 'Unloading Tabung Gas',
   dokumen_pendukung: 'Dokumen Pendukung',
-  kegiatan: 'Kegiatan',
+  kegiatan: 'Kegiatan Lainnya',
+  kunjungan_dinas: 'Kunjungan Kantor Dinas',
+  gudang_titik_serah: 'Gudang Titik Serah',
+  perakitan_mesin: 'Perakitan Mesin',
+  pemeriksaan_barang: 'Pemeriksaan Barang',
+  kegiatan_distribusi: 'Kegiatan Pendistribusian',
+  closing_kabupaten: 'Closing Kabupaten',
 };
