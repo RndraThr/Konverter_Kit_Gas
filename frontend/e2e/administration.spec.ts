@@ -50,16 +50,16 @@ test('administration foundation journey', async ({ page }, testInfo) => {
 
     expect(toggleBox?.width).toBe(44);
     expect(toggleBox?.height).toBe(44);
-    expect(Math.abs((toggleBox?.x ?? 0) + 22 - ((sidebarBox?.x ?? 0) + (sidebarBox?.width ?? 0)))).toBeLessThanOrEqual(1);
-    expect(toggleBox?.y).toBeLessThan(40);
-    expect(ergasBox?.width).toBeGreaterThanOrEqual(76);
-    expect(ksmBox?.width).toBeGreaterThanOrEqual(92);
+    // The toggle sits inside the sidebar's top row, which lines up with the page header.
+    expect((toggleBox?.x ?? 0) + (toggleBox?.width ?? 0)).toBeLessThanOrEqual((sidebarBox?.x ?? 0) + (sidebarBox?.width ?? 0));
+    expect(toggleBox?.y).toBeLessThan(20);
+    expect(ergasBox?.width).toBeGreaterThanOrEqual(64);
+    expect(ksmBox?.width).toBeGreaterThanOrEqual(80);
 
     await toggle.click();
     await expect(page.getByLabel('Sidebar utama')).toHaveAttribute('data-state', 'collapsed');
     await expect(page.getByRole('button', { name: 'Maksimalkan sidebar' })).toBeVisible();
-    await expect.poll(async () => (await page.getByLabel('Sidebar utama').boundingBox())?.width).toBe(76);
-    await expect.poll(async () => (await page.getByLabel('Sidebar utama').getByAltText('Ergas').boundingBox())?.width).toBeGreaterThanOrEqual(48);
+    await expect.poll(async () => (await page.getByLabel('Sidebar utama').boundingBox())?.width).toBe(68);
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath('sidebar-minimized.png'), fullPage: true });
     await page.reload();
