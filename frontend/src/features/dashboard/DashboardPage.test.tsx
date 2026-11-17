@@ -145,7 +145,7 @@ test('combines every dashboard filter and requests statistics with the same scop
   renderPage(undefined, ['/dashboard?search=Siti&regency_id=regency-1&program_id=program-1&zone_id=zone-1&schedule_id=schedule-1&district=Sabbangparu&allocation_status=needs_review&distribution_status=draft&evidence_status=partial&page=4&page_size=50&sort=full_name&direction=asc']);
   await screen.findByText('Siti Aminah');
 
-  expect(screen.getByRole('combobox', { name: 'Kabupaten' })).toHaveTextContent('WJO - Wajo');
+  await waitFor(() => expect(screen.getByRole('combobox', { name: 'Kabupaten' })).toHaveValue('WJO - Wajo'));
   expect(screen.getByRole('combobox', { name: 'Program' })).toHaveTextContent('Program Petani 2026');
   expect(screen.getByRole('combobox', { name: 'Zona' })).toHaveTextContent('ZONA-1 - Zona 1');
   expect(screen.getByRole('combobox', { name: 'Jadwal' })).toHaveTextContent('Wajo Tahap 1');

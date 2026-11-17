@@ -8,7 +8,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { SearchableSelect } from '@/components/SearchableSelect';
 import { useCan } from '@/lib/permissions';
 import { ApiError, apiRequest } from '../../lib/api';
 import type { DataResponse, DriveStatus, Report, ScheduleResponse } from './types';
@@ -35,10 +35,7 @@ export function ReportsPage() {
     <section className={styles.filters} aria-label="Filter laporan">
       <div className="grid min-w-0 gap-2">
         <Label id="report-schedule-label">Jadwal</Label>
-        <Select value={scheduleID} onValueChange={(value) => setScheduleID(value ?? '')}>
-          <SelectTrigger className="w-full min-w-0" aria-labelledby="report-schedule-label"><SelectValue placeholder="Pilih kabupaten dan jadwal" /></SelectTrigger>
-          <SelectContent>{schedules.data?.data.map((schedule) => <SelectItem key={schedule.id} value={schedule.id}>{schedule.regency?.name} / {schedule.name}</SelectItem>)}</SelectContent>
-        </Select>
+        <SearchableSelect className="w-full min-w-0" value={scheduleID} onValueChange={setScheduleID} aria-labelledby="report-schedule-label" placeholder="Cari kabupaten atau jadwal" emptyText="Jadwal tidak ditemukan." options={(schedules.data?.data ?? []).map((schedule) => ({ value: schedule.id, label: `${schedule.regency?.name} / ${schedule.name}` }))} />
       </div>
     </section>
     {!scheduleID ? <DataState kind="empty" title="Pilih jadwal untuk melihat Laporan DP3" description="Laporan berisi penerima yang distribusinya sudah selesai di kabupaten tersebut." />
