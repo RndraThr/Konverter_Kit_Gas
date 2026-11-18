@@ -1,6 +1,6 @@
 import { Camera, CheckCircle2, CircleAlert, Clock3, ImagePlus, RefreshCw, Trash2, UploadCloud, Video, X } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
-import { type DragEvent, lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { type DragEvent, lazy, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { apiRequest } from '../../lib/api';
 import { sameTarget, uploadQueue, useUploadCompletions, useUploadJobs, type UploadJob, type UploadTarget } from '../../lib/uploadQueue';
 import { useObjectURL } from '../../lib/useObjectURL';
@@ -31,6 +31,8 @@ type Props = {
   canRetryMove?: boolean;
   onChanged: (slot: SlotSummary) => void;
   onRetryMove?: (file: MediaFile) => void;
+  /** Extra controls under the slot, e.g. adding or removing an on-demand slot. */
+  actions?: ReactNode;
 };
 
 const storageStateCopy: Record<MediaStorageState, { label: string; detail?: string }> = {
@@ -40,7 +42,7 @@ const storageStateCopy: Record<MediaStorageState, { label: string; detail?: stri
   move_failed: { label: 'Pemindahan gagal — akan dicoba kembali' },
 };
 
-export function DocumentationSlot({ slot, canManage, canRetryMove = false, onChanged, onRetryMove }: Props) {
+export function DocumentationSlot({ slot, canManage, canRetryMove = false, onChanged, onRetryMove, actions }: Props) {
   const [files, setFiles] = useState<MediaFile[]>(slot.files ?? []);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -234,6 +236,7 @@ export function DocumentationSlot({ slot, canManage, canRetryMove = false, onCha
     {uploadError && <p role="alert" className="text-sm text-destructive">{uploadError.file.name}: {uploadError.errorMessage ?? 'Foto belum dapat diunggah.'}</p>}
     {fileError && <p role="alert" className="text-sm text-destructive">{fileError}</p>}
     {moveError && <p role="alert" className="text-sm text-destructive">{moveError}</p>}
+    {actions}
     {cameraOpen && <Suspense fallback={null}><WatermarkCamera title={slot.label} programId={programId} onCapture={capturePhoto} onClose={() => setCameraOpen(false)} /></Suspense>}
     <MediaPreviewDialog items={files.map((mediaFile) => ({ id: mediaFile.id, url: mediaFile.content_url, title: mediaFile.original_filename, mediaType: mediaFile.mime_type.startsWith('video/') ? 'video' : 'image' }))} index={previewIndex} onIndexChange={setPreviewIndex} />
   </article>;

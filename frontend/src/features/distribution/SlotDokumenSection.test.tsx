@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
 import { apiRequest } from '../../lib/api';
@@ -264,7 +264,8 @@ test('saves equipment and allows document media management', async () => {
   renderSection(linked);
 
   await userEvent.click(screen.getByRole('combobox', { name: 'Merk/Tipe Mesin' }));
-  await userEvent.click(screen.getByRole('option', { name: 'SHARK SPWP' }));
+  // The popup opens a moment after the click; under a busy full run it is not there yet.
+  await userEvent.click(await screen.findByRole('option', { name: 'SHARK SPWP' }));
   fireEvent.change(screen.getByLabelText('Serial Number Mesin'), { target: { value: 'sn-001' } });
   fireEvent.click(screen.getByRole('button', { name: 'Simpan data peralatan' }));
 
@@ -434,4 +435,42 @@ test('adds a recipient missing from DCP3 and selects it for the slot', async () 
   expect(apiRequest).toHaveBeenCalledWith('/api/v1/recipients', expect.objectContaining({ method: 'POST', body: expect.stringContaining('"schedule_id":"schedule-1"') }));
   expect(screen.getByDisplayValue('BARU SEKALI')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Hubungkan ke Nomor Bagi Ini' })).toBeVisible();
+});
+
+const ktpSlot = { id: 'doc-ktp', code: 'recipient_id_card', label: 'Foto KTP dan Nomor Urut', stage: 'dokumen' as const, status: 'missing', required: true, min_files: 1, max_files: 1, media_kind: 'image' as const, input_source: 'both' as const, files: [] };
+const kuasaSlot = { ...ktpSlot, id: 'doc-kuasa', code: 'power_of_attorney', label: 'Foto Surat Kuasa dan Nomor Urut', max_files: 2 };
+
+test('adds a Surat Kuasa slot under KTP and removes it again while it is empty', async () => {
+  const linked: DistributionSlot = { ...openSlot, status: 'linked', full_name: candidate.full_name, nik: candidate.nik, documentation: [ktpSlot] };
+  const withKuasa: DistributionSlot = { ...linked, documentation: [ktpSlot, kuasaSlot] };
+  vi.mocked(apiRequest).mockImplementation((path, init) => {
+    if (path === '/api/v1/distribution/slots/7/extra-slots/power_of_attorney?schedule_id=schedule-1') return Promise.resolve({ data: init?.method === 'POST' ? withKuasa : linked });
+    return Promise.resolve({ data: [] });
+  });
+  const { onChanged } = renderSection(linked);
+
+  const ktpCard = screen.getByRole('article', { name: 'Foto KTP dan Nomor Urut' });
+  expect(within(ktpCard).getByText(/Bila penerima diwakili/)).toBeVisible();
+  await userEvent.click(within(ktpCard).getByRole('button', { name: 'Surat Kuasa' }));
+
+  const kuasaCard = await screen.findByRole('article', { name: 'Foto Surat Kuasa dan Nomor Urut' });
+  expect(within(kuasaCard).getByText('Wajib')).toBeVisible();
+  expect(within(screen.getByRole('article', { name: 'Foto KTP dan Nomor Urut' })).queryByRole('button', { name: 'Surat Kuasa' })).not.toBeInTheDocument();
+  expect(onChanged).toHaveBeenLastCalledWith(withKuasa);
+
+  await userEvent.click(within(kuasaCard).getByRole('button', { name: 'Hapus slot' }));
+  await waitFor(() => expect(screen.queryByRole('article', { name: 'Foto Surat Kuasa dan Nomor Urut' })).not.toBeInTheDocument());
+  expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/slots/7/extra-slots/power_of_attorney?schedule_id=schedule-1', { method: 'DELETE' });
+});
+
+test('keeps a Surat Kuasa slot that has a photo and hides the controls when read-only', () => {
+  const photo = { id: 'media-1', original_filename: 'kuasa.jpg', mime_type: 'image/jpeg', content_url: '/media/1', storage_state: 'final' as const };
+  const withPhoto = { ...kuasaSlot, files: [photo] } as unknown as DistributionSlot['documentation'][number];
+  const linked: DistributionSlot = { ...openSlot, status: 'linked', full_name: candidate.full_name, nik: candidate.nik, documentation: [ktpSlot, withPhoto] };
+  renderSection(linked);
+  expect(within(screen.getByRole('article', { name: 'Foto Surat Kuasa dan Nomor Urut' })).queryByRole('button', { name: 'Hapus slot' })).not.toBeInTheDocument();
+  cleanup();
+
+  renderSection({ ...linked, documentation: [ktpSlot] }, ['distribution.view']);
+  expect(screen.queryByRole('button', { name: 'Surat Kuasa' })).not.toBeInTheDocument();
 });

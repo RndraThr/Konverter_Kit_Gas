@@ -304,7 +304,41 @@ func (h *Handler) handleDistributionSlot(w http.ResponseWriter, r *http.Request,
 			return
 		}
 	}
+	if len(parts) == 3 && parts[1] == "extra-slots" && (r.Method == http.MethodPost || r.Method == http.MethodDelete) {
+		slotNumber, err := strconv.Atoi(parts[0])
+		if err != nil {
+			writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
+			return
+		}
+		h.handleDistributionExtraSlot(w, r, rc, slotNumber, parts[2])
+		return
+	}
 	writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
+}
+
+// handleDistributionExtraSlot: POST adds and DELETE removes an on-demand
+// documentation slot such as Surat Kuasa on slots/{n}/extra-slots/{code}.
+func (h *Handler) handleDistributionExtraSlot(w http.ResponseWriter, r *http.Request, rc requestContext, slotNumber int, code string) {
+	if !h.authorize(w, r, rc.principal, "distribution.pos_dokumen") {
+		return
+	}
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	input := distribution.ExtraSlotInput{ScheduleID: r.URL.Query().Get("schedule_id"), SlotNumber: slotNumber, Code: code}
+	var result distribution.DistributionSlot
+	var err error
+	if r.Method == http.MethodPost {
+		result, err = h.deps.Distribution.AddExtraSlot(r.Context(), rc.principal, input, clientMeta(r), scope)
+	} else {
+		result, err = h.deps.Distribution.RemoveExtraSlot(r.Context(), rc.principal, input, clientMeta(r), scope)
+	}
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, result)
 }
 
 func (h *Handler) handleDistributionDateUpdate(w http.ResponseWriter, r *http.Request, rc requestContext, slotNumber int) {

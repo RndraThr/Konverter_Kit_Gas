@@ -51,7 +51,41 @@ var (
 	ErrCandidateNotAvailable     = errors.New("candidate allocation can no longer receive a package")
 	ErrCandidateAlreadyAssigned  = errors.New("candidate is already assigned to another distribution number")
 	ErrReplacementSameRecipient  = errors.New("replacement recipient is the current recipient")
+	ErrExtraSlotUnknown          = errors.New("extra documentation slot is not available for this distribution")
+	ErrExtraSlotHasMedia         = errors.New("extra documentation slot still has media")
 )
+
+// ExtraSlot is a documentation slot the field team adds to a single
+// distribution only when it applies, next to the template slot it belongs
+// with (AnchorCode). Once added it is required like any template slot, and
+// it can be removed again while it holds no media.
+type ExtraSlot struct {
+	Code       string
+	AnchorCode string
+	Label      string
+	MaxFiles   int
+}
+
+// ExtraSlots lists the slots that can be added on demand.
+var ExtraSlots = []ExtraSlot{
+	// A recipient who sends a representative brings a signed power of attorney.
+	{Code: "power_of_attorney", AnchorCode: "recipient_id_card", Label: "Foto Surat Kuasa dan Nomor Urut", MaxFiles: 2},
+}
+
+func findExtraSlot(code string) (ExtraSlot, bool) {
+	for _, slot := range ExtraSlots {
+		if slot.Code == code {
+			return slot, true
+		}
+	}
+	return ExtraSlot{}, false
+}
+
+type ExtraSlotInput struct {
+	ScheduleID string
+	SlotNumber int
+	Code       string
+}
 
 // Candidate lookup states returned by LookupCandidate. They exist so POS Dokumen can explain an
 // empty search instead of guessing: "not_registered" invites creating recipient data, every other

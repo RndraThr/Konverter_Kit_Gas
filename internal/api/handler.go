@@ -106,6 +106,8 @@ type DistributionService interface {
 	SearchSlot(context.Context, string, string, auth.RegencyScope) (distribution.DistributionSlot, error)
 	CompleteSlot(context.Context, auth.Principal, distribution.CompleteSlotInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
 	SetDistributionDate(context.Context, auth.Principal, distribution.SetDistributionDateInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
+	AddExtraSlot(context.Context, auth.Principal, distribution.ExtraSlotInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
+	RemoveExtraSlot(context.Context, auth.Principal, distribution.ExtraSlotInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
 	UpdateEquipment(context.Context, auth.Principal, distribution.UpdateEquipmentInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
 	UpdateEquipmentSerials(context.Context, auth.Principal, distribution.UpdateEquipmentSerialsInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)
 	UpdateRecipient(context.Context, auth.Principal, distribution.UpdateRecipientInput, auth.ClientMeta, auth.RegencyScope) (distribution.DistributionSlot, error)

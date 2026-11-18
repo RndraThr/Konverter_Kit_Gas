@@ -1,5 +1,5 @@
 import { type FormEvent, type KeyboardEvent, lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import { FileText, Pencil, ScanBarcode, UserPlus } from 'lucide-react';
+import { FileText, Pencil, Plus, ScanBarcode, Trash2, UserPlus } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiRequest, ApiError } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
@@ -56,6 +56,13 @@ const hasErrors = (errors: RecipientErrors) => Object.keys(errors).length > 0;
 const BarcodeScanner = lazy(() => import('./BarcodeScanner'));
 
 type SerialField = 'machine_serial_number' | 'converter_serial_number';
+
+// Slots the officer adds to one distribution only when they apply, keyed by
+// the slot they belong under (mirrors distribution.ExtraSlots on the server).
+const extraSlots: Record<string, { code: string; name: string; hint: string }> = {
+  recipient_id_card: { code: 'power_of_attorney', name: 'Surat Kuasa', hint: 'Bila penerima diwakili orang lain, tambahkan slot foto surat kuasa. Setelah ditambahkan, fotonya wajib diisi.' },
+};
+const extraSlotCodes = new Set(Object.values(extraSlots).map((extra) => extra.code));
 
 type Props = {
   slot: DistributionSlot;
@@ -208,6 +215,10 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
     onSuccess: ({ data }) => { publish(data); closeReplacement(); void replacements.refetch(); },
   });
   const equipmentUpdate = useMutation({ mutationFn: () => apiRequest<DataResponse<DistributionSlot>>(`/api/v1/distribution/slots/${currentSlot.slot_number}/equipment?schedule_id=${encodeURIComponent(currentSlot.schedule_id)}`, { method: 'PATCH', body: JSON.stringify(equipment) }), onSuccess: ({ data }) => publish(data) });
+  const extraSlot = useMutation({
+    mutationFn: ({ code, remove }: { code: string; remove: boolean }) => apiRequest<DataResponse<DistributionSlot>>(`/api/v1/distribution/slots/${currentSlot.slot_number}/extra-slots/${code}?schedule_id=${encodeURIComponent(currentSlot.schedule_id)}`, { method: remove ? 'DELETE' : 'POST' }),
+    onSuccess: ({ data }) => publish(data),
+  });
   const retryMove = useMutation({
     mutationFn: (id: string) => apiRequest<DataResponse<MediaFile>>(`/api/v1/distribution/media/${id}/retry-move`, { method: 'POST' }),
     onSuccess: ({ data }) => publish({
@@ -243,6 +254,22 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
   const recipientFormErrors = recipientErrors(recipient, programType);
   const cardLabel = (type?: 'farmer' | 'fisherman') => type === 'fisherman' ? 'Nomor KUSUKA' : type === 'farmer' ? 'Nomor kartu tani' : 'Nomor kartu/KUSUKA';
   const updateDocumentation = (next: DistributionSlot['documentation'][number]) => publish({ ...currentSlot, documentation: currentSlot.documentation.map((item) => item.code === next.code ? next : item) });
+  const extraSlotError = extraSlot.isError && <p role="alert" className="text-sm text-destructive">{extraSlot.error instanceof ApiError ? extraSlot.error.message : 'Slot belum dapat diubah.'}</p>;
+  // "+ Surat Kuasa" under KTP while it is not added yet; "Hapus slot" on the added slot while it is empty.
+  const documentationActions = (item: DistributionSlot['documentation'][number]) => {
+    if (!editable) return null;
+    const extra = extraSlots[item.code];
+    if (extra && !currentSlot.documentation.some((other) => other.code === extra.code)) return <div className="space-y-2 border-t pt-3">
+      <p className="text-xs text-muted-foreground">{extra.hint}</p>
+      <Button type="button" variant="outline" size="sm" disabled={extraSlot.isPending} onClick={() => extraSlot.mutate({ code: extra.code, remove: false })}><Plus aria-hidden="true" />{extra.name}</Button>
+      {extraSlot.variables?.code === extra.code && extraSlotError}
+    </div>;
+    if (extraSlotCodes.has(item.code) && !(item.files ?? []).length) return <div className="space-y-2 border-t pt-3">
+      <Button type="button" variant="ghost" size="sm" className="text-destructive" disabled={extraSlot.isPending} onClick={() => extraSlot.mutate({ code: item.code, remove: true })}><Trash2 aria-hidden="true" />Hapus slot</Button>
+      {extraSlot.variables?.code === item.code && extraSlotError}
+    </div>;
+    return null;
+  };
 
   // Explains an empty suggestion list. Only "not_registered" invites creating recipient data;
   // every other state must steer the officer to fix the existing record instead, because a NIK that
@@ -362,7 +389,7 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
     </form></section>
 
     {(movingCount > 0 || failedCount > 0) && <div className="space-y-2">{movingCount > 0 && <div role="status" className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">{movingCount} media sedang dipindahkan ke folder final.</div>}{failedCount > 0 && <Alert variant="destructive"><AlertDescription className="space-y-2"><p>{failedCount} pemindahan media gagal. Gunakan tombol coba lagi pada media terkait.</p>{editable && failedMediaOutsideDocument.map((file) => <Button key={file.id} type="button" size="sm" variant="outline" aria-label={`Coba pindahkan lagi ${file.original_filename}`} disabled={retryMove.isPending} onClick={() => retryMove.mutate(file.id)}>Coba lagi: {file.original_filename}</Button>)}{retryMove.isError && <p>{retryMove.error instanceof ApiError ? retryMove.error.message : 'Pemindahan media belum dapat dicoba kembali.'}</p>}</AlertDescription></Alert>}</div>}
-    {documentation.length > 0 && <section aria-label="Dokumentasi" className="grid gap-4 sm:grid-cols-2">{documentation.map((item) => <DocumentationSlot key={item.code} slot={item} canManage={editable} canRetryMove={editable} onChanged={updateDocumentation} />)}</section>}
+    {documentation.length > 0 && <section aria-label="Dokumentasi" className="grid gap-4 sm:grid-cols-2">{documentation.map((item) => <DocumentationSlot key={item.code} slot={item} canManage={editable} canRetryMove={editable} onChanged={updateDocumentation} actions={documentationActions(item)} />)}</section>}
     {scanning && <Suspense fallback={null}>
       <BarcodeScanner onResult={(text) => { setEquipment((prev) => ({ ...prev, [scanning]: uppercaseBusinessText(text) })); setScanning(null); }} onClose={() => setScanning(null)} />
     </Suspense>}

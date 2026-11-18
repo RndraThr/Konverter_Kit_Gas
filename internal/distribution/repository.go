@@ -683,6 +683,110 @@ func (r *Repository) SetDistributionDate(ctx context.Context, actor auth.Princip
 	return r.getSlotByID(ctx, slotID)
 }
 
+// lockOpenSlot locks a distribution slot that is not completed yet, within the caller's regencies.
+func lockOpenSlot(ctx context.Context, tx pgx.Tx, scheduleID string, slotNumber int, scope auth.RegencyScope) (string, error) {
+	var slotID, status string
+	err := tx.QueryRow(ctx, `
+		SELECT ds.id::text, ds.status
+		FROM distribution_slots ds
+		JOIN program_schedules ps ON ps.id=ds.schedule_id
+		WHERE ds.schedule_id=$1 AND ds.slot_number=$2 AND ($3 OR ps.regency_id::text = ANY($4))
+		FOR UPDATE OF ds
+	`, scheduleID, slotNumber, scope.Unrestricted, scope.RegencyIDs).Scan(&slotID, &status)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrSlotNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("lock distribution slot: %w", err)
+	}
+	if status == "completed" {
+		return "", ErrAlreadyCompleted
+	}
+	return slotID, nil
+}
+
+// AddExtraSlot adds an on-demand documentation slot right after its anchor
+// slot, taking the anchor's capture rules. Adding one that exists is a no-op.
+func (r *Repository) AddExtraSlot(ctx context.Context, actor auth.Principal, input ExtraSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
+	extra, ok := findExtraSlot(input.Code)
+	if !ok {
+		return DistributionSlot{}, ErrExtraSlotUnknown
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return DistributionSlot{}, fmt.Errorf("begin extra slot add: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	slotID, err := lockOpenSlot(ctx, tx, input.ScheduleID, input.SlotNumber, scope)
+	if err != nil {
+		return DistributionSlot{}, err
+	}
+	tag, err := tx.Exec(ctx, `
+		INSERT INTO documentation_slots(distribution_slot_id,slot_code,label_snapshot,stage,is_required,min_files,max_files,input_source,media_kind,require_location,require_captured_at,sort_order)
+		SELECT distribution_slot_id,$3,$4,stage,true,1,$5,input_source,media_kind,require_location,require_captured_at,sort_order+1
+		FROM documentation_slots WHERE distribution_slot_id=$1 AND slot_code=$2
+		ON CONFLICT DO NOTHING
+	`, slotID, extra.AnchorCode, extra.Code, extra.Label, extra.MaxFiles)
+	if err != nil {
+		return DistributionSlot{}, fmt.Errorf("add extra slot: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		var exists bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM documentation_slots WHERE distribution_slot_id=$1 AND slot_code=$2)`, slotID, extra.Code).Scan(&exists); err != nil {
+			return DistributionSlot{}, fmt.Errorf("check extra slot: %w", err)
+		}
+		if !exists {
+			// The distribution has no anchor slot (e.g. a fisherman template without KTP).
+			return DistributionSlot{}, ErrExtraSlotUnknown
+		}
+	} else if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "distribution.extra_slot_added", ResourceType: "distribution_slot", ResourceID: slotID, Metadata: map[string]any{"slot_code": extra.Code}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+		return DistributionSlot{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return DistributionSlot{}, fmt.Errorf("commit extra slot add: %w", err)
+	}
+	return r.getSlotByID(ctx, slotID)
+}
+
+// RemoveExtraSlot removes an on-demand slot that holds no media.
+func (r *Repository) RemoveExtraSlot(ctx context.Context, actor auth.Principal, input ExtraSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
+	if _, ok := findExtraSlot(input.Code); !ok {
+		return DistributionSlot{}, ErrExtraSlotUnknown
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return DistributionSlot{}, fmt.Errorf("begin extra slot removal: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	slotID, err := lockOpenSlot(ctx, tx, input.ScheduleID, input.SlotNumber, scope)
+	if err != nil {
+		return DistributionSlot{}, err
+	}
+	var hasMedia bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS(SELECT 1 FROM media_files m JOIN documentation_slots s ON s.id=m.documentation_slot_id
+			WHERE s.distribution_slot_id=$1 AND s.slot_code=$2)
+	`, slotID, input.Code).Scan(&hasMedia); err != nil {
+		return DistributionSlot{}, fmt.Errorf("check extra slot media: %w", err)
+	}
+	if hasMedia {
+		return DistributionSlot{}, ErrExtraSlotHasMedia
+	}
+	tag, err := tx.Exec(ctx, `DELETE FROM documentation_slots WHERE distribution_slot_id=$1 AND slot_code=$2`, slotID, input.Code)
+	if err != nil {
+		return DistributionSlot{}, fmt.Errorf("remove extra slot: %w", err)
+	}
+	if tag.RowsAffected() > 0 {
+		if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "distribution.extra_slot_removed", ResourceType: "distribution_slot", ResourceID: slotID, Metadata: map[string]any{"slot_code": input.Code}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+			return DistributionSlot{}, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return DistributionSlot{}, fmt.Errorf("commit extra slot removal: %w", err)
+	}
+	return r.getSlotByID(ctx, slotID)
+}
+
 func (r *Repository) UpdateEquipment(ctx context.Context, actor auth.Principal, input UpdateEquipmentInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {

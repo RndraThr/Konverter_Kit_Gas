@@ -853,6 +853,30 @@ func TestDistributionDateUpdateUsesOneDateForTheSlotNumber(t *testing.T) {
 	}
 }
 
+func TestDistributionExtraSlotRoutes(t *testing.T) {
+	secret := []byte("01234567890123456789012345678901")
+	send := func(authService *fakeAuthService, service *fakeDistributionService, method string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, "/api/v1/distribution/slots/3/extra-slots/power_of_attorney?schedule_id=schedule-1", nil)
+		req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: validSessionToken})
+		req.Header.Set("X-CSRF-Token", auth.CSRFToken(secret, validSessionToken))
+		rec := httptest.NewRecorder()
+		NewHandler(Dependencies{Auth: authService, Distribution: service, SessionSecret: secret}).ServeHTTP(rec, req)
+		return rec
+	}
+	dokumen := &fakeAuthService{principal: auth.Principal{UserID: "user-1"}, allowedPermissions: map[string]bool{"distribution.pos_dokumen": true}}
+	service := &fakeDistributionService{}
+	if rec := send(dokumen, service, http.MethodPost); rec.Code != http.StatusOK || service.extraSlotAction != "add" || service.extraSlotInput != (distribution.ExtraSlotInput{ScheduleID: "schedule-1", SlotNumber: 3, Code: "power_of_attorney"}) {
+		t.Fatalf("add status=%d input=%+v body=%s", rec.Code, service.extraSlotInput, rec.Body.String())
+	}
+	if rec := send(dokumen, service, http.MethodDelete); rec.Code != http.StatusConflict || service.extraSlotAction != "remove" || !strings.Contains(rec.Body.String(), `"code":"extra_slot_has_media"`) {
+		t.Fatalf("remove status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	mesinOnly := &fakeAuthService{principal: auth.Principal{UserID: "user-2"}, allowedPermissions: map[string]bool{"distribution.pos_mesin": true}}
+	if rec := send(mesinOnly, &fakeDistributionService{}, http.MethodPost); rec.Code != http.StatusForbidden {
+		t.Fatalf("POS Mesin add status=%d", rec.Code)
+	}
+}
+
 func TestRetryMediaMoveRequiresPosDokumenAndForwardsScope(t *testing.T) {
 	secret := []byte("01234567890123456789012345678901")
 	service := &fakeDistributionService{retriedMedia: distribution.MediaFile{ID: "media-1", StorageState: "moving"}}
@@ -1201,6 +1225,8 @@ type fakeDistributionService struct {
 	completedSlot        distribution.DistributionSlot
 	completeErr          error
 	dateInput            distribution.SetDistributionDateInput
+	extraSlotInput       distribution.ExtraSlotInput
+	extraSlotAction      string
 	retriedMedia         distribution.MediaFile
 	retryMediaID         string
 	retryMediaErr        error
@@ -1256,6 +1282,15 @@ func (f *fakeDistributionService) CompleteSlot(_ context.Context, _ auth.Princip
 func (f *fakeDistributionService) SetDistributionDate(_ context.Context, _ auth.Principal, input distribution.SetDistributionDateInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.DistributionSlot, error) {
 	f.dateInput, f.seenRegencyScope = input, scope
 	return f.datedSlot, nil
+}
+
+func (f *fakeDistributionService) AddExtraSlot(_ context.Context, _ auth.Principal, input distribution.ExtraSlotInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.DistributionSlot, error) {
+	f.extraSlotInput, f.extraSlotAction, f.seenRegencyScope = input, "add", scope
+	return distribution.DistributionSlot{ID: "slot-1", SlotNumber: input.SlotNumber}, nil
+}
+func (f *fakeDistributionService) RemoveExtraSlot(_ context.Context, _ auth.Principal, input distribution.ExtraSlotInput, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.DistributionSlot, error) {
+	f.extraSlotInput, f.extraSlotAction, f.seenRegencyScope = input, "remove", scope
+	return distribution.DistributionSlot{}, distribution.ErrExtraSlotHasMedia
 }
 
 func (f *fakeDistributionService) RetryMediaMove(_ context.Context, _ auth.Principal, mediaID string, _ auth.ClientMeta, scope auth.RegencyScope) (distribution.MediaFile, error) {

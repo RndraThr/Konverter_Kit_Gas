@@ -100,7 +100,13 @@ type distributionDateRepository interface {
 	SetDistributionDate(ctx context.Context, actor auth.Principal, input SetDistributionDateInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
 }
 
+type extraSlotRepository interface {
+	AddExtraSlot(ctx context.Context, actor auth.Principal, input ExtraSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
+	RemoveExtraSlot(ctx context.Context, actor auth.Principal, input ExtraSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error)
+}
+
 type Service struct {
+	extraSlotRepository        extraSlotRepository
 	mediaRepository            mediaRepository
 	mediaMoveRepository        mediaMoveRepository
 	posMesinRepository         posMesinRepository
@@ -122,6 +128,7 @@ type Service struct {
 
 func NewService(repository any, dependencies ...any) *Service {
 	service := &Service{}
+	service.extraSlotRepository, _ = repository.(extraSlotRepository)
 	service.mediaRepository, _ = repository.(mediaRepository)
 	service.mediaMoveRepository, _ = repository.(mediaMoveRepository)
 	service.posMesinRepository, _ = repository.(posMesinRepository)
@@ -164,6 +171,43 @@ func (s *Service) SetDistributionDate(ctx context.Context, actor auth.Principal,
 		return DistributionSlot{}, ErrSlotNotFound
 	}
 	return s.distributionDateRepository.SetDistributionDate(ctx, actor, input, meta, scope)
+}
+
+// AddExtraSlot adds an on-demand documentation slot (see ExtraSlots) to one distribution.
+func (s *Service) AddExtraSlot(ctx context.Context, actor auth.Principal, input ExtraSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
+	if err := normalizeExtraSlotInput(&input); err != nil {
+		return DistributionSlot{}, err
+	}
+	if s.extraSlotRepository == nil {
+		return DistributionSlot{}, ErrSlotNotFound
+	}
+	return s.extraSlotRepository.AddExtraSlot(ctx, actor, input, meta, scope)
+}
+
+// RemoveExtraSlot removes an on-demand documentation slot that holds no media.
+func (s *Service) RemoveExtraSlot(ctx context.Context, actor auth.Principal, input ExtraSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
+	if err := normalizeExtraSlotInput(&input); err != nil {
+		return DistributionSlot{}, err
+	}
+	if s.extraSlotRepository == nil {
+		return DistributionSlot{}, ErrSlotNotFound
+	}
+	return s.extraSlotRepository.RemoveExtraSlot(ctx, actor, input, meta, scope)
+}
+
+func normalizeExtraSlotInput(input *ExtraSlotInput) error {
+	input.ScheduleID = strings.TrimSpace(input.ScheduleID)
+	input.Code = strings.TrimSpace(input.Code)
+	if input.ScheduleID == "" {
+		return ErrScheduleRequired
+	}
+	if input.SlotNumber < 1 {
+		return ErrSlotNumberRequired
+	}
+	if _, ok := findExtraSlot(input.Code); !ok {
+		return ErrExtraSlotUnknown
+	}
+	return nil
 }
 
 func (s *Service) CreateSlot(ctx context.Context, actor auth.Principal, input CreateSlotInput, scope auth.RegencyScope, meta auth.ClientMeta) (DistributionSlot, error) {
