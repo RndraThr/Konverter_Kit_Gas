@@ -645,6 +645,10 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "slot_not_open", "Nomor bagi ini sudah terhubung atau tidak lagi terbuka")
 	case errors.Is(err, distribution.ErrSlotNotLinked):
 		writeError(w, http.StatusConflict, "slot_not_linked", "Nomor bagi ini belum terhubung ke penerima")
+	case errors.Is(err, distribution.ErrExtraSlotUnknown):
+		writeError(w, http.StatusNotFound, "extra_slot_unknown", "Slot tambahan ini tidak tersedia untuk nomor bagi ini")
+	case errors.Is(err, distribution.ErrExtraSlotHasMedia):
+		writeError(w, http.StatusConflict, "extra_slot_has_media", "Hapus foto di slot ini terlebih dahulu")
 	case errors.Is(err, distribution.ErrAlreadyCompleted):
 		writeError(w, http.StatusConflict, "already_completed", "Distribusi untuk nomor bagi ini sudah selesai")
 	case errors.Is(err, distribution.ErrRevisionNotCompleted):

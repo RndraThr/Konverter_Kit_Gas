@@ -83,7 +83,7 @@ export const pendistribusian: GuideTopic = {
       shots: [{ id: 'ds-dokumen-peralatan', title: 'Data peralatan', legend: ['Merk/tipe mesin', 'Merk konkit/reducer', 'Merk/spesifikasi selang', 'Simpan data peralatan'] }],
       steps: [
         { n: 1, text: <>Pilih merk/tipe sesuai barang yang diserahkan (pilihan berasal dari template paket jadwal), lengkapi nomor seri bila belum, lalu <ButtonSample>Simpan data peralatan</ButtonSample>.</>, permissions: ['distribution.pos_dokumen', 'distribution.manage'] },
-        { text: <>Isi foto wajib: KTP, KK, kartu tani/surat keterangan, surat keterangan luas lahan (boleh sampai 5 foto bila suratnya lebih dari satu lembar), dan foto penerima dengan KTP. Foto bertanda <b>Wajib</b> harus lengkap sebelum POS Penyerahan terbuka.</>, permissions: ['distribution.pos_dokumen', 'distribution.manage'] },
+        { text: <>Isi foto wajib: KTP, KK, kartu tani/surat keterangan, surat keterangan luas lahan (boleh sampai 5 foto bila suratnya lebih dari satu lembar), dan foto penerima dengan KTP. Bila penerima diwakili orang lain, klik <b>+ Surat Kuasa</b> di bawah foto KTP untuk menambah slot foto surat kuasa; slot itu menjadi wajib dan bisa dihapus lagi selama belum berisi foto. Foto bertanda <b>Wajib</b> harus lengkap sebelum POS Penyerahan terbuka.</>, permissions: ['distribution.pos_dokumen', 'distribution.manage'] },
       ],
     },
     {
