@@ -18,6 +18,7 @@ import (
 	"konkit/internal/appreleases"
 	"konkit/internal/audit"
 	"konkit/internal/auth"
+	"konkit/internal/banner"
 	"konkit/internal/bast"
 	"konkit/internal/config"
 	"konkit/internal/database"
@@ -233,6 +234,7 @@ func run(ctx context.Context, cfg config.Config) error {
 		ServisBerkala:     bastServisBerkalaService,
 		GasElpiji:         bastGasElpijiService,
 		Finance:           financeService,
+		Banner:            banner.NewService(pool),
 		Notifications:     notificationService,
 		TKDN:              bastTKDNService,
 		Pemeriksaan:       bastPemeriksaanService,

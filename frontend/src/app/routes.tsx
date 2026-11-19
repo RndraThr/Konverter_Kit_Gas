@@ -23,6 +23,7 @@ import { RequestsPage } from '../features/finance/RequestsPage';
 import { RequestDetailPage } from '../features/finance/RequestDetailPage';
 import { ReviewPage } from '../features/finance/ReviewPage';
 import { LimitsPage } from '../features/finance/LimitsPage';
+import { BannerPage } from '../features/banner/BannerPage';
 import { VoucherPage } from '../features/finance/VoucherPage';
 import { MonitoringPage } from '../features/finance/MonitoringPage';
 import { TeamsPage } from '../features/finance/TeamsPage';
@@ -76,6 +77,7 @@ export const dashboardRoutes: RouteObject[] = [{
     { path: 'keuangan', element: <ProtectedPage permission="finance.request"><RequestsPage /></ProtectedPage> },
     { path: 'keuangan/:id', element: <ProtectedPage permission={['finance.request', 'finance.review', 'finance.monitor']}><RequestDetailPage /></ProtectedPage> },
     { path: 'keuangan-review', element: <ProtectedPage permission="finance.review"><ReviewPage /></ProtectedPage> },
+    { path: 'banner', element: <ProtectedPage permission="banner.view"><BannerPage /></ProtectedPage> },
     { path: 'keuangan-limit', element: <ProtectedPage permission="finance.review"><LimitsPage /></ProtectedPage> },
     { path: 'keuangan-voucher', element: <ProtectedPage permission="finance.review"><VoucherPage /></ProtectedPage> },
     { path: 'keuangan-monitoring', element: <ProtectedPage permission="finance.monitor"><MonitoringPage /></ProtectedPage> },
