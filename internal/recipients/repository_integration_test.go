@@ -638,7 +638,9 @@ func TestUpdateRejectsNIKAlreadyRegisteredToAnotherPerson(t *testing.T) {
 	}
 }
 
-func TestCreateRejectsSectorIdentifierAlreadyRegisteredToAnotherPerson(t *testing.T) {
+// Recipients without a farmer card share one letter number from the
+// agriculture office, so a sector card number may belong to several people.
+func TestCreateAllowsSectorIdentifierSharedWithAnotherPerson(t *testing.T) {
 	pool := recipientsIntegrationPool(t)
 	fixture := seedRecipientFixture(t, pool)
 	repository := NewRepository(pool)
@@ -655,15 +657,19 @@ func TestCreateRejectsSectorIdentifierAlreadyRegisteredToAnotherPerson(t *testin
 	}
 	t.Cleanup(func() { cleanupCreatedRecipient(t, pool, first.AllocationID) })
 
-	_, err = repository.Create(ctx, actor, CreateInput{
+	second, err := repository.Create(ctx, actor, CreateInput{
 		ScheduleID: fixture.scheduleID, FullName: "Second Card Owner", SectorIdentifier: "KP-SHARED-001",
 	}, meta, unrestricted)
-	if !errors.Is(err, ErrSectorIdentifierInUse) {
-		t.Fatalf("expected ErrSectorIdentifierInUse for a duplicate sector identifier on create, got %v", err)
+	if err != nil {
+		t.Fatalf("create with a shared sector identifier: %v", err)
+	}
+	t.Cleanup(func() { cleanupCreatedRecipient(t, pool, second.AllocationID) })
+	if second.SectorIdentifier != "KP-SHARED-001" {
+		t.Fatalf("second recipient sector identifier=%q", second.SectorIdentifier)
 	}
 }
 
-func TestUpdateRejectsSectorIdentifierAlreadyRegisteredToAnotherPerson(t *testing.T) {
+func TestUpdateAllowsSectorIdentifierSharedWithAnotherPerson(t *testing.T) {
 	pool := recipientsIntegrationPool(t)
 	fixture := seedRecipientFixture(t, pool)
 	repository := NewRepository(pool)
@@ -680,11 +686,14 @@ func TestUpdateRejectsSectorIdentifierAlreadyRegisteredToAnotherPerson(t *testin
 	}
 	t.Cleanup(func() { cleanupCreatedRecipient(t, pool, first.AllocationID) })
 
-	_, err = repository.Update(ctx, actor, fixture.needsReviewAllocID, UpdateInput{
+	updated, err := repository.Update(ctx, actor, fixture.needsReviewAllocID, UpdateInput{
 		FullName: "Needs Review Person", SectorIdentifier: "KP-SHARED-002",
 	}, meta, unrestricted)
-	if !errors.Is(err, ErrSectorIdentifierInUse) {
-		t.Fatalf("expected ErrSectorIdentifierInUse when updating to a sector identifier owned by another person, got %v", err)
+	if err != nil {
+		t.Fatalf("update to a shared sector identifier: %v", err)
+	}
+	if updated.SectorIdentifier != "KP-SHARED-002" {
+		t.Fatalf("updated recipient sector identifier=%q", updated.SectorIdentifier)
 	}
 }
 

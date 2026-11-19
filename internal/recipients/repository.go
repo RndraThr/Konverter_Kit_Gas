@@ -458,10 +458,7 @@ func uniqueViolationConstraint(err error) (string, bool) {
 	return "", false
 }
 
-const (
-	peopleNIKUniqueIndex                    = "people_nik_uq"
-	personSectorIdentifierCrossPersonUnique = "person_sector_identifiers_identifier_type_normalized_value_key"
-)
+const peopleNIKUniqueIndex = "people_nik_uq"
 
 func recordRecipientAudit(ctx context.Context, tx pgx.Tx, actor auth.Principal, meta auth.ClientMeta, action, resourceID string, metadata map[string]any) error {
 	return audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "recipient." + action, ResourceType: "package_allocation", ResourceID: resourceID, Metadata: metadata, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent})
@@ -514,9 +511,6 @@ func (r *Repository) Create(ctx context.Context, actor auth.Principal, input Cre
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO person_sector_identifiers(person_id,identifier_type,normalized_value,display_value) VALUES($1,$2,$3,$3)`,
 			personID, identifierType, strings.ToUpper(strings.TrimSpace(input.SectorIdentifier))); err != nil {
-			if constraint, ok := uniqueViolationConstraint(err); ok && constraint == personSectorIdentifierCrossPersonUnique {
-				return Recipient{}, ErrSectorIdentifierInUse
-			}
 			return Recipient{}, fmt.Errorf("insert sector identifier: %w", err)
 		}
 	}
@@ -595,9 +589,6 @@ func (r *Repository) Update(ctx context.Context, actor auth.Principal, allocatio
 			INSERT INTO person_sector_identifiers(person_id,identifier_type,normalized_value,display_value) VALUES($1,$2,$3,$3)
 			ON CONFLICT (person_id, identifier_type) DO UPDATE SET normalized_value = EXCLUDED.normalized_value, display_value = EXCLUDED.display_value, updated_at = now()
 		`, personID, identifierType, normalized); err != nil {
-			if constraint, ok := uniqueViolationConstraint(err); ok && constraint == personSectorIdentifierCrossPersonUnique {
-				return Recipient{}, ErrSectorIdentifierInUse
-			}
 			return Recipient{}, fmt.Errorf("upsert sector identifier: %w", err)
 		}
 	}

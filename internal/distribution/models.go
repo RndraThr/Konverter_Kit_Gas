@@ -13,7 +13,6 @@ var (
 	ErrPhoneInvalid              = errors.New("Nomor HP harus diawali 08 dan terdiri dari 10-13 digit")
 	ErrSerialInvalid             = errors.New("serial number must contain 1 to 100 characters")
 	ErrSyncCursorInvalid         = errors.New("sync cursor must be an RFC3339 timestamp")
-	ErrIdentifierConflict        = errors.New("recipient identifier is already in use")
 	ErrMediaUnavailable          = errors.New("media storage is unavailable")
 	ErrMediaNotFound             = errors.New("documentation media not found")
 	ErrMediaTypeInvalid          = errors.New("documentation file must be JPEG, PNG, WebP, MP4, WebM, or MOV")

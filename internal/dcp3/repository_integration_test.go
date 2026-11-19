@@ -75,10 +75,10 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Siti Aminah and Ani Kelompok are valid. Hasan Konflik and Budi Kelompok carry a card that
-	// already belongs to someone else: they still get their own person, without the card. The
-	// duplicated NIK needs review and adds no second allocation.
-	if result.TotalRows != 5 || result.ValidRows != 2 || result.WarningRows != 2 || result.ReviewRows != 1 || result.InvalidRows != 0 ||
+	// Hasan Konflik and Budi Kelompok carry a card that someone else also holds: a card number
+	// may be shared, so they are valid like the rest. The duplicated NIK needs review and adds
+	// no second allocation.
+	if result.TotalRows != 5 || result.ValidRows != 4 || result.WarningRows != 0 || result.ReviewRows != 1 || result.InvalidRows != 0 ||
 		result.CreatedRows != 4 || result.SkippedRows != 1 || result.UpdatedRows != 0 || result.KeptRows != 0 {
 		t.Fatalf("unexpected import result: %+v", result)
 	}
@@ -86,7 +86,7 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 	for _, problem := range result.Problems {
 		problemRows[problem.SourceRowNumber] = problem.Status
 	}
-	if len(problemRows) != 3 || problemRows[3] != RowNeedsReview || problemRows[4] != RowWarning || problemRows[6] != RowWarning {
+	if len(problemRows) != 1 || problemRows[3] != RowNeedsReview {
 		t.Fatalf("unexpected problems: %+v", result.Problems)
 	}
 	// Once imported, the same file is refused for this schedule.
@@ -127,16 +127,16 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 		t.Fatalf("review_rows=%d package_snapshots=%d", reviewRows, packageSnapshots)
 	}
 
-	var conflictingOwner string
-	if err := pool.QueryRow(ctx, `SELECT person_id::text FROM person_sector_identifiers WHERE identifier_type='farmer_card' AND normalized_value='KP99'`).Scan(&conflictingOwner); err != nil {
+	var earlierOwnerKeepsCard bool
+	if err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM person_sector_identifiers WHERE identifier_type='farmer_card' AND normalized_value='KP99' AND person_id=$1)`, conflictingPersonID).Scan(&earlierOwnerKeepsCard); err != nil {
 		t.Fatal(err)
 	}
-	if conflictingOwner != conflictingPersonID {
-		t.Fatalf("conflicting identifier owner changed: %s", conflictingOwner)
+	if !earlierOwnerKeepsCard {
+		t.Fatal("the earlier holder of KP-99 lost the card")
 	}
 
-	// Every row with a usable NIK reaches a person and a ready allocation; the shared card stays
-	// with the first farmer only.
+	// Every row with a usable NIK reaches a person and a ready allocation, and each keeps the
+	// card number from the file, shared or not.
 	var readyWithPerson int
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM package_allocations WHERE schedule_id=$1 AND status='ready' AND intended_person_id IS NOT NULL`, scheduleID).Scan(&readyWithPerson); err != nil {
 		t.Fatal(err)
@@ -159,7 +159,7 @@ func TestIntegrationCommitImportsIdentitiesAllocationsAndDocumentation(t *testin
 	if err := cardRows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	if len(cards) != 3 || cards[conflictingNIK] != "" || cards[groupNIK1] == "" || cards[groupNIK2] != "" {
+	if len(cards) != 3 || cards[conflictingNIK] != "KP-99" || cards[groupNIK1] != groupLetter || cards[groupNIK2] != groupLetter {
 		t.Fatalf("people and cards = %+v", cards)
 	}
 }

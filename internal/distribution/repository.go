@@ -501,9 +501,7 @@ func uniqueViolationConstraint(err error) (string, bool) {
 }
 
 // packageAllocationsScheduleDistributionNumberUniqueIndex is the auto-generated name of
-// package_allocations' UNIQUE (schedule_id, distribution_number) constraint. It has nothing to do
-// with a recipient's NIK or sector identifier, so a violation of it must not be reported as
-// ErrIdentifierConflict.
+// package_allocations' UNIQUE (schedule_id, distribution_number) constraint.
 const packageAllocationsScheduleDistributionNumberUniqueIndex = "package_allocations_schedule_id_distribution_number_key"
 
 func (r *Repository) CreateSlot(ctx context.Context, actor auth.Principal, input CreateSlotInput, scope auth.RegencyScope, meta auth.ClientMeta) (DistributionSlot, error) {
@@ -1145,9 +1143,6 @@ func (r *Repository) LinkSlot(ctx context.Context, actor auth.Principal, input L
 			INSERT INTO person_sector_identifiers(person_id,identifier_type,normalized_value,display_value) VALUES($1,$2,$3,$3)
 			ON CONFLICT (person_id,identifier_type) DO UPDATE SET normalized_value=EXCLUDED.normalized_value, display_value=EXCLUDED.display_value, updated_at=now()
 		`, personID, identifierType, input.SectorIdentifier); err != nil {
-			if code, ok := uniqueViolationConstraint(err); ok && code != "" {
-				return DistributionSlot{}, ErrIdentifierConflict
-			}
 			return DistributionSlot{}, fmt.Errorf("upsert sector identifier: %w", err)
 		}
 	}
@@ -1426,9 +1421,6 @@ func updateRecipientDetails(ctx context.Context, tx pgx.Tx, personID, programTyp
 		INSERT INTO person_sector_identifiers(person_id,identifier_type,normalized_value,display_value) VALUES($1,$2,$3,$3)
 		ON CONFLICT (person_id,identifier_type) DO UPDATE SET normalized_value=EXCLUDED.normalized_value,display_value=EXCLUDED.display_value,updated_at=now()
 	`, personID, identifierType, sectorIdentifier); err != nil {
-		if constraint, ok := uniqueViolationConstraint(err); ok && constraint != "" {
-			return ErrIdentifierConflict
-		}
 		return fmt.Errorf("upsert recipient sector identifier: %w", err)
 	}
 	return nil

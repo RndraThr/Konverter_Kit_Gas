@@ -122,7 +122,7 @@ type ImportResult struct {
 }
 
 // ImportProblem is a row that needs attention: it cannot be distributed yet,
-// was skipped, kept its earlier data, or lost its sector card number.
+// was skipped, or kept its earlier data.
 type ImportProblem struct {
 	SourceRowNumber int       `json:"source_row_number"`
 	FullName        string    `json:"full_name"`
