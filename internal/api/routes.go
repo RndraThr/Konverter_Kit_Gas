@@ -625,8 +625,6 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "duplicate_import", "File DCP3 ini sudah pernah diunggah pada jadwal yang sama")
 	case errors.Is(err, dcp3.ErrImportState):
 		writeError(w, http.StatusConflict, "import_state_invalid", "Batch DCP3 tidak dapat diimport pada status saat ini")
-	case errors.Is(err, distribution.ErrIdentifierConflict):
-		writeError(w, http.StatusConflict, "identifier_conflict", "NIK atau nomor kartu sudah digunakan penerima lain")
 	case errors.Is(err, distribution.ErrIdentityIncomplete):
 		writeError(w, http.StatusConflict, "identity_incomplete", "Identitas wajib penerima belum lengkap")
 	case errors.Is(err, distribution.ErrSignatureInvalid):
@@ -687,8 +685,6 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "operation_rejected", err.Error())
 	case errors.Is(err, recipients.ErrNIKInUse):
 		writeFieldError(w, http.StatusConflict, "conflict", err.Error(), map[string]string{"nik": err.Error()})
-	case errors.Is(err, recipients.ErrSectorIdentifierInUse):
-		writeFieldError(w, http.StatusConflict, "conflict", err.Error(), map[string]string{"sector_identifier": err.Error()})
 	case errors.Is(err, profile.ErrFullNameInvalid), errors.Is(err, profile.ErrUsernameInvalid), errors.Is(err, profile.ErrEmailInvalid),
 		errors.Is(err, profile.ErrCurrentPassword), errors.Is(err, profile.ErrPasswordTooShort), errors.Is(err, profile.ErrPasswordUnchanged),
 		errors.Is(err, administration.ErrInvalidInput), errors.Is(err, administration.ErrPasswordTooShort), errors.Is(err, administration.ErrRoleNotFound),

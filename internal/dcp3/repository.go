@@ -182,14 +182,9 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 				seenNIK[normalized.NIK] = struct{}{}
 			}
 		}
-		personID, cardTaken, err := r.matchOrCreatePerson(ctx, tx, scheduleID, batchID, normalized, duplicateIdentity)
+		personID, err := r.matchOrCreatePerson(ctx, tx, scheduleID, batchID, normalized, duplicateIdentity)
 		if err != nil {
 			return ImportResult{}, err
-		}
-		// The holder may sit outside the importer's regency scope, so the
-		// message does not name them.
-		if cardTaken {
-			normalized.raise(RowWarning, fmt.Sprintf("Nomor kartu sektor %s sudah dipakai penerima lain, jadi tidak disimpan untuk penerima ini", normalized.SectorIdentifierDisplay))
 		}
 		// outcome is what the row did to the schedule: created, updated,
 		// kept or skipped.
@@ -290,7 +285,7 @@ func (r *Repository) Commit(ctx context.Context, actor auth.Principal, batchID s
 		default:
 			result.SkippedRows++
 		}
-		if status == "needs_review" || cardTaken || outcome == "kept" || outcome == "skipped" {
+		if status == "needs_review" || outcome == "kept" || outcome == "skipped" {
 			result.Problems = append(result.Problems, ImportProblem{
 				SourceRowNumber: raw.SourceRowNumber, FullName: normalized.FullName, NIK: normalized.NIK,
 				Status: normalized.ValidationStatus, Messages: normalized.ValidationMessages,
@@ -353,65 +348,61 @@ func overwritePerson(ctx context.Context, tx pgx.Tx, personID string, row Normal
 	if err != nil {
 		return fmt.Errorf("overwrite person from DCP3: %w", err)
 	}
+	if row.SectorIdentifier == "" {
+		return nil
+	}
+	_, err = tx.Exec(ctx, `UPDATE person_sector_identifiers SET normalized_value=$3,display_value=$4,updated_at=now() WHERE person_id=$1 AND identifier_type=$2`,
+		personID, row.IdentifierType, row.SectorIdentifier, row.SectorIdentifierDisplay)
+	if err != nil {
+		return fmt.Errorf("overwrite sector identifier from DCP3: %w", err)
+	}
 	return nil
 }
 
-// matchOrCreatePerson finds the row's person by NIK, or by sector card when
-// the row has no NIK, and creates one when neither exists. A sector card
-// number stays unique to one person, but DCP3 files often put a shared
-// group letter number in that column. When the card already belongs to
-// someone with another NIK, the row keeps its own person (identified by
-// NIK) without the card, and cardTaken reports it.
+// matchOrCreatePerson finds the row's person by NIK and creates one when
+// nobody has it. A sector card number does not identify anyone: several
+// recipients without a farmer card share one letter number from the
+// agriculture office, so the card is stored for each of them.
 //
 // A NIK that is not 16 digits is not saved, but the row still gets a person
-// so it shows up in Data Penerima for review. A row with neither NIK nor
-// card match, or a NIK nobody has yet, matches a recipient without NIK of the
-// same name and village from an earlier import into this schedule. A revised
-// file that fills in or fixes the NIK then completes that recipient instead
-// of adding them twice.
-func (r *Repository) matchOrCreatePerson(ctx context.Context, tx pgx.Tx, scheduleID, batchID string, row NormalizedRow, duplicateIdentity bool) (personID string, cardTaken bool, err error) {
+// so it shows up in Data Penerima for review. A row without NIK, or a NIK
+// nobody has yet, matches a recipient without NIK of the same name and
+// village from an earlier import into this schedule. A revised file that
+// fills in or fixes the NIK then completes that recipient instead of adding
+// them twice.
+func (r *Repository) matchOrCreatePerson(ctx context.Context, tx pgx.Tx, scheduleID, batchID string, row NormalizedRow, duplicateIdentity bool) (string, error) {
 	if row.ValidationStatus == RowInvalid {
-		return "", false, nil
+		return "", nil
 	}
 	if len(row.NIK) != 16 {
 		row.NIK = ""
 	}
-	nikPersonID, err := personByNIK(ctx, tx, row.NIK)
+	personID, err := personByNIK(ctx, tx, row.NIK)
 	if err != nil {
-		return "", false, fmt.Errorf("find person by NIK: %w", err)
-	}
-	cardPersonID, cardPersonNIK, err := personByIdentifier(ctx, tx, row.IdentifierType, row.SectorIdentifier)
-	if err != nil {
-		return "", false, fmt.Errorf("find person by sector card: %w", err)
-	}
-	cardTaken = cardPersonID != "" && (nikPersonID != "" && nikPersonID != cardPersonID ||
-		nikPersonID == "" && row.NIK != "" && cardPersonNIK != "" && cardPersonNIK != row.NIK)
-	personID = nikPersonID
-	if personID == "" && !cardTaken {
-		personID = cardPersonID
+		return "", fmt.Errorf("find person by NIK: %w", err)
 	}
 	if personID == "" {
 		if personID, err = personInSchedule(ctx, tx, scheduleID, batchID, row); err != nil {
-			return "", false, err
+			return "", err
 		}
 	}
 	if personID == "" {
 		if err := tx.QueryRow(ctx, `INSERT INTO people(full_name,nik,address,village,district,phone_number,verification_status) VALUES($1,NULLIF($2,''),NULLIF($3,''),NULLIF($4,''),NULLIF($5,''),NULLIF($6,''),$7) RETURNING id::text`, row.FullName, row.NIK, row.Address, row.Village, row.District, row.PhoneNumber, verificationStatus(row.ValidationStatus)).Scan(&personID); err != nil {
-			return "", false, fmt.Errorf("insert person: %w", err)
+			return "", fmt.Errorf("insert person: %w", err)
 		}
 	} else if !duplicateIdentity {
 		_, err := tx.Exec(ctx, `UPDATE people SET nik=COALESCE(nik,NULLIF($2,'')),address=COALESCE(address,NULLIF($3,'')),village=COALESCE(village,NULLIF($4,'')),district=COALESCE(district,NULLIF($5,'')),phone_number=COALESCE(phone_number,NULLIF($6,'')),updated_at=now() WHERE id=$1`, personID, row.NIK, row.Address, row.Village, row.District, row.PhoneNumber)
 		if err != nil {
-			return "", false, fmt.Errorf("complete person from DCP3: %w", err)
+			return "", fmt.Errorf("complete person from DCP3: %w", err)
 		}
 	}
-	if row.SectorIdentifier != "" && cardPersonID == "" && !duplicateIdentity {
+	if row.SectorIdentifier != "" && !duplicateIdentity {
 		_, err := tx.Exec(ctx, `INSERT INTO person_sector_identifiers(person_id,identifier_type,normalized_value,display_value) VALUES($1,$2,$3,$4) ON CONFLICT (person_id,identifier_type) DO NOTHING`, personID, row.IdentifierType, row.SectorIdentifier, row.SectorIdentifierDisplay)
 		if err != nil {
-			return "", false, fmt.Errorf("insert sector identifier: %w", err)
+			return "", fmt.Errorf("insert sector identifier: %w", err)
 		}
 	}
-	return personID, cardTaken, nil
+	return personID, nil
 }
 
 // personInSchedule finds a recipient without NIK of an earlier import into
@@ -444,18 +435,6 @@ func personByNIK(ctx context.Context, tx pgx.Tx, nik string) (string, error) {
 		return "", nil
 	}
 	return id, err
-}
-
-func personByIdentifier(ctx context.Context, tx pgx.Tx, identifierType, value string) (string, string, error) {
-	if value == "" {
-		return "", "", nil
-	}
-	var id, nik string
-	err := tx.QueryRow(ctx, `SELECT p.id::text,COALESCE(p.nik,'') FROM person_sector_identifiers i JOIN people p ON p.id=i.person_id WHERE i.identifier_type=$1 AND i.normalized_value=$2`, identifierType, value).Scan(&id, &nik)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return "", "", nil
-	}
-	return id, nik, err
 }
 
 func verificationStatus(status RowStatus) string {
