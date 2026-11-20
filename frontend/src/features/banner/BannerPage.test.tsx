@@ -18,6 +18,7 @@ const overview = {
   master_service_center: { name: 'Bengkel Shark', address: 'Jl. Sawah', phone: '0811' },
   service_center: { name: 'Bengkel Shark', address: 'Jl. Sawah', phone: '0811' },
   settings: { service_center_name: '', service_center_address: '', service_center_phone: '', seremoni_name: '', plakat_name: '', plakat_place: '', plakat_date: '' },
+  style_defaults: { seremoni_name: '#232C7A', plakat_date: '#222222', plakat_name: '#232C7A', backdrop_service: '#1D1819' },
   kinds: [
     { kind: 'backdrop', label: 'Backdrop', size: '300 x 200 cm', filename: 'BANNER BACKDROP PETANI KABUPATEN BONE.pdf' },
     { kind: 'seremoni', label: 'Seremoni', size: '400 x 250 cm', filename: 'BANNER SEREMONI PETANI KABUPATEN BONE.pdf' },
@@ -69,4 +70,18 @@ test('viewers see the banners without editing', async () => {
   expect(await screen.findByDisplayValue('Bengkel Shark')).toBeDisabled();
   expect(screen.queryByRole('button', { name: 'Simpan' })).not.toBeInTheDocument();
   expect(screen.queryByLabelText('Pilih logo kabupaten')).not.toBeInTheDocument();
+});
+
+test('changes the size and color of the seremoni name', async () => {
+  renderPage();
+  await userEvent.click(await screen.findByRole('combobox', { name: 'Jadwal' }));
+  await userEvent.click(await screen.findByRole('option', { name: 'KAB. BONE / Bone 2026' }));
+  await userEvent.click(await screen.findByRole('tab', { name: 'Seremoni' }));
+  fireEvent.change(screen.getByLabelText('Ukuran Nama'), { target: { value: '120' } });
+  fireEvent.input(screen.getByLabelText('Warna Nama'), { target: { value: '#8b0000' } });
+  expect(screen.getByText('120%')).toBeVisible();
+  await userEvent.click(screen.getByRole('button', { name: 'Simpan' }));
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/banners/settings?schedule_id=schedule-1', expect.objectContaining({
+    method: 'PUT', body: expect.stringContaining('"seremoni_name":{"size_percent":120,"color":"#8B0000"}'),
+  })));
 });

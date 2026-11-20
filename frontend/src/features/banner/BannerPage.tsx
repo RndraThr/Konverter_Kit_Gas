@@ -19,25 +19,38 @@ const PdfCanvasPreview = lazy(() => import('@/features/berita-acara/PdfCanvasPre
 
 type Kind = 'backdrop' | 'pelatihan' | 'seremoni' | 'plakat';
 type ServiceCenter = { name: string; address: string; phone: string };
+type TextStyle = { size_percent?: number; color?: string };
 type Settings = {
   service_center_name: string; service_center_address: string; service_center_phone: string;
   seremoni_name: string; plakat_name: string; plakat_place: string; plakat_date: string;
+  styles?: Record<string, TextStyle>;
 };
+type TextField = Exclude<keyof Settings, 'styles'>;
 type KindInfo = { kind: Kind; label: string; size: string; filename: string };
 type Overview = {
   schedule_id: string; schedule_name: string; regency_name: string; display_name: string; short_name: string;
   supported: boolean; brand: string; has_logo: boolean; logo_updated_at?: string;
   master_service_center: ServiceCenter; service_center: ServiceCenter; settings: Settings;
   kinds: KindInfo[];
+  style_defaults?: Record<string, string>;
 };
 
 /** The fields each banner prints; Pelatihan Teknis has none besides the logo. */
-const kindFields: Record<Kind, (keyof Settings)[]> = {
+const kindFields: Record<Kind, TextField[]> = {
   backdrop: ['service_center_name', 'service_center_address', 'service_center_phone'],
   pelatihan: [],
   seremoni: ['seremoni_name'],
   plakat: ['plakat_name', 'plakat_place', 'plakat_date'],
 };
+
+/** The typed texts of each banner whose size and color can be changed. */
+const kindStyles: Record<Kind, { key: string; label: string }[]> = {
+  backdrop: [{ key: 'backdrop_service', label: 'Teks lokasi servis' }],
+  pelatihan: [],
+  seremoni: [{ key: 'seremoni_name', label: 'Nama' }],
+  plakat: [{ key: 'plakat_date', label: 'Tempat & tanggal' }, { key: 'plakat_name', label: 'Nama' }],
+};
+const sizeMin = 60, sizeMax = 140;
 
 /** The form shows the service center actually printed: the typed value, or the master data. */
 const formFrom = (o: Overview): Settings => ({
@@ -118,9 +131,14 @@ function BannerSettings({ data, info, canManage }: { data: Overview; info: KindI
   const queryClient = useQueryClient();
   const fields = kindFields[info.kind];
   const [form, setForm] = useState<Settings>(() => formFrom(data));
-  const set = (field: keyof Settings) => (event: { target: { value: string } }) => setForm((current) => ({ ...current, [field]: event.target.value }));
+  const set = (field: TextField) => (event: { target: { value: string } }) => setForm((current) => ({ ...current, [field]: event.target.value }));
+  const styled = kindStyles[info.kind];
+  const defaults = data.style_defaults ?? {};
+  const styleOf = (settings: Settings, key: string) => ({ size: settings.styles?.[key]?.size_percent || 100, color: (settings.styles?.[key]?.color || defaults[key] || '#000000').toUpperCase() });
+  const setStyle = (key: string, next: TextStyle) => setForm((current) => ({ ...current, styles: { ...current.styles, [key]: { ...current.styles?.[key], ...next } } }));
   const saved = formFrom(data);
-  const dirty = fields.some((field) => form[field] !== saved[field]);
+  const dirty = fields.some((field) => form[field] !== saved[field])
+    || styled.some(({ key }) => styleOf(form, key).size !== styleOf(saved, key).size || styleOf(form, key).color !== styleOf(saved, key).color);
   const master = data.master_service_center;
   const hasMaster = Boolean(master.name);
   const fromMaster = hasMaster && form.service_center_name === master.name && form.service_center_address === master.address && form.service_center_phone === master.phone;
@@ -128,7 +146,10 @@ function BannerSettings({ data, info, canManage }: { data: Overview; info: KindI
   const save = useMutation({
     // The other banners' text is sent as saved, so only this banner changes.
     mutationFn: () => apiRequest<{ data: Overview }>(`/api/v1/banners/settings?schedule_id=${encodeURIComponent(data.schedule_id)}`, {
-      method: 'PUT', body: JSON.stringify({ ...saved, ...Object.fromEntries(fields.map((field) => [field, form[field]])) }),
+      method: 'PUT', body: JSON.stringify({
+        ...saved, ...Object.fromEntries(fields.map((field) => [field, form[field]])),
+        styles: { ...saved.styles, ...Object.fromEntries(styled.map(({ key }) => [key, { size_percent: styleOf(form, key).size, color: styleOf(form, key).color }])) },
+      }),
     }),
     onSuccess: (response) => { queryClient.setQueryData(['banners', data.schedule_id], response); toast.success(`${info.label} tersimpan.`); },
     onError: (error) => toast.error(error instanceof ApiError ? error.message : 'Data banner belum tersimpan.'),
@@ -164,7 +185,31 @@ function BannerSettings({ data, info, canManage }: { data: Overview; info: KindI
     <CardHeader className="border-b"><CardTitle className="text-base">Isian {info.label}</CardTitle></CardHeader>
     <CardContent className="pt-4">
       <fieldset className="grid gap-4" disabled={!canManage}>{body}</fieldset>
-      {canManage && fields.length > 0 && <div className="mt-5 flex justify-end">
+      {styled.length > 0 && <fieldset className="mt-5 grid gap-4 border-t pt-4" disabled={!canManage}>
+        <legend className="sr-only">Tampilan teks</legend>
+        <p className="text-sm font-medium">Tampilan teks</p>
+        {styled.map(({ key, label }) => {
+          const style = styleOf(form, key);
+          const isDefault = style.size === 100 && style.color === (defaults[key] ?? '').toUpperCase();
+          return <div key={key} className="grid gap-2 rounded-lg border p-3">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm">{label}</span>
+              {!isDefault && canManage && <Button type="button" variant="ghost" size="sm" onClick={() => setStyle(key, { size_percent: 100, color: defaults[key] })}><RotateCcw />Bawaan</Button>}
+            </div>
+            <label className="grid grid-cols-[auto_minmax(0,1fr)_3.5rem] items-center gap-3 text-xs text-muted-foreground">
+              Ukuran
+              <input type="range" min={sizeMin} max={sizeMax} step={5} value={style.size} aria-label={`Ukuran ${label}`} className="accent-primary" onChange={(event) => setStyle(key, { size_percent: Number(event.target.value) })} />
+              <span className="text-right text-sm tabular-nums text-foreground">{style.size}%</span>
+            </label>
+            <label className="flex items-center gap-3 text-xs text-muted-foreground">
+              Warna
+              <input type="color" value={style.color} aria-label={`Warna ${label}`} className="h-8 w-12 cursor-pointer rounded border bg-transparent p-0.5" onChange={(event) => setStyle(key, { color: event.target.value.toUpperCase() })} />
+              <span className="font-mono text-sm text-foreground">{style.color}</span>
+            </label>
+          </div>;
+        })}
+      </fieldset>}
+      {canManage && (fields.length > 0 || styled.length > 0) && <div className="mt-5 flex justify-end">
         <Button disabled={!dirty || save.isPending} onClick={() => save.mutate()}><Save />{save.isPending ? 'Menyimpan...' : 'Simpan'}</Button>
       </div>}
     </CardContent>

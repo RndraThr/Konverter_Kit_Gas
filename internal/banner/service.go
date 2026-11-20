@@ -24,6 +24,7 @@ var (
 	ErrInvalidLogo  = errors.New("kabupaten logo must be a PNG or JPEG image")
 	ErrLogoTooLarge = errors.New("kabupaten logo is too large")
 	ErrInvalidDate  = errors.New("plakat date must be YYYY-MM-DD")
+	ErrInvalidStyle = errors.New("text style must have a known text, a size of 60-140% and a #RRGGBB color")
 	supportedBrands = []string{"shark", "loncin"}
 )
 
@@ -45,6 +46,23 @@ type Settings struct {
 	PlakatName           string `json:"plakat_name"`
 	PlakatPlace          string `json:"plakat_place"`
 	PlakatDate           string `json:"plakat_date"`
+	// Styles holds the size and color of the typed texts, by text. Nil on
+	// save keeps the stored styles.
+	Styles StyleMap `json:"styles"`
+}
+
+// StyleMap is Settings.Styles. Anything but a JSON object reads as nil, so
+// app 1.2.10, which sends the styles back as text, keeps them unchanged.
+type StyleMap map[string]TextStyle
+
+func (m *StyleMap) UnmarshalJSON(data []byte) error {
+	var styles map[string]TextStyle
+	if json.Unmarshal(data, &styles) != nil {
+		*m = nil
+		return nil
+	}
+	*m = styles
+	return nil
 }
 
 // Overview is what the banner page shows for one schedule.
@@ -64,6 +82,8 @@ type Overview struct {
 	ServiceCenter ServiceCenter `json:"service_center"`
 	Settings      Settings      `json:"settings"`
 	Kinds         []KindInfo    `json:"kinds"`
+	// StyleDefaults are the default colors of the styled texts.
+	StyleDefaults map[string]string `json:"style_defaults"`
 }
 
 // KindInfo describes one banner for the page.
@@ -160,18 +180,24 @@ func (s *Service) Overview(ctx context.Context, scheduleID string, scope auth.Re
 		return Overview{}, fmt.Errorf("get service center: %w", err)
 	}
 	var date *time.Time
+	var styles []byte
 	err = s.pool.QueryRow(ctx, `
 		SELECT COALESCE(service_center_name, ''), COALESCE(service_center_address, ''), COALESCE(service_center_phone, ''),
-			seremoni_name, plakat_name, plakat_place, plakat_date
+			seremoni_name, plakat_name, plakat_place, plakat_date, styles
 		FROM banner_settings WHERE schedule_id = $1`, row.id).
 		Scan(&o.Settings.ServiceCenterName, &o.Settings.ServiceCenterAddress, &o.Settings.ServiceCenterPhone,
-			&o.Settings.SeremoniName, &o.Settings.PlakatName, &o.Settings.PlakatPlace, &date)
+			&o.Settings.SeremoniName, &o.Settings.PlakatName, &o.Settings.PlakatPlace, &date, &styles)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return Overview{}, fmt.Errorf("get banner settings: %w", err)
 	}
 	if date != nil {
 		o.Settings.PlakatDate = date.Format(dateLayout)
 	}
+	o.Settings.Styles = StyleMap{}
+	if len(styles) > 0 {
+		_ = json.Unmarshal(styles, &o.Settings.Styles)
+	}
+	o.StyleDefaults = DefaultStyleColors()
 	o.ServiceCenter = ServiceCenter{
 		Name:    firstNonEmpty(o.Settings.ServiceCenterName, o.MasterCenter.Name),
 		Address: firstNonEmpty(o.Settings.ServiceCenterAddress, o.MasterCenter.Address),
@@ -207,6 +233,33 @@ func (s *Service) SaveSettings(ctx context.Context, actor auth.Principal, schedu
 		}
 		date = &parsed
 	}
+	incoming := in.Styles
+	if incoming == nil {
+		incoming = current.Settings.Styles
+	}
+	styles := map[string]TextStyle{}
+	for key, style := range incoming {
+		if _, known := defaultStyleColors[key]; !known {
+			return Overview{}, ErrInvalidStyle
+		}
+		if style.SizePercent == 100 {
+			style.SizePercent = 0
+		}
+		if style.SizePercent != 0 && (style.SizePercent < MinSizePercent || style.SizePercent > MaxSizePercent) {
+			return Overview{}, ErrInvalidStyle
+		}
+		style.Color = strings.ToUpper(strings.TrimSpace(style.Color))
+		if style.Color == defaultStyleColors[key] {
+			style.Color = ""
+		}
+		if style.Color != "" && !ValidHexColor(style.Color) {
+			return Overview{}, ErrInvalidStyle
+		}
+		if style != (TextStyle{}) {
+			styles[key] = style
+		}
+	}
+	stylesJSON, _ := json.Marshal(styles)
 	override := func(value, master string) *string {
 		value = strings.Join(strings.Fields(value), " ")
 		if value == "" || value == master {
@@ -221,13 +274,13 @@ func (s *Service) SaveSettings(ctx context.Context, actor auth.Principal, schedu
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO banner_settings (schedule_id, service_center_name, service_center_address, service_center_phone, seremoni_name, plakat_name, plakat_place, plakat_date, updated_by, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9, '')::uuid, now())
+		INSERT INTO banner_settings (schedule_id, service_center_name, service_center_address, service_center_phone, seremoni_name, plakat_name, plakat_place, plakat_date, styles, updated_by, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, '')::uuid, now())
 		ON CONFLICT (schedule_id) DO UPDATE SET service_center_name = EXCLUDED.service_center_name, service_center_address = EXCLUDED.service_center_address,
 			service_center_phone = EXCLUDED.service_center_phone, seremoni_name = EXCLUDED.seremoni_name, plakat_name = EXCLUDED.plakat_name,
-			plakat_place = EXCLUDED.plakat_place, plakat_date = EXCLUDED.plakat_date, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+			plakat_place = EXCLUDED.plakat_place, plakat_date = EXCLUDED.plakat_date, styles = EXCLUDED.styles, updated_by = EXCLUDED.updated_by, updated_at = now()`,
 		current.ScheduleID, override(in.ServiceCenterName, current.MasterCenter.Name), override(in.ServiceCenterAddress, current.MasterCenter.Address),
-		override(in.ServiceCenterPhone, current.MasterCenter.Phone), clean(in.SeremoniName), clean(in.PlakatName), clean(in.PlakatPlace), date, actor.UserID); err != nil {
+		override(in.ServiceCenterPhone, current.MasterCenter.Phone), clean(in.SeremoniName), clean(in.PlakatName), clean(in.PlakatPlace), date, stylesJSON, actor.UserID); err != nil {
 		return Overview{}, fmt.Errorf("save banner settings: %w", err)
 	}
 	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "banner.settings_saved", ResourceType: "program_schedule", ResourceID: current.ScheduleID, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
@@ -308,7 +361,7 @@ func (s *Service) Banner(ctx context.Context, scheduleID string, kind Kind, scop
 	if !o.Supported {
 		return nil, "", ErrNotSupported
 	}
-	in := Input{Kind: kind, RegencyName: o.RegencyName, ServiceCenter: o.ServiceCenter, PersonName: o.Settings.SeremoniName}
+	in := Input{Kind: kind, RegencyName: o.RegencyName, ServiceCenter: o.ServiceCenter, PersonName: o.Settings.SeremoniName, Styles: o.Settings.Styles}
 	if kind == KindPlakat {
 		in.PersonName = o.Settings.PlakatName
 		in.Place = firstNonEmpty(o.Settings.PlakatPlace, o.ShortName)
