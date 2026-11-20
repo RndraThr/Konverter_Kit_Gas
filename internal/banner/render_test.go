@@ -46,6 +46,7 @@ func TestRenderEveryKind(t *testing.T) {
 				Kind: kind, RegencyName: "KAB. BONE", Logo: logo,
 				ServiceCenter: ServiceCenter{Name: "Agus Saidi Tekhnik", Address: "Dsn. Muara, Kel. Sungai Lueng, Kec. Langsa Timur, Kota Langsa", Phone: "0852-7709-7647"},
 				PersonName:    "Dr. Ir. Hj. Andi Yuliani Paris, M.Sc", Place: "Bone", Date: time.Date(2026, 11, 29, 0, 0, 0, 0, time.UTC),
+				Styles: map[string]TextStyle{StylePlakatName: {SizePercent: 130, Color: "#8B0000"}, StyleBackdropService: {SizePercent: 80}},
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -80,6 +81,12 @@ func TestRegencyNames(t *testing.T) {
 	}
 	if got := FormatDate(time.Date(2026, 12, 6, 0, 0, 0, 0, time.UTC)); got != "6 Desember 2026" {
 		t.Errorf("date = %q", got)
+	}
+	if scale, color := resolveStyle(map[string]TextStyle{StylePlakatName: {SizePercent: 120, Color: "#8B0000"}}, StylePlakatName); scale != 1.2 || color != [3]int{0x8B, 0, 0} {
+		t.Errorf("style = %v %v", scale, color)
+	}
+	if scale, color := resolveStyle(nil, StyleSeremoniName); scale != 1 || color != [3]int{0x23, 0x2C, 0x7A} {
+		t.Errorf("default style = %v %v", scale, color)
 	}
 	if got := Filename(KindPlakat, "KAB. BONE"); got != "PLAKAT PETANI KABUPATEN BONE.pdf" {
 		t.Errorf("filename = %q", got)

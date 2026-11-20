@@ -120,6 +120,8 @@ func writeBannerError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusUnprocessableEntity, "banner_logo_invalid", "Logo harus berupa gambar PNG atau JPG")
 	case errors.Is(err, banner.ErrLogoTooLarge):
 		writeError(w, http.StatusRequestEntityTooLarge, "banner_logo_too_large", "Ukuran logo maksimal 10 MB")
+	case errors.Is(err, banner.ErrInvalidStyle):
+		writeError(w, http.StatusUnprocessableEntity, "banner_style_invalid", "Ukuran huruf 60-140% dan warna berformat #RRGGBB")
 	case errors.Is(err, banner.ErrInvalidDate):
 		writeFieldError(w, http.StatusUnprocessableEntity, "validation_failed", "Tanggal plakat tidak valid", map[string]string{"plakat_date": "Tanggal tidak valid"})
 	default:

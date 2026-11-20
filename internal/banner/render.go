@@ -60,12 +60,77 @@ var layouts = map[Kind]layout{
 	KindPlakat:    {template: "assets/plakat-petani.pdf", title: "PLAKAT PETANI", w: 1700.7874, h: 1133.8583, logo: box{962, 24, 1104, 166}},
 }
 
-// Text colors of the templates: titles #222222, names the dark blue of the
-// earlier ceremony banners.
-var (
-	inkColor  = [3]int{0x22, 0x22, 0x22}
-	nameColor = [3]int{0x23, 0x2C, 0x7A}
+// Text color of the template titles, used for the plakat's kabupaten line.
+var inkColor = [3]int{0x22, 0x22, 0x22}
+
+// TextStyle adjusts one typed text of a banner: its size as a percentage of
+// the default and its color as #RRGGBB. Zero values keep the defaults.
+type TextStyle struct {
+	SizePercent int    `json:"size_percent,omitempty"`
+	Color       string `json:"color,omitempty"`
+}
+
+// Styled texts and their default colors; sizes default to 100%.
+const (
+	StyleSeremoniName    = "seremoni_name"
+	StylePlakatDate      = "plakat_date"
+	StylePlakatName      = "plakat_name"
+	StyleBackdropService = "backdrop_service"
+	MinSizePercent       = 60
+	MaxSizePercent       = 140
 )
+
+var defaultStyleColors = map[string]string{
+	StyleSeremoniName:    "#232C7A",
+	StylePlakatDate:      "#222222",
+	StylePlakatName:      "#232C7A",
+	StyleBackdropService: "#1D1819",
+}
+
+// DefaultStyleColors lists the styled texts with their default colors.
+func DefaultStyleColors() map[string]string {
+	out := make(map[string]string, len(defaultStyleColors))
+	for key, color := range defaultStyleColors {
+		out[key] = color
+	}
+	return out
+}
+
+// resolve gives the scale and RGB color of a styled text.
+func resolveStyle(styles map[string]TextStyle, key string) (float64, [3]int) {
+	style := styles[key]
+	scale := 1.0
+	if style.SizePercent >= MinSizePercent && style.SizePercent <= MaxSizePercent {
+		scale = float64(style.SizePercent) / 100
+	}
+	color, ok := parseHexColor(style.Color)
+	if !ok {
+		color, _ = parseHexColor(defaultStyleColors[key])
+	}
+	return scale, color
+}
+
+func parseHexColor(value string) ([3]int, bool) {
+	value = strings.TrimPrefix(strings.TrimSpace(value), "#")
+	if len(value) != 6 {
+		return [3]int{}, false
+	}
+	var rgb [3]int
+	for i := range 3 {
+		var n int
+		if _, err := fmt.Sscanf(value[i*2:i*2+2], "%02x", &n); err != nil {
+			return [3]int{}, false
+		}
+		rgb[i] = n
+	}
+	return rgb, true
+}
+
+// ValidHexColor reports whether value is #RRGGBB.
+func ValidHexColor(value string) bool {
+	_, ok := parseHexColor(value)
+	return ok && strings.HasPrefix(strings.TrimSpace(value), "#")
+}
 
 // ServiceCenter is the service point printed on the backdrop.
 type ServiceCenter struct {
@@ -83,6 +148,7 @@ type Input struct {
 	PersonName    string    // seremoni and plakat
 	Place         string    // plakat, e.g. "Bone"
 	Date          time.Time // plakat
+	Styles        map[string]TextStyle
 }
 
 // Filename is the download name, e.g. "PLAKAT PETANI KABUPATEN BONE.pdf".
@@ -137,10 +203,12 @@ func drawOverlay(lay layout, in Input) ([]byte, error) {
 	}
 	switch in.Kind {
 	case KindBackdrop:
-		drawServiceCenter(pdf, in.ServiceCenter)
+		scale, color := resolveStyle(in.Styles, StyleBackdropService)
+		drawServiceCenter(pdf, in.ServiceCenter, scale, color)
 	case KindSeremoni:
 		// Between the program lines (to y 3989) and the products (from y 4482).
-		centeredFit(pdf, "MontserratX", strings.ToUpper(strings.TrimSpace(in.PersonName)), 410, 9600, lay.w/2, 4400, nameColor)
+		scale, color := resolveStyle(in.Styles, StyleSeremoniName)
+		centeredFit(pdf, "MontserratX", strings.ToUpper(strings.TrimSpace(in.PersonName)), 410*scale, 9600, lay.w/2, 4400, color)
 	case KindPlakat:
 		drawPlakat(pdf, lay, in)
 	}
@@ -203,15 +271,17 @@ func drawPlakat(pdf *fpdf.Fpdf, lay layout, in Input) {
 
 	if place, date := strings.TrimSpace(in.Place), FormatDate(in.Date); place != "" || date != "" {
 		line := strings.Trim(place+", "+date, ", ")
-		centeredFit(pdf, "MontserratB", line, 46, 1500, lay.w/2, 594, inkColor)
+		scale, color := resolveStyle(in.Styles, StylePlakatDate)
+		centeredFit(pdf, "MontserratB", line, 46*scale, 1500, lay.w/2, 594, color)
 	}
 	// Between the program line (to y 514) and the products (from y 707).
-	centeredFit(pdf, "MontserratX", strings.ToUpper(strings.TrimSpace(in.PersonName)), 58, 1500, lay.w/2, 672, nameColor)
+	scale, color := resolveStyle(in.Styles, StylePlakatName)
+	centeredFit(pdf, "MontserratX", strings.ToUpper(strings.TrimSpace(in.PersonName)), 58*scale, 1500, lay.w/2, 672, color)
 }
 
 // drawServiceCenter fills the yellow "Lokasi Servis" box of the backdrop:
 // the name, the address, and the phone at the bottom, shrunk to fit.
-func drawServiceCenter(pdf *fpdf.Fpdf, sc ServiceCenter) {
+func drawServiceCenter(pdf *fpdf.Fpdf, sc ServiceCenter, base float64, color [3]int) {
 	area := box{640, 3650, 1770, 4410}
 	name, address := strings.TrimSpace(sc.Name), strings.TrimSpace(sc.Address)
 	phone := strings.TrimSpace(sc.Phone)
@@ -220,7 +290,7 @@ func drawServiceCenter(pdf *fpdf.Fpdf, sc ServiceCenter) {
 	}
 	var nameLines, addressLines []string
 	var sName, sBody float64
-	for scale := 1.0; ; scale -= 0.05 {
+	for scale := base; ; scale -= 0.05 {
 		sName, sBody = 118*scale, 80*scale
 		pdf.SetFont("MontserratX", "", sName)
 		nameLines = wrapText(pdf, name, area.w())
@@ -231,7 +301,7 @@ func drawServiceCenter(pdf *fpdf.Fpdf, sc ServiceCenter) {
 			break
 		}
 	}
-	pdf.SetTextColor(0x1D, 0x18, 0x19)
+	pdf.SetTextColor(color[0], color[1], color[2])
 	y := area.y0 + sName*capHeight
 	pdf.SetFont("MontserratX", "", sName)
 	for _, line := range nameLines {

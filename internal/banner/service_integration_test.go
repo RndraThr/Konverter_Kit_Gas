@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand/v2"
@@ -123,6 +124,27 @@ func TestIntegrationBannerSettingsLogoAndRender(t *testing.T) {
 	if saved.Settings.ServiceCenterName != "" || saved.ServiceCenter.Phone != "0899-0000-1111" || saved.ServiceCenter.Address != "Jl. Loncin 1" ||
 		saved.Settings.SeremoniName != "ir. lamhot sinaga" || saved.Settings.PlakatDate != "2026-11-29" {
 		t.Fatalf("saved = %+v", saved)
+	}
+	// Text styles: defaults are not stored, colors are normalized, odd values refused.
+	styled, err := service.SaveSettings(ctx, auth.Principal{}, scheduleID, Settings{
+		SeremoniName: "ir. lamhot sinaga", PlakatName: "Dr. Andi", PlakatDate: "2026-11-29",
+		Styles: StyleMap{StylePlakatName: {SizePercent: 120, Color: "#8b0000"}, StyleSeremoniName: {SizePercent: 100, Color: "#232C7A"}},
+	}, scope, auth.ClientMeta{})
+	if err != nil || len(styled.Settings.Styles) != 1 || styled.Settings.Styles[StylePlakatName] != (TextStyle{SizePercent: 120, Color: "#8B0000"}) || styled.StyleDefaults[StylePlakatName] == "" {
+		t.Fatalf("styles = %+v err=%v", styled.Settings.Styles, err)
+	}
+	// App 1.2.10 sends the styles back as text: they stay as stored.
+	var legacy Settings
+	if err := json.Unmarshal([]byte(`{"plakat_name":"Dr. Andi","plakat_date":"2026-11-29","styles":"{plakat_name: {size_percent: 120}}"}`), &legacy); err != nil {
+		t.Fatal(err)
+	}
+	if kept, err := service.SaveSettings(ctx, auth.Principal{}, scheduleID, legacy, scope, auth.ClientMeta{}); err != nil || kept.Settings.Styles[StylePlakatName].SizePercent != 120 {
+		t.Fatalf("legacy save: %+v %v", kept.Settings.Styles, err)
+	}
+	for _, bad := range []StyleMap{{StylePlakatName: {SizePercent: 200}}, {StylePlakatName: {Color: "merah"}}, {"judul": {SizePercent: 110}}} {
+		if _, err := service.SaveSettings(ctx, auth.Principal{}, scheduleID, Settings{Styles: bad}, scope, auth.ClientMeta{}); !errors.Is(err, ErrInvalidStyle) {
+			t.Fatalf("style %+v: %v", bad, err)
+		}
 	}
 	if _, err := service.SaveSettings(ctx, auth.Principal{}, scheduleID, Settings{PlakatDate: "29-11-2026"}, scope, auth.ClientMeta{}); !errors.Is(err, ErrInvalidDate) {
 		t.Fatalf("bad date: %v", err)
