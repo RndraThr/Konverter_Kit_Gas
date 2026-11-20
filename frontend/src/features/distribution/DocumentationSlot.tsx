@@ -1,4 +1,4 @@
-import { Camera, CheckCircle2, CircleAlert, Clock3, ImagePlus, RefreshCw, Trash2, UploadCloud, Video, X } from 'lucide-react';
+import { Camera, CheckCircle2, CircleAlert, CircleHelp, Clock3, ImagePlus, RefreshCw, Trash2, UploadCloud, Video, X } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { type DragEvent, lazy, type ReactNode, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { apiRequest } from '../../lib/api';
@@ -7,11 +7,13 @@ import { useObjectURL } from '../../lib/useObjectURL';
 import type { DataResponse, MediaFile, MediaStorageState, SlotSummary } from './types';
 import styles from './Distribution.module.css';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { MediaPreviewDialog } from '@/components/MediaPreviewDialog';
 import { cn } from '@/lib/utils';
 import type { CapturedPhoto } from '../camera/types';
 import { shrinkGalleryImage } from '../camera/shrinkGalleryImage';
 import { useWatermarkProgram } from '../camera/WatermarkProgramContext';
+import { type SlotExample, useSlotExample } from './slotExamples';
 
 const WatermarkCamera = lazy(() => import('../camera/WatermarkCamera'));
 
@@ -49,6 +51,8 @@ export function DocumentationSlot({ slot, canManage, canRetryMove = false, onCha
   const [fileError, setFileError] = useState('');
   const [moveError, setMoveError] = useState('');
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [exampleOpen, setExampleOpen] = useState(false);
+  const example = useSlotExample(slot.code);
   const programId = useWatermarkProgram();
   const filesRef = useRef(files);
   useEffect(() => setFiles(slot.files ?? []), [slot.files]);
@@ -182,10 +186,13 @@ export function DocumentationSlot({ slot, canManage, canRetryMove = false, onCha
           ? `${files.length} ${mediaLabel}${required > 0 ? ` · min. ${required}` : ''} · maks. ${maxFiles}`
           : `${files.length} dari ${required} ${mediaLabel}${slot.required ? ' wajib' : ''}`}</p>
       </div>
-      <span className={cn('inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold', complete ? 'bg-primary/10 text-primary' : slot.required ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground')}>
-        {complete ? <CheckCircle2 className="size-4" aria-hidden="true" /> : <CircleAlert className="size-4" aria-hidden="true" />}
-        {complete ? 'Lengkap' : slot.required ? 'Belum lengkap' : 'Belum diisi'}
-      </span>
+      <div className="flex shrink-0 items-center gap-1.5">
+        <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold', complete ? 'bg-primary/10 text-primary' : slot.required ? 'bg-destructive/10 text-destructive' : 'bg-muted text-muted-foreground')}>
+          {complete ? <CheckCircle2 className="size-4" aria-hidden="true" /> : <CircleAlert className="size-4" aria-hidden="true" />}
+          {complete ? 'Lengkap' : slot.required ? 'Belum lengkap' : 'Belum diisi'}
+        </span>
+        {example && <button type="button" aria-label={`Contoh foto ${slot.label}`} title="Lihat contoh foto" className="-m-2.5 inline-flex size-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:text-primary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50" onClick={() => setExampleOpen(true)}><CircleHelp className="size-5" aria-hidden="true" /></button>}
+      </div>
     </header>
 
     {(files.length > 0 || queue.length > 0) && <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
@@ -238,8 +245,23 @@ export function DocumentationSlot({ slot, canManage, canRetryMove = false, onCha
     {moveError && <p role="alert" className="text-sm text-destructive">{moveError}</p>}
     {actions}
     {cameraOpen && <Suspense fallback={null}><WatermarkCamera title={slot.label} programId={programId} onCapture={capturePhoto} onClose={() => setCameraOpen(false)} /></Suspense>}
+    {example && <SlotExampleDialog label={slot.label} example={example} open={exampleOpen} onOpenChange={setExampleOpen} />}
     <MediaPreviewDialog items={files.map((mediaFile) => ({ id: mediaFile.id, url: mediaFile.content_url, title: mediaFile.original_filename, mediaType: mediaFile.mime_type.startsWith('video/') ? 'video' : 'image' }))} index={previewIndex} onIndexChange={setPreviewIndex} />
   </article>;
+}
+
+/** The reference photo for the slot: the angle and framing officers should copy. */
+function SlotExampleDialog({ label, example, open, onOpenChange }: { label: string; example: SlotExample; open: boolean; onOpenChange: (open: boolean) => void }) {
+  return <Dialog open={open} onOpenChange={onOpenChange}>
+    <DialogContent className="max-w-lg gap-3">
+      <DialogHeader>
+        <DialogTitle>Contoh foto</DialogTitle>
+        <DialogDescription>{label}</DialogDescription>
+      </DialogHeader>
+      <img src={example.image_url} alt={`Contoh foto ${label}`} className="max-h-[65vh] w-full rounded-lg border bg-muted object-contain" />
+      {example.caption && <p className="whitespace-pre-line text-sm">{example.caption}</p>}
+    </DialogContent>
+  </Dialog>;
 }
 
 /** Where a photo is: a small corner mark, the words are in the title and the summary below. */

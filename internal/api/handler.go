@@ -288,20 +288,22 @@ type GeoService interface {
 }
 
 type Dependencies struct {
-	Geo             GeoService
-	AppReleases     AppReleaseService
-	Auth            AuthService
-	Profile         ProfileService
-	Administration  AdministrationService
-	Settings        SettingsService
-	Health          HealthService
-	Audit           AuditService
-	Programs        ProgramSetupService
-	DCP3            DCP3Service
-	Distribution    DistributionService
-	Reports         ReportsService
-	Recipients      RecipientsService
-	DistributionMap DistributionMapService
+	Geo         GeoService
+	AppReleases AppReleaseService
+	// DocumentationExamples holds the example photo of each documentation slot code.
+	DocumentationExamples DocumentationExampleService
+	Auth                  AuthService
+	Profile               ProfileService
+	Administration        AdministrationService
+	Settings              SettingsService
+	Health                HealthService
+	Audit                 AuditService
+	Programs              ProgramSetupService
+	DCP3                  DCP3Service
+	Distribution          DistributionService
+	Reports               ReportsService
+	Recipients            RecipientsService
+	DistributionMap       DistributionMapService
 	// MapConfig is the basemap configuration served by /map/config.
 	MapConfig           distmap.ClientConfig
 	Activities          ActivitiesService
@@ -441,6 +443,10 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handlePermissions(w, r, rc)
 	case path == "system/settings":
 		h.handleSettings(w, r, rc)
+	case path == "documentation-examples":
+		h.handleDocumentationExamples(w, r, rc)
+	case strings.HasPrefix(path, "documentation-examples/"):
+		h.handleDocumentationExample(w, r, rc, strings.TrimPrefix(path, "documentation-examples/"))
 	case path == "app/releases":
 		h.handleAppReleases(w, r, rc)
 	case path == "app/releases/latest":
