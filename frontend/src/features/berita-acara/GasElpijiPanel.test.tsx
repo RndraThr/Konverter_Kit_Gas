@@ -69,7 +69,7 @@ test('a new delivery date keeps the warehouse and names but needs a fresh count'
   fireEvent.click(finalize)
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/bast/gas-elpiji/finalize', expect.objectContaining({ method: 'POST' })))
   const body = JSON.parse(vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/api/v1/bast/gas-elpiji/finalize')![1]!.body as string)
-  expect(body).toMatchObject({ document_date: '2026-12-12', cylinder_count: 80, warehouse_location: 'SPBE Bangka', remarks: '' })
+  expect(body).toMatchObject({ document_date: '2026-12-12', cylinder_count: 80, warehouse_location: 'SPBE Bangka', remarks: 'Lengkap' })
 })
 
 test('wet signature mode saves the draft, blocks finalizing without a scan, and holds the merge', async () => {
