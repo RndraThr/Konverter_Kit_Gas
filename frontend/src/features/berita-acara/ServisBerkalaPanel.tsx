@@ -23,8 +23,10 @@ type ServisDates = Pick<ScheduleSettings, 'servis_1_start' | 'servis_1_end' | 's
 
 const emptyDates: ServisDates = { servis_1_start: '', servis_1_end: '', servis_2_start: '', servis_2_end: '' };
 
-// Tanggal ISO (YYYY-MM-DD) dapat dibandingkan langsung sebagai string.
-const periodValid = (start: string, end: string) => start !== '' && end !== '' && start <= end;
+// Tanggal ISO (YYYY-MM-DD) dapat dibandingkan langsung sebagai string. Rentang
+// yang dikosongkan dihitung otomatis dari distribusi terakhir.
+const periodValid = (start: string, end: string) => (start === '' && end === '') || (start !== '' && end !== '' && start <= end);
+const longDate = (value: string) => new Date(`${value}T00:00:00`).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
 
 export function ServisBerkalaPanel({ scheduleID, regencyName, programType, defaultDate }: Props) {
   const canManage = useCan('bast.manage');
@@ -112,10 +114,13 @@ export function ServisBerkalaPanel({ scheduleID, regencyName, programType, defau
               <div className="grid gap-3 p-3">
                 <FormField label="Mulai" name={start} type="date" required value={dates[start]} disabled={!canManage} onChange={(e) => setDate(start)(e.target.value)} />
                 <FormField label="Selesai" name={end} type="date" required value={dates[end]} disabled={!canManage} onChange={(e) => setDate(end)(e.target.value)} />
+                {dates[start] === '' && dates[end] === '' && summary.data?.data.services[n - 1]?.auto
+                  ? <p className="text-xs leading-5 text-muted-foreground">Otomatis: <b className="text-foreground">{longDate(summary.data.data.services[n - 1].start)} – {longDate(summary.data.data.services[n - 1].end)}</b> ({n === 1 ? '6 bulan' : '1 tahun'} setelah distribusi terakhir). Isi tanggal untuk menggantinya.</p>
+                  : null}
               </div>
             </fieldset>
           })}
-          {!datesValid && <p className="text-xs text-muted-foreground">Isi keempat tanggal; tanggal selesai tidak boleh sebelum tanggal mulai.</p>}
+          {!datesValid && <p className="text-xs text-muted-foreground">Isi tanggal mulai dan selesai berpasangan (atau kosongkan keduanya untuk otomatis); tanggal selesai tidak boleh sebelum tanggal mulai.</p>}
           {canManage && <Button disabled={!datesValid || saveDates.isPending} onClick={() => saveDates.mutate()}><Save aria-hidden="true" />{saveDates.isPending ? 'Menyimpan...' : 'Simpan jadwal'}</Button>}
           <p className="text-xs leading-5 text-muted-foreground">Nama Pelaksana, perusahaan pelaksana, serta nama dan NIP Dinas Pertanian diambil dari Konfigurasi Berita Acara jadwal.</p>
         </CardContent>
@@ -136,7 +141,7 @@ export function ServisBerkalaPanel({ scheduleID, regencyName, programType, defau
             <WetSignatureHint scheduleID={scheduleID} document="servis-berkala" date={documentDate} open={showSignatures} onOpen={() => setShowSignatures(true)} />
 
             {status === 'no_recipients' && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">Belum ada distribusi selesai pada jadwal ini.</div>}
-            {status === 'servis_schedule_required' && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">Tanggal servis belum lengkap: dibiarkan kosong di preview. Lengkapi dan simpan jadwal servis sebelum finalisasi.</p>}
+            {status === 'servis_schedule_required' && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">Tanggal servis belum lengkap: dibiarkan kosong di preview. Isi jadwal servis, atau tunggu distribusi selesai agar tanggal dihitung otomatis.</p>}
 
             {activeDoc && <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center">
               <div><div className="flex items-center gap-2"><FileCheck2 className="size-4 text-emerald-600" /><strong className="text-sm">{activeDoc.filename}</strong></div><p className="mt-1 text-xs text-muted-foreground">Versi {activeDoc.version} · {activeDoc.page_count} halaman · {activeDoc.recipient_count} paket</p></div>

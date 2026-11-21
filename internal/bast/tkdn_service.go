@@ -72,6 +72,7 @@ func (s *TKDNService) Summary(ctx context.Context, scheduleID string, scope auth
 	if err != nil {
 		return TKDNSummary{}, err
 	}
+	total = tkdnTotal(ctxData, total)
 	profile, err := s.repository.GetTKDNProfile(ctx, ctxData.ProgramID)
 	if err != nil {
 		return TKDNSummary{}, err
@@ -252,6 +253,7 @@ func (s *TKDNService) snapshot(ctx context.Context, scheduleID, documentDate str
 	if err != nil {
 		return TKDNSnapshot{}, DP3Context{}, err
 	}
+	total = tkdnTotal(ctxData, total)
 	if total == 0 {
 		return TKDNSnapshot{}, DP3Context{}, ErrAggregateNoRecipients
 	}
@@ -267,6 +269,16 @@ func (s *TKDNService) snapshot(ctx context.Context, scheduleID, documentDate str
 		return TKDNSnapshot{}, DP3Context{}, err
 	}
 	return buildTKDNSnapshot(ctxData, settings, profile, tkdnItemsFor(profile.Rows, resolved), logos, documentDate, version, total), ctxData, nil
+}
+
+// tkdnTotal is the number of packages the TKDN BA reports: the kabupaten's
+// fixed distribution target, or the completed distributions when no target
+// is set.
+func tkdnTotal(ctxData DP3Context, completed int) int {
+	if ctxData.SlotQuota > 0 {
+		return ctxData.SlotQuota
+	}
+	return completed
 }
 
 func (s *TKDNService) closingRows(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]ClosingKabupatenRow, int, error) {

@@ -133,7 +133,8 @@ export type ZonePO = { zone_id: string; zone_name: string; rows: ZonePORow[] };
 
 export type ScheduleItems = { schedule_id: string; program_id: string; zone_name: string; machine_brand: string; items: ScheduleItemChoice[] };
 
-export type ServisPeriod = { start: string; end: string };
+/** auto: worked out from the last distribution because the schedule settings leave it empty. */
+export type ServisPeriod = { start: string; end: string; auto?: boolean };
 
 export type ServisBerkalaSummary = {
   total_packages: number;

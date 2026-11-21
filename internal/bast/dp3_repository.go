@@ -19,7 +19,10 @@ func (r *Repository) GetDP3Context(ctx context.Context, scheduleID string, scope
 		SELECT ps.id::text, ps.program_id::text, ps.regency_id::text, p.program_type, r.name,
 			r.document_code, r.province_name,
 			ps.start_date::text, p.fiscal_year, z.id::text, z.name, z.is_placeholder,
-			EXISTS(SELECT 1 FROM program_ba_logo_assets l WHERE l.program_id=p.id AND l.is_visible=true)
+			EXISTS(SELECT 1 FROM program_ba_logo_assets l WHERE l.program_id=p.id AND l.is_visible=true),
+			COALESCE(ps.slot_quota, 0),
+			COALESCE((SELECT max(COALESCE(ds.distribution_date, (ds.completed_at AT TIME ZONE 'Asia/Jakarta')::date))::text
+				FROM distribution_slots ds WHERE ds.schedule_id=ps.id AND ds.status='completed'), '')
 		FROM program_schedules ps
 		JOIN programs p ON p.id=ps.program_id
 		JOIN regencies r ON r.id=ps.regency_id
@@ -30,6 +33,7 @@ func (r *Repository) GetDP3Context(ctx context.Context, scheduleID string, scope
 		&result.ScheduleID, &result.ProgramID, &result.RegencyID, &result.ProgramType, &result.RegencyName,
 		&result.RegencyCode, &result.ProvinceName,
 		&result.StartDate, &result.FiscalYear, &zoneID, &zoneName, &placeholder, &result.HasActiveLogo,
+		&result.SlotQuota, &result.LastDistributionDate,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return DP3Context{}, ErrNotFound
