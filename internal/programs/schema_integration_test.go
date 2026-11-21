@@ -104,7 +104,7 @@ func TestKonkitPackageUsesSingleCombinedHoseComponent(t *testing.T) {
 		if component.Code == "suction_hose" || component.Code == "discharge_hose" {
 			t.Fatalf("legacy split hose component still exists: %+v", component)
 		}
-		if component.Code == "oil" && component.Label == "Oli" && component.Quantity == 2 && component.Unit == "Liter" {
+		if component.Code == "oil" && component.Label == "Oli" && component.Quantity == 2 && component.Unit == "Botol" {
 			referenceDetails++
 		}
 		if component.Code == "bracket" && component.Label == "Braket" && component.Quantity == 1 && component.Unit == "Buah" {
