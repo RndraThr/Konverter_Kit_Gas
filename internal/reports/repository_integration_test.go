@@ -111,16 +111,28 @@ func TestRepositoryReadsRecipientDetailsAndKeepsDriveState(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := SlotDetail{DistributionDate: "2026-11-05", CardNumber: "KT-01", PhoneNumber: "081234567890",
-		MachineSerial: "M-001", ConverterBrand: "ERGAS", ConverterSerial: "C-001", HoseSerial: "H-001"}
+		MachineSerial: "M-001", ConverterBrand: "ERGAS", ConverterSerial: "C-001", HoseSerial: "H-001", Source: "Pengganti"}
 	if details[slotID] != want {
 		t.Fatalf("details = %+v, want %+v", details[slotID], want)
+	}
+	// A recipient whose allocation came from a DCP3 import counts as DCP3.
+	var batchID, rowID, nominationID, allocationID string
+	mustQuery(`INSERT INTO dcp3_import_batches(schedule_id,original_filename,file_checksum,sheet_name,status) VALUES($1,'dcp3.xlsx',$2,'Sheet1','imported') RETURNING id::text`, []any{scheduleID, fmt.Sprintf("%064d", time.Now().UnixNano())}, &batchID)
+	mustQuery(`INSERT INTO dcp3_import_rows(batch_id,source_row_number,raw_data_json) VALUES($1,1,'{}') RETURNING id::text`, []any{batchID}, &rowID)
+	mustQuery(`INSERT INTO candidate_nominations(batch_id,import_row_id,person_id,program_type,source_snapshot_json,status) VALUES($1,$2,$3,'farmer','{}','ready') RETURNING id::text`, []any{batchID, rowID, personID}, &nominationID)
+	mustQuery(`INSERT INTO package_allocations(schedule_id,nomination_id,intended_person_id,actual_recipient_person_id,distribution_number,status,package_snapshot_json) VALUES($1,$2,$3,$3,3,'distributed','{}') RETURNING id::text`, []any{scheduleID, nominationID, personID}, &allocationID)
+	if _, err := pool.Exec(ctx, `UPDATE distribution_slots SET allocation_id = $2 WHERE id = $1`, slotID, allocationID); err != nil {
+		t.Fatal(err)
+	}
+	if details, err = repo.ListSlotDetails(ctx, scheduleID); err != nil || details[slotID].Source != "DCP3" {
+		t.Fatalf("DCP3 recipient source = %q err=%v", details[slotID].Source, err)
 	}
 
 	report, err := NewService(repo, bast.NewRepository(pool), &memoryStorage{}, time.UTC).Report(ctx, scheduleID, auth.RegencyScope{RegencyIDs: []string{regencyID}})
 	if err != nil || len(report.Rows) != 1 {
 		t.Fatalf("report: %+v err=%v", report, err)
 	}
-	if row := report.Rows[0]; row.FullName != "Siti Aminah" || row.DistributionNumber != 3 || row.CardNumber != "KT-01" || row.MachineSerial != "M-001" || row.DistributionDate != "2026-11-05" {
+	if row := report.Rows[0]; row.FullName != "Siti Aminah" || row.DistributionNumber != 3 || row.CardNumber != "KT-01" || row.Status != "DCP3" || row.MachineSerial != "M-001" || row.DistributionDate != "2026-11-05" {
 		t.Fatalf("report row: %+v", row)
 	}
 	if _, err := repo.GetScheduleInfo(ctx, "not-a-uuid", auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrScheduleNotFound) {

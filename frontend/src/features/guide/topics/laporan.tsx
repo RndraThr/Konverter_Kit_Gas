@@ -6,7 +6,7 @@ export const laporan: GuideTopic = {
   slug: 'laporan',
   stepId: 'laporan',
   title: 'Laporan DP3 & Map Distribusi',
-  intro: 'Laporan DP3 berisi data penerima yang distribusinya sudah selesai per kabupaten, tanpa status, dan bisa diunduh sebagai Excel atau PDF. Excel-nya juga tersimpan otomatis di folder kabupaten di Drive. Map Distribusi menampilkan setiap nomor bagi sebagai titik di peta, berwarna sesuai milestone penyaluran.',
+  intro: 'Laporan DP3 berisi data penerima yang distribusinya sudah selesai per kabupaten, dengan kolom Status yang menandai asal penerima (DCP3 atau Pengganti), dan bisa diunduh sebagai Excel atau PDF. Excel-nya juga tersimpan otomatis di folder kabupaten di Drive. Map Distribusi menampilkan setiap nomor bagi sebagai titik di peta, berwarna sesuai milestone penyaluran.',
   manage: ['distribution.manage'],
   view: ['distribution.view'],
   route: '/laporan',
@@ -25,6 +25,7 @@ export const laporan: GuideTopic = {
         { name: 'Excel di Drive', meaning: 'File Laporan DP3 di folder kabupaten. Diperbarui otomatis tiap 10 menit bila datanya berubah.' },
       ],
       problems: [
+        { q: 'Apa arti Status DCP3 dan Pengganti?', a: 'DCP3 berarti penerima berasal dari file DCP3 yang diimpor. Pengganti berarti penerima ditambah di luar DCP3, lewat Tambah penerima atau Ganti penerima.' },
         { q: 'Penerima belum muncul?', a: 'Laporan DP3 hanya memuat distribusi yang sudah selesai. Selesaikan nomor bagi di POS Penyerahan terlebih dahulu.' },
         { q: 'Muncul "Pembaruan terakhir gagal"?', a: 'Biasanya karena koneksi ke Drive terputus. Sistem mencoba lagi otomatis; pengguna dengan akses kelola distribusi bisa menekan Perbarui sekarang.' },
       ],

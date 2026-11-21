@@ -14,7 +14,7 @@ async function chooseOption(label: string | RegExp, optionName: string | RegExp)
 }
 
 const row = {
-  row_number: 1, full_name: 'Siti Aminah', nik: '7306014101900001', card_number: '6032988517402660', phone_number: '081234567890',
+  row_number: 1, full_name: 'Siti Aminah', nik: '7306014101900001', card_number: '6032988517402660', status: 'DCP3' as 'DCP3' | 'Pengganti', phone_number: '081234567890',
   address: 'Jl. Poros', village: 'Tempe', district: 'Sabbangparu', distribution_date: '2026-11-05', handover_location: 'Balai Desa Tempe',
   distribution_number: 7, machine_brand: 'SHARK', machine_type: 'SPWP', machine_power: '6.5 HP', machine_fuel_type: 'Bensin',
   machine_serial: 'M-001', converter_brand: 'ERGAS', converter_serial: 'C-001', hose_serial: 'H-001',
@@ -41,7 +41,13 @@ function renderPage(permissions = ['distribution.view', 'distribution.manage'], 
 
 afterEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); });
 
-test('lists completed recipients with their data and no statuses', async () => {
+test('marks a recipient added outside DCP3 as Pengganti', async () => {
+  renderPage(undefined, [{ ...row, status: 'Pengganti' }]);
+  await chooseOption('Jadwal', /Wajo Tahap 1/);
+  expect(within(await screen.findByRole('table')).getByText('Pengganti')).toBeVisible();
+});
+
+test('lists completed recipients with their data and where they came from', async () => {
   renderPage();
   expect(screen.getByRole('heading', { name: 'Laporan DP3' })).toBeVisible();
   await chooseOption('Jadwal', /Wajo Tahap 1/);
@@ -51,7 +57,9 @@ test('lists completed recipients with their data and no statuses', async () => {
     expect(within(table).getByText(text)).toBeVisible();
   }
   expect(within(table).getByRole('columnheader', { name: 'No. Kartu Tani' })).toBeVisible();
-  expect(within(table).queryByText(/status/i)).not.toBeInTheDocument();
+  // The only status is the recipient's source, not the distribution progress.
+  expect(within(table).getByRole('columnheader', { name: 'Status' })).toBeVisible();
+  expect(within(table).getByText('DCP3')).toBeVisible();
   expect(screen.queryByRole('combobox', { name: /Status/ })).not.toBeInTheDocument();
   expect(within(screen.getByLabelText('Ringkasan laporan')).getByText('Penerima selesai')).toBeVisible();
 });

@@ -120,7 +120,7 @@ func newFixture() (*fakeRepo, *fakeRecipients) {
 			RegencyName: "Wajo", ProvinceName: "Sulawesi Selatan", ZoneName: "Zona 1"},
 		details: map[string]SlotDetail{"slot-1": {
 			DistributionDate: "2026-11-05", CardNumber: "0012345678901234", PhoneNumber: "081234567890",
-			MachineSerial: "000123", ConverterBrand: "ERGAS", ConverterSerial: "C-001", HoseSerial: "H-001",
+			MachineSerial: "000123", ConverterBrand: "ERGAS", ConverterSerial: "C-001", HoseSerial: "H-001", Source: "DCP3",
 		}},
 	}
 	recipients := &fakeRecipients{list: []bast.DP3Recipient{{
@@ -226,7 +226,7 @@ func TestReportAndDriveStatusRespectScope(t *testing.T) {
 	}
 }
 
-func TestExportExcelHoldsRecipientDataWithoutStatus(t *testing.T) {
+func TestExportExcelHoldsRecipientDataAndSource(t *testing.T) {
 	repo, recipients := newFixture()
 	service := NewService(repo, recipients, &memoryStorage{}, time.UTC)
 	service.now = fixedNow
@@ -253,16 +253,18 @@ func TestExportExcelHoldsRecipientDataWithoutStatus(t *testing.T) {
 		t.Fatalf("unexpected update line: %q", sheetRows[3][0])
 	}
 	header := sheetRows[excelHeaderRow-1]
+	// The only status is where the recipient came from (DCP3 or Pengganti),
+	// never the distribution or documentation progress.
 	for _, title := range header {
-		if strings.Contains(title, "Status") || strings.Contains(title, "Dokumentasi") {
-			t.Fatalf("status column in laporan DP3: %q", header)
+		if strings.Contains(title, "Dokumentasi") || (strings.Contains(title, "Status") && title != "Status") {
+			t.Fatalf("progress column in laporan DP3: %q", header)
 		}
 	}
-	if header[3] != "No. Kartu Tani" || len(header) != 19 {
+	if header[3] != "No. Kartu Tani" || header[4] != "Status" || len(header) != 20 {
 		t.Fatalf("unexpected header: %q", header)
 	}
 	row := sheetRows[excelHeaderRow]
-	want := []string{"1", "Siti Aminah", "0306014101900001", "0012345678901234", "081234567890", "Jl. Poros", "Tempe", "Sabbangparu",
+	want := []string{"1", "Siti Aminah", "0306014101900001", "0012345678901234", "DCP3", "081234567890", "Jl. Poros", "Tempe", "Sabbangparu",
 		"05-11-2026", "Balai Desa Tempe", "7", "SHARK", "SPWP", "6.5 HP", "Bensin", "000123", "ERGAS", "C-001", "H-001"}
 	if !slices.Equal(row, want) {
 		t.Fatalf("row mismatch:\n got %q\nwant %q", row, want)

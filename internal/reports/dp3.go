@@ -34,7 +34,7 @@ var (
 
 // dp3Layout ikut masuk sidik isi: ubah nilainya saat isi atau lokasi file
 // Drive berubah, agar semua workbook dibangun ulang dan dipindahkan.
-const dp3Layout = "laporan-dp3-v2"
+const dp3Layout = "laporan-dp3-v3"
 
 // DriveSyncInterval is how often the server rebuilds changed workbooks.
 const DriveSyncInterval = 10 * time.Minute
@@ -61,6 +61,8 @@ type SlotDetail struct {
 	ConverterBrand   string
 	ConverterSerial  string
 	HoseSerial       string
+	// Source is "DCP3" for a recipient imported from DCP3, "Pengganti" otherwise.
+	Source string
 }
 
 // Row is one recipient of the report.
@@ -69,6 +71,7 @@ type Row struct {
 	FullName           string `json:"full_name"`
 	NIK                string `json:"nik"`
 	CardNumber         string `json:"card_number"`
+	Status             string `json:"status"`
 	PhoneNumber        string `json:"phone_number"`
 	Address            string `json:"address"`
 	Village            string `json:"village"`
@@ -374,7 +377,7 @@ func (s *Service) rows(ctx context.Context, scheduleID string) ([]Row, error) {
 	for _, recipient := range recipients {
 		detail := details[recipient.SlotID]
 		row := Row{
-			RowNumber: recipient.RowNumber, FullName: recipient.FullName, NIK: recipient.NIK, CardNumber: detail.CardNumber,
+			RowNumber: recipient.RowNumber, FullName: recipient.FullName, NIK: recipient.NIK, CardNumber: detail.CardNumber, Status: detail.Source,
 			PhoneNumber: detail.PhoneNumber, Address: recipient.Address, Village: recipient.Village, District: recipient.District,
 			DistributionDate: detail.DistributionDate, HandoverLocation: recipient.HandoverLocation,
 			MachineBrand: recipient.MachineBrand, MachineType: recipient.MachineType, MachinePower: recipient.MachinePower,

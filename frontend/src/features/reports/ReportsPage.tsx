@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { DataState } from '@/components/DataState';
 import { DataTable } from '@/components/DataTable';
 import { PageHeader } from '@/components/PageHeader';
+import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -55,14 +56,15 @@ export function ReportsPage() {
           </section>
           <DriveCard scheduleID={scheduleID} regencyName={data?.regency_name ?? ''} />
         </div>
-        {rows.length ? <DataTable label="Penerima Laporan DP3" minimumWidth={1280}>
-          <thead><tr><th>No</th><th>No. Bagi</th><th>Nama Penerima</th><th>NIK</th><th>{cardTitle}</th><th>No. HP</th><th>Desa / Kecamatan</th><th>Tanggal</th><th>Titik Serah</th><th>Mesin</th><th>No. Seri Mesin</th></tr></thead>
+        {rows.length ? <DataTable label="Penerima Laporan DP3" minimumWidth={1360}>
+          <thead><tr><th>No</th><th>No. Bagi</th><th>Nama Penerima</th><th>NIK</th><th>{cardTitle}</th><th>Status</th><th>No. HP</th><th>Desa / Kecamatan</th><th>Tanggal</th><th>Titik Serah</th><th>Mesin</th><th>No. Seri Mesin</th></tr></thead>
           <tbody>{rows.map((row) => <tr key={`${row.row_number}-${row.distribution_number}`}>
             <td className="font-semibold tabular-nums">{row.row_number}</td>
             <td className="tabular-nums text-muted-foreground">{row.distribution_number || '-'}</td>
             <td><strong>{row.full_name}</strong>{row.address && <small className="subline">{row.address}</small>}</td>
             <td className="font-mono text-xs">{row.nik || '-'}</td>
             <td className="font-mono text-xs">{row.card_number || '-'}</td>
+            <td><Badge variant={row.status === 'Pengganti' ? 'outline' : 'secondary'}>{row.status}</Badge></td>
             <td className="tabular-nums">{row.phone_number || '-'}</td>
             <td>{[row.village, row.district].filter(Boolean).join(', ') || '-'}</td>
             <td className="whitespace-nowrap">{formatDate(row.distribution_date)}</td>
