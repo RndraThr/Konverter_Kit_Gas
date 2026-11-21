@@ -14,8 +14,8 @@ import (
 // MonitoringService is the central team's live distribution monitoring.
 type MonitoringService interface {
 	Overview(ctx context.Context, programID, date string, scope auth.RegencyScope) (monitoring.Overview, error)
-	SaveCalendar(ctx context.Context, actor auth.Principal, input monitoring.CalendarInput, meta auth.ClientMeta) error
-	SaveAssignments(ctx context.Context, actor auth.Principal, input monitoring.AssignmentInput, meta auth.ClientMeta) error
+	SaveCalendar(ctx context.Context, actor auth.Principal, input monitoring.CalendarInput, scope auth.RegencyScope, meta auth.ClientMeta) error
+	SaveAssignments(ctx context.Context, actor auth.Principal, input monitoring.AssignmentInput, scope auth.RegencyScope, meta auth.ClientMeta) error
 	Queue(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]monitoring.QueueItem, error)
 	Slot(ctx context.Context, scheduleID string, slotNumber int, scope auth.RegencyScope) (monitoring.SlotDetail, error)
 	Approve(ctx context.Context, actor auth.Principal, scheduleID string, slotNumber int, input monitoring.ApproveInput, scope auth.RegencyScope, meta auth.ClientMeta) (monitoring.SlotDetail, error)
@@ -62,13 +62,13 @@ func (h *Handler) handleMonitoring(w http.ResponseWriter, r *http.Request, rc re
 		if !decodeJSON(w, r, &input) {
 			return
 		}
-		writeMonitoringResult(w, map[string]bool{"saved": true}, service.SaveCalendar(r.Context(), rc.principal, input, clientMeta(r)))
+		writeMonitoringResult(w, map[string]bool{"saved": true}, service.SaveCalendar(r.Context(), rc.principal, input, scope, clientMeta(r)))
 	case path == "assignments" && r.Method == http.MethodPut:
 		var input monitoring.AssignmentInput
 		if !decodeJSON(w, r, &input) {
 			return
 		}
-		writeMonitoringResult(w, map[string]bool{"saved": true}, service.SaveAssignments(r.Context(), rc.principal, input, clientMeta(r)))
+		writeMonitoringResult(w, map[string]bool{"saved": true}, service.SaveAssignments(r.Context(), rc.principal, input, scope, clientMeta(r)))
 	case path == "queue" && r.Method == http.MethodGet:
 		result, err := service.Queue(r.Context(), scheduleID, scope)
 		writeMonitoringResult(w, result, err)
@@ -115,6 +115,8 @@ func writeMonitoringResult(w http.ResponseWriter, result any, err error) {
 		writeData(w, http.StatusOK, result)
 	case errors.Is(err, monitoring.ErrProgramNotFound), errors.Is(err, monitoring.ErrScheduleNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "Program atau jadwal tidak ditemukan")
+	case errors.Is(err, monitoring.ErrRakornasForbidden):
+		writeError(w, http.StatusForbidden, "forbidden", "Jadwal Rakornas hanya dapat diubah akun tanpa batasan kabupaten")
 	case errors.Is(err, monitoring.ErrInvalidPhase):
 		writeError(w, http.StatusUnprocessableEntity, "monitoring_phase_invalid", "Tanggal atau tahap jadwal tidak valid")
 	case errors.Is(err, monitoring.ErrInvalidUser):
