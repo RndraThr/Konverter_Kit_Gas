@@ -635,11 +635,39 @@ func (r *Repository) getSlotByID(ctx context.Context, id string) (DistributionSl
 	if slot.RecipientSignedAt, err = r.recipientSignedAt(ctx, id); err != nil {
 		return DistributionSlot{}, err
 	}
+	if slot.RevisionFlags, err = r.revisionFlags(ctx, id); err != nil {
+		return DistributionSlot{}, err
+	}
 	slot.Documentation, err = r.listSlotDocumentation(ctx, id)
 	if err != nil {
 		return DistributionSlot{}, err
 	}
 	return slot, nil
+}
+
+// revisionFlags lists the slot's current photos the central monitoring
+// rejected. A replaced photo is a new media file, so its mark goes away.
+func (r *Repository) revisionFlags(ctx context.Context, slotID string) ([]RevisionFlag, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT mf.id::text, dcs.slot_code, dcs.label_snapshot, COALESCE(dcs.stage, ''), mr.reason
+		FROM media_reviews mr
+		JOIN media_files mf ON mf.id = mr.media_id AND mf.status = 'accepted'
+		JOIN documentation_slots dcs ON dcs.id = mf.documentation_slot_id
+		WHERE dcs.distribution_slot_id = $1 AND mr.status = 'rejected'
+		ORDER BY dcs.sort_order, mf.uploaded_at`, slotID)
+	if err != nil {
+		return nil, fmt.Errorf("list revision flags: %w", err)
+	}
+	defer rows.Close()
+	var flags []RevisionFlag
+	for rows.Next() {
+		var f RevisionFlag
+		if err := rows.Scan(&f.MediaID, &f.SlotCode, &f.Label, &f.Stage, &f.Reason); err != nil {
+			return nil, fmt.Errorf("scan revision flag: %w", err)
+		}
+		flags = append(flags, f)
+	}
+	return flags, rows.Err()
 }
 
 func (r *Repository) SetDistributionDate(ctx context.Context, actor auth.Principal, input SetDistributionDateInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
@@ -869,6 +897,14 @@ func (r *Repository) UpdateEquipmentSerials(ctx context.Context, actor auth.Prin
 }
 
 func (r *Repository) ReopenSlot(ctx context.Context, actor auth.Principal, input ReopenSlotInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {
+	return r.ReopenSlotThen(ctx, actor, input, meta, scope, nil)
+}
+
+// ReopenSlotThen reopens a completed slot like ReopenSlot and runs then (when
+// not nil) in the same transaction with the slot id, before the commit. The
+// distribution monitoring records its review and notifications there, so a
+// revision is saved whole or not at all.
+func (r *Repository) ReopenSlotThen(ctx context.Context, actor auth.Principal, input ReopenSlotInput, meta auth.ClientMeta, scope auth.RegencyScope, then func(context.Context, pgx.Tx, string) error) (DistributionSlot, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return DistributionSlot{}, fmt.Errorf("begin reopen distribution slot: %w", err)
@@ -931,6 +967,11 @@ func (r *Repository) ReopenSlot(ctx context.Context, actor auth.Principal, input
 	}
 	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "distribution.slot_reopened", ResourceType: "distribution_slot", ResourceID: slotID, Metadata: map[string]any{"allocation_id": *allocationID, "stage": input.Stage, "reason": input.Reason, "distribution_date": distributionDate}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
 		return DistributionSlot{}, err
+	}
+	if then != nil {
+		if err := then(ctx, tx, slotID); err != nil {
+			return DistributionSlot{}, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return DistributionSlot{}, fmt.Errorf("commit reopen distribution slot: %w", err)

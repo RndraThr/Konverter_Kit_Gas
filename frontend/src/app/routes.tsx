@@ -6,6 +6,7 @@ import { getBootstrap } from '../lib/api';
 import { DashboardPage } from '../features/dashboard/DashboardPage';
 import { DistributionMapPage } from '../features/dashboard/DistributionMapPage';
 import { ProfilePage } from '../features/profile/ProfilePage';
+import { MonitoringPage as DistributionMonitoringPage } from '../features/monitoring/MonitoringPage';
 import { WatermarkSettingsPage } from '../features/camera/WatermarkSettingsPage';
 import { UsersPage } from '../features/users/UsersPage';
 import { RolesPage } from '../features/roles/RolesPage';
@@ -77,6 +78,7 @@ export const dashboardRoutes: RouteObject[] = [{
     { path: 'keuangan', element: <ProtectedPage permission="finance.request"><RequestsPage /></ProtectedPage> },
     { path: 'keuangan/:id', element: <ProtectedPage permission={['finance.request', 'finance.review', 'finance.monitor']}><RequestDetailPage /></ProtectedPage> },
     { path: 'keuangan-review', element: <ProtectedPage permission="finance.review"><ReviewPage /></ProtectedPage> },
+    { path: 'monitoring-distribusi', element: <ProtectedPage permission="monitoring.view"><DistributionMonitoringPage /></ProtectedPage> },
     { path: 'banner', element: <ProtectedPage permission="banner.view"><BannerPage /></ProtectedPage> },
     { path: 'keuangan-limit', element: <ProtectedPage permission="finance.review"><LimitsPage /></ProtectedPage> },
     { path: 'keuangan-voucher', element: <ProtectedPage permission="finance.review"><VoucherPage /></ProtectedPage> },

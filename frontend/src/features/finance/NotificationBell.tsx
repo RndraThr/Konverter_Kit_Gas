@@ -1,10 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlarmClock, Banknote, Bell, CheckCheck, ClipboardList, ShieldCheck } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { AlarmClock, Banknote, Bell, CheckCheck, ClipboardList, ImageOff, ShieldCheck } from 'lucide-react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { apiRequest } from '@/lib/api';
+import { useCan } from '@/lib/permissions';
+import { useRealtimeSignals } from '@/lib/realtime';
 import { cn } from '@/lib/utils';
 import { timeAgo, type DataResponse } from './api';
 
@@ -17,43 +19,34 @@ const categoryStyles: Record<string, { icon: typeof Bell; tone: string }> = {
   finance_result: { icon: ShieldCheck, tone: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200' },
   finance_payment: { icon: Banknote, tone: 'bg-sky-100 text-sky-900 dark:bg-sky-950/40 dark:text-sky-200' },
   finance_reminder: { icon: AlarmClock, tone: 'bg-destructive/10 text-destructive' },
+  distribution_revision: { icon: ImageOff, tone: 'bg-orange-100 text-orange-900 dark:bg-orange-950/40 dark:text-orange-200' },
 };
-const reconnectDelays = [1_000, 3_000, 10_000, 30_000];
-
 /** Sinyal realtime: notifikasi baru langsung memuat ulang kotak dan data keuangan. */
 function useNotificationSignals() {
   const queryClient = useQueryClient();
-  useEffect(() => {
-    if (typeof WebSocket === 'undefined') return;
-    let socket: WebSocket | null = null;
-    let attempts = 0;
-    let timer = 0;
-    let stopped = false;
-    const connect = () => {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      socket = new WebSocket(`${protocol}//${window.location.host}/api/v1/realtime`);
-      socket.onopen = () => { attempts = 0; };
-      socket.onmessage = (event: MessageEvent<string>) => {
-        const signal = JSON.parse(event.data) as { t?: string };
-        if (signal.t !== 'notification') return;
-        void queryClient.invalidateQueries({ queryKey: inboxKey });
-        void queryClient.invalidateQueries({ queryKey: ['finance'] });
-      };
-      socket.onclose = () => {
-        if (stopped) return;
-        timer = window.setTimeout(connect, reconnectDelays[Math.min(attempts, reconnectDelays.length - 1)]);
-        attempts += 1;
-      };
-    };
-    connect();
-    return () => { stopped = true; window.clearTimeout(timer); socket?.close(); };
-  }, [queryClient]);
+  useRealtimeSignals((signal) => {
+    if (signal.t !== 'notification') return;
+    void queryClient.invalidateQueries({ queryKey: inboxKey });
+    void queryClient.invalidateQueries({ queryKey: ['finance'] });
+  });
+}
+
+/**
+ * A distribution revision links to the app's nomor bagi page; on the website
+ * it opens the slot in the monitoring (central team) or the Pendistribusian page.
+ */
+export function webLink(link: string, canMonitor: boolean): string {
+  const match = /^\/nomor-bagi\/(\d+)\?(.*)$/.exec(link);
+  if (!match) return link;
+  const schedule = new URLSearchParams(match[2]).get('schedule') ?? '';
+  return canMonitor ? `/monitoring-distribusi?tab=antrean&schedule=${schedule}&slot=${match[1]}` : '/dokumentasi/pendistribusian';
 }
 
 export function NotificationBell() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const canMonitor = useCan('monitoring.view');
   useNotificationSignals();
   const inbox = useQuery({
     queryKey: inboxKey,
@@ -76,7 +69,7 @@ export function NotificationBell() {
       {rows.length === 0 && <p className="p-3 text-sm text-muted-foreground">Belum ada notifikasi.</p>}
       {rows.map((row) => {
         const style = categoryStyles[row.category] ?? { icon: Bell, tone: 'bg-muted text-muted-foreground' };
-        return <DropdownMenuItem key={row.id} className={cn('items-start gap-2', !row.read_at && 'bg-primary/5')} onClick={() => { if (!row.read_at) read.mutate(row.id); if (row.link) navigate(row.link); }}>
+        return <DropdownMenuItem key={row.id} className={cn('items-start gap-2', !row.read_at && 'bg-primary/5')} onClick={() => { if (!row.read_at) read.mutate(row.id); if (row.link) navigate(webLink(row.link, canMonitor)); }}>
           <span className={cn('grid size-8 shrink-0 place-items-center rounded-full', style.tone)}><style.icon aria-hidden="true" className="size-4" /></span>
           <span className="min-w-0 flex-1">
             <strong className={cn('block text-sm', row.read_at && 'font-medium text-muted-foreground')}>{row.title}</strong>

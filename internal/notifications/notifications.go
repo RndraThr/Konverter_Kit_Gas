@@ -21,9 +21,12 @@ const (
 	CategoryResult   = "finance_result"
 	CategoryPayment  = "finance_payment"
 	CategoryReminder = "finance_reminder"
+	// CategoryDistributionRevision: the central monitoring sent a recipient's
+	// documentation back to the field.
+	CategoryDistributionRevision = "distribution_revision"
 )
 
-var Categories = []string{CategoryReview, CategoryResult, CategoryPayment, CategoryReminder}
+var Categories = []string{CategoryReview, CategoryResult, CategoryPayment, CategoryReminder, CategoryDistributionRevision}
 
 const (
 	maxPushAttempts = 5

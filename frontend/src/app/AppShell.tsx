@@ -3,7 +3,7 @@ import { UploadQueueIndicator } from '@/components/UploadQueueIndicator';
 import {
   Activity, BookOpen, BookOpenCheck, BookOpenText, Building2, CalendarClock, CalendarRange, Camera, ChevronDown, ClipboardList, FileClock, Flag, Truck, Warehouse, Wrench,
   ClipboardCheck, Gauge, ReceiptText, FileCheck2, Files, FileSpreadsheet, FileText, GraduationCap, Images, ListFilter, MapPinned, Menu, PackageOpen, PanelLeftClose, PanelLeftOpen,
-  ChevronRight, Megaphone, PartyPopper, Presentation, Settings, ShieldCheck, Users, UsersRound, Wallet, WalletCards, X,
+  ChevronRight, Megaphone, MonitorCheck, PartyPopper, Presentation, Settings, ShieldCheck, Users, UsersRound, Wallet, WalletCards, X,
 } from 'lucide-react';
 import { ReactNode, useEffect, useId, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
@@ -40,6 +40,7 @@ const groups: NavGroup[] = [
   ] },
   { label: 'Distribusi', items: [
     { label: 'Pendistribusian', to: '/dokumentasi/pendistribusian', permission: 'distribution.view', icon: <Camera /> },
+    { label: 'Monitoring live', pageTitle: 'Monitoring distribusi', to: '/monitoring-distribusi', permission: 'monitoring.view', icon: <MonitorCheck /> },
     { label: 'Dokumen Pendukung', to: '/dokumen-pendukung', permission: 'activities.view', icon: <FileCheck2 /> },
     { label: 'Berita Acara', to: '/berita-acara', permission: 'bast.view', icon: <Files /> },
     { label: 'Banner', to: '/banner', permission: 'banner.view', icon: <Megaphone /> },
