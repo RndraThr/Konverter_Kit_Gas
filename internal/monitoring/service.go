@@ -210,8 +210,11 @@ func (s *Service) people(ctx context.Context, query string) ([]Person, error) {
 // SaveCalendar replaces the phase days of the given kabupaten (and the
 // Rakornas days when sent). The schedule's own start and end dates stay as
 // they are: DP3 and the final report print them.
-func (s *Service) SaveCalendar(ctx context.Context, actor auth.Principal, input CalendarInput, meta auth.ClientMeta) error {
+func (s *Service) SaveCalendar(ctx context.Context, actor auth.Principal, input CalendarInput, scope auth.RegencyScope, meta auth.ClientMeta) error {
 	programID := strings.TrimSpace(input.ProgramID)
+	if input.Rakornas != nil && !scope.Unrestricted {
+		return ErrRakornasForbidden
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin save calendar: %w", err)
@@ -230,7 +233,8 @@ func (s *Service) SaveCalendar(ctx context.Context, actor auth.Principal, input 
 		if err != nil {
 			return err
 		}
-		tag, err := tx.Exec(ctx, `SELECT 1 FROM program_schedules WHERE id::text = $1 AND program_id::text = $2`, row.ScheduleID, programID)
+		tag, err := tx.Exec(ctx, `SELECT 1 FROM program_schedules WHERE id::text = $1 AND program_id::text = $2 AND ($3 OR regency_id::text = ANY($4))`,
+			row.ScheduleID, programID, scope.Unrestricted, scope.RegencyIDs)
 		if err != nil {
 			return fmt.Errorf("find schedule: %w", err)
 		}
@@ -273,13 +277,14 @@ func (s *Service) SaveCalendar(ctx context.Context, actor auth.Principal, input 
 }
 
 // SaveAssignments replaces who checks a kabupaten and who leads it in the field.
-func (s *Service) SaveAssignments(ctx context.Context, actor auth.Principal, input AssignmentInput, meta auth.ClientMeta) error {
+func (s *Service) SaveAssignments(ctx context.Context, actor auth.Principal, input AssignmentInput, scope auth.RegencyScope, meta auth.ClientMeta) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin save assignments: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	tag, err := tx.Exec(ctx, `SELECT 1 FROM program_schedules WHERE id::text = $1`, strings.TrimSpace(input.ScheduleID))
+	tag, err := tx.Exec(ctx, `SELECT 1 FROM program_schedules WHERE id::text = $1 AND ($2 OR regency_id::text = ANY($3))`,
+		strings.TrimSpace(input.ScheduleID), scope.Unrestricted, scope.RegencyIDs)
 	if err != nil {
 		return fmt.Errorf("find schedule: %w", err)
 	}

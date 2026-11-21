@@ -54,10 +54,13 @@ var (
 	ErrProgramNotFound  = errors.New("program not found")
 	ErrScheduleNotFound = errors.New("schedule not found")
 	ErrInvalidPhase     = errors.New("phase day is invalid")
-	ErrInvalidUser      = errors.New("assigned user is invalid")
-	ErrNothingToApprove = errors.New("no photo to approve")
-	ErrRevisionEmpty    = errors.New("a revision needs at least one marked photo")
-	ErrFlagUnknown      = errors.New("marked photo does not belong to this recipient")
+	// ErrRakornasForbidden: Rakornas concerns every kabupaten of a program, so
+	// an account limited to some kabupaten cannot change it.
+	ErrRakornasForbidden = errors.New("rakornas needs an unrestricted account")
+	ErrInvalidUser       = errors.New("assigned user is invalid")
+	ErrNothingToApprove  = errors.New("no photo to approve")
+	ErrRevisionEmpty     = errors.New("a revision needs at least one marked photo")
+	ErrFlagUnknown       = errors.New("marked photo does not belong to this recipient")
 )
 
 type Person struct {

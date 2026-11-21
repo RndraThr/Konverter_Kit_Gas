@@ -142,8 +142,8 @@ func TestCalendarSetsPhasesAndToday(t *testing.T) {
 	admin := auth.Principal{UserID: f.admin}
 	days := []PhaseDay{{"2026-11-18", PhaseMaterial}, {"2026-11-19", PhaseRakor}, {"2026-11-20", PhaseDistribusi}, {"2026-11-21", PhaseDistribusi}, {"2026-11-22", PhasePenutupan}}
 	rakornas := []string{"2026-11-23", "2026-11-23"}
-	must(t, service.SaveCalendar(ctx, admin, CalendarInput{ProgramID: f.programID, Rows: []CalendarRow{{ScheduleID: f.scheduleID, Days: days}}, Rakornas: &rakornas}, auth.ClientMeta{}))
-	if err := service.SaveCalendar(ctx, admin, CalendarInput{ProgramID: f.programID, Rows: []CalendarRow{{ScheduleID: f.scheduleID, Days: []PhaseDay{{"2026-11-18", "libur"}}}}}, auth.ClientMeta{}); !errors.Is(err, ErrInvalidPhase) {
+	must(t, service.SaveCalendar(ctx, admin, CalendarInput{ProgramID: f.programID, Rows: []CalendarRow{{ScheduleID: f.scheduleID, Days: days}}, Rakornas: &rakornas}, all, auth.ClientMeta{}))
+	if err := service.SaveCalendar(ctx, admin, CalendarInput{ProgramID: f.programID, Rows: []CalendarRow{{ScheduleID: f.scheduleID, Days: []PhaseDay{{"2026-11-18", "libur"}}}}}, all, auth.ClientMeta{}); !errors.Is(err, ErrInvalidPhase) {
 		t.Fatalf("unknown phase err = %v", err)
 	}
 
@@ -174,14 +174,51 @@ func TestAssignmentsRejectUnknownUser(t *testing.T) {
 	ctx := context.Background()
 	service := NewService(pool, distribution.NewRepository(pool), nil)
 	admin := auth.Principal{UserID: f.admin}
-	must(t, service.SaveAssignments(ctx, admin, AssignmentInput{ScheduleID: f.scheduleID, Reviewers: []string{f.admin, f.admin}, Leaders: []string{f.leader}}, auth.ClientMeta{}))
-	if err := service.SaveAssignments(ctx, admin, AssignmentInput{ScheduleID: f.scheduleID, Reviewers: []string{"00000000-0000-0000-0000-000000000000"}}, auth.ClientMeta{}); !errors.Is(err, ErrInvalidUser) {
+	must(t, service.SaveAssignments(ctx, admin, AssignmentInput{ScheduleID: f.scheduleID, Reviewers: []string{f.admin, f.admin}, Leaders: []string{f.leader}}, all, auth.ClientMeta{}))
+	if err := service.SaveAssignments(ctx, admin, AssignmentInput{ScheduleID: f.scheduleID, Reviewers: []string{"00000000-0000-0000-0000-000000000000"}}, all, auth.ClientMeta{}); !errors.Is(err, ErrInvalidUser) {
 		t.Fatalf("unknown user err = %v", err)
 	}
 	overview, err := service.Overview(ctx, f.programID, "2026-11-21", all)
 	must(t, err)
 	if r := overview.Rows[0]; len(r.Reviewers) != 1 || r.Reviewers[0].ID != f.admin || len(r.Leaders) != 1 || r.Leaders[0].ID != f.leader {
 		t.Fatalf("assignments kept after failed save: %+v", r)
+	}
+}
+
+// An account limited to other kabupaten can neither plan nor staff this
+// schedule, and Rakornas, which spans every kabupaten, stays with unrestricted accounts.
+func TestWritesStayInsideRegencyScope(t *testing.T) {
+	pool := testPool(t)
+	f := seed(t, pool)
+	ctx := context.Background()
+	service := NewService(pool, distribution.NewRepository(pool), nil)
+	admin := auth.Principal{UserID: f.admin}
+	elsewhere := auth.RegencyScope{RegencyIDs: []string{"00000000-0000-0000-0000-000000000000"}}
+	own := auth.RegencyScope{RegencyIDs: []string{f.regencyID}}
+	days := []PhaseDay{{"2026-11-20", PhaseDistribusi}}
+	rakornas := []string{"2026-11-23"}
+
+	if err := service.SaveCalendar(ctx, admin, CalendarInput{ProgramID: f.programID, Rows: []CalendarRow{{ScheduleID: f.scheduleID, Days: days}}}, elsewhere, auth.ClientMeta{}); !errors.Is(err, ErrScheduleNotFound) {
+		t.Fatalf("calendar outside scope err = %v", err)
+	}
+	if err := service.SaveCalendar(ctx, admin, CalendarInput{ProgramID: f.programID, Rakornas: &rakornas}, own, auth.ClientMeta{}); !errors.Is(err, ErrRakornasForbidden) {
+		t.Fatalf("rakornas from a limited account err = %v", err)
+	}
+	if err := service.SaveAssignments(ctx, admin, AssignmentInput{ScheduleID: f.scheduleID, Leaders: []string{f.leader}}, elsewhere, auth.ClientMeta{}); !errors.Is(err, ErrScheduleNotFound) {
+		t.Fatalf("assignments outside scope err = %v", err)
+	}
+	overview, err := service.Overview(ctx, f.programID, "2026-11-20", all)
+	must(t, err)
+	if r := overview.Rows[0]; len(r.Days) != 0 || len(r.Leaders) != 0 || len(overview.Rakornas) != 0 {
+		t.Fatalf("refused writes changed the schedule: %+v rakornas=%v", r, overview.Rakornas)
+	}
+
+	must(t, service.SaveCalendar(ctx, admin, CalendarInput{ProgramID: f.programID, Rows: []CalendarRow{{ScheduleID: f.scheduleID, Days: days}}}, own, auth.ClientMeta{}))
+	must(t, service.SaveAssignments(ctx, admin, AssignmentInput{ScheduleID: f.scheduleID, Leaders: []string{f.leader}}, own, auth.ClientMeta{}))
+	overview, err = service.Overview(ctx, f.programID, "2026-11-20", all)
+	must(t, err)
+	if r := overview.Rows[0]; len(r.Days) != 1 || len(r.Leaders) != 1 {
+		t.Fatalf("writes in scope not saved: %+v", r)
 	}
 }
 
@@ -257,7 +294,7 @@ func TestRevisionRejectsPhotosReopensAndNotifies(t *testing.T) {
 	repo := distribution.NewRepository(pool)
 	service := NewService(pool, repo, nil)
 	admin := auth.Principal{UserID: f.admin}
-	must(t, service.SaveAssignments(ctx, admin, AssignmentInput{ScheduleID: f.scheduleID, Leaders: []string{f.leader, f.admin}}, auth.ClientMeta{}))
+	must(t, service.SaveAssignments(ctx, admin, AssignmentInput{ScheduleID: f.scheduleID, Leaders: []string{f.leader, f.admin}}, all, auth.ClientMeta{}))
 
 	if _, err := service.RequestRevision(ctx, admin, f.scheduleID, 1, RevisionInput{Note: "ulang"}, all, auth.ClientMeta{}); !errors.Is(err, ErrRevisionEmpty) {
 		t.Fatalf("empty revision err = %v", err)
