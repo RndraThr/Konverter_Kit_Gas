@@ -225,3 +225,24 @@ func TestParseWorkbookUnwrapsQuotedTextFormulas(t *testing.T) {
 		t.Fatalf("a computed formula must stay as written, got %q", got)
 	}
 }
+
+// A blank header cell (an empty first column, or a gap between titled
+// columns, as in the Malang file) is skipped when its column is empty and
+// named after its letter when it holds data.
+func TestParseWorkbookToleratesBlankHeaderCells(t *testing.T) {
+	data := workbookBytes(t, func(file *excelize.File) {
+		_ = file.SetSheetRow("Sheet1", "A1", &[]any{nil, "NO", "NAMA", nil, "NOMOR KTP", nil})
+		_ = file.SetSheetRow("Sheet1", "A2", &[]any{nil, 1, "ANATA", nil, "3507230703900001", "catatan"})
+		_ = file.SetSheetRow("Sheet1", "A3", &[]any{nil, 2, "SUYONO", nil, "3507230108690007", nil})
+	})
+	preview, err := ParseWorkbook(bytes.NewReader(data), ParseLimits{MaxBytes: 1 << 20, MaxRows: 10, MaxColumns: 10}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(preview.Headers, "|") != "NO|NAMA|NOMOR KTP|Kolom F" {
+		t.Fatalf("headers = %q", preview.Headers)
+	}
+	if len(preview.Rows) != 2 || strings.Join(preview.Rows[0].Values, "|") != "1|ANATA|3507230703900001|catatan" {
+		t.Fatalf("rows = %+v", preview.Rows)
+	}
+}

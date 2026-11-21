@@ -20,19 +20,40 @@ func ParseWorkbook(source io.Reader, limits ParseLimits, headerRowIndex int) (Wo
 		return WorkbookPreview{}, ErrHeadersInvalid
 	}
 
-	headers := make([]string, len(rows[headerRowIndex]))
-	seen := make(map[string]struct{}, len(headers))
-	for index, header := range rows[headerRowIndex] {
-		header = strings.TrimSpace(header)
-		key := strings.ToLower(header)
-		if header == "" {
-			return WorkbookPreview{}, ErrHeadersInvalid
+	// A header cell left blank (an empty first column, or a gap between two
+	// titled columns) is skipped when its column holds no data, and named after
+	// its column letter ("Kolom D") when it does, so such files still import.
+	var headers []string
+	var columns []int
+	seen := map[string]struct{}{}
+	// Blank cells at the end of the header row are not returned, so a data
+	// column after the last title is found through the widest row.
+	width := len(rows[headerRowIndex])
+	for _, row := range rows[headerRowIndex+1:] {
+		width = max(width, len(row))
+	}
+	for index := range width {
+		header := ""
+		if index < len(rows[headerRowIndex]) {
+			header = strings.TrimSpace(rows[headerRowIndex][index])
 		}
+		if header == "" {
+			if !columnHasData(rows[headerRowIndex+1:], index) {
+				continue
+			}
+			name, err := excelize.ColumnNumberToName(index + 1)
+			if err != nil {
+				return WorkbookPreview{}, ErrWorkbookInvalid
+			}
+			header = "Kolom " + name
+		}
+		key := strings.ToLower(header)
 		if _, duplicate := seen[key]; duplicate {
 			return WorkbookPreview{}, ErrHeadersInvalid
 		}
 		seen[key] = struct{}{}
-		headers[index] = header
+		headers = append(headers, header)
+		columns = append(columns, index)
 	}
 	if len(headers) == 0 {
 		return WorkbookPreview{}, ErrHeadersInvalid
@@ -41,9 +62,9 @@ func ParseWorkbook(source io.Reader, limits ParseLimits, headerRowIndex int) (Wo
 	preview := WorkbookPreview{SheetName: sheetName, Headers: headers, Rows: []PreviewRow{}}
 	for rowIndex := headerRowIndex + 1; rowIndex < len(rows); rowIndex++ {
 		values := make([]string, len(headers))
-		for columnIndex := range headers {
+		for position, columnIndex := range columns {
 			if columnIndex < len(rows[rowIndex]) {
-				values[columnIndex] = strings.TrimSpace(rows[rowIndex][columnIndex])
+				values[position] = strings.TrimSpace(rows[rowIndex][columnIndex])
 			}
 			cell, coordinateErr := excelize.CoordinatesToCellName(columnIndex+1, rowIndex+1)
 			if coordinateErr != nil {
@@ -55,9 +76,9 @@ func ParseWorkbook(source io.Reader, limits ParseLimits, headerRowIndex int) (Wo
 			}
 			if formula != "" {
 				if literal, ok := formulaStringLiteral(formula); ok {
-					values[columnIndex] = strings.TrimSpace(literal)
+					values[position] = strings.TrimSpace(literal)
 				} else {
-					values[columnIndex] = "=" + formula
+					values[position] = "=" + formula
 				}
 			}
 		}
@@ -143,6 +164,16 @@ func openWorkbook(source io.Reader, limits ParseLimits) (*excelize.File, string,
 		}
 	}
 	return file, sheetName, rows, nil
+}
+
+// columnHasData reports whether any of rows has a value in column index.
+func columnHasData(rows [][]string, index int) bool {
+	for _, row := range rows {
+		if index < len(row) && strings.TrimSpace(row[index]) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func allBlank(values []string) bool {

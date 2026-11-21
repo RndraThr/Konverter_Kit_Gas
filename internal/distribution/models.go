@@ -141,6 +141,9 @@ type DistributionSlot struct {
 	ReopenedBy            *string       `json:"reopened_by,omitempty"`
 	ReopenedStage         string        `json:"reopened_stage,omitempty"`
 	RevisionReason        string        `json:"revision_reason,omitempty"`
+	// RevisionFlags are the current photos the central monitoring rejected;
+	// a replaced photo is a new file, so its mark goes away.
+	RevisionFlags []RevisionFlag `json:"revision_flags,omitempty"`
 	// HandoverLocationID is the titik serah chosen in POS Dokumen.
 	HandoverLocationID   *string `json:"handover_location_id"`
 	HandoverLocationName string  `json:"handover_location_name,omitempty"`
@@ -149,6 +152,15 @@ type DistributionSlot struct {
 	RecipientSignedAt *time.Time `json:"recipient_signed_at,omitempty"`
 	CreatedAt         time.Time  `json:"created_at"`
 	UpdatedAt         time.Time  `json:"updated_at"`
+}
+
+// RevisionFlag is one photo marked wrong by the central monitoring.
+type RevisionFlag struct {
+	MediaID  string `json:"media_id"`
+	SlotCode string `json:"slot_code"`
+	Label    string `json:"label"`
+	Stage    string `json:"stage"`
+	Reason   string `json:"reason"`
 }
 
 type SlotCatalogEntry struct {

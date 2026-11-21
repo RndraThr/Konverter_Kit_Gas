@@ -23,7 +23,9 @@ type Props = { scheduleID: string; regencyName: string; programType: ProgramType
 type DataResponse<T> = { data: T };
 type ReceiptForm = Omit<GasElpijiInput, 'schedule_id' | 'document_date' | 'cylinder_count'> & { cylinder_count: string };
 
-const emptyForm: ReceiptForm = { warehouse_location: '', warehouse_address: '', pic: '', cylinder_count: '', remarks: '', receiver_name: '', pertamina_name: '' };
+/** Remarks a new receipt starts with, so they are not forgotten. */
+const defaultRemarks = 'Lengkap';
+const emptyForm: ReceiptForm = { warehouse_location: '', warehouse_address: '', pic: '', cylinder_count: '', remarks: defaultRemarks, receiver_name: '', pertamina_name: '' };
 
 const textFields: { key: Exclude<keyof ReceiptForm, 'cylinder_count'>; label: string; required: boolean }[] = [
   { key: 'warehouse_location', label: 'Lokasi gudang', required: true },
@@ -89,8 +91,8 @@ export function GasElpijiPanel({ scheduleID, regencyName, programType, defaultDa
     const source = draft ?? match?.input;
     setEdited(false);
     if (source) setForm(formFromInput(source));
-    else if (first && loaded.length > 0) setForm({ ...formFromInput(loaded[loaded.length - 1].input), cylinder_count: '', remarks: '' });
-    else setForm((value) => ({ ...value, cylinder_count: '', remarks: '' }));
+    else if (first && loaded.length > 0) setForm({ ...formFromInput(loaded[loaded.length - 1].input), cylinder_count: '', remarks: defaultRemarks });
+    else setForm((value) => ({ ...value, cylinder_count: '', remarks: defaultRemarks }));
   }, [summary.data, documentDate]);
 
   const input: GasElpijiInput = { ...form, schedule_id: scheduleID, document_date: documentDate, cylinder_count: Number(form.cylinder_count) || 0 };

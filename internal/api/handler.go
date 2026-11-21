@@ -325,6 +325,7 @@ type Dependencies struct {
 	GasElpiji           GasElpijiService
 	Finance             FinanceService
 	Banner              BannerService
+	Monitoring          MonitoringService
 	Notifications       NotificationService
 	TKDN                TKDNService
 	Pemeriksaan         PemeriksaanService
@@ -417,6 +418,8 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleFinance(w, r, rc, strings.TrimPrefix(path, "finance/"))
 	case path == "banners", strings.HasPrefix(path, "banners/"):
 		h.handleBanners(w, r, rc, strings.TrimPrefix(strings.TrimPrefix(path, "banners"), "/"))
+	case strings.HasPrefix(path, "monitoring/"):
+		h.handleMonitoring(w, r, rc, strings.TrimPrefix(path, "monitoring/"))
 	case path == "notifications", strings.HasPrefix(path, "notifications/"):
 		h.handleNotifications(w, r, rc, strings.TrimPrefix(strings.TrimPrefix(path, "notifications"), "/"))
 	case path == "me":

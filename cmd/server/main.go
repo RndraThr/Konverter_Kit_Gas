@@ -31,6 +31,7 @@ import (
 	"konkit/internal/geo"
 	"konkit/internal/health"
 	"konkit/internal/media"
+	"konkit/internal/monitoring"
 	"konkit/internal/notifications"
 	"konkit/internal/profile"
 	"konkit/internal/programs"
@@ -243,6 +244,7 @@ func run(ctx context.Context, cfg config.Config) error {
 		GasElpiji:         bastGasElpijiService,
 		Finance:           financeService,
 		Banner:            banner.NewService(pool),
+		Monitoring:        monitoring.NewService(pool, distributionRepository, notificationService),
 		Notifications:     notificationService,
 		TKDN:              bastTKDNService,
 		Pemeriksaan:       bastPemeriksaanService,
