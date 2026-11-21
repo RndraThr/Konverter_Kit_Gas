@@ -27,6 +27,14 @@ const preview = {
   machine_options: [],
 };
 
+let imports: unknown[] = [];
+const oldImport = { id: 'batch-old', filename: 'DCP3 Bone.xlsx', total_rows: 3, imported_at: '2026-11-20T02:00:00Z', imported_by: 'Rendra', recipients: 3, linked: 1, distributed: 1 };
+const removal = {
+  import: oldImport, removed: 2, import_deleted: false,
+  unlinked: [{ full_name: 'ANI', nik: '7301', slot_number: 4 }],
+  kept: [{ full_name: 'CICI', nik: '7303', slot_number: 6, reason: 'sudah selesai didistribusikan' }],
+};
+
 function renderPage(permissions = ['dcp3.view', 'dcp3.import']) {
   vi.mocked(apiRequest).mockImplementation((path, _init) => {
     if (path === '/api/v1/program-setup/schedules') return Promise.resolve({ data: [{
@@ -35,6 +43,9 @@ function renderPage(permissions = ['dcp3.view', 'dcp3.import']) {
       regency: { id: 'regency-1', name: 'Wajo', document_code: 'WJO' },
     }] });
     if (path === '/api/v1/dcp3/previews') return Promise.resolve({ data: preview });
+    if (path === '/api/v1/dcp3/imports?schedule_id=schedule-1') return Promise.resolve({ data: imports });
+    if (path === '/api/v1/dcp3/imports/batch-old/removal') return Promise.resolve({ data: removal });
+    if (path === '/api/v1/dcp3/imports/batch-old' && _init?.method === 'DELETE') return Promise.resolve({ data: removal });
     if (path === '/api/v1/dcp3/imports' && _init?.method === 'POST') return Promise.resolve({ data: {
       batch_id: 'batch-1', total_rows: 4, valid_rows: 1, warning_rows: 1, review_rows: 1, invalid_rows: 1,
       created_rows: 2, updated_rows: 1, kept_rows: 0, skipped_rows: 1,
@@ -145,4 +156,19 @@ test('keeps DCP3 readable without showing import controls', async () => {
   expect(await screen.findByText('Data calon penerima paket perdana')).toBeVisible();
   expect(screen.queryByLabelText('Pilih file DCP3')).not.toBeInTheDocument();
   expect(screen.getByText('Akses import diperlukan untuk menambahkan data DCP3.')).toBeVisible();
+});
+
+test('a wrongly uploaded import can be removed after seeing what happens to its recipients', async () => {
+  imports = [oldImport];
+  renderPage();
+  await chooseOption('Jadwal distribusi', 'Wajo - Wajo Tahap 1');
+  expect(await screen.findByText('DCP3 Bone.xlsx')).toBeVisible();
+  await userEvent.click(screen.getByRole('button', { name: /Hapus import/ }));
+  const dialog = await screen.findByRole('dialog');
+  expect(await within(dialog).findByText(/akan dihapus/)).toHaveTextContent('2 penerima akan dihapus');
+  expect(within(dialog).getByText(/#4 ANI/)).toBeVisible();
+  expect(within(dialog).getByText(/CICI — sudah selesai didistribusikan/)).toBeVisible();
+  await userEvent.click(within(dialog).getByRole('button', { name: /Hapus import/ }));
+  await waitFor(() => expect(vi.mocked(apiRequest)).toHaveBeenCalledWith('/api/v1/dcp3/imports/batch-old', { method: 'DELETE' }));
+  imports = [];
 });

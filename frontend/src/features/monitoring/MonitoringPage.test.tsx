@@ -213,3 +213,14 @@ test('selects dates of several kabupaten and moves them together with the arrow 
     { schedule_id: 's2', days: [{ day: '2026-11-22', phase: 'material' }] },
   ]));
 });
+
+test('the kabupaten list can be searched and shows the photos to check', async () => {
+  renderPage('/monitoring-distribusi?tab=antrean&schedule=s1');
+  const list = await screen.findByRole('listbox', { name: 'Kabupaten' });
+  const malang = within(list).getByRole('option', { name: /KAB. MALANG/ });
+  expect(malang).toHaveAttribute('aria-selected', 'true');
+  expect(within(malang).getByTitle('14 foto belum dicek')).toHaveTextContent('14');
+  await userEvent.type(screen.getByRole('textbox', { name: 'Cari kabupaten' }), 'tuban');
+  expect(within(list).queryByRole('option', { name: /KAB. MALANG/ })).toBeNull();
+  expect(within(list).getByText('Tidak ada kabupaten.')).toBeVisible();
+});

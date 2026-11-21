@@ -34,7 +34,8 @@ type servisBerkalaRepository interface {
 
 // ServisBerkalaService menerbitkan BA Agenda Servis Berkala per jadwal
 // kabupaten. Jumlah paket pada nomor dokumen dihitung dari distribusi selesai
-// (sama dengan total Closing Kabupaten); jadwal servis dari pengaturan jadwal.
+// (sama dengan total Closing Kabupaten); jadwal servis dari pengaturan jadwal,
+// atau otomatis dari distribusi terakhir bila tidak diisi.
 type ServisBerkalaService struct {
 	repository servisBerkalaRepository
 	storage    media.Storage
@@ -50,7 +51,8 @@ func NewServisBerkalaService(repository servisBerkalaRepository, storage media.S
 
 func (s *ServisBerkalaService) Summary(ctx context.Context, scheduleID string, scope auth.RegencyScope) (ServisBerkalaSummary, error) {
 	scheduleID = strings.TrimSpace(scheduleID)
-	if _, err := s.repository.GetDP3Context(ctx, scheduleID, scope); err != nil {
+	ctxData, err := s.repository.GetDP3Context(ctx, scheduleID, scope)
+	if err != nil {
 		return ServisBerkalaSummary{}, err
 	}
 	total, err := s.totalPackages(ctx, scheduleID, scope)
@@ -61,7 +63,7 @@ func (s *ServisBerkalaService) Summary(ctx context.Context, scheduleID string, s
 	if err != nil {
 		return ServisBerkalaSummary{}, err
 	}
-	periods := servisPeriods(settings)
+	periods := servisPeriods(settings, ctxData.LastDistributionDate)
 	return ServisBerkalaSummary{TotalPackages: total, Services: periods, ScheduleReady: validateServisPeriods(periods) == nil}, nil
 }
 
@@ -226,7 +228,7 @@ func (s *ServisBerkalaService) snapshot(ctx context.Context, scheduleID, documen
 		return ServisBerkalaSnapshot{}, DP3Context{}, err
 	}
 	if requireSchedule {
-		if err := validateServisPeriods(servisPeriods(settings)); err != nil {
+		if err := validateServisPeriods(servisPeriods(settings, ctxData.LastDistributionDate)); err != nil {
 			return ServisBerkalaSnapshot{}, DP3Context{}, err
 		}
 	}

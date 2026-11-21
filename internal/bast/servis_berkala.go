@@ -16,6 +16,9 @@ var ErrServisScheduleRequired = errors.New("servis berkala schedule is incomplet
 
 // ServisPeriod adalah satu rentang tanggal servis (YYYY-MM-DD).
 type ServisPeriod struct {
+	// Auto: not set in the schedule settings, worked out from the last
+	// distribution (service 1 six months, service 2 one year later, 7 days).
+	Auto  bool   `json:"auto,omitempty"`
 	Start string `json:"start"`
 	End   string `json:"end"`
 }
@@ -47,11 +50,42 @@ type ServisBerkalaSummary struct {
 	ScheduleReady bool           `json:"schedule_ready"`
 }
 
-func servisPeriods(settings ScheduleSettings) []ServisPeriod {
-	return []ServisPeriod{
+// servisPeriods are the two service ranges: the ones typed in the schedule
+// settings, else worked out from the last completed distribution.
+func servisPeriods(settings ScheduleSettings, lastDistribution string) []ServisPeriod {
+	periods := []ServisPeriod{
 		{Start: settings.Servis1Start, End: settings.Servis1End},
 		{Start: settings.Servis2Start, End: settings.Servis2End},
 	}
+	for i, months := range []int{6, 12} {
+		if periods[i].Start == "" && periods[i].End == "" {
+			if auto, ok := autoServisPeriod(lastDistribution, months); ok {
+				periods[i] = auto
+			}
+		}
+	}
+	return periods
+}
+
+// servisRangeDays is how long a service visit range lasts after its start.
+const servisRangeDays = 7
+
+// autoServisPeriod starts the given months after the last distribution (a
+// day past the target month's end falls back to its last day) and lasts
+// seven days: 30 January 2027 gives 30 July - 6 August 2027 for six months.
+func autoServisPeriod(lastDistribution string, months int) (ServisPeriod, bool) {
+	base, err := time.Parse("2006-01-02", lastDistribution)
+	if err != nil {
+		return ServisPeriod{}, false
+	}
+	start := addMonthsClamped(base, months)
+	return ServisPeriod{Start: start.Format("2006-01-02"), End: start.AddDate(0, 0, servisRangeDays).Format("2006-01-02"), Auto: true}, true
+}
+
+func addMonthsClamped(date time.Time, months int) time.Time {
+	first := time.Date(date.Year(), date.Month()+time.Month(months), 1, 0, 0, 0, 0, time.UTC)
+	last := first.AddDate(0, 1, -1).Day()
+	return time.Date(first.Year(), first.Month(), min(date.Day(), last), 0, 0, 0, 0, time.UTC)
 }
 
 func validateServisPeriods(periods []ServisPeriod) error {
@@ -80,7 +114,7 @@ func buildServisBerkalaSnapshot(ctx DP3Context, settings ScheduleSettings, logos
 		ZoneName:              ctx.ZoneName,
 		FiscalYear:            ctx.FiscalYear,
 		TotalPackages:         totalPackages,
-		Services:              servisPeriods(settings),
+		Services:              servisPeriods(settings, ctx.LastDistributionDate),
 		ConsultantCompanyName: settings.Consultant(),
 		Logos:                 sortedLogos,
 		Signatories: closingSignatories{

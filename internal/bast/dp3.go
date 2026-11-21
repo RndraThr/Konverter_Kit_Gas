@@ -35,6 +35,10 @@ type DP3Context struct {
 	FiscalYear      int
 	StartDate       string
 	HasActiveLogo   bool
+	// SlotQuota is the kabupaten's fixed distribution target (0: not set).
+	SlotQuota int
+	// LastDistributionDate is the latest completed distribution (YYYY-MM-DD, "" when none).
+	LastDistributionDate string
 }
 
 // DP3Recipient adalah satu baris nominatif DP3 setelah mesin ter-resolve.

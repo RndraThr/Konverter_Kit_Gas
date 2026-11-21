@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"konkit/internal/auth"
 	"konkit/internal/dcp3"
 )
 
@@ -171,4 +173,59 @@ func (h *Handler) handleDCP3Import(w http.ResponseWriter, r *http.Request, rc re
 		return
 	}
 	writeData(w, http.StatusCreated, result)
+}
+
+// DCP3ImportsService lists and removes imported DCP3 files.
+type DCP3ImportsService interface {
+	ListImports(context.Context, string, auth.RegencyScope) ([]dcp3.ImportSummary, error)
+	RemoveImport(context.Context, auth.Principal, string, bool, auth.ClientMeta, auth.RegencyScope) (dcp3.Removal, error)
+}
+
+// handleDCP3Imports serves the import history of a schedule:
+//
+//	GET    dcp3/imports?schedule_id=   imported files (dcp3.view)
+//	GET    dcp3/imports/{id}/removal   what removing the file would do (dcp3.import)
+//	DELETE dcp3/imports/{id}           remove the file (dcp3.import)
+func (h *Handler) handleDCP3Imports(w http.ResponseWriter, r *http.Request, rc requestContext, path string) {
+	service, ok := h.deps.DCP3.(DCP3ImportsService)
+	if h.deps.DCP3 == nil || !ok {
+		writeUnavailable(w)
+		return
+	}
+	permission := "dcp3.import"
+	if path == "" {
+		permission = "dcp3.view"
+	}
+	if !h.authorize(w, r, rc.principal, permission) {
+		return
+	}
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	id, action, _ := strings.Cut(path, "/")
+	switch {
+	case path == "" && r.Method == http.MethodGet:
+		result, err := service.ListImports(r.Context(), r.URL.Query().Get("schedule_id"), scope)
+		writeDCP3ImportsResult(w, result, err)
+	case id != "" && action == "removal" && r.Method == http.MethodGet:
+		result, err := service.RemoveImport(r.Context(), rc.principal, id, true, clientMeta(r), scope)
+		writeDCP3ImportsResult(w, result, err)
+	case id != "" && action == "" && r.Method == http.MethodDelete:
+		result, err := service.RemoveImport(r.Context(), rc.principal, id, false, clientMeta(r), scope)
+		writeDCP3ImportsResult(w, result, err)
+	default:
+		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
+	}
+}
+
+func writeDCP3ImportsResult(w http.ResponseWriter, result any, err error) {
+	switch {
+	case err == nil:
+		writeData(w, http.StatusOK, result)
+	case errors.Is(err, dcp3.ErrImportNotFound):
+		writeError(w, http.StatusNotFound, "not_found", "Import DCP3 tidak ditemukan")
+	default:
+		writeServiceError(w, err)
+	}
 }

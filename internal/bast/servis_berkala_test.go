@@ -102,3 +102,33 @@ func TestScheduleSettingsInputValidatesServisDates(t *testing.T) {
 		}
 	}
 }
+
+func TestServisPeriodsFallBackToTheLastDistribution(t *testing.T) {
+	periods := servisPeriods(ScheduleSettings{}, "2027-01-30")
+	want := []ServisPeriod{{Start: "2027-07-30", End: "2027-08-06", Auto: true}, {Start: "2028-01-30", End: "2028-02-06", Auto: true}}
+	if len(periods) != 2 || periods[0] != want[0] || periods[1] != want[1] {
+		t.Fatalf("periods = %+v, want %+v", periods, want)
+	}
+	// A typed range wins; the other is still worked out.
+	periods = servisPeriods(ScheduleSettings{Servis1Start: "2027-08-01", Servis1End: "2027-08-03"}, "2027-01-30")
+	if periods[0] != (ServisPeriod{Start: "2027-08-01", End: "2027-08-03"}) || !periods[1].Auto {
+		t.Fatalf("periods with typed service 1 = %+v", periods)
+	}
+	// 31 August plus six months is the last day of February.
+	if p, _ := autoServisPeriod("2027-08-31", 6); p.Start != "2028-02-29" || p.End != "2028-03-07" {
+		t.Fatalf("month end = %+v", p)
+	}
+	// No distribution yet: nothing to work out from.
+	if periods := servisPeriods(ScheduleSettings{}, ""); periods[0].Start != "" || validateServisPeriods(periods) == nil {
+		t.Fatalf("without a distribution = %+v", periods)
+	}
+}
+
+func TestTKDNTotalUsesTheKabupatenTarget(t *testing.T) {
+	if got := tkdnTotal(DP3Context{SlotQuota: 234}, 12); got != 234 {
+		t.Fatalf("with a target = %d", got)
+	}
+	if got := tkdnTotal(DP3Context{}, 12); got != 12 {
+		t.Fatalf("without a target = %d", got)
+	}
+}

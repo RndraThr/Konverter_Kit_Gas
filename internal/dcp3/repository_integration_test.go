@@ -315,8 +315,15 @@ func createDCP3ScheduleFixture(t *testing.T, pool *pgxpool.Pool, cleanupNIKs ...
 	t.Helper()
 	ctx := context.Background()
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
-	code := fmt.Sprintf("%c%c%c", 'K', 'A'+suffix[len(suffix)-2]%20, 'A'+suffix[len(suffix)-1]%20)
 	var regencyID, programID, packageID, documentationID, scheduleID, personID string
+	// A document code nobody uses yet: a code taken from the clock collided
+	// with existing regencies now and then.
+	var code string
+	if err := pool.QueryRow(ctx, `SELECT chr(65+(g%26)::int)||chr(65+((g/26)%26)::int)||chr(65+((g/676)%26)::int) FROM generate_series(0,17575) g
+		WHERE NOT EXISTS (SELECT 1 FROM regencies WHERE document_code=chr(65+(g%26)::int)||chr(65+((g/26)%26)::int)||chr(65+((g/676)%26)::int))
+		ORDER BY random() LIMIT 1`).Scan(&code); err != nil {
+		t.Fatal(err)
+	}
 	if err := pool.QueryRow(ctx, `INSERT INTO regencies(province_name,name,document_code) VALUES('Sulawesi Selatan',$1,$2) RETURNING id::text`, "DCP3 Test "+suffix, code).Scan(&regencyID); err != nil {
 		t.Fatal(err)
 	}

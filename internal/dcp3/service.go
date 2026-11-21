@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"regexp"
 	"strings"
@@ -165,4 +166,30 @@ func normalizeIdentifier(value string) string {
 		}
 		return -1
 	}, value)
+}
+
+// importRemover lists and removes imported files (the database repository).
+type importRemover interface {
+	ListImports(context.Context, string, auth.RegencyScope) ([]ImportSummary, error)
+	RemoveImport(context.Context, auth.Principal, string, bool, auth.ClientMeta, auth.RegencyScope) (Removal, error)
+}
+
+var errRemovalUnavailable = errors.New("dcp3 import removal is unavailable")
+
+// ListImports lists the imported DCP3 files of a schedule.
+func (s *ImportService) ListImports(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]ImportSummary, error) {
+	remover, ok := s.repository.(importRemover)
+	if !ok {
+		return nil, errRemovalUnavailable
+	}
+	return remover.ListImports(ctx, scheduleID, scope)
+}
+
+// RemoveImport removes a wrongly imported file; dryRun only reports the effect.
+func (s *ImportService) RemoveImport(ctx context.Context, actor auth.Principal, batchID string, dryRun bool, meta auth.ClientMeta, scope auth.RegencyScope) (Removal, error) {
+	remover, ok := s.repository.(importRemover)
+	if !ok {
+		return Removal{}, errRemovalUnavailable
+	}
+	return remover.RemoveImport(ctx, actor, batchID, dryRun, meta, scope)
 }
