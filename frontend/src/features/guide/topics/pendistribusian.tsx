@@ -44,6 +44,7 @@ export const pendistribusian: GuideTopic = {
         { n: 4, text: <>Isi setiap slot foto wajib dengan <ButtonSample variant="outline" icon={<Camera />}>Buka kamera</ButtonSample> atau <ButtonSample variant="outline" icon={<ImagePlus />}>Pilih galeri</ButtonSample>. Slot berubah menjadi <b>Lengkap</b> setelah tersimpan.</>, permissions: ['distribution.pos_mesin', 'distribution.manage'] },
       ],
       problems: [
+        { q: 'Bagaimana sudut foto yang benar?', a: 'Tekan tanda tanya (?) di pojok kanan atas slot untuk melihat contoh foto beserta keterangannya. Tanda tanya hanya muncul pada slot yang sudah diberi contoh oleh super admin di Pengaturan.' },
         { q: 'Unggahan foto gagal?', a: 'Periksa sinyal, lalu tekan Coba lagi pada foto yang gagal; foto tidak perlu dipilih ulang. Gagal karena sinyal putus dicoba lagi otomatis.' },
         { q: 'Boleh pindah menu atau muat ulang saat foto masih diunggah?', a: 'Boleh. Foto masuk antrian unggah (ikon awan di header) dan tetap diunggah di latar belakang; bila halaman dimuat ulang, antrian dilanjutkan otomatis. Jangan tutup tab sampai antrian habis.' },
       ],

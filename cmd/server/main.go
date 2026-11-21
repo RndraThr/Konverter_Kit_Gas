@@ -38,6 +38,7 @@ import (
 	"konkit/internal/recipients"
 	"konkit/internal/reports"
 	"konkit/internal/settings"
+	"konkit/internal/slotexamples"
 	"konkit/internal/web"
 )
 
@@ -154,6 +155,12 @@ func run(ctx context.Context, cfg config.Config) error {
 		return err
 	}
 	appReleaseService := appreleases.NewService(pool, appReleaseStorage)
+	// Example photos for the documentation slots are small and read on every
+	// distribution page, so they also stay on the server's own disk.
+	documentationExampleStorage, err := media.NewLocalStorage(filepath.Join(cfg.StoragePath, "documentation-examples"))
+	if err != nil {
+		return err
+	}
 	go appReleaseService.RunPatches(ctx)
 	notificationService := notifications.NewService(pool, pushSender(ctx, cfg))
 	financeService := finance.NewService(pool, mediaStorage, notificationService)
@@ -164,21 +171,22 @@ func run(ctx context.Context, cfg config.Config) error {
 	go realtime.Listen(ctx, cfg.DatabaseURL, realtimeHub)
 
 	apiHandler := apihttp.NewHandler(apihttp.Dependencies{
-		Auth:            authService,
-		AppReleases:     appReleaseService,
-		FinalReport:     finalReportService,
-		Geo:             geo.NewReverser(cfg.GeocoderURL, &http.Client{Timeout: 5 * time.Second}, "Konkit/1.0 (Konverter Kit Gas; PT Kian Santang Muliatama Tbk)"),
-		Profile:         profile.NewService(profile.NewRepository(pool)),
-		Administration:  administration.NewService(administration.NewRepository(pool)),
-		Settings:        settings.NewService(settings.NewRepository(pool)),
-		Health:          health.NewService(health.NewPostgresProbe(pool), cfg.Env, "dev", cfg.StorageBackend, mediaMoveWorkerActive, time.Now()),
-		Audit:           audit.NewRepository(pool),
-		Programs:        programService,
-		DCP3:            dcp3.NewImportService(dcp3.NewRepository(pool), dcp3.ParseLimits{MaxBytes: 10 << 20, MaxRows: 5000, MaxColumns: 100}),
-		Distribution:    distribution.NewService(distributionRepository, mediaStorage, videoLimiter),
-		Reports:         reportsService,
-		Recipients:      recipients.NewService(recipients.NewRepository(pool)),
-		DistributionMap: distmap.NewService(distmapRepository),
+		Auth:                  authService,
+		AppReleases:           appReleaseService,
+		DocumentationExamples: slotexamples.NewService(pool, documentationExampleStorage),
+		FinalReport:           finalReportService,
+		Geo:                   geo.NewReverser(cfg.GeocoderURL, &http.Client{Timeout: 5 * time.Second}, "Konkit/1.0 (Konverter Kit Gas; PT Kian Santang Muliatama Tbk)"),
+		Profile:               profile.NewService(profile.NewRepository(pool)),
+		Administration:        administration.NewService(administration.NewRepository(pool)),
+		Settings:              settings.NewService(settings.NewRepository(pool)),
+		Health:                health.NewService(health.NewPostgresProbe(pool), cfg.Env, "dev", cfg.StorageBackend, mediaMoveWorkerActive, time.Now()),
+		Audit:                 audit.NewRepository(pool),
+		Programs:              programService,
+		DCP3:                  dcp3.NewImportService(dcp3.NewRepository(pool), dcp3.ParseLimits{MaxBytes: 10 << 20, MaxRows: 5000, MaxColumns: 100}),
+		Distribution:          distribution.NewService(distributionRepository, mediaStorage, videoLimiter),
+		Reports:               reportsService,
+		Recipients:            recipients.NewService(recipients.NewRepository(pool)),
+		DistributionMap:       distmap.NewService(distmapRepository),
 		MapConfig: distmap.ClientConfig{
 			StyleURL: cfg.MapStyleURL, SatelliteTiles: cfg.MapSatelliteTiles, HybridOverlayTiles: cfg.MapHybridOverlayTiles,
 			Attribution: cfg.MapAttribution, APIKey: cfg.MapTileAPIKey,

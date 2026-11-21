@@ -13,6 +13,7 @@ import { apiRequest } from '../../lib/api';
 import { useCan } from '../../lib/permissions';
 import { uppercaseBusinessText } from '../../lib/text';
 import { AppReleasesPanel } from './AppReleasesPanel';
+import { SlotExamplesPanel } from './SlotExamplesPanel';
 import { formatSettingsPreview } from './settingsPresentation';
 
 type Setting = {
@@ -155,6 +156,7 @@ export function SettingsPage() {
             </div>
           </div>
         </form>}
+    <SlotExamplesPanel />
     <AppReleasesPanel />
   </div>;
 }

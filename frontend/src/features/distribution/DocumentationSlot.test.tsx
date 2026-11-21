@@ -406,3 +406,22 @@ test('resizes gallery photos with the stored quality but leaves videos untouched
   const uploaded = vi.mocked(uploadRequest).mock.calls.map(([, body]) => (body.get('file') as File).name);
   expect(uploaded).toEqual(['galeri.jpg', 'rekaman.mp4']);
 });
+
+test('shows the example photo of the slot from the question mark in its corner', async () => {
+  vi.mocked(apiRequest).mockImplementation(async (path) => (path === '/api/v1/documentation-examples'
+    ? { data: [{ slot_code: 'signed_bast', label: 'BAST bertanda tangan', stage: 'penyerahan', example: { caption: 'Seluruh halaman BAST masuk bingkai', image_url: '/api/v1/documentation-examples/signed_bast/image?v=1', updated_at: '2026-11-20T00:00:00Z' } }] }
+    : { data: [] }));
+  renderSlot();
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Contoh foto BAST bertanda tangan' }));
+  expect(await screen.findByRole('img', { name: 'Contoh foto BAST bertanda tangan' })).toHaveAttribute('src', '/api/v1/documentation-examples/signed_bast/image?v=1');
+  expect(screen.getByText('Seluruh halaman BAST masuk bingkai')).toBeVisible();
+});
+
+test('has no example button when the slot has no example photo', async () => {
+  vi.mocked(apiRequest).mockResolvedValue({ data: [{ slot_code: 'signed_bast', label: 'BAST bertanda tangan', stage: 'penyerahan', example: null }] });
+  renderSlot();
+
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/documentation-examples'));
+  expect(screen.queryByRole('button', { name: /Contoh foto/ })).not.toBeInTheDocument();
+});
