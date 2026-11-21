@@ -15,6 +15,7 @@ import { useCan } from '../../lib/permissions';
 import { formatDate } from '../programs/types';
 import { ColumnMappingStep } from './ColumnMappingStep';
 import { ImportPreviewTable, rowStatus } from './ImportPreviewTable';
+import { ImportHistory } from './ImportHistory';
 import { ImportStepper } from './ImportStepper';
 import { DataResponse, DCP3Mapping, DCP3Preview, emptyMapping, ImportResult, ScheduleResponse } from './types';
 import styles from './DCP3Import.module.css';
@@ -102,6 +103,7 @@ export function DCP3ImportPage() {
               <span><small>Kabupaten</small>{selectedSchedule.regency?.name}</span>
               <span><small>Periode</small>{formatDate(selectedSchedule.start_date)} - {formatDate(selectedSchedule.end_date)}</span>
             </div>
+            <ImportHistory scheduleId={scheduleID} canRemove={canImport} />
           </> : null}
           <div className={styles.actions}><Button type="button" disabled={!scheduleID} onClick={() => setStep(2)}>Lanjut ke upload <ArrowRight /></Button></div>
         </CardContent>

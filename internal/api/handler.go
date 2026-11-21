@@ -468,8 +468,10 @@ func (h *Handler) routeProtected(w http.ResponseWriter, r *http.Request, rc requ
 		h.handleDCP3RawPreview(w, r, rc)
 	case strings.HasPrefix(path, "dcp3/previews/"):
 		h.handleDCP3Preview(w, r, rc, strings.TrimPrefix(path, "dcp3/previews/"))
-	case path == "dcp3/imports":
+	case path == "dcp3/imports" && r.Method == http.MethodPost:
 		h.handleDCP3Import(w, r, rc)
+	case path == "dcp3/imports", strings.HasPrefix(path, "dcp3/imports/"):
+		h.handleDCP3Imports(w, r, rc, strings.TrimPrefix(strings.TrimPrefix(path, "dcp3/imports"), "/"))
 	case path == "distribution/slots":
 		h.handleDistributionSlots(w, r, rc)
 	case path == "distribution/handover-locations":
