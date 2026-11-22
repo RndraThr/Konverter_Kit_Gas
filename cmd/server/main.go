@@ -171,6 +171,7 @@ func run(ctx context.Context, cfg config.Config) error {
 	realtimeHub := realtime.NewHub()
 	go realtime.Listen(ctx, cfg.DatabaseURL, realtimeHub)
 
+	monitoringService := monitoring.NewService(pool, distributionRepository, notificationService)
 	apiHandler := apihttp.NewHandler(apihttp.Dependencies{
 		Auth:                  authService,
 		AppReleases:           appReleaseService,
@@ -245,7 +246,8 @@ func run(ctx context.Context, cfg config.Config) error {
 		GasElpiji:         bastGasElpijiService,
 		Finance:           financeService,
 		Banner:            banner.NewService(pool),
-		Monitoring:        monitoring.NewService(pool, distributionRepository, notificationService),
+		Monitoring:        monitoringService,
+		Dashboard:         monitoringService,
 		Notifications:     notificationService,
 		TKDN:              bastTKDNService,
 		Pemeriksaan:       bastPemeriksaanService,

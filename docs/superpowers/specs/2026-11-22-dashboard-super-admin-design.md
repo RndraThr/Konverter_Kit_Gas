@@ -69,16 +69,16 @@ Progres per tahap pada grafik zona dan kabupaten adalah **tertaut → diserahkan
   - Program default: program aktif terbaru, sama dengan Monitoring.
   - Satu query agregat per bagian: per kabupaten, per hari, dan dokumentasi. Total dan zona dijumlahkan di Go dari baris kabupaten.
   - Tidak ada query per kabupaten.
-- Endpoint `GET /api/v1/dashboard/summary?program_id=`.
+- Endpoint `GET /api/v1/dashboard/progress?program_id=` (`/dashboard/summary` sudah dipakai ringkasan user di beranda).
   - Response: `programs`, `program_id`, `totals`, `zones[]`, `regencies[]` (dengan `zone_name`, `zone_sort`), `daily[]`, `activities[]`.
   - Program tidak ditemukan menghasilkan 404.
-- Migrasi `00111_dashboard_permission.sql` membuat permission `dashboard.view` dan memberikannya ke `super_admin`.
+- Migrasi `00111_dashboard_permission.sql` membuat permission `progress_dashboard.view` (`dashboard.view` sudah dimiliki role lapangan dan finance) dan memberikannya ke `super_admin`.
 - Integration test dengan fixture kecil: dua kabupaten di dua zona, slot open/linked/completed, foto approved, satu BA final, dan activity media. Test memeriksa tiap angka serta scope kabupaten.
 
 ## Frontend
 
 - `frontend/src/features/super-dashboard/` berisi `SuperDashboardPage.tsx`, `api.ts`, `types.ts`, dan komponen grafik.
-- Rute `/dashboard` dengan `ProtectedPage permission="dashboard.view"`. Menu "Dashboard" menjadi item pertama di grup "Ringkasan".
+- Rute `/dashboard` dengan `ProtectedPage permission="progress_dashboard.view"`. Menu "Dashboard" menjadi item pertama di grup "Ringkasan".
 - Halaman di-load secara lazy (`React.lazy`) supaya Recharts tidak masuk bundle utama.
 - State loading, kosong (program belum punya jadwal), dan error. Di lebar ponsel grafik ditumpuk satu kolom, dan grafik kabupaten bisa di-scroll vertikal.
 - Warna dan gaya mengikuti `design-system/konkit/MASTER.md`. Satu warna per tahap dipakai konsisten di semua grafik.
