@@ -99,7 +99,7 @@ func (s *PemeriksaanService) Preview(ctx context.Context, scheduleID, documentDa
 	if err != nil {
 		return AggregatePreview{}, err
 	}
-	wet, wetImages, err := s.wet(ctx, ctxData.ScheduleID, strings.TrimSpace(documentDate), scope)
+	wet, wetImages, all, err := s.wet(ctx, ctxData.ScheduleID, strings.TrimSpace(documentDate), scope)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
@@ -116,6 +116,12 @@ func (s *PemeriksaanService) Preview(ctx context.Context, scheduleID, documentDa
 	rendered, err := RenderPemeriksaan(snapshots, logoBytes)
 	if err != nil {
 		return AggregatePreview{}, err
+	}
+	// Pindai lengkap: preview menampilkan halaman pindaian form yang dipilih.
+	if wet.Full && len(wet.FullPDF) > 0 {
+		if scan, err := pemeriksaanScanFor(all, snapshots, wet, logoBytes); err == nil {
+			rendered = scan
+		}
 	}
 	hash := sha256.Sum256(rendered.PDF)
 	filename := fmt.Sprintf("BA PEMERIKSAAN - %s - %s.pdf", strings.ToUpper(strings.Join(strings.Fields(ctxData.RegencyName), " ")), documentDate)
@@ -134,12 +140,15 @@ func (s *PemeriksaanService) Finalize(ctx context.Context, actor auth.Principal,
 	if err != nil {
 		return nil, err
 	}
-	wet, wetImages, err := s.wet(ctx, ctxData.ScheduleID, documentDate, scope)
+	wet, wetImages, all, err := s.wet(ctx, ctxData.ScheduleID, documentDate, scope)
 	if err != nil {
 		return nil, err
 	}
 	if wet.Enabled && !wet.Scanned {
 		return nil, ErrWetSignatureRequired
+	}
+	if wet.Full && len(wet.FullPDF) == 0 {
+		return nil, ErrFullScanRequired
 	}
 	for i := range snapshots {
 		snapshots[i].SignatureMarks = marks
@@ -160,7 +169,16 @@ func (s *PemeriksaanService) Finalize(ctx context.Context, actor auth.Principal,
 	}
 	documents := make([]AggregateDocument, 0, len(snapshots))
 	for _, snapshot := range snapshots {
-		doc, err := s.finalizeForm(ctx, actor, ctxData, snapshot, logoBytes, folderPath, meta, scope)
+		var scan *RenderedAggregate
+		if wet.Full {
+			// Pindai lengkap: PDF final tiap form adalah halamannya di pindaian.
+			part, err := pemeriksaanScanFor(all, []PemeriksaanSnapshot{snapshot}, wet, logoBytes)
+			if err != nil {
+				return nil, ErrFullScanRequired
+			}
+			scan = &part
+		}
+		doc, err := s.finalizeForm(ctx, actor, ctxData, snapshot, logoBytes, folderPath, scan, meta, scope)
 		if err != nil {
 			return nil, fmt.Errorf("finalize form %s: %w", snapshot.Form.Code, err)
 		}
@@ -169,7 +187,7 @@ func (s *PemeriksaanService) Finalize(ctx context.Context, actor auth.Principal,
 	return documents, nil
 }
 
-func (s *PemeriksaanService) finalizeForm(ctx context.Context, actor auth.Principal, ctxData DP3Context, snapshot PemeriksaanSnapshot, logoBytes map[string][]byte, folderPath []string, meta auth.ClientMeta, scope auth.RegencyScope) (AggregateDocument, error) {
+func (s *PemeriksaanService) finalizeForm(ctx context.Context, actor auth.Principal, ctxData DP3Context, snapshot PemeriksaanSnapshot, logoBytes map[string][]byte, folderPath []string, scan *RenderedAggregate, meta auth.ClientMeta, scope auth.RegencyScope) (AggregateDocument, error) {
 	documentType := snapshot.DocumentType
 	version, err := s.repository.NextAggregateVersion(ctx, ctxData.ScheduleID, documentType, snapshot.DocumentDate)
 	if err != nil {
@@ -182,6 +200,9 @@ func (s *PemeriksaanService) finalizeForm(ctx context.Context, actor auth.Princi
 	rendered, err := RenderPemeriksaan([]PemeriksaanSnapshot{snapshot}, logoBytes)
 	if err != nil {
 		return AggregateDocument{}, err
+	}
+	if scan != nil {
+		rendered = *scan
 	}
 	hash := sha256.Sum256(rendered.PDF)
 	checksum := hex.EncodeToString(hash[:])
@@ -315,14 +336,56 @@ func (s *PemeriksaanService) closingRows(ctx context.Context, scheduleID string,
 // wet menentukan tanda tangan basah BA Pemeriksaan satu tanggal. Kode isi
 // dihitung dari semua form agar sama untuk preview, cetak, dan finalisasi
 // sebagian form.
-func (s *PemeriksaanService) wet(ctx context.Context, scheduleID, documentDate string, scope auth.RegencyScope) (WetSignature, map[string][]byte, error) {
+func (s *PemeriksaanService) wet(ctx context.Context, scheduleID, documentDate string, scope auth.RegencyScope) (WetSignature, map[string][]byte, []PemeriksaanSnapshot, error) {
 	all, _, err := s.snapshots(ctx, scheduleID, documentDate, nil, scope)
 	if err != nil {
-		return WetSignature{}, nil, err
+		return WetSignature{}, nil, nil, err
 	}
-	return loadWetSignature(ctx, s.repository, scheduleID, "ba-pemeriksaan", documentDate, struct {
+	wet, images, err := loadWetSignature(ctx, s.repository, scheduleID, "ba-pemeriksaan", documentDate, struct {
 		Forms []PemeriksaanSnapshot `json:"forms"`
 	}{all})
+	return wet, images, all, err
+}
+
+// pemeriksaanScanFor cuts the pages of the chosen forms out of the full scan
+// (pindai lengkap). The scan follows the printed BA: every form in order,
+// each one ending with its signature page, so each form's page range is
+// found by rendering the forms one by one.
+func pemeriksaanScanFor(all, chosen []PemeriksaanSnapshot, wet WetSignature, logoBytes map[string][]byte) (RenderedAggregate, error) {
+	ranges := make(map[string][2]int, len(all))
+	next := 1
+	for _, form := range all {
+		form.Wet = WetSignature{Full: true}
+		rendered, err := RenderPemeriksaan([]PemeriksaanSnapshot{form}, logoBytes)
+		if err != nil {
+			return RenderedAggregate{}, err
+		}
+		ranges[form.Form.Code] = [2]int{next, next + rendered.PageCount - 1}
+		next += rendered.PageCount
+	}
+	total, err := pdfPageCount(wet.FullPDF)
+	if err != nil {
+		return RenderedAggregate{}, err
+	}
+	if total != next-1 {
+		return RenderedAggregate{}, &FullScanPageError{Want: next - 1, Got: total}
+	}
+	if len(chosen) == len(all) {
+		return RenderedAggregate{PDF: wet.FullPDF, PageCount: total}, nil
+	}
+	parts := make([][]byte, 0, len(chosen))
+	for _, form := range chosen {
+		pages, ok := ranges[form.Form.Code]
+		if !ok {
+			return RenderedAggregate{}, ErrFullScanRequired
+		}
+		part, err := pdfPages(wet.FullPDF, pages[0], pages[1])
+		if err != nil {
+			return RenderedAggregate{}, err
+		}
+		parts = append(parts, part)
+	}
+	return mergePDFs(parts)
 }
 
 // SignaturePreview merender semua form, dipakai editor tanda tangan.

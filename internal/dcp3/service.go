@@ -171,7 +171,7 @@ func normalizeIdentifier(value string) string {
 // importRemover lists and removes imported files (the database repository).
 type importRemover interface {
 	ListImports(context.Context, string, auth.RegencyScope) ([]ImportSummary, error)
-	RemoveImport(context.Context, auth.Principal, string, bool, auth.ClientMeta, auth.RegencyScope) (Removal, error)
+	RemoveImport(context.Context, auth.Principal, string, RemovalInput, bool, auth.ClientMeta, auth.RegencyScope) (Removal, error)
 }
 
 var errRemovalUnavailable = errors.New("dcp3 import removal is unavailable")
@@ -185,11 +185,12 @@ func (s *ImportService) ListImports(ctx context.Context, scheduleID string, scop
 	return remover.ListImports(ctx, scheduleID, scope)
 }
 
-// RemoveImport removes a wrongly imported file; dryRun only reports the effect.
-func (s *ImportService) RemoveImport(ctx context.Context, actor auth.Principal, batchID string, dryRun bool, meta auth.ClientMeta, scope auth.RegencyScope) (Removal, error) {
+// RemoveImport removes the chosen recipients of a wrongly imported file;
+// dryRun only lists them with the default choice.
+func (s *ImportService) RemoveImport(ctx context.Context, actor auth.Principal, batchID string, input RemovalInput, dryRun bool, meta auth.ClientMeta, scope auth.RegencyScope) (Removal, error) {
 	remover, ok := s.repository.(importRemover)
 	if !ok {
 		return Removal{}, errRemovalUnavailable
 	}
-	return remover.RemoveImport(ctx, actor, batchID, dryRun, meta, scope)
+	return remover.RemoveImport(ctx, actor, batchID, input, dryRun, meta, scope)
 }

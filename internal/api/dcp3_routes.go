@@ -178,14 +178,14 @@ func (h *Handler) handleDCP3Import(w http.ResponseWriter, r *http.Request, rc re
 // DCP3ImportsService lists and removes imported DCP3 files.
 type DCP3ImportsService interface {
 	ListImports(context.Context, string, auth.RegencyScope) ([]dcp3.ImportSummary, error)
-	RemoveImport(context.Context, auth.Principal, string, bool, auth.ClientMeta, auth.RegencyScope) (dcp3.Removal, error)
+	RemoveImport(context.Context, auth.Principal, string, dcp3.RemovalInput, bool, auth.ClientMeta, auth.RegencyScope) (dcp3.Removal, error)
 }
 
 // handleDCP3Imports serves the import history of a schedule:
 //
 //	GET    dcp3/imports?schedule_id=   imported files (dcp3.view)
-//	GET    dcp3/imports/{id}/removal   what removing the file would do (dcp3.import)
-//	DELETE dcp3/imports/{id}           remove the file (dcp3.import)
+//	GET    dcp3/imports/{id}/removal   its recipients, what removing each does, default choice (dcp3.import)
+//	DELETE dcp3/imports/{id}           remove the chosen recipients, body {"allocation_ids": [...]} (dcp3.import)
 func (h *Handler) handleDCP3Imports(w http.ResponseWriter, r *http.Request, rc requestContext, path string) {
 	service, ok := h.deps.DCP3.(DCP3ImportsService)
 	if h.deps.DCP3 == nil || !ok {
@@ -209,10 +209,14 @@ func (h *Handler) handleDCP3Imports(w http.ResponseWriter, r *http.Request, rc r
 		result, err := service.ListImports(r.Context(), r.URL.Query().Get("schedule_id"), scope)
 		writeDCP3ImportsResult(w, result, err)
 	case id != "" && action == "removal" && r.Method == http.MethodGet:
-		result, err := service.RemoveImport(r.Context(), rc.principal, id, true, clientMeta(r), scope)
+		result, err := service.RemoveImport(r.Context(), rc.principal, id, dcp3.RemovalInput{}, true, clientMeta(r), scope)
 		writeDCP3ImportsResult(w, result, err)
 	case id != "" && action == "" && r.Method == http.MethodDelete:
-		result, err := service.RemoveImport(r.Context(), rc.principal, id, false, clientMeta(r), scope)
+		var input dcp3.RemovalInput
+		if r.ContentLength != 0 && !decodeJSON(w, r, &input) {
+			return
+		}
+		result, err := service.RemoveImport(r.Context(), rc.principal, id, input, false, clientMeta(r), scope)
 		writeDCP3ImportsResult(w, result, err)
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
@@ -225,6 +229,8 @@ func writeDCP3ImportsResult(w http.ResponseWriter, result any, err error) {
 		writeData(w, http.StatusOK, result)
 	case errors.Is(err, dcp3.ErrImportNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "Import DCP3 tidak ditemukan")
+	case errors.Is(err, dcp3.ErrRemovalSelection):
+		writeError(w, http.StatusUnprocessableEntity, "dcp3_removal_selection", "Penerima yang dipilih bukan bagian dari import ini")
 	default:
 		writeServiceError(w, err)
 	}

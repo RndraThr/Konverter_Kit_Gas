@@ -157,6 +157,23 @@ func TestMergePDFsJoinsThePagesInOrder(t *testing.T) {
 	}
 }
 
+func TestPDFPagesCutsOneRecipientOutOfTheScan(t *testing.T) {
+	scan := pdfWithPages(t, 5)
+	part, err := pdfPages(scan, 2, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count, err := pdfPageCount(part); err != nil || count != 2 {
+		t.Fatalf("count=%d err=%v", count, err)
+	}
+	if _, err := pdfPages(scan, 3, 2); err == nil {
+		t.Fatal("reversed range accepted")
+	}
+	if _, err := pdfPages(scan, 0, 1); err == nil {
+		t.Fatal("page 0 accepted")
+	}
+}
+
 func TestGasElpijiSupportsFullScan(t *testing.T) {
 	if !fullScanDocuments["gas-elpiji"] || overviewFullScanKeys["gas-elpiji"] != "gas-elpiji" {
 		t.Fatal("gas elpiji should support pindai lengkap")

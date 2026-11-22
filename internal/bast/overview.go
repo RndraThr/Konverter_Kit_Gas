@@ -89,6 +89,7 @@ var overviewFullScanKeys = map[string]string{
 	"servis-berkala":      "servis-berkala",
 	"tkdn":                "tkdn",
 	"gas-elpiji":          "gas-elpiji",
+	"pemeriksaan":         "ba-pemeriksaan",
 }
 
 // Overview mengembalikan status final, perlu dibuat ulang, arsip, dan tanda

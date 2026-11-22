@@ -14,6 +14,7 @@ import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
 import { SignatureSettingsPanel } from './SignatureSettingsPanel';
+import { FullScanCard } from './FullScanBar';
 import { useWetSignatureBlocked, WetSignatureHint } from './WetSignatureBar';
 import { PemeriksaanFormsEditor } from './PemeriksaanFormsEditor';
 import { DocumentInfoFields } from './DocumentInfoFields';
@@ -144,6 +145,7 @@ export function PemeriksaanPanel({ scheduleID, programID, regencyName, programTy
         </CardContent>
       </Card>
     </div>
+    {ready && documentDate !== '' && <FullScanCard scheduleID={scheduleID} document="ba-pemeriksaan" date={documentDate} label="BA Pemeriksaan" />}
 
     {showEditor && <PemeriksaanFormsEditor forms={forms} entries={summary.data.data.entries ?? []} canManage={canManage} saving={saveProfile.isPending} onChange={setForms} onSave={() => saveProfile.mutate()} />}
   </div>;

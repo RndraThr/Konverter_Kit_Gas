@@ -23,4 +23,4 @@ export function fullScanPath(scheduleID: string, document: string, date: string,
 }
 
 /** BA yang mendukung pindai lengkap (sama dengan server). */
-export const fullScanDocuments = new Set(['dp3', 'rekap-harian', 'closing-titik-serah', 'closing-kabupaten', 'servis-berkala', 'tkdn', 'ba-perorangan', 'gas-elpiji']);
+export const fullScanDocuments = new Set(['dp3', 'rekap-harian', 'closing-titik-serah', 'closing-kabupaten', 'servis-berkala', 'tkdn', 'ba-perorangan', 'gas-elpiji', 'ba-pemeriksaan']);

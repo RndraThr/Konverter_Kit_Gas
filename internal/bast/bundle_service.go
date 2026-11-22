@@ -130,6 +130,12 @@ func (s *BundleService) PreviewBundle(ctx context.Context, request BundleRequest
 		return BundlePreview{}, err
 	}
 	if request.SlotID != "" {
+		// Pindai lengkap: one recipient's pages of the day's wet-signed scan.
+		if !systemRender(ctx) {
+			if preview, ok := s.recipientScanPages(ctx, request, documents, scope); ok {
+				return preview, nil
+			}
+		}
 		documents = slices.DeleteFunc(documents, func(d RecipientDocument) bool { return d.DistributionSlotID != request.SlotID })
 		if len(documents) == 0 {
 			return BundlePreview{}, ErrNotFound
@@ -149,6 +155,45 @@ func (s *BundleService) PreviewBundle(ctx context.Context, request BundleRequest
 		}
 	}
 	return BundlePreview{PDF: rendered.PDF, Filename: rendered.Filename, RecipientCount: len(documents), PageCount: rendered.PageCount, Checksum: checksum}, nil
+}
+
+// recipientScanPages cuts one recipient's BA out of the day's full scan
+// (pindai lengkap) when it matches the current data. The day's BA is rendered
+// again to know which pages belong to the recipient: the scan only matches
+// while the data, and so the layout, is the one printed.
+func (s *BundleService) recipientScanPages(ctx context.Context, request BundleRequest, dayDocuments []RecipientDocument, scope auth.RegencyScope) (BundlePreview, bool) {
+	scan := s.matchingFullScan(ctx, request, scope)
+	if scan == nil {
+		return BundlePreview{}, false
+	}
+	slotNumber := 0
+	for _, document := range dayDocuments {
+		if document.DistributionSlotID == request.SlotID {
+			slotNumber = document.SlotNumber
+		}
+	}
+	if slotNumber == 0 {
+		return BundlePreview{}, false
+	}
+	rendered, _, err := s.render(ctx, request.ProgramID, request.RegencyID, request.LocalDate, dayDocuments)
+	if err != nil {
+		return BundlePreview{}, false
+	}
+	if pages, err := pdfPageCount(scan); err != nil || pages != rendered.PageCount {
+		return BundlePreview{}, false
+	}
+	for _, pages := range rendered.Recipients {
+		if pages.SlotNumber != slotNumber {
+			continue
+		}
+		pdf, err := pdfPages(scan, pages.PageStart, pages.PageEnd)
+		if err != nil {
+			return BundlePreview{}, false
+		}
+		hash := sha256.Sum256(pdf)
+		return BundlePreview{PDF: pdf, Filename: rendered.Filename, RecipientCount: 1, PageCount: pages.PageEnd - pages.PageStart + 1, Checksum: hex.EncodeToString(hash[:])}, true
+	}
+	return BundlePreview{}, false
 }
 
 // matchingFullScan: pindaian BA Perorangan tanggal ini yang cocok dengan
