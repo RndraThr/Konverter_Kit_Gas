@@ -72,10 +72,10 @@ export function RakordaPanel({ config = rakordaConfig, scheduleID, regencyName, 
   useEffect(() => { if (settings.data?.data) { setLocation(settings.data.data[config.locationKey] ?? ''); setRowCount(settings.data.data[config.rowCountKey] || config.defaultRowCount); } }, [settings.data, config]);
 
   const locationOK = (value: string) => config.locationOptional || value.trim() !== '';
-  const validSettings = locationOK(location) && rowCount >= 5 && rowCount <= 200;
+  const validSettings = locationOK(location) && rowCount >= 5 && rowCount <= 500;
   const savedLocation = settings.data?.data[config.locationKey] ?? '';
   const savedRowCount = settings.data?.data[config.rowCountKey] ?? 0;
-  const settingsReady = locationOK(savedLocation) && savedRowCount >= 5 && savedRowCount <= 200;
+  const settingsReady = locationOK(savedLocation) && savedRowCount >= 5 && savedRowCount <= 500;
   const preview = useQuery({
     queryKey: ['bast', config.apiPath, 'preview', scheduleID, date, savedLocation, savedRowCount],
     queryFn: () => apiBlobRequest(`${apiBase}/preview`, { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, date }) }),
@@ -112,7 +112,7 @@ export function RakordaPanel({ config = rakordaConfig, scheduleID, regencyName, 
         <CardContent className="grid gap-4 pt-5">
           <FormField label={`Lokasi ${config.name}`} name={config.locationKey} list={`${config.locationKey}-places`} required={!config.locationOptional} value={location} disabled={!canManage} placeholder="Pilih titik serah atau ketik lokasi" onChange={(event) => setLocation(uppercaseBusinessText(event.target.value))} hint={config.locationOptional ? 'Pilih dari titik serah kabupaten atau ketik lokasi lain; boleh dikosongkan.' : 'Pilih dari titik serah kabupaten atau ketik lokasi lain.'} />
           <datalist id={`${config.locationKey}-places`}>{places.map((place) => <option key={place.id} value={uppercaseBusinessText(place.name)} />)}</datalist>
-          <FormField label="Jumlah baris" name={config.rowCountKey} type="number" min={5} max={200} required value={rowCount} disabled={!canManage} onChange={(event) => setRowCount(Number(event.target.value))} hint="Minimal 5 dan maksimal 200 baris; halaman bertambah otomatis." />
+          <FormField label="Jumlah baris" name={config.rowCountKey} type="number" min={5} max={500} required value={rowCount} disabled={!canManage} onChange={(event) => setRowCount(Number(event.target.value))} hint="Minimal 5 dan maksimal 500 baris; halaman bertambah otomatis." />
           {config.note && <p className="text-xs leading-5 text-muted-foreground">{config.note}</p>}
           {canManage && <Button disabled={!validSettings || saveSettings.isPending} onClick={() => saveSettings.mutate()}><Save aria-hidden="true" />{saveSettings.isPending ? 'Menyimpan...' : 'Simpan pengaturan'}</Button>}
         </CardContent>
