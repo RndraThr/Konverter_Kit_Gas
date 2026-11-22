@@ -90,7 +90,7 @@ test('keeps completed slots read-only until a machine-stage revision succeeds', 
   await userEvent.type(screen.getByLabelText('Alasan revisi'), 'Foto mesin perlu diperbaiki');
   await userEvent.click(screen.getByRole('button', { name: 'Buka revisi' }));
 
-  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/slots/slot-1/reopen', {
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/slots/7/reopen?schedule_id=schedule-1', {
     method: 'POST', body: JSON.stringify({ stage: 'mesin', reason: 'Foto mesin perlu diperbaiki' }),
   }));
   expect(onChanged).toHaveBeenCalledWith(expect.objectContaining({ status: 'linked', reopened_stage: 'mesin' }));

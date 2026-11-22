@@ -24,7 +24,7 @@ export function RevisionDialog({ slot, stage, open, onOpenChange, onReopened }: 
   }, [open]);
 
   const reopen = useMutation({
-    mutationFn: () => apiRequest<DataResponse<DistributionSlot>>(`/api/v1/distribution/slots/${slot.id}/reopen`, {
+    mutationFn: () => apiRequest<DataResponse<DistributionSlot>>(`/api/v1/distribution/slots/${slot.slot_number}/reopen?schedule_id=${encodeURIComponent(slot.schedule_id)}`, {
       method: 'POST',
       body: JSON.stringify({ stage, reason: reason.trim() }),
     }),

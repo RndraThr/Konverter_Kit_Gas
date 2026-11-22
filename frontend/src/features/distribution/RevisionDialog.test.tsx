@@ -27,7 +27,7 @@ test('requires a meaningful reason before reopening the requested stage', async 
   await userEvent.type(screen.getByLabelText('Alasan revisi'), 'Nomor seri perlu dikoreksi');
   await userEvent.click(submit);
 
-  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/slots/slot-1/reopen', {
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/slots/7/reopen?schedule_id=schedule-1', {
     method: 'POST',
     body: JSON.stringify({ stage: 'dokumen', reason: 'Nomor seri perlu dikoreksi' }),
   }));
