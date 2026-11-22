@@ -72,9 +72,14 @@ func (r *Repository) ListSlotDetails(ctx context.Context, scheduleID string) (ma
 		SELECT ds.id::text, COALESCE(ds.distribution_date, (ds.distributed_at AT TIME ZONE 'Asia/Jakarta')::date),
 		       COALESCE(psi.display_value,''), COALESCE(p.phone_number,''), COALESCE(ds.machine_serial_number,''),
 		       COALESCE(ds.verification_snapshot_json->'equipment'->>'converter_brand',''), COALESCE(ds.converter_serial_number,''),
-		       COALESCE(ds.hose_serial_number,'')
+		       COALESCE(ds.hose_serial_number,''),
+		       CASE WHEN cn.batch_id IS NOT NULL THEN 'DCP3' ELSE 'Pengganti' END
 		FROM distribution_slots ds
 		JOIN people p ON p.id = ds.recipient_person_id
+		-- Penerima dari import DCP3 punya batch; yang ditambah manual atau
+		-- lewat Ganti penerima tidak, dan dihitung sebagai pengganti.
+		LEFT JOIN package_allocations pa ON pa.id = ds.allocation_id
+		LEFT JOIN candidate_nominations cn ON cn.id = pa.nomination_id
 		JOIN program_schedules ps ON ps.id = ds.schedule_id
 		JOIN programs pr ON pr.id = ps.program_id
 		LEFT JOIN person_sector_identifiers psi ON psi.person_id = p.id
@@ -91,7 +96,7 @@ func (r *Repository) ListSlotDetails(ctx context.Context, scheduleID string) (ma
 		var date time.Time
 		var detail SlotDetail
 		if err := rows.Scan(&slotID, &date, &detail.CardNumber, &detail.PhoneNumber, &detail.MachineSerial,
-			&detail.ConverterBrand, &detail.ConverterSerial, &detail.HoseSerial); err != nil {
+			&detail.ConverterBrand, &detail.ConverterSerial, &detail.HoseSerial, &detail.Source); err != nil {
 			return nil, err
 		}
 		detail.DistributionDate = date.Format("2006-01-02")

@@ -1,11 +1,13 @@
 import type { Schedule } from '../programs/types';
 
-// ReportRow: satu penerima Laporan DP3 (distribusi selesai, tanpa status).
+// ReportRow: satu penerima Laporan DP3 (distribusi selesai). status hanya
+// asal penerima: DCP3 dari import, Pengganti bila ditambah di luar DCP3.
 export type ReportRow = {
   row_number: number;
   full_name: string;
   nik: string;
   card_number: string;
+  status: 'DCP3' | 'Pengganti';
   phone_number: string;
   address: string;
   village: string;

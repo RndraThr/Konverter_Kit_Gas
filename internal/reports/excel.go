@@ -34,6 +34,7 @@ func excelColumns(programType string) []excelColumn {
 		{"Nama Penerima", 28, cellPlain, func(r Row) any { return r.FullName }},
 		{"NIK", 20, cellText, func(r Row) any { return r.NIK }},
 		{cardTitle(programType), 22, cellText, func(r Row) any { return r.CardNumber }},
+		{"Status", 12, cellPlain, func(r Row) any { return r.Status }},
 		{"No. HP", 16, cellText, func(r Row) any { return r.PhoneNumber }},
 		{"Alamat", 32, cellPlain, func(r Row) any { return r.Address }},
 		{"Desa/Kelurahan", 18, cellPlain, func(r Row) any { return r.Village }},

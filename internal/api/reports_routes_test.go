@@ -26,7 +26,7 @@ func (s *fakeReportsService) Report(_ context.Context, scheduleID string, scope 
 	s.scheduleID, s.seenRegencyScope = scheduleID, scope
 	return reports.Report{
 		ScheduleInfo: reports.ScheduleInfo{ScheduleID: scheduleID, RegencyName: "Wajo"},
-		Rows:         []reports.Row{{RowNumber: 1, DistributionNumber: 7, FullName: "Siti Aminah", NIK: "7306014101900001"}},
+		Rows:         []reports.Row{{RowNumber: 1, DistributionNumber: 7, FullName: "Siti Aminah", NIK: "7306014101900001", Status: "DCP3"}},
 	}, nil
 }
 func (s *fakeReportsService) ExportExcel(_ context.Context, _ auth.Principal, scheduleID string, _ auth.ClientMeta, scope auth.RegencyScope) (reports.File, error) {
@@ -64,8 +64,11 @@ func TestReportsRowsReturnsRecipientsInCallerScope(t *testing.T) {
 	if len(service.seenRegencyScope.RegencyIDs) != 1 || service.seenRegencyScope.RegencyIDs[0] != "regency-1" {
 		t.Fatalf("scope not forwarded: %+v", service.seenRegencyScope)
 	}
-	if strings.Contains(rec.Body.String(), "status") {
-		t.Fatalf("laporan DP3 must not carry statuses: %s", rec.Body.String())
+	// The one status a row carries is where the recipient came from (DCP3 or
+	// Pengganti), never the distribution or documentation progress.
+	body := rec.Body.String()
+	if !strings.Contains(body, `"status":"DCP3"`) || strings.Count(body, "status") != 1 || strings.Contains(body, "documentation") || strings.Contains(body, "recompletion") {
+		t.Fatalf("laporan DP3 must carry only the recipient source: %s", body)
 	}
 }
 
