@@ -52,6 +52,8 @@ describe('AppShell', () => {
     expect(screen.getByRole('link', { name: 'Data Penerima' })).toHaveAttribute('href', '/');
     expect(screen.getByRole('link', { name: 'Map Distribusi' })).toHaveAttribute('href', '/map-distribusi');
     expect(screen.queryByRole('link', { name: 'Ringkasan' })).not.toBeInTheDocument();
+    // dashboard.view (home summary) is not the progress dashboard.
+    expect(screen.queryByRole('link', { name: 'Dashboard progres' })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Persiapan' }));
     expect(screen.getByRole('link', { name: 'DCP3' })).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Distribusi' }));
@@ -65,6 +67,16 @@ describe('AppShell', () => {
     expect(screen.queryByRole('link', { name: 'Profil saya' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Ubah password' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Role & akses' })).not.toBeInTheDocument();
+  });
+
+  it('shows the progress dashboard first in Ringkasan with its permission', async () => {
+    const withDashboard = { ...bootstrap, data: { ...bootstrap.data, permissions: [...bootstrap.data.permissions, 'progress_dashboard.view'] } };
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(withDashboard), { status: 200 }));
+    renderShell();
+    const link = await screen.findByRole('link', { name: 'Dashboard progres' });
+    expect(link).toHaveAttribute('href', '/dashboard');
+    const ringkasan = screen.getAllByRole('link').filter((a) => ['Dashboard progres', 'Data Penerima'].includes(a.textContent ?? ''));
+    expect(ringkasan[0]).toBe(link);
   });
 
   it('opens the mobile navigation from an accessible button', async () => {
