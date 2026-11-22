@@ -79,7 +79,7 @@ func TestScheduleSettingsInputNormalizesRakordaDefaults(t *testing.T) {
 }
 
 func TestScheduleSettingsInputRejectsAttendanceRowCountOutsideRange(t *testing.T) {
-	for _, rows := range []int{4, 201} {
+	for _, rows := range []int{4, 501} {
 		for _, input := range []ScheduleSettingsInput{
 			{ScheduleID: "sched-1", RakordaRowCount: rows},
 			{ScheduleID: "sched-1", SosialisasiRowCount: rows},

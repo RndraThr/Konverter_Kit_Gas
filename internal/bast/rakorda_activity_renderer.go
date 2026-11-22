@@ -77,7 +77,7 @@ func RenderTraining100(snapshot RakordaSnapshot, logoBytes map[string][]byte) (R
 // baris bernomor; kolom tanda tangan empat pihak menyusul di bawah baris
 // terakhir, atau di halaman baru bila ruangnya tidak cukup.
 func renderActivityAttendance(document activityDocument, snapshot RakordaSnapshot, logoBytes map[string][]byte) (RenderedAggregate, error) {
-	if len(snapshot.Participants) == 0 && (snapshot.RowCount < 5 || snapshot.RowCount > 200) {
+	if len(snapshot.Participants) == 0 && (snapshot.RowCount < 5 || snapshot.RowCount > maxActivityRows) {
 		return RenderedAggregate{}, ErrInvalidInput
 	}
 	pdf := fpdf.New("P", "mm", "A4", "")

@@ -282,3 +282,25 @@ func TestTrainingLocationComesFromParticipantsHandoverLocation(t *testing.T) {
 		t.Fatalf("fallback location=%q err=%v", snapshot.Location, err)
 	}
 }
+
+func TestAttendanceSheetsRenderUpTo500Rows(t *testing.T) {
+	logos := map[string][]byte{"logo-1": testPNG(t)}
+	snapshot := RakordaSnapshot{
+		DocumentDate: "2026-10-03", Location: "BALAI DESA TEMPE",
+		RegencyName: "WAJO", ProvinceName: "SULAWESI SELATAN", ZoneName: "ZONA 4", FiscalYear: 2026,
+		RowCount: 500, Logos: []LogoSnapshot{{AssetID: "logo-1", MimeType: "image/png", SortOrder: 1, MaxWidthMM: 35, MaxHeightMM: 14}},
+		Signatories: closingSignatories{AgricultureOfficeName: "IR. HARYANTO", AgricultureOfficeNIP: "197203151998031004"},
+	}
+	for name, render := range map[string]func(RakordaSnapshot, map[string][]byte) (RenderedAggregate, error){
+		"rakorda": RenderRakorda, "sosialisasi": RenderSosialisasi,
+	} {
+		rendered, err := render(snapshot, logos)
+		if err != nil || rendered.PageCount < 10 {
+			t.Fatalf("%s pages=%d err=%v", name, rendered.PageCount, err)
+		}
+	}
+	snapshot.RowCount = 501
+	if _, err := RenderRakorda(snapshot, logos); err == nil {
+		t.Fatal("501 rows accepted")
+	}
+}

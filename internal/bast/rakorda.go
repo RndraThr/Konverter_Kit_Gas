@@ -45,7 +45,7 @@ func buildRakordaSnapshot(spec rakordaDocumentSpec, ctx DP3Context, settings Sch
 		location = recipientLocations(names, location)
 	} else {
 		participants = nil
-		if rowCount < 5 || rowCount > 200 {
+		if rowCount < 5 || rowCount > maxActivityRows {
 			return RakordaSnapshot{}, ErrInvalidInput
 		}
 	}
