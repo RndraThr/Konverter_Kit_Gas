@@ -64,33 +64,12 @@ func (s *Service) Overview(ctx context.Context, programID, date string, scope au
 		return Overview{}, err
 	}
 	out := Overview{Date: date, Programs: []Program{}, Rakornas: []string{}, Rows: []ScheduleRow{}, Reviewers: []Person{}, Users: []Person{}}
-	rows, err := s.pool.Query(ctx, `SELECT id::text, name, fiscal_year, status FROM programs WHERE status <> 'archived'
-		ORDER BY (status = 'active') DESC, fiscal_year DESC, name`)
-	if err != nil {
-		return out, fmt.Errorf("list programs: %w", err)
-	}
-	for rows.Next() {
-		var p Program
-		if err := rows.Scan(&p.ID, &p.Name, &p.FiscalYear, &p.Status); err != nil {
-			rows.Close()
-			return out, fmt.Errorf("scan program: %w", err)
-		}
-		out.Programs = append(out.Programs, p)
-	}
-	rows.Close()
-	programID = strings.TrimSpace(programID)
-	if programID == "" && len(out.Programs) > 0 {
-		programID = out.Programs[0].ID
-	}
-	if !slices.ContainsFunc(out.Programs, func(p Program) bool { return p.ID == programID }) {
-		if programID == "" {
-			return out, nil
-		}
-		return out, ErrProgramNotFound
+	if out.Programs, programID, err = s.pickProgram(ctx, programID); err != nil || programID == "" {
+		return out, err
 	}
 	out.ProgramID = programID
 
-	rows, err = s.pool.Query(ctx, `
+	rows, err := s.pool.Query(ctx, `
 		WITH photos AS (`+photoCounts+`)
 		SELECT ps.id::text, ps.name, r.id::text, r.name, r.province_name, COALESCE(z.name, ''), COALESCE(z.sort_order, 0),
 			ps.start_date::text, ps.end_date::text, COALESCE(ps.slot_quota, 0), COALESCE(sr.sheet_no, 0),
