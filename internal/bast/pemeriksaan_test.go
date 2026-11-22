@@ -124,3 +124,28 @@ func TestRenderPemeriksaanOneFormIsTwoPagesAndPreviewCombinesAll(t *testing.T) {
 		t.Fatalf("combined page_count=%d, want %d", combined.PageCount, 2*len(snapshots))
 	}
 }
+
+func TestPemeriksaanFullScanIsCutPerForm(t *testing.T) {
+	snapshots := samplePemeriksaanSnapshots()
+	logo := map[string][]byte{"logo-1": testPNG(t)}
+	scan := WetSignature{Full: true, FullPDF: pdfWithPages(t, 2*len(snapshots))}
+
+	all, err := pemeriksaanScanFor(snapshots, snapshots, scan, logo)
+	if err != nil || all.PageCount != 2*len(snapshots) {
+		t.Fatalf("all pages=%d err=%v", all.PageCount, err)
+	}
+	one, err := pemeriksaanScanFor(snapshots, snapshots[1:2], scan, logo)
+	if err != nil || one.PageCount != 2 {
+		t.Fatalf("one form pages=%d err=%v", one.PageCount, err)
+	}
+	two, err := pemeriksaanScanFor(snapshots, []PemeriksaanSnapshot{snapshots[0], snapshots[2]}, scan, logo)
+	if err != nil || two.PageCount != 4 {
+		t.Fatalf("two forms pages=%d err=%v", two.PageCount, err)
+	}
+	// A scan with a different page count is not cut.
+	short := WetSignature{Full: true, FullPDF: pdfWithPages(t, 3)}
+	var pages *FullScanPageError
+	if _, err := pemeriksaanScanFor(snapshots, snapshots[:1], short, logo); !errors.As(err, &pages) {
+		t.Fatalf("err=%v", err)
+	}
+}

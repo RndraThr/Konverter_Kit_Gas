@@ -13,7 +13,7 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-func TestIntegrationRemoveImportUnlinksOpenSlotsAndKeepsDistributed(t *testing.T) {
+func TestIntegrationRemoveImportDefaultsToSafeRecipientsAndRemovesChosenOnes(t *testing.T) {
 	pool := dcp3IntegrationPool(t)
 	ctx := context.Background()
 	seed := time.Now().UnixNano() % 100000000000000
@@ -68,54 +68,76 @@ func TestIntegrationRemoveImportUnlinksOpenSlotsAndKeepsDistributed(t *testing.T
 	if len(imports) != 1 || imports[0].Recipients != 4 || imports[0].Linked != 1 || imports[0].Distributed != 1 {
 		t.Fatalf("imports = %+v", imports)
 	}
-	if _, err := service.RemoveImport(ctx, auth.Principal{}, batchID, true, meta, auth.RegencyScope{RegencyIDs: []string{"00000000-0000-0000-0000-000000000000"}}); !errors.Is(err, ErrImportNotFound) {
+	if _, err := service.RemoveImport(ctx, auth.Principal{}, batchID, RemovalInput{}, true, meta, auth.RegencyScope{RegencyIDs: []string{"00000000-0000-0000-0000-000000000000"}}); !errors.Is(err, ErrImportNotFound) {
 		t.Fatalf("out of scope err = %v", err)
 	}
-
-	preview, err := service.RemoveImport(ctx, auth.Principal{}, batchID, true, meta, auth.RegencyScope{RegencyIDs: []string{regencyID}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if preview.Removed != 3 || len(preview.Unlinked) != 1 || *preview.Unlinked[0].SlotNumber != 1 || len(preview.Kept) != 1 || preview.Kept[0].FullName != "CICI" || preview.ImportDeleted {
-		t.Fatalf("preview = %+v", preview)
-	}
-	var count int
 	must := func(err error) {
 		t.Helper()
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	must(pool.QueryRow(ctx, `SELECT count(*) FROM package_allocations WHERE schedule_id=$1`, scheduleID).Scan(&count))
-	if count != 4 {
-		t.Fatalf("a dry run changed data: %d allocations", count)
+
+	preview, err := service.RemoveImport(ctx, auth.Principal{}, batchID, RemovalInput{}, true, meta, auth.RegencyScope{RegencyIDs: []string{regencyID}})
+	must(err)
+	states := map[string]RemovalRecipient{}
+	for _, r := range preview.Recipients {
+		states[r.FullName] = r
+	}
+	if len(preview.Recipients) != 4 || !states["ANI"].Selected || !states["DODI"].Selected || states["BUDI"].Selected || states["CICI"].Selected ||
+		states["BUDI"].State != RemovalLinked || states["CICI"].State != RemovalCompleted || states["CICI"].Warning == "" || states["ANI"].Warning != "" {
+		t.Fatalf("preview recipients = %+v", preview.Recipients)
+	}
+	if preview.Removed != 2 || preview.Kept != 2 || preview.ImportDeleted {
+		t.Fatalf("preview = %+v", preview)
+	}
+	if _, err := service.RemoveImport(ctx, auth.Principal{}, batchID, RemovalInput{AllocationIDs: &[]string{"00000000-0000-0000-0000-000000000000"}}, false, meta, scope); !errors.Is(err, ErrRemovalSelection) {
+		t.Fatalf("foreign recipient err = %v", err)
 	}
 
-	if _, err := service.RemoveImport(ctx, auth.Principal{}, batchID, false, meta, scope); err != nil {
-		t.Fatal(err)
+	// The default choice removes only the recipients without a warning.
+	result, err := service.RemoveImport(ctx, auth.Principal{}, batchID, RemovalInput{}, false, meta, scope)
+	must(err)
+	if result.Removed != 2 || result.Kept != 2 || result.ImportDeleted {
+		t.Fatalf("default removal = %+v", result)
 	}
-	var status string
-	var allocation *string
-	must(pool.QueryRow(ctx, `SELECT status, allocation_id::text FROM distribution_slots WHERE schedule_id=$1 AND slot_number=1`, scheduleID).Scan(&status, &allocation))
-	if status != "open" || allocation != nil {
-		t.Fatalf("slot 1 = %s %v, want open and unlinked", status, allocation)
-	}
-	must(pool.QueryRow(ctx, `SELECT count(*) FROM package_allocations WHERE schedule_id=$1`, scheduleID).Scan(&count))
-	if count != 1 {
-		t.Fatalf("allocations left = %d, want only the distributed one", count)
-	}
-	must(pool.QueryRow(ctx, `SELECT count(*) FROM people WHERE nik = ANY($1)`, []string{nikA, nikB, nikD}).Scan(&count))
+	var count int
+	must(pool.QueryRow(ctx, `SELECT count(*) FROM people WHERE nik = ANY($1)`, []string{nikA, nikD}).Scan(&count))
 	if count != 0 {
 		t.Fatalf("people of removed rows left = %d", count)
 	}
-	must(pool.QueryRow(ctx, `SELECT count(*) FROM people WHERE nik = $1`, nikC).Scan(&count))
-	if count != 1 {
-		t.Fatal("the distributed recipient was removed")
+	var status string
+	must(pool.QueryRow(ctx, `SELECT status FROM distribution_slots WHERE schedule_id=$1 AND slot_number=1`, scheduleID).Scan(&status))
+	if status != "linked" {
+		t.Fatalf("slot 1 = %s, an unchosen recipient must stay linked", status)
 	}
-	imports, err = service.ListImports(ctx, scheduleID, scope)
+
+	// Chosen on purpose: the linked and the distributed recipient go too.
+	chosen := []string{states["BUDI"].AllocationID, states["CICI"].AllocationID}
+	result, err = service.RemoveImport(ctx, auth.Principal{}, batchID, RemovalInput{AllocationIDs: &chosen}, false, meta, scope)
 	must(err)
-	if len(imports) != 1 || imports[0].Recipients != 1 {
-		t.Fatalf("imports after removal = %+v", imports)
+	if result.Removed != 2 || result.Unlinked != 2 || !result.ImportDeleted {
+		t.Fatalf("chosen removal = %+v", result)
+	}
+	rows, err := pool.Query(ctx, `SELECT slot_number, status, allocation_id IS NULL, completed_at IS NULL FROM distribution_slots WHERE schedule_id=$1 ORDER BY slot_number`, scheduleID)
+	must(err)
+	for rows.Next() {
+		var n int
+		var st string
+		var noAllocation, noCompletion bool
+		must(rows.Scan(&n, &st, &noAllocation, &noCompletion))
+		if st != "open" || !noAllocation || !noCompletion {
+			t.Fatalf("slot %d = %s allocation-null=%v completed-null=%v", n, st, noAllocation, noCompletion)
+		}
+	}
+	rows.Close()
+	must(pool.QueryRow(ctx, `SELECT count(*) FROM package_allocations WHERE schedule_id=$1`, scheduleID).Scan(&count))
+	if count != 0 {
+		t.Fatalf("allocations left = %d", count)
+	}
+	must(pool.QueryRow(ctx, `SELECT count(*) FROM dcp3_import_batches WHERE schedule_id=$1`, scheduleID).Scan(&count))
+	if count != 0 {
+		t.Fatal("the emptied import was kept")
 	}
 }
 
@@ -144,11 +166,11 @@ func TestIntegrationRemoveImportDeletesTheFileSoItCanBeImportedAgain(t *testing.
 		return preview.ID
 	}
 	batchID := commit()
-	result, err := service.RemoveImport(ctx, auth.Principal{}, batchID, false, meta, scope)
+	result, err := service.RemoveImport(ctx, auth.Principal{}, batchID, RemovalInput{}, false, meta, scope)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.ImportDeleted || result.Removed != 1 {
+	if !result.ImportDeleted || result.Removed != 1 || result.Kept != 0 {
 		t.Fatalf("removal = %+v", result)
 	}
 	var batches int

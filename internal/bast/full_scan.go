@@ -33,7 +33,7 @@ type WetMode struct {
 var fullScanDocuments = map[string]bool{
 	"dp3": true, "rekap-harian": true, "closing-titik-serah": true,
 	"closing-kabupaten": true, "servis-berkala": true, "tkdn": true,
-	"ba-perorangan": true, "gas-elpiji": true,
+	"ba-perorangan": true, "gas-elpiji": true, "ba-pemeriksaan": true,
 }
 
 // MaxFullScanBytes membatasi PDF pindaian satu BA.
@@ -121,6 +121,18 @@ func fullScanFinalPDF(wet WetSignature, rendered []byte) ([]byte, error) {
 		return nil, ErrFullScanRequired
 	}
 	return wet.FullPDF, nil
+}
+
+// pdfPages returns pages start..end (1-based, inclusive) of a PDF.
+func pdfPages(data []byte, start, end int) ([]byte, error) {
+	if start < 1 || end < start {
+		return nil, fmt.Errorf("invalid page range %d-%d", start, end)
+	}
+	var out bytes.Buffer
+	if err := pdfapi.Trim(bytes.NewReader(data), &out, []string{fmt.Sprintf("%d-%d", start, end)}, nil); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
 }
 
 // pdfPageCount membaca jumlah halaman PDF; galat berarti bukan PDF yang sah.

@@ -30,9 +30,12 @@ const preview = {
 let imports: unknown[] = [];
 const oldImport = { id: 'batch-old', filename: 'DCP3 Bone.xlsx', total_rows: 3, imported_at: '2026-11-20T02:00:00Z', imported_by: 'Rendra', recipients: 3, linked: 1, distributed: 1 };
 const removal = {
-  import: oldImport, removed: 2, import_deleted: false,
-  unlinked: [{ full_name: 'ANI', nik: '7301', slot_number: 4 }],
-  kept: [{ full_name: 'CICI', nik: '7303', slot_number: 6, reason: 'sudah selesai didistribusikan' }],
+  import: oldImport, removed: 1, unlinked: 0, kept: 2, import_deleted: false,
+  recipients: [
+    { allocation_id: 'a-free', full_name: 'DODI', nik: '7304', state: 'free', selected: true },
+    { allocation_id: 'a-linked', full_name: 'ANI', nik: '7301', slot_number: 4, state: 'linked', warning: 'Tersambung ke nomor bagi: nomor bagi dikosongkan lagi (foto tetap ada)', selected: false },
+    { allocation_id: 'a-done', full_name: 'CICI', nik: '7303', slot_number: 6, state: 'completed', warning: 'Sudah selesai didistribusikan', selected: false },
+  ],
 };
 
 function renderPage(permissions = ['dcp3.view', 'dcp3.import']) {
@@ -158,17 +161,21 @@ test('keeps DCP3 readable without showing import controls', async () => {
   expect(screen.getByText('Akses import diperlukan untuk menambahkan data DCP3.')).toBeVisible();
 });
 
-test('a wrongly uploaded import can be removed after seeing what happens to its recipients', async () => {
+test('a wrongly uploaded import is removed recipient by recipient, warnings unticked by default', async () => {
   imports = [oldImport];
   renderPage();
   await chooseOption('Jadwal distribusi', 'Wajo - Wajo Tahap 1');
   expect(await screen.findByText('DCP3 Bone.xlsx')).toBeVisible();
   await userEvent.click(screen.getByRole('button', { name: /Hapus import/ }));
   const dialog = await screen.findByRole('dialog');
-  expect(await within(dialog).findByText(/akan dihapus/)).toHaveTextContent('2 penerima akan dihapus');
-  expect(within(dialog).getByText(/#4 ANI/)).toBeVisible();
-  expect(within(dialog).getByText(/CICI — sudah selesai didistribusikan/)).toBeVisible();
-  await userEvent.click(within(dialog).getByRole('button', { name: /Hapus import/ }));
-  await waitFor(() => expect(vi.mocked(apiRequest)).toHaveBeenCalledWith('/api/v1/dcp3/imports/batch-old', { method: 'DELETE' }));
+  expect(await within(dialog).findByRole('checkbox', { name: /DODI/ })).toBeChecked();
+  expect(within(dialog).getByRole('checkbox', { name: /ANI/ })).not.toBeChecked();
+  expect(within(dialog).getByRole('checkbox', { name: /CICI/ })).not.toBeChecked();
+  expect(within(dialog).getByText('Sudah selesai didistribusikan')).toBeVisible();
+  // The distributed recipient is ticked on purpose.
+  await userEvent.click(within(dialog).getByRole('checkbox', { name: /CICI/ }));
+  expect(within(dialog).getByText(/dengan peringatan/)).toHaveTextContent('1 dengan peringatan');
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Hapus 2 penerima' }));
+  await waitFor(() => expect(vi.mocked(apiRequest)).toHaveBeenCalledWith('/api/v1/dcp3/imports/batch-old', { method: 'DELETE', body: JSON.stringify({ allocation_ids: ['a-free', 'a-done'] }) }));
   imports = [];
 });

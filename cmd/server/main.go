@@ -222,6 +222,7 @@ func run(ctx context.Context, cfg config.Config) error {
 			"tkdn":                {Preview: bastTKDNService.Preview, Code: bast.WetPageCode(bastTKDNService)},
 			"ba-perorangan":       {Preview: bastService.SchedulePreview, Code: bastService.ScheduleFingerprint},
 			"gas-elpiji":          {Preview: bastGasElpijiService.SignaturePreview, Code: bast.WetPageCode(bast.PreviewFunc(bastGasElpijiService.SignaturePreview))},
+			"ba-pemeriksaan":      {Preview: bastPemeriksaanService.SignaturePreview, Code: bast.WetPageCode(bast.PreviewFunc(bastPemeriksaanService.SignaturePreview))},
 		}),
 		BASTWetSignature: bast.NewWetSignatureService(bastRepository, map[string]bast.WetPreviewer{
 			"dp3":                 bastDP3Service,
