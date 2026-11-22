@@ -74,7 +74,7 @@ describe('AppShell', () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify(withDashboard), { status: 200 }));
     renderShell();
     const link = await screen.findByRole('link', { name: 'Dashboard progres' });
-    expect(link).toHaveAttribute('href', '/dashboard');
+    expect(link).toHaveAttribute('href', '/progres');
     const ringkasan = screen.getAllByRole('link').filter((a) => ['Dashboard progres', 'Data Penerima'].includes(a.textContent ?? ''));
     expect(ringkasan[0]).toBe(link);
   });

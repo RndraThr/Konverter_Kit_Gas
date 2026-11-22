@@ -52,7 +52,7 @@ export const dashboardRoutes: RouteObject[] = [{
   element: <AppShell />,
   children: [
     { index: true, element: <ProtectedPage permission="recipients.view"><DashboardPage /></ProtectedPage> },
-    { path: 'dashboard', element: <ProtectedPage permission="progress_dashboard.view"><Suspense fallback={<DataState kind="loading" title="Memuat dashboard" description="Menyiapkan grafik." />}><SuperDashboardPage /></Suspense></ProtectedPage> },
+    { path: 'progres', element: <ProtectedPage permission="progress_dashboard.view"><Suspense fallback={<DataState kind="loading" title="Memuat dashboard" description="Menyiapkan grafik." />}><SuperDashboardPage /></Suspense></ProtectedPage> },
     { path: 'map-distribusi', element: <ProtectedPage permission="distribution.view"><DistributionMapPage /></ProtectedPage> },
     { path: 'persiapan-program', element: <ProtectedPage permission="programs.view"><ProgramSetupPage /></ProtectedPage> },
     { path: 'dcp3', element: <ProtectedPage permission="dcp3.view"><DCP3ImportPage /></ProtectedPage> },

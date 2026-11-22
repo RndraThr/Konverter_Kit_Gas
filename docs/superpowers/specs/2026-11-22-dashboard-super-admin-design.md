@@ -78,7 +78,7 @@ Progres per tahap pada grafik zona dan kabupaten adalah **tertaut → diserahkan
 ## Frontend
 
 - `frontend/src/features/super-dashboard/` berisi `SuperDashboardPage.tsx`, `api.ts`, `types.ts`, dan komponen grafik.
-- Rute `/dashboard` dengan `ProtectedPage permission="progress_dashboard.view"`. Menu "Dashboard" menjadi item pertama di grup "Ringkasan".
+- Rute `/dashboard/progres` (SPA ber-basename `/dashboard`) dengan `ProtectedPage permission="progress_dashboard.view"`. Menu "Dashboard progres" (bukan "Dashboard", karena breadcrumb beranda sudah memakai nama itu) menjadi item pertama di grup "Ringkasan".
 - Halaman di-load secara lazy (`React.lazy`) supaya Recharts tidak masuk bundle utama.
 - State loading, kosong (program belum punya jadwal), dan error. Di lebar ponsel grafik ditumpuk satu kolom, dan grafik kabupaten bisa di-scroll vertikal.
 - Warna dan gaya mengikuti `design-system/konkit/MASTER.md`. Satu warna per tahap dipakai konsisten di semua grafik.

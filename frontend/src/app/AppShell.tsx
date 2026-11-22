@@ -31,7 +31,7 @@ const closedGroupsPreferenceKey = 'konkit.sidebar.closed-groups';
 
 const groups: NavGroup[] = [
   { label: 'Ringkasan', items: [
-    { label: 'Dashboard progres', to: '/dashboard', permission: 'progress_dashboard.view', icon: <BarChart3 /> },
+    { label: 'Dashboard progres', to: '/progres', permission: 'progress_dashboard.view', icon: <BarChart3 /> },
     { label: 'Data Penerima', to: '/', permission: 'recipients.view', icon: <ListFilter /> },
     { label: 'Map Distribusi', to: '/map-distribusi', permission: 'distribution.view', icon: <MapPinned /> },
   ] },
