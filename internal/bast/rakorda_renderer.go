@@ -19,7 +19,7 @@ var rakordaColumnWidths = []float64{12, 55, 43, 35, 33}
 // "Dihadiri oleh :", dan awal tabel; halaman lanjutan hanya logo dan baris
 // bernomor.
 func RenderRakorda(snapshot RakordaSnapshot, logoBytes map[string][]byte) (RenderedAggregate, error) {
-	if snapshot.RowCount < 5 || snapshot.RowCount > 200 {
+	if snapshot.RowCount < 5 || snapshot.RowCount > maxActivityRows {
 		return RenderedAggregate{}, ErrInvalidInput
 	}
 	pdf := fpdf.New("P", "mm", "A4", "")

@@ -53,6 +53,10 @@ const (
 	defaultTraining100RowCount = 51
 )
 
+// maxActivityRows is the most rows of an attendance sheet (Rakorda,
+// Sosialisasi, Training); the sheet grows by pages.
+const maxActivityRows = 500
+
 // ScheduleSettingsInput membawa nilai konfigurasi BA per jadwal dari request.
 type ScheduleSettingsInput struct {
 	ScheduleID            string `json:"schedule_id"`
@@ -113,7 +117,7 @@ func (in *ScheduleSettingsInput) normalize() error {
 		return ErrInvalidInput
 	}
 	for _, rows := range []int{in.RakordaRowCount, in.SosialisasiRowCount, in.Training10RowCount, in.Training100RowCount} {
-		if rows < 5 || rows > 200 {
+		if rows < 5 || rows > maxActivityRows {
 			return ErrInvalidInput
 		}
 	}
