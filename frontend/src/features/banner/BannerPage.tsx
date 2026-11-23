@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Download, ImageUp, Info, RotateCcw, Save } from 'lucide-react';
+import { Download, ImageDown, ImageUp, Info, RotateCcw, Save } from 'lucide-react';
 import { lazy, Suspense, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { DataState } from '@/components/DataState';
@@ -240,7 +240,10 @@ function BannerPreview({ data, info }: { data: Overview; info: KindInfo }) {
           <CardTitle className="text-base">Pratinjau {info.label}</CardTitle>
           <p className="truncate text-sm text-muted-foreground">{info.size} · {info.filename}</p>
         </div>
-        <a className={buttonVariants({ size: 'sm' })} href={path} download={info.filename}><Download />Unduh PDF</a>
+        <div className="flex flex-wrap gap-2">
+          <a className={buttonVariants({ size: 'sm', variant: 'outline' })} href={path.replace('.pdf?', '.png?')} download={info.filename.replace(/\.pdf$/i, '.png')} title="Gambar PNG, untuk percetakan atau HP yang tidak bisa membuka PDF"><ImageDown />Unduh PNG</a>
+          <a className={buttonVariants({ size: 'sm' })} href={path} download={info.filename}><Download />Unduh PDF</a>
+        </div>
       </div>
       {missing && <p className="rounded-md bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">{missing}</p>}
     </CardHeader>
