@@ -19,6 +19,7 @@ type BannerService interface {
 	SaveLogo(context.Context, auth.Principal, string, string, []byte, auth.RegencyScope, auth.ClientMeta) (banner.Overview, error)
 	Logo(context.Context, string, auth.RegencyScope) ([]byte, string, error)
 	Banner(context.Context, string, banner.Kind, auth.RegencyScope) ([]byte, string, error)
+	BannerImage(context.Context, string, banner.Kind, auth.RegencyScope) ([]byte, string, error)
 }
 
 // handleBanners serves /api/v1/banners/... for one schedule (?schedule_id=):
@@ -27,6 +28,7 @@ type BannerService interface {
 //	PUT  settings           save the typed text (banner.manage)
 //	GET  logo, PUT logo     the kabupaten logo (PUT multipart "file", banner.manage)
 //	GET  {kind}.pdf         the banner PDF (backdrop, pelatihan, seremoni, plakat)
+//	GET  {kind}.png         the same banner as a PNG image
 func (h *Handler) handleBanners(w http.ResponseWriter, r *http.Request, rc requestContext, path string) {
 	if h.deps.Banner == nil {
 		writeUnavailable(w)
@@ -95,6 +97,16 @@ func (h *Handler) handleBanners(w http.ResponseWriter, r *http.Request, rc reque
 		w.Header().Set("Content-Disposition", fmt.Sprintf("%s; filename=%q", disposition, filename))
 		w.Header().Set("Cache-Control", "private, no-store")
 		_, _ = w.Write(data)
+	case strings.HasSuffix(path, ".png") && r.Method == http.MethodGet:
+		data, filename, err := service.BannerImage(r.Context(), scheduleID, banner.Kind(strings.TrimSuffix(path, ".png")), scope)
+		if err != nil {
+			writeBannerError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
+		w.Header().Set("Cache-Control", "private, no-store")
+		_, _ = w.Write(data)
 	default:
 		writeError(w, http.StatusNotFound, "not_found", "Endpoint tidak ditemukan")
 	}
@@ -114,6 +126,8 @@ func writeBannerError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusNotFound, "not_found", "Data tidak ditemukan")
 	case errors.Is(err, banner.ErrUnknownKind):
 		writeError(w, http.StatusNotFound, "not_found", "Jenis banner tidak dikenal")
+	case errors.Is(err, banner.ErrImageUnavailable):
+		writeError(w, http.StatusServiceUnavailable, "banner_image_unavailable", "Unduhan PNG belum tersedia di server; gunakan PDF")
 	case errors.Is(err, banner.ErrNotSupported):
 		writeError(w, http.StatusUnprocessableEntity, "banner_not_supported", "Banner baru tersedia untuk program Petani")
 	case errors.Is(err, banner.ErrInvalidLogo):

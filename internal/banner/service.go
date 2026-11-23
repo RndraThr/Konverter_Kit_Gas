@@ -380,3 +380,17 @@ func (s *Service) Banner(ctx context.Context, scheduleID string, kind Kind, scop
 	}
 	return pdf, Filename(kind, o.RegencyName), nil
 }
+
+// BannerImage returns the banner as a PNG, for printers or phones that cannot
+// open the full-size PDF.
+func (s *Service) BannerImage(ctx context.Context, scheduleID string, kind Kind, scope auth.RegencyScope) ([]byte, string, error) {
+	pdf, filename, err := s.Banner(ctx, scheduleID, kind, scope)
+	if err != nil {
+		return nil, "", err
+	}
+	png, err := RenderPNG(ctx, kind, pdf)
+	if err != nil {
+		return nil, "", err
+	}
+	return png, strings.TrimSuffix(filename, ".pdf") + ".png", nil
+}

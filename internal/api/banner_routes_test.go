@@ -34,6 +34,11 @@ func (f *fakeBannerService) Banner(_ context.Context, _ string, kind banner.Kind
 	return []byte("%PDF-1.7"), "PLAKAT PETANI KABUPATEN BONE.pdf", nil
 }
 
+func (f *fakeBannerService) BannerImage(_ context.Context, _ string, kind banner.Kind, _ auth.RegencyScope) ([]byte, string, error) {
+	f.kind = kind
+	return []byte("PNG"), "BANNER SEREMONI PETANI KABUPATEN BONE.png", nil
+}
+
 // Viewers download banners; only managers change their text.
 func TestBannerRoutesPermissionsAndDownload(t *testing.T) {
 	secret := []byte("01234567890123456789012345678901")
@@ -53,6 +58,11 @@ func TestBannerRoutesPermissionsAndDownload(t *testing.T) {
 	if rec.Code != http.StatusOK || service.kind != banner.KindPlakat || rec.Header().Get("Content-Type") != "application/pdf" ||
 		!strings.Contains(rec.Header().Get("Content-Disposition"), `attachment; filename="PLAKAT PETANI KABUPATEN BONE.pdf"`) {
 		t.Fatalf("download: %d %v", rec.Code, rec.Header())
+	}
+	rec = request(http.MethodGet, "/api/v1/banners/seremoni.png?schedule_id=schedule-1", "", viewer)
+	if rec.Code != http.StatusOK || service.kind != banner.KindSeremoni || rec.Header().Get("Content-Type") != "image/png" ||
+		!strings.Contains(rec.Header().Get("Content-Disposition"), `filename="BANNER SEREMONI PETANI KABUPATEN BONE.png"`) {
+		t.Fatalf("png download: %d %v", rec.Code, rec.Header())
 	}
 	if rec := request(http.MethodGet, "/api/v1/banners", "", viewer); rec.Code != http.StatusBadRequest {
 		t.Fatalf("missing schedule: %d", rec.Code)

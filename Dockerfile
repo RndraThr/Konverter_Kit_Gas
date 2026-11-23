@@ -26,7 +26,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /out/admin ./cmd/admin
 
 # ---- Stage 3: runtime ----
 FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/* \
+# poppler-utils: pdftoppm turns the banner PDFs into PNG downloads.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates poppler-utils && rm -rf /var/lib/apt/lists/* \
 	&& groupadd --system --gid 1000 app && useradd --system --uid 1000 --gid app --home /app --shell /usr/sbin/nologin app
 WORKDIR /app
 COPY go.mod ./
