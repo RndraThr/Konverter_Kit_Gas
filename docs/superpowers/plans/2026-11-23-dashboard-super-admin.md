@@ -16,7 +16,7 @@
 ## Global Constraints
 
 - Branch: `feat/super-admin-dashboard`, dibuat dari `origin/main`. Satu PR.
-- Migrasi berikutnya: `00111_dashboard_permission.sql`. Permission `dashboard.view` hanya diberikan ke `super_admin`.
+- Migrasi berikutnya: `00112_dashboard_permission.sql`. Permission `dashboard.view` hanya diberikan ke `super_admin`.
 - Scope dihitung untuk jadwal yang `ps.status <> 'cancelled'` dan mengikuti `auth.RegencyScope`.
 - Tanggal harian memakai `(completed_at AT TIME ZONE 'Asia/Jakarta')::date`.
 - Jangan ubah kontrak API yang sudah ada. Endpoint ini murni tambahan.
@@ -40,7 +40,7 @@
 ### Task 1: Query dashboard + permission
 
 **Files:**
-- Create: `internal/database/migrations/00111_dashboard_permission.sql` (pola sama dengan `00106_documentation_slot_examples.sql`: `INSERT INTO permissions`, `INSERT INTO role_permissions` untuk `super_admin`, lalu Down menghapus keduanya).
+- Create: `internal/database/migrations/00112_dashboard_permission.sql` (pola sama dengan `00106_documentation_slot_examples.sql`: `INSERT INTO permissions`, `INSERT INTO role_permissions` untuk `super_admin`, lalu Down menghapus keduanya).
 - Create: `internal/monitoring/dashboard.go`
 - Test: `internal/monitoring/dashboard_integration_test.go` (memakai `testPool`, `must`, dan gaya `seed` dari `monitoring_integration_test.go`, dengan fixture sendiri).
 
@@ -219,4 +219,4 @@ func (s *Service) Dashboard(ctx context.Context, programID string, scope auth.Re
 - [ ] **Step 1:** Daftarkan topik. Jalankan `npx vitest run src/features/guide` dan pastikan test panduan yang memeriksa semua topik tetap PASS.
 - [ ] **Step 2:** Jalankan verifikasi penuh: `go vet ./...`, `go test -p 1 ./...` (dengan `TEST_DATABASE_URL`), `npx vitest run`, `npm run typecheck`, dan `npx eslint src`. Kegagalan lama di `administration`, `bast`, atau `geo` karena sisa data `konkit_test` dicatat, bukan diperbaiki.
 - [ ] **Step 3:** Uji end-to-end. Jalankan server di `:8099` dengan DB lokal, login sebagai super admin, lalu `GET /api/v1/dashboard/summary` harus mengembalikan 200. Akun non super admin harus mendapat 403.
-- [ ] **Step 4:** Commit, push, lalu buat PR lewat GitHub API (token dari `git credential fill` di `python -I`, tidak di-echo). Body PR menyebut migrasi `00111` yang perlu `migrate up` di VPS, dan diakhiri baris atribusi Claude Code.
+- [ ] **Step 4:** Commit, push, lalu buat PR lewat GitHub API (token dari `git credential fill` di `python -I`, tidak di-echo). Body PR menyebut migrasi `00112` yang perlu `migrate up` di VPS, dan diakhiri baris atribusi Claude Code.

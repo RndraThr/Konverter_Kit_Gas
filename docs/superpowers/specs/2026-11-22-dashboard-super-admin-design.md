@@ -72,7 +72,7 @@ Progres per tahap pada grafik zona dan kabupaten adalah **tertaut → diserahkan
 - Endpoint `GET /api/v1/dashboard/progress?program_id=` (`/dashboard/summary` sudah dipakai ringkasan user di beranda).
   - Response: `programs`, `program_id`, `totals`, `zones[]`, `regencies[]` (dengan `zone_name`, `zone_sort`), `daily[]`, `activities[]`.
   - Program tidak ditemukan menghasilkan 404.
-- Migrasi `00111_dashboard_permission.sql` membuat permission `progress_dashboard.view` (`dashboard.view` sudah dimiliki role lapangan dan finance) dan memberikannya ke `super_admin`.
+- Migrasi `00112_dashboard_permission.sql` membuat permission `progress_dashboard.view` (`dashboard.view` sudah dimiliki role lapangan dan finance) dan memberikannya ke `super_admin`.
 - Integration test dengan fixture kecil: dua kabupaten di dua zona, slot open/linked/completed, foto approved, satu BA final, dan activity media. Test memeriksa tiap angka serta scope kabupaten.
 
 ## Frontend
