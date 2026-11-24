@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"image/jpeg"
 	"io"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -122,14 +123,13 @@ func zipEntries(t *testing.T, data []byte) map[string][]byte {
 	return entries
 }
 
-// allContentSlots lists every content-photo media entry on slides 5-8 (the
-// reference deck's real Wajo photos), excluding the shared header/footer
-// logos image9.png/image5.png.
+// allContentSlots lists every content-photo media entry on slides 5-8,
+// excluding the shared logos image1.png (KSM) and image2.png (certificates).
 var allContentSlots = []string{
-	"ppt/media/image12.jpg", "ppt/media/image2.jpg", "ppt/media/image1.jpg", // slide5
-	"ppt/media/image8.jpg", "ppt/media/image15.jpg", // slide6
-	"ppt/media/image3.jpg", "ppt/media/image6.jpg", "ppt/media/image16.jpg", "ppt/media/image14.jpg", // slide7
-	"ppt/media/image11.jpg", "ppt/media/image13.jpg", "ppt/media/image7.jpg", // slide8
+	"ppt/media/image3.jpg", "ppt/media/image4.jpg", "ppt/media/image5.jpg", // slide5
+	"ppt/media/image6.jpg", "ppt/media/image7.jpg", // slide6
+	"ppt/media/image8.jpg", "ppt/media/image9.jpg", "ppt/media/image10.jpg", "ppt/media/image11.jpg", // slide7
+	"ppt/media/image12.jpg", "ppt/media/image13.jpg", "ppt/media/image14.jpg", // slide8
 }
 
 func TestRenderPPTXNeverLeaksReferencePhotosWithZeroPicks(t *testing.T) {
@@ -155,7 +155,7 @@ func TestRenderPPTXNeverLeaksReferencePhotosWithZeroPicks(t *testing.T) {
 			t.Errorf("%s is not the neutral placeholder", name)
 		}
 	}
-	for _, shared := range []string{"ppt/media/image9.png", "ppt/media/image5.png"} {
+	for _, shared := range []string{"ppt/media/image1.png", "ppt/media/image2.png"} {
 		if !bytes.Equal(rendered[shared], original[shared]) {
 			t.Errorf("shared logo %s must be left untouched", shared)
 		}
@@ -177,10 +177,10 @@ func TestRenderPPTXFillsPickedSlotsAndPlaceholdersTheRest(t *testing.T) {
 		t.Fatalf("placeholder: %v", err)
 	}
 	want := map[string][]byte{
-		"ppt/media/image12.jpg": pickA, "ppt/media/image2.jpg": placeholder, "ppt/media/image1.jpg": placeholder,
-		"ppt/media/image8.jpg": placeholder, "ppt/media/image15.jpg": placeholder,
-		"ppt/media/image3.jpg": pickA, "ppt/media/image6.jpg": pickB, "ppt/media/image16.jpg": placeholder, "ppt/media/image14.jpg": placeholder,
-		"ppt/media/image11.jpg": placeholder, "ppt/media/image13.jpg": placeholder, "ppt/media/image7.jpg": placeholder,
+		"ppt/media/image3.jpg": pickA, "ppt/media/image4.jpg": placeholder, "ppt/media/image5.jpg": placeholder,
+		"ppt/media/image6.jpg": placeholder, "ppt/media/image7.jpg": placeholder,
+		"ppt/media/image8.jpg": pickA, "ppt/media/image9.jpg": pickB, "ppt/media/image10.jpg": placeholder, "ppt/media/image11.jpg": placeholder,
+		"ppt/media/image12.jpg": placeholder, "ppt/media/image13.jpg": placeholder, "ppt/media/image14.jpg": placeholder,
 	}
 	for name, expected := range want {
 		if !bytes.Equal(rendered[name], expected) {
@@ -208,6 +208,33 @@ func TestMaxPicksMatchesSlotCounts(t *testing.T) {
 	for key, want := range cases {
 		if got := MaxPicks(key); got != want {
 			t.Errorf("MaxPicks(%q) = %d, want %d", key, got, want)
+		}
+	}
+}
+
+// TestSlotMapMatchesTemplate guards a rebuilt template (design/build.py):
+// every mapped media file must be a picture of the expected slide, in the
+// order the slide references it, and every photo of slides 5-8 is mapped.
+func TestSlotMapMatchesTemplate(t *testing.T) {
+	entries := zipEntries(t, template.PPTX)
+	slides := map[string][]string{
+		"slide5": slideImageOrder[SlideKeyPengirimanPenerimaan],
+		"slide6": slideImageOrder[SlideKeyRapatKoordinasi],
+		"slide7": slideImageOrder[SlideKeySosialisasi],
+		"slide8": placeholderOnlySlots["dokumentasi_pendistribusian"],
+	}
+	for slide, want := range slides {
+		rels := string(entries["ppt/slides/_rels/"+slide+".xml.rels"])
+		xmlText := string(entries["ppt/slides/"+slide+".xml"])
+		var got []string
+		for _, ref := range regexp.MustCompile(`r:embed="(rId\d+)"`).FindAllStringSubmatch(xmlText, -1) {
+			target := regexp.MustCompile(`Id="` + ref[1] + `"[^>]*Target="\.\./media/([^"]+\.jpg)"`).FindStringSubmatch(rels)
+			if target != nil {
+				got = append(got, "ppt/media/"+target[1])
+			}
+		}
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("%s photos = %v, mapped %v", slide, got, want)
 		}
 	}
 }

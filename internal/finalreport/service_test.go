@@ -128,7 +128,7 @@ func TestDocumentFilename(t *testing.T) {
 }
 
 func TestSlotJPEGTranscodesPNGAndPassesJPEGThrough(t *testing.T) {
-	img := image.NewRGBA(image.Rect(0, 0, 4, 4))
+	img := image.NewRGBA(image.Rect(0, 0, 8, 6))
 	var pngBuf bytes.Buffer
 	if err := png.Encode(&pngBuf, img); err != nil {
 		t.Fatal(err)
@@ -150,6 +150,25 @@ func TestSlotJPEGTranscodesPNGAndPassesJPEGThrough(t *testing.T) {
 	}
 	if _, err := slotJPEG([]byte("not an image")); err == nil {
 		t.Fatal("expected error for non-image bytes")
+	}
+}
+
+// The deck's photo frames are 4:3: other shapes are cut to 4:3 around the
+// centre instead of being stretched.
+func TestSlotJPEGCutsPhotosToFourByThree(t *testing.T) {
+	for _, tc := range []struct{ w, h, wantW, wantH int }{{600, 800, 600, 450}, {1600, 900, 1200, 900}} {
+		var in bytes.Buffer
+		if err := jpeg.Encode(&in, image.NewRGBA(image.Rect(0, 0, tc.w, tc.h)), nil); err != nil {
+			t.Fatal(err)
+		}
+		out, err := slotJPEG(in.Bytes())
+		if err != nil {
+			t.Fatal(err)
+		}
+		cfg, err := jpeg.DecodeConfig(bytes.NewReader(out))
+		if err != nil || cfg.Width != tc.wantW || cfg.Height != tc.wantH {
+			t.Fatalf("%dx%d -> %dx%d (err=%v), want %dx%d", tc.w, tc.h, cfg.Width, cfg.Height, err, tc.wantW, tc.wantH)
+		}
 	}
 }
 
@@ -315,7 +334,7 @@ func TestGenerateTranscodesPNGPickIntoJPEGSlot(t *testing.T) {
 	if _, err := svc.Generate(ctx, auth.Principal{}, programID, regencyID, unrestrictedScope(), auth.ClientMeta{}); err != nil {
 		t.Fatalf("generate: %v", err)
 	}
-	slot := zipEntries(t, storage.lastPut)["ppt/media/image8.jpg"]
+	slot := zipEntries(t, storage.lastPut)[slideImageOrder[SlideKeyRapatKoordinasi][0]]
 	placeholder, _ := placeholderJPEG()
 	if bytes.Equal(slot, placeholder) {
 		t.Fatal("picked PNG slot was left as placeholder")

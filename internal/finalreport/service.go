@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"image"
+	"image/draw"
 	"image/jpeg"
 	"image/png"
 	"io"
@@ -251,25 +252,50 @@ func documentFilename(programType programs.ProgramType, regencyName string) stri
 
 var pngSignature = []byte("\x89PNG\r\n\x1a\n")
 
-// slotJPEG returns bytes suitable for a template .jpg slot: JPEG input
-// passes through unchanged, PNG input is transcoded to JPEG, anything else
-// is an error.
+// slotJPEG returns bytes suitable for a template .jpg slot. The deck's photo
+// frames are 4:3, so a photo of another shape is cut to 4:3 around its
+// centre (instead of being stretched) and re-encoded; a 4:3 JPEG passes
+// through unchanged, a PNG is transcoded. Anything else is an error.
 func slotJPEG(data []byte) ([]byte, error) {
+	var img image.Image
 	if bytes.HasPrefix(data, pngSignature) {
-		img, err := png.Decode(bytes.NewReader(data))
+		decoded, err := png.Decode(bytes.NewReader(data))
 		if err != nil {
 			return nil, fmt.Errorf("decode png: %w", err)
 		}
-		var out bytes.Buffer
-		if err := jpeg.Encode(&out, flattenOnWhite(img), &jpeg.Options{Quality: 90}); err != nil {
-			return nil, fmt.Errorf("encode jpeg: %w", err)
+		img = flattenOnWhite(decoded)
+	} else {
+		cfg, err := jpeg.DecodeConfig(bytes.NewReader(data))
+		if err != nil {
+			return nil, fmt.Errorf("photo is neither JPEG nor PNG: %w", err)
 		}
-		return out.Bytes(), nil
+		if cfg.Width*3 == cfg.Height*4 {
+			return data, nil
+		}
+		if img, err = jpeg.Decode(bytes.NewReader(data)); err != nil {
+			return nil, fmt.Errorf("decode jpeg: %w", err)
+		}
 	}
-	if _, err := jpeg.DecodeConfig(bytes.NewReader(data)); err != nil {
-		return nil, fmt.Errorf("photo is neither JPEG nor PNG: %w", err)
+	var out bytes.Buffer
+	if err := jpeg.Encode(&out, cropFourByThree(img), &jpeg.Options{Quality: 90}); err != nil {
+		return nil, fmt.Errorf("encode jpeg: %w", err)
 	}
-	return data, nil
+	return out.Bytes(), nil
+}
+
+// cropFourByThree cuts the largest centred 4:3 area out of img.
+func cropFourByThree(img image.Image) image.Image {
+	b := img.Bounds()
+	w, h := b.Dx(), b.Dy()
+	if w*3 > h*4 {
+		w = h * 4 / 3
+	} else {
+		h = w * 3 / 4
+	}
+	area := image.Rect(0, 0, w, h).Add(b.Min).Add(image.Pt((b.Dx()-w)/2, (b.Dy()-h)/2))
+	out := image.NewRGBA(image.Rect(0, 0, w, h))
+	draw.Draw(out, out.Bounds(), img, area.Min, draw.Src)
+	return out
 }
 
 // flattenOnWhite composites a possibly-transparent image onto white so
