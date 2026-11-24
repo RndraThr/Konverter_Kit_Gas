@@ -12,7 +12,7 @@ vi.mock('../../lib/api', async () => {
 afterEach(() => { vi.restoreAllMocks(); });
 
 const previewData = {
-  regency_label: 'KABUPATEN WAJO', fiscal_year: '2026', agriculture_office_name: 'Belum diisi',
+  regency_label: 'KABUPATEN WAJO', fiscal_year: '2026', program_target: 'Kapal Perikanan bagi Nelayan Sasaran', agriculture_office_name: 'Belum diisi',
   consultant_company_name: 'PT KSM', machine_manufacturer_name: 'Belum diisi',
   delivery_hose_date: 'Belum diisi', delivery_machine_group_date: 'Belum diisi', delivery_gas_cylinder_date: 'Belum diisi',
   delivery_range_start: 'Belum diisi', delivery_range_end: 'Belum diisi',
@@ -33,6 +33,7 @@ test('navigates between slides and shows blank-field placeholders', async () => 
   renderPresent();
 
   expect(await screen.findByText('KABUPATEN WAJO')).toBeVisible();
+  expect(screen.getByText(/UNTUK KAPAL PERIKANAN BAGI NELAYAN SASARAN/)).toBeVisible();
   fireEvent.click(screen.getByRole('button', { name: 'Slide berikutnya' }));
   expect(await screen.findAllByText('Belum diisi')).not.toHaveLength(0);
   expect(screen.getByText('Aula Kantor Bupati')).toBeVisible();

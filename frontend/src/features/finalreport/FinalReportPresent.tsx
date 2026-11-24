@@ -63,7 +63,7 @@ function Attendees({ data }: { data: FinalReportPreview }) {
 function docSlide(key: SlideKey, data: FinalReportPreview): { heading: string; lines: ReactNode[] } {
   switch (key) {
     case 'pengiriman_penerimaan':
-      return { heading: 'Dokumentasi Pengiriman dan Penerimaan Barang', lines: [data.handover_location, `Tanggal ${data.delivery_range_start} s.d. ${data.delivery_range_end}`] };
+      return { heading: 'Dokumentasi Pengiriman dan Penerimaan Barang', lines: [data.agriculture_office_name, `Tanggal ${data.delivery_range_start} s.d. ${data.delivery_range_end}`] };
     case 'rapat_koordinasi':
       return { heading: 'Dokumentasi Rapat Koordinasi', lines: [data.rakorda_location, `Tanggal ${data.rakorda_date}`] };
     case 'sosialisasi':
@@ -75,7 +75,7 @@ function buildSlides(data: FinalReportPreview): ReactNode[] {
   return [
     <div key="title" className="max-w-3xl space-y-4 text-center">
       <h1 className="text-3xl font-bold">LAPORAN KEGIATAN</h1>
-      <p>PENYEDIAAN DAN PENDISTRIBUSIAN PAKET PERDANA LIQUEFIED PETROLEUM GAS (LPG) UNTUK MESIN POMPA AIR BAGI PETANI SASARAN TAHUN ANGGARAN {data.fiscal_year} DI PT PERTAMINA PATRA NIAGA</p>
+      <p>PENYEDIAAN DAN PENDISTRIBUSIAN PAKET PERDANA LIQUEFIED PETROLEUM GAS (LPG) UNTUK {data.program_target.toUpperCase()} TAHUN ANGGARAN {data.fiscal_year} DI PT PERTAMINA PATRA NIAGA</p>
       <p>PT KIAN SANTANG MULIATAMA TBK</p>
       <p className="text-2xl">{data.regency_label}</p>
     </div>,

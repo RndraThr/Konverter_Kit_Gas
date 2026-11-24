@@ -104,6 +104,7 @@ func TestPreviewTakesDatesAndLocationsFromBeritaAcara(t *testing.T) {
 		"sosialisasi":  {preview.SosialisasiLocation, "Balai Desa Sukamaju"},
 		"titik serah":  {preview.HandoverLocation, "Balai Desa Rantau, Gudang Sukamaju"},
 		"team (unset)": {preview.LeaderCount, "Belum diisi"},
+		"judul":        {preview.ProgramTarget, "Mesin Pompa Air bagi Petani Sasaran"},
 	}
 	for name, c := range checks {
 		if c[0] != c[1] {

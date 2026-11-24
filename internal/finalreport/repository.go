@@ -7,6 +7,7 @@ import (
 
 	"konkit/internal/audit"
 	"konkit/internal/auth"
+	"konkit/internal/programs"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -161,6 +162,7 @@ func (r *Repository) ReplacePhotoPicks(ctx context.Context, programID, regencyID
 type previewSourceData struct {
 	regencyName, provinceName                                       string
 	fiscalYear                                                      int
+	programType                                                     programs.ProgramType
 	agricultureOfficeName, consultantCompanyName, consultantDefault string
 	handoverLocation                                                string
 	rakordaDate, sosialisasiDate                                    string
@@ -174,10 +176,10 @@ type previewSourceData struct {
 func (r *Repository) GetPreviewSourceData(ctx context.Context, programID, regencyID string, scope auth.RegencyScope) (previewSourceData, error) {
 	var data previewSourceData
 	err := r.pool.QueryRow(ctx, `
-		SELECT reg.name, reg.province_name, p.fiscal_year
+		SELECT reg.name, reg.province_name, p.fiscal_year, p.program_type
 		FROM regencies reg, programs p
 		WHERE reg.id=$1::uuid AND p.id=$2::uuid AND ($3 OR reg.id::text=ANY($4))
-	`, regencyID, programID, scope.Unrestricted, scope.RegencyIDs).Scan(&data.regencyName, &data.provinceName, &data.fiscalYear)
+	`, regencyID, programID, scope.Unrestricted, scope.RegencyIDs).Scan(&data.regencyName, &data.provinceName, &data.fiscalYear, &data.programType)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return previewSourceData{}, ErrNotFound
 	}

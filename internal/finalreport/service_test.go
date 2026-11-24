@@ -99,6 +99,18 @@ func TestFormatIndonesianDate(t *testing.T) {
 	}
 }
 
+func TestProgramTargetFollowsProgramType(t *testing.T) {
+	cases := map[programs.ProgramType]string{
+		programs.ProgramFarmer:    "Mesin Pompa Air bagi Petani Sasaran",
+		programs.ProgramFisherman: "Kapal Perikanan bagi Nelayan Sasaran",
+	}
+	for programType, want := range cases {
+		if got := programTarget(programType); got != want {
+			t.Errorf("programTarget(%q) = %q, want %q", programType, got, want)
+		}
+	}
+}
+
 func TestRegencyLabel(t *testing.T) {
 	cases := map[string]string{
 		"KAB. BIREUEN": "KABUPATEN BIREUEN", "Kab. Wajo": "KABUPATEN WAJO", "KOTA LANGSA": "KOTA LANGSA",

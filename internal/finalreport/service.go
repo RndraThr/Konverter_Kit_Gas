@@ -167,6 +167,7 @@ func (s *Service) Preview(ctx context.Context, programID, regencyID string, scop
 	return Preview{
 		RegencyLabel:             orBlank(regencyLabel(data.regencyName)),
 		FiscalYear:               orBlank(strconv.Itoa(data.fiscalYear)),
+		ProgramTarget:            programTarget(data.programType),
 		AgricultureOfficeName:    orBlank(data.agricultureOfficeName),
 		ConsultantCompanyName:    orBlank(data.consultantCompanyName),
 		MachineManufacturerName:  orBlank(settings.MachineManufacturerName),
@@ -226,6 +227,15 @@ func formatIndonesianDate(iso string) string {
 		return ""
 	}
 	return fmt.Sprintf("%d %s %d", parsed.Day(), indonesianMonths[parsed.Month()-1], parsed.Year())
+}
+
+// programTarget is what the program's LPG packages are for and who receives
+// them, as the title of every activity document words it.
+func programTarget(programType programs.ProgramType) string {
+	if programType == programs.ProgramFisherman {
+		return "Kapal Perikanan bagi Nelayan Sasaran"
+	}
+	return "Mesin Pompa Air bagi Petani Sasaran"
 }
 
 // regencyLabel turns regencies.name ("KAB. BIREUEN", "KOTA LANGSA") into the

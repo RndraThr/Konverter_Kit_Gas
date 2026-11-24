@@ -6,6 +6,7 @@ package template
 const (
 	TokenRegencyLabel             = "{{REGENCY_LABEL}}" // "KABUPATEN WAJO"
 	TokenFiscalYear               = "{{FISCAL_YEAR}}"
+	TokenProgramTarget            = "{{PROGRAM_TARGET}}" // "Mesin Pompa Air bagi Petani Sasaran"
 	TokenAgricultureOfficeName    = "{{AGRICULTURE_OFFICE_NAME}}"
 	TokenConsultantCompanyName    = "{{CONSULTANT_COMPANY_NAME}}"
 	TokenMachineManufacturerName  = "{{MACHINE_MANUFACTURER_NAME}}"
@@ -31,7 +32,7 @@ const (
 // AllTokens lists every token above, used by Task 9's tests to assert the
 // committed template actually contains each one at least once.
 var AllTokens = []string{
-	TokenRegencyLabel, TokenFiscalYear, TokenAgricultureOfficeName, TokenConsultantCompanyName,
+	TokenRegencyLabel, TokenFiscalYear, TokenProgramTarget, TokenAgricultureOfficeName, TokenConsultantCompanyName,
 	TokenMachineManufacturerName, TokenDeliveryHoseDate, TokenDeliveryMachineGroupDate,
 	TokenDeliveryGasCylinderDate, TokenDeliveryRangeStart, TokenDeliveryRangeEnd, TokenRakordaDate,
 	TokenSosialisasiDate, TokenRakordaLocation, TokenSosialisasiLocation, TokenLeaderCount, TokenAdminCount, TokenTechnicianCount, TokenHelperCount,

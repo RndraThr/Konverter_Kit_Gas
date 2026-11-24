@@ -84,7 +84,7 @@ func RenderPPTX(templateData []byte, preview Preview, photoBytes map[string][][]
 	}
 
 	replacements := map[string]string{
-		template.TokenRegencyLabel: preview.RegencyLabel, template.TokenFiscalYear: preview.FiscalYear,
+		template.TokenRegencyLabel: preview.RegencyLabel, template.TokenFiscalYear: preview.FiscalYear, template.TokenProgramTarget: preview.ProgramTarget,
 		template.TokenAgricultureOfficeName: preview.AgricultureOfficeName, template.TokenConsultantCompanyName: preview.ConsultantCompanyName,
 		template.TokenMachineManufacturerName: preview.MachineManufacturerName,
 		template.TokenDeliveryHoseDate:        preview.DeliveryHoseDate, template.TokenDeliveryMachineGroupDate: preview.DeliveryMachineGroupDate,

@@ -20,6 +20,8 @@ export type FinalReportPhotoPick = {
 export type FinalReportPreview = {
   regency_label: string;
   fiscal_year: string;
+  /** "Mesin Pompa Air bagi Petani Sasaran" or the fisherman wording. */
+  program_target: string;
   agriculture_office_name: string;
   consultant_company_name: string;
   machine_manufacturer_name: string;

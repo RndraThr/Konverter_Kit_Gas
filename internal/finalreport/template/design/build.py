@@ -106,7 +106,7 @@ def cover():
         ("rect", 8.1, 0, 0.08, H, GOLD, {}),
         ("rect", 0.75, 0.9, 0.9, 0.05, GOLD, {}),
         ("text", 0.75, 1.1, 6.9, 0.4, [para(run("LAPORAN AKHIR KEGIATAN", 14, GOLD, True, spc=300))], {}),
-        ("text", 0.75, 1.65, 6.9, 2.6, [para(run("Penyediaan dan Pendistribusian Paket Perdana Liquefied Petroleum Gas (LPG) untuk Mesin Pompa Air bagi Petani Sasaran", 28, WHITE, True), line=1.05)], {}),
+        ("text", 0.75, 1.65, 6.9, 2.6, [para(run("Penyediaan dan Pendistribusian Paket Perdana Liquefied Petroleum Gas (LPG) untuk {{PROGRAM_TARGET}}", 28, WHITE, True), line=1.05)], {}),
         ("text", 0.75, 4.25, 6.9, 0.8, [
             para(run("Tahun Anggaran {{FISCAL_YEAR}}", 16, "D6DEE8"), space_after=2),
             para(run("di PT Pertamina Patra Niaga", 16, "D6DEE8")),
@@ -117,7 +117,7 @@ def cover():
         ("text", 8.75, 2.55, 4.1, 0.3, [para(run("PENYEDIA BARANG", 10, MUTED, True, spc=200))], {}),
         ("image", 8.75, 2.9, 4.1, 4.1 / 6.736, LOGO),
         ("rect", 8.75, 3.75, 4.1, 0.015, LINE, {}),
-        ("text", 8.75, 3.9, 4.1, 0.9, [para(run("Pendistribusian paket perdana LPG beserta mesin pompa air untuk petani sasaran.", 12, MUTED), line=1.15)], {}),
+        ("text", 8.75, 3.9, 4.1, 0.9, [para(run("Pendistribusian paket perdana LPG untuk {{PROGRAM_TARGET}}.", 12, MUTED), line=1.15)], {}),
         ("image", 8.75, 6.75, 3.2, 3.2 / 8.196, ISO),
     ]
 
@@ -269,7 +269,7 @@ SLIDES = [
     slide_pengiriman(),
     slide_sosialisasi(),
     slide_pendistribusian(),
-    doc_slide(5, "Pengiriman dan Penerimaan Barang", "{{HANDOVER_LOCATION}}", ["{{DELIVERY_RANGE_START}}", "s.d. {{DELIVERY_RANGE_END}}"], "big+2"),
+    doc_slide(5, "Pengiriman dan Penerimaan Barang", "{{AGRICULTURE_OFFICE_NAME}}", ["{{DELIVERY_RANGE_START}}", "s.d. {{DELIVERY_RANGE_END}}"], "big+2"),
     doc_slide(6, "Rapat Koordinasi", "{{RAKORDA_LOCATION}}", "{{RAKORDA_DATE}}", "2"),
     doc_slide(7, "Seremoni dan Sosialisasi", "{{SOSIALISASI_LOCATION}}", "{{SOSIALISASI_DATE}}", "2x2"),
     doc_slide(8, "Pendistribusian", "{{HANDOVER_LOCATION}}", "", "big+2"),
@@ -369,6 +369,7 @@ def build_pptx():
 SAMPLE = {
     "REGENCY_LABEL": "KABUPATEN TANJUNG JABUNG TIMUR",
     "FISCAL_YEAR": "2026",
+    "PROGRAM_TARGET": "Mesin Pompa Air bagi Petani Sasaran",
     "AGRICULTURE_OFFICE_NAME": "Dinas Tanaman Pangan dan Hortikultura Kabupaten Tanjung Jabung Timur",
     "CONSULTANT_COMPANY_NAME": "PT Bina Karya (Persero)",
     "MACHINE_MANUFACTURER_NAME": "PT Tanaka Engine Indonesia",
