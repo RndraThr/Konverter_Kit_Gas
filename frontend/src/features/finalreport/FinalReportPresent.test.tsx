@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, expect, test, vi } from 'vitest';
 import { apiRequest } from '../../lib/api';
 import FinalReportPresent from './FinalReportPresent';
@@ -33,7 +33,7 @@ test('navigates between slides and shows blank-field placeholders', async () => 
   renderPresent();
 
   expect(await screen.findByText('KABUPATEN WAJO')).toBeVisible();
-  expect(screen.getByText(/UNTUK KAPAL PERIKANAN BAGI NELAYAN SASARAN/)).toBeVisible();
+  expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/untuk Kapal Perikanan bagi Nelayan Sasaran/);
   fireEvent.click(screen.getByRole('button', { name: 'Slide berikutnya' }));
   expect(await screen.findAllByText('Belum diisi')).not.toHaveLength(0);
   expect(screen.getByText('Aula Kantor Bupati')).toBeVisible();
@@ -74,8 +74,18 @@ test('shows at most the slide\'s slot count of photos (Rapat Koordinasi: 2)', as
   renderPresent();
   await screen.findByText('KABUPATEN WAJO');
   for (let i = 0; i < 5; i += 1) fireEvent.keyDown(window, { key: 'ArrowRight' });
-  expect(await screen.findByText('Dokumentasi Rapat Koordinasi')).toBeVisible();
-  expect(screen.getByAltText('Foto a')).toBeVisible();
-  expect(screen.getByAltText('Foto b')).toBeVisible();
-  expect(screen.queryByAltText('Foto c')).not.toBeInTheDocument();
+  const slide = await screen.findByRole('group', { name: 'Dokumentasi Rapat Koordinasi' });
+  expect(within(slide).getByAltText('Foto a')).toBeVisible();
+  expect(within(slide).getByAltText('Foto b')).toBeVisible();
+  expect(within(slide).queryByAltText('Foto c')).not.toBeInTheDocument();
+});
+
+test('follows the deck: logo on the cover and an empty frame per photo slot not picked', async () => {
+  vi.mocked(apiRequest).mockResolvedValue({ data: previewData });
+  renderPresent();
+  const cover = await screen.findByRole('group', { name: 'Sampul' });
+  expect(within(cover).getByAltText('PT Kian Santang Muliatama Tbk')).toBeInTheDocument();
+  for (let i = 0; i < 6; i += 1) fireEvent.keyDown(window, { key: 'ArrowRight' });
+  const sosialisasi = await screen.findByRole('group', { name: 'Dokumentasi Seremoni dan Sosialisasi' });
+  expect(within(sosialisasi).getAllByText('Foto belum dipilih')).toHaveLength(4);
 });
