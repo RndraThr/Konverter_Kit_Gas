@@ -188,7 +188,7 @@ export const guideSteps: GuideStep[] = [
     manage: ['distribution.manage'],
     view: ['distribution.view'],
     route: '/laporan',
-    routes: ['/laporan', '/map-distribusi'],
+    routes: ['/laporan', '/map-distribusi', '/progres'],
     tasks: [
       { n: 1, text: <>Menu <b>Laporan DP3</b>: pilih kabupaten dan jadwal.</> },
       { n: 2, text: <>Unduh dengan <ButtonSample variant="outline" icon={<FileSpreadsheet />} trailingIcon={<Download />}>Export Excel</ButtonSample> atau <ButtonSample variant="outline" icon={<FileText />} trailingIcon={<Download />}>Export PDF</ButtonSample></> },

@@ -6,7 +6,7 @@ export const laporan: GuideTopic = {
   slug: 'laporan',
   stepId: 'laporan',
   title: 'Laporan DP3 & Map Distribusi',
-  intro: 'Laporan DP3 berisi data penerima yang distribusinya sudah selesai per kabupaten, dengan kolom Status yang menandai asal penerima (DCP3 atau Pengganti), dan bisa diunduh sebagai Excel atau PDF. Excel-nya juga tersimpan otomatis di folder kabupaten di Drive. Map Distribusi menampilkan setiap nomor bagi sebagai titik di peta, berwarna sesuai milestone penyaluran.',
+  intro: 'Dashboard progres (khusus super admin) menampilkan grafik progres program per zona dan kabupaten. Laporan DP3 berisi data penerima yang distribusinya sudah selesai per kabupaten, dengan kolom Status yang menandai asal penerima (DCP3 atau Pengganti), dan bisa diunduh sebagai Excel atau PDF. Excel-nya juga tersimpan otomatis di folder kabupaten di Drive. Map Distribusi menampilkan setiap nomor bagi sebagai titik di peta, berwarna sesuai milestone penyaluran.',
   manage: ['distribution.manage'],
   view: ['distribution.view'],
   route: '/laporan',
@@ -37,6 +37,28 @@ export const laporan: GuideTopic = {
       steps: [
         { n: 1, text: <>Klik <ButtonSample variant="outline" icon={<FileSpreadsheet />} trailingIcon={<Download />}>Export Excel</ButtonSample> untuk diolah lebih lanjut, atau <ButtonSample variant="outline" icon={<FileText />} trailingIcon={<Download />}>Export PDF</ButtonSample> untuk dikirim atau dicetak.</> },
         { text: <>Perlu file di Drive diperbarui sekarang juga? Klik <ButtonSample variant="ghost" icon={<RefreshCw />}>Perbarui sekarang</ButtonSample> di kartu Excel di Drive.</>, permissions: ['distribution.manage'] },
+      ],
+    },
+    {
+      id: 'dashboard',
+      title: 'Dashboard progres',
+      summary: 'Grafik progres satu program untuk super admin: total dibanding kuota, per zona, per kabupaten yang dikelompokkan per zona, penyerahan per hari, dan dokumentasi kegiatan.',
+      steps: [
+        { n: 1, text: <>Buka menu <b>Dashboard progres</b> di grup Ringkasan. Bila ada beberapa program, pilih <FieldSample>Program</FieldSample> di kanan atas.</>, permissions: ['progress_dashboard.view'] },
+        { n: 2, text: <>Lihat <b>Progres per zona</b> untuk menemukan zona yang tertinggal, lalu <b>Per kabupaten</b> di zona itu. Bar menunjukkan persentase dari kuota; arahkan kursor untuk angka lengkapnya.</>, permissions: ['progress_dashboard.view'] },
+        { n: 3, text: <>Klik bar kabupaten (atau namanya di <b>Lihat tabel</b>) untuk membuka antrean cek kabupaten itu di Monitoring distribusi.</>, permissions: ['progress_dashboard.view'] },
+      ],
+      fields: [
+        { name: 'Kuota', meaning: 'Jumlah kuota nomor bagi semua jadwal kabupaten program ini.' },
+        { name: 'Tertaut', meaning: 'Nomor bagi yang sudah punya penerima (sedang diproses atau selesai).' },
+        { name: 'Diserahkan', meaning: 'Nomor bagi yang distribusinya sudah selesai. Angkanya sama dengan "selesai" di Monitoring distribusi.' },
+        { name: 'Foto disetujui', meaning: 'Penerima selesai yang semua fotonya sudah disetujui tim cek.' },
+        { name: 'BA final', meaning: 'Penerima selesai yang BA Perorangannya sudah difinalisasi.' },
+        { name: 'Dokumentasi kegiatan', meaning: 'Jumlah foto dan video aktif per jenis kegiatan program ini.' },
+      ],
+      problems: [
+        { q: 'Kabupaten masuk "Tanpa zona"?', a: 'Kabupaten itu belum dimasukkan ke zona program. Atur di Persiapan program, tab Zona.' },
+        { q: 'Menu Dashboard progres tidak ada?', a: 'Dashboard progres hanya untuk super admin (akses "Lihat Dashboard Progres").' },
       ],
     },
     {

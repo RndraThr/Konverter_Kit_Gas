@@ -1,10 +1,14 @@
 import { Navigate, RouteObject } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ReactNode } from 'react';
+import { lazy, ReactNode, Suspense } from 'react';
 import { AppShell } from './AppShell';
 import { getBootstrap } from '../lib/api';
 import { DashboardPage } from '../features/dashboard/DashboardPage';
 import { DistributionMapPage } from '../features/dashboard/DistributionMapPage';
+import { DataState } from '../components/DataState';
+
+// Recharts stays out of the main bundle.
+const SuperDashboardPage = lazy(() => import('../features/super-dashboard/SuperDashboardPage').then((m) => ({ default: m.SuperDashboardPage })));
 import { ProfilePage } from '../features/profile/ProfilePage';
 import { MonitoringPage as DistributionMonitoringPage } from '../features/monitoring/MonitoringPage';
 import { WatermarkSettingsPage } from '../features/camera/WatermarkSettingsPage';
@@ -48,6 +52,7 @@ export const dashboardRoutes: RouteObject[] = [{
   element: <AppShell />,
   children: [
     { index: true, element: <ProtectedPage permission="recipients.view"><DashboardPage /></ProtectedPage> },
+    { path: 'progres', element: <ProtectedPage permission="progress_dashboard.view"><Suspense fallback={<DataState kind="loading" title="Memuat dashboard" description="Menyiapkan grafik." />}><SuperDashboardPage /></Suspense></ProtectedPage> },
     { path: 'map-distribusi', element: <ProtectedPage permission="distribution.view"><DistributionMapPage /></ProtectedPage> },
     { path: 'persiapan-program', element: <ProtectedPage permission="programs.view"><ProgramSetupPage /></ProtectedPage> },
     { path: 'dcp3', element: <ProtectedPage permission="dcp3.view"><DCP3ImportPage /></ProtectedPage> },
