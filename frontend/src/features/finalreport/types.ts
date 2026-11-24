@@ -6,9 +6,6 @@ export type FinalReportSettings = {
   technician_count: number;
   helper_count: number;
   machine_manufacturer_name: string;
-  delivery_hose_date: string;
-  delivery_machine_group_date: string;
-  delivery_gas_cylinder_date: string;
 };
 
 export type FinalReportPhotoPick = {
@@ -33,6 +30,8 @@ export type FinalReportPreview = {
   delivery_range_end: string;
   rakorda_date: string;
   sosialisasi_date: string;
+  rakorda_location: string;
+  sosialisasi_location: string;
   leader_count: string;
   admin_count: string;
   technician_count: string;

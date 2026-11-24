@@ -65,9 +65,9 @@ function docSlide(key: SlideKey, data: FinalReportPreview): { heading: string; l
     case 'pengiriman_penerimaan':
       return { heading: 'Dokumentasi Pengiriman dan Penerimaan Barang', lines: [data.handover_location, `Tanggal ${data.delivery_range_start} s.d. ${data.delivery_range_end}`] };
     case 'rapat_koordinasi':
-      return { heading: 'Dokumentasi Rapat Koordinasi', lines: [data.agriculture_office_name, `Tanggal ${data.rakorda_date}`] };
+      return { heading: 'Dokumentasi Rapat Koordinasi', lines: [data.rakorda_location, `Tanggal ${data.rakorda_date}`] };
     case 'sosialisasi':
-      return { heading: 'Dokumentasi Seremoni dan Sosialisasi', lines: [data.handover_location, `Tanggal ${data.sosialisasi_date}`] };
+      return { heading: 'Dokumentasi Seremoni dan Sosialisasi', lines: [data.sosialisasi_location, `Tanggal ${data.sosialisasi_date}`] };
   }
 }
 
@@ -86,10 +86,12 @@ function buildSlides(data: FinalReportPreview): ReactNode[] {
       <p>Tanggal {data.delivery_machine_group_date} (Mesin Pompa), (Konkit), (Oli), (Bracket), (Name Plate) dan (Selang Hisap)</p>
       <p>Tanggal {data.delivery_gas_cylinder_date} (Tabung Gas 3 Kg)</p>
       <h2 className="pt-4 text-xl font-semibold">Rapat Koordinasi, {data.rakorda_date}</h2>
+      <p>{data.rakorda_location}</p>
       <Attendees data={data} />
     </div>,
     <div key="sosialisasi" className="max-w-2xl space-y-2">
       <h2 className="text-xl font-semibold">Sosialisasi, {data.sosialisasi_date}</h2>
+      <p>{data.sosialisasi_location}</p>
       <Attendees data={data} />
       <h3 className="pt-4 font-semibold">Anggota Tim</h3>
       <ul className="list-disc space-y-1 pl-6">

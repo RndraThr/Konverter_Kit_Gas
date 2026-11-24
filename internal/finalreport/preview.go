@@ -17,6 +17,8 @@ type Preview struct {
 	DeliveryRangeEnd         string                 `json:"delivery_range_end"`
 	RakordaDate              string                 `json:"rakorda_date"`
 	SosialisasiDate          string                 `json:"sosialisasi_date"`
+	RakordaLocation          string                 `json:"rakorda_location"`
+	SosialisasiLocation      string                 `json:"sosialisasi_location"`
 	LeaderCount              string                 `json:"leader_count"`
 	AdminCount               string                 `json:"admin_count"`
 	TechnicianCount          string                 `json:"technician_count"`

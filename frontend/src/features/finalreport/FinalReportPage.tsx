@@ -22,8 +22,8 @@ const FinalReportPresent = lazy(() => import('./FinalReportPresent'));
 const toCount = (value: string) => Math.max(0, Number(value) || 0);
 
 type SettingsDraft = Omit<FinalReportSettings, 'program_id' | 'regency_id'>;
-const emptyDraft: SettingsDraft = { leader_count: 0, admin_count: 0, technician_count: 0, helper_count: 0, machine_manufacturer_name: '', delivery_hose_date: '', delivery_machine_group_date: '', delivery_gas_cylinder_date: '' };
-const draftFrom = (current: FinalReportSettings): SettingsDraft => ({ leader_count: current.leader_count, admin_count: current.admin_count, technician_count: current.technician_count, helper_count: current.helper_count, machine_manufacturer_name: current.machine_manufacturer_name, delivery_hose_date: current.delivery_hose_date, delivery_machine_group_date: current.delivery_machine_group_date, delivery_gas_cylinder_date: current.delivery_gas_cylinder_date });
+const emptyDraft: SettingsDraft = { leader_count: 0, admin_count: 0, technician_count: 0, helper_count: 0, machine_manufacturer_name: '' };
+const draftFrom = (current: FinalReportSettings): SettingsDraft => ({ leader_count: current.leader_count, admin_count: current.admin_count, technician_count: current.technician_count, helper_count: current.helper_count, machine_manufacturer_name: current.machine_manufacturer_name });
 const sameDraft = (a: SettingsDraft, b: SettingsDraft) => (Object.keys(emptyDraft) as (keyof SettingsDraft)[]).every((key) => a[key] === b[key]);
 
 // Only JPEG/PNG still images can be placed in the PPTX's .jpg slots.
@@ -78,11 +78,7 @@ export function FinalReportPage({ programId, regencyId }: { programId: string; r
         <FormField label="Helper" name="helper_count" type="number" min={0} value={String(draft.helper_count)} onChange={(e) => setDraft((d) => ({ ...d, helper_count: toCount(e.target.value) }))} />
       </div>
       <FormField label="Nama Pabrikan Mesin" name="machine_manufacturer_name" value={draft.machine_manufacturer_name} onChange={(e) => setDraft((d) => ({ ...d, machine_manufacturer_name: e.target.value }))} />
-      <div className="grid gap-3 sm:grid-cols-3">
-        <FormField label="Tanggal Kirim Selang Buang" name="delivery_hose_date" type="date" value={draft.delivery_hose_date} onChange={(e) => setDraft((d) => ({ ...d, delivery_hose_date: e.target.value }))} />
-        <FormField label="Tanggal Kirim Mesin/Konkit/Oli/dll" name="delivery_machine_group_date" type="date" value={draft.delivery_machine_group_date} onChange={(e) => setDraft((d) => ({ ...d, delivery_machine_group_date: e.target.value }))} />
-        <FormField label="Tanggal Kirim Tabung Gas" name="delivery_gas_cylinder_date" type="date" value={draft.delivery_gas_cylinder_date} onChange={(e) => setDraft((d) => ({ ...d, delivery_gas_cylinder_date: e.target.value }))} />
-      </div>
+      <p className="text-sm text-muted-foreground">Tanggal pengiriman diambil dari tanggal BA Pemeriksaan Barang (form Selang Hisap &amp; Buang, Mesin Pompa, dan Tabung Gas). Lokasi Rakor dan Sosialisasi dari pengaturan Berita Acara jadwal, titik serah dari penyerahan.</p>
       <Button type="button" onClick={() => saveSettings.mutate()} disabled={saveSettings.isPending || settingsQuery.isPending}>{saveSettings.isPending ? 'Menyimpan...' : 'Simpan Pengaturan'}</Button>
         </>}
     </section>}

@@ -147,7 +147,8 @@ def slide_pengiriman():
     els += card(right, y, w, h)
     els.append(("text", right + 0.35, y + 0.25, w - 0.6, 3.9, [
         para(run("Rapat Koordinasi", 17, NAVY, True), space_after=3),
-        para(run("{{RAKORDA_DATE}}", 14, GOLD, True), space_after=12),
+        para(run("{{RAKORDA_DATE}}", 14, GOLD, True), space_after=2),
+        para(run("{{RAKORDA_LOCATION}}", 12, MUTED), space_after=12),
         para(run("DIHADIRI OLEH", 10, MUTED, True, spc=150), space_after=6),
         *bullet_list(ATTENDEES),
     ], {}))
@@ -161,7 +162,8 @@ def slide_sosialisasi():
     els += card(left, y, w, h)
     els.append(("text", left + 0.35, y + 0.25, w - 0.6, 3.9, [
         para(run("Sosialisasi", 17, NAVY, True), space_after=3),
-        para(run("{{SOSIALISASI_DATE}}", 14, GOLD, True), space_after=12),
+        para(run("{{SOSIALISASI_DATE}}", 14, GOLD, True), space_after=2),
+        para(run("{{SOSIALISASI_LOCATION}}", 12, MUTED), space_after=12),
         para(run("DIHADIRI OLEH", 10, MUTED, True, spc=150), space_after=6),
         *bullet_list(ATTENDEES),
     ], {}))
@@ -184,7 +186,7 @@ def slide_pendistribusian():
     els = chrome(4) + heading("03  ·  PENDISTRIBUSIAN", "Pendistribusian Paket")
     els += card(0.5, 2.4, 12.333, 1.25)
     els.append(("text", 0.85, 2.4, 11.8, 1.25, [
-        para(run("LOKASI SERAH TERIMA", 10, MUTED, True, spc=150), space_after=4),
+        para(run("TITIK SERAH", 10, MUTED, True, spc=150), space_after=4),
         para(run("{{HANDOVER_LOCATION}}", 18, NAVY, True)),
     ], {"anchor": "m"}))
     y, h = 3.95, 2.7
@@ -268,8 +270,8 @@ SLIDES = [
     slide_sosialisasi(),
     slide_pendistribusian(),
     doc_slide(5, "Pengiriman dan Penerimaan Barang", "{{HANDOVER_LOCATION}}", ["{{DELIVERY_RANGE_START}}", "s.d. {{DELIVERY_RANGE_END}}"], "big+2"),
-    doc_slide(6, "Rapat Koordinasi", "{{AGRICULTURE_OFFICE_NAME}}", "{{RAKORDA_DATE}}", "2"),
-    doc_slide(7, "Seremoni dan Sosialisasi", "{{HANDOVER_LOCATION}}", "{{SOSIALISASI_DATE}}", "2x2"),
+    doc_slide(6, "Rapat Koordinasi", "{{RAKORDA_LOCATION}}", "{{RAKORDA_DATE}}", "2"),
+    doc_slide(7, "Seremoni dan Sosialisasi", "{{SOSIALISASI_LOCATION}}", "{{SOSIALISASI_DATE}}", "2x2"),
     doc_slide(8, "Pendistribusian", "{{HANDOVER_LOCATION}}", "", "big+2"),
     closing(),
 ]
@@ -377,8 +379,10 @@ SAMPLE = {
     "DELIVERY_RANGE_END": "14 November 2026",
     "RAKORDA_DATE": "16 November 2026",
     "SOSIALISASI_DATE": "18 November 2026",
+    "RAKORDA_LOCATION": "Aula Kantor Bupati Tanjung Jabung Timur",
+    "SOSIALISASI_LOCATION": "Balai Desa Rantau Rasau",
     "LEADER_COUNT": "2", "ADMIN_COUNT": "3", "TECHNICIAN_COUNT": "8", "HELPER_COUNT": "12",
-    "HANDOVER_LOCATION": "Gudang Titik Serah Desa Rantau Rasau, Kecamatan Rantau Rasau",
+    "HANDOVER_LOCATION": "Balai Desa Rantau Rasau, Gudang Desa Sungai Ular, Lapangan Desa Bandar Jaya",
     "DISTRIBUTION_START_DATE": "20 November 2026",
     "DISTRIBUTION_END_DATE": "24 November 2026",
     "DISTRIBUTION_TOTAL": "104",

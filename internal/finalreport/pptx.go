@@ -91,6 +91,7 @@ func RenderPPTX(templateData []byte, preview Preview, photoBytes map[string][][]
 		template.TokenDeliveryGasCylinderDate: preview.DeliveryGasCylinderDate,
 		template.TokenDeliveryRangeStart:      preview.DeliveryRangeStart, template.TokenDeliveryRangeEnd: preview.DeliveryRangeEnd,
 		template.TokenRakordaDate: preview.RakordaDate, template.TokenSosialisasiDate: preview.SosialisasiDate,
+		template.TokenRakordaLocation: preview.RakordaLocation, template.TokenSosialisasiLocation: preview.SosialisasiLocation,
 		template.TokenLeaderCount: preview.LeaderCount, template.TokenAdminCount: preview.AdminCount,
 		template.TokenTechnicianCount: preview.TechnicianCount, template.TokenHelperCount: preview.HelperCount,
 		template.TokenHandoverLocation:      preview.HandoverLocation,

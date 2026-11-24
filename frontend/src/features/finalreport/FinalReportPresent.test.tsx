@@ -17,6 +17,7 @@ const previewData = {
   delivery_hose_date: 'Belum diisi', delivery_machine_group_date: 'Belum diisi', delivery_gas_cylinder_date: 'Belum diisi',
   delivery_range_start: 'Belum diisi', delivery_range_end: 'Belum diisi',
   rakorda_date: 'Belum diisi', sosialisasi_date: 'Belum diisi',
+  rakorda_location: 'Aula Kantor Bupati', sosialisasi_location: 'Balai Desa Sukamaju',
   leader_count: '0', admin_count: '0', technician_count: '0', helper_count: '0',
   handover_location: 'Belum diisi', distribution_start_date: 'Belum diisi', distribution_end_date: 'Belum diisi', distribution_total: 'Belum diisi',
   photo_picks: {},
@@ -34,6 +35,9 @@ test('navigates between slides and shows blank-field placeholders', async () => 
   expect(await screen.findByText('KABUPATEN WAJO')).toBeVisible();
   fireEvent.click(screen.getByRole('button', { name: 'Slide berikutnya' }));
   expect(await screen.findAllByText('Belum diisi')).not.toHaveLength(0);
+  expect(screen.getByText('Aula Kantor Bupati')).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Slide berikutnya' }));
+  expect(await screen.findByText('Balai Desa Sukamaju')).toBeVisible();
 });
 
 test('Escape calls onClose', async () => {

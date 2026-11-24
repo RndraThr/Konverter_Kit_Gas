@@ -40,19 +40,17 @@ var validSlideKeys = map[string]bool{
 }
 
 // Settings is the per-program-per-regency input that has no other home in
-// the system (susunan tim, delivery dates, machine manufacturer name).
+// the system (susunan tim, machine manufacturer name). Delivery dates come
+// from BA Pemeriksaan Barang.
 type Settings struct {
-	ProgramID                string    `json:"program_id"`
-	RegencyID                string    `json:"regency_id"`
-	LeaderCount              int       `json:"leader_count"`
-	AdminCount               int       `json:"admin_count"`
-	TechnicianCount          int       `json:"technician_count"`
-	HelperCount              int       `json:"helper_count"`
-	MachineManufacturerName  string    `json:"machine_manufacturer_name"`
-	DeliveryHoseDate         string    `json:"delivery_hose_date"`
-	DeliveryMachineGroupDate string    `json:"delivery_machine_group_date"`
-	DeliveryGasCylinderDate  string    `json:"delivery_gas_cylinder_date"`
-	UpdatedAt                time.Time `json:"updated_at"`
+	ProgramID               string    `json:"program_id"`
+	RegencyID               string    `json:"regency_id"`
+	LeaderCount             int       `json:"leader_count"`
+	AdminCount              int       `json:"admin_count"`
+	TechnicianCount         int       `json:"technician_count"`
+	HelperCount             int       `json:"helper_count"`
+	MachineManufacturerName string    `json:"machine_manufacturer_name"`
+	UpdatedAt               time.Time `json:"updated_at"`
 }
 
 // PhotoPick is one chosen photo for one documentation slide.

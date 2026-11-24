@@ -17,7 +17,7 @@ type Repository struct{ pool *pgxpool.Pool }
 
 func NewRepository(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
-const settingsColumns = `program_id::text, regency_id::text, leader_count, admin_count, technician_count, helper_count, machine_manufacturer_name, COALESCE(delivery_hose_date::text,''), COALESCE(delivery_machine_group_date::text,''), COALESCE(delivery_gas_cylinder_date::text,''), updated_at`
+const settingsColumns = `program_id::text, regency_id::text, leader_count, admin_count, technician_count, helper_count, machine_manufacturer_name, updated_at`
 
 func (r *Repository) GetSettings(ctx context.Context, programID, regencyID string, scope auth.RegencyScope) (Settings, error) {
 	var s Settings
@@ -27,7 +27,7 @@ func (r *Repository) GetSettings(ctx context.Context, programID, regencyID strin
 		WHERE program_id=$1 AND regency_id=$2 AND ($3 OR regency_id::text=ANY($4))
 	`, programID, regencyID, scope.Unrestricted, scope.RegencyIDs).Scan(
 		&s.ProgramID, &s.RegencyID, &s.LeaderCount, &s.AdminCount, &s.TechnicianCount, &s.HelperCount,
-		&s.MachineManufacturerName, &s.DeliveryHoseDate, &s.DeliveryMachineGroupDate, &s.DeliveryGasCylinderDate, &s.UpdatedAt,
+		&s.MachineManufacturerName, &s.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Settings{ProgramID: programID, RegencyID: regencyID}, nil
@@ -41,21 +41,19 @@ func (r *Repository) GetSettings(ctx context.Context, programID, regencyID strin
 func (r *Repository) PutSettings(ctx context.Context, actor auth.Principal, input Settings, scope auth.RegencyScope) (Settings, error) {
 	var s Settings
 	err := r.pool.QueryRow(ctx, `
-		INSERT INTO final_report_settings (program_id, regency_id, leader_count, admin_count, technician_count, helper_count, machine_manufacturer_name, delivery_hose_date, delivery_machine_group_date, delivery_gas_cylinder_date, updated_by)
-		SELECT $1::uuid, $2::uuid, $3, $4, $5, $6, $7, NULLIF($8,'')::date, NULLIF($9,'')::date, NULLIF($10,'')::date, NULLIF($11,'')::uuid
-		WHERE $12 OR $2::text=ANY($13)
+		INSERT INTO final_report_settings (program_id, regency_id, leader_count, admin_count, technician_count, helper_count, machine_manufacturer_name, updated_by)
+		SELECT $1::uuid, $2::uuid, $3, $4, $5, $6, $7, NULLIF($8,'')::uuid
+		WHERE $9 OR $2::text=ANY($10)
 		ON CONFLICT (program_id, regency_id) DO UPDATE SET
 			leader_count=EXCLUDED.leader_count, admin_count=EXCLUDED.admin_count, technician_count=EXCLUDED.technician_count,
 			helper_count=EXCLUDED.helper_count, machine_manufacturer_name=EXCLUDED.machine_manufacturer_name,
-			delivery_hose_date=EXCLUDED.delivery_hose_date, delivery_machine_group_date=EXCLUDED.delivery_machine_group_date,
-			delivery_gas_cylinder_date=EXCLUDED.delivery_gas_cylinder_date, updated_by=EXCLUDED.updated_by, updated_at=now()
+			updated_by=EXCLUDED.updated_by, updated_at=now()
 		RETURNING `+settingsColumns,
 		input.ProgramID, input.RegencyID, input.LeaderCount, input.AdminCount, input.TechnicianCount, input.HelperCount,
-		input.MachineManufacturerName, input.DeliveryHoseDate, input.DeliveryMachineGroupDate, input.DeliveryGasCylinderDate,
-		actor.UserID, scope.Unrestricted, scope.RegencyIDs,
+		input.MachineManufacturerName, actor.UserID, scope.Unrestricted, scope.RegencyIDs,
 	).Scan(
 		&s.ProgramID, &s.RegencyID, &s.LeaderCount, &s.AdminCount, &s.TechnicianCount, &s.HelperCount,
-		&s.MachineManufacturerName, &s.DeliveryHoseDate, &s.DeliveryMachineGroupDate, &s.DeliveryGasCylinderDate, &s.UpdatedAt,
+		&s.MachineManufacturerName, &s.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Settings{}, ErrRegencyOutOfScope
@@ -166,8 +164,11 @@ type previewSourceData struct {
 	agricultureOfficeName, consultantCompanyName, consultantDefault string
 	handoverLocation                                                string
 	rakordaDate, sosialisasiDate                                    string
-	distributionStart, distributionEnd                              string
-	distributionTotal                                               int
+	rakordaLocation, sosialisasiLocation                            string
+	// Delivery dates: earliest BA Pemeriksaan Barang date per form.
+	hoseDate, machineDate, gasCylinderDate string
+	distributionStart, distributionEnd     string
+	distributionTotal                      int
 }
 
 func (r *Repository) GetPreviewSourceData(ctx context.Context, programID, regencyID string, scope auth.RegencyScope) (previewSourceData, error) {
@@ -198,9 +199,27 @@ func (r *Repository) GetPreviewSourceData(ctx context.Context, programID, regenc
 	}
 
 	_ = r.pool.QueryRow(ctx, `
-		SELECT COALESCE(agriculture_office_name,''), COALESCE(consultant_company_name,''), COALESCE(handover_location,'')
+		SELECT COALESCE(agriculture_office_name,''), COALESCE(consultant_company_name,''), rakorda_location, sosialisasi_location
 		FROM bast_schedule_settings WHERE schedule_id=$1::uuid
-	`, scheduleID).Scan(&data.agricultureOfficeName, &data.consultantCompanyName, &data.handoverLocation)
+	`, scheduleID).Scan(&data.agricultureOfficeName, &data.consultantCompanyName, &data.rakordaLocation, &data.sosialisasiLocation)
+
+	// Titik serah of the recipients handed over, the busiest first.
+	_ = r.pool.QueryRow(ctx, `
+		SELECT COALESCE(string_agg(name, ', ' ORDER BY n DESC, name), '') FROM (
+			SELECT l.name, count(*) AS n FROM distribution_slots ds
+			JOIN bast_handover_locations l ON l.id = ds.handover_location_id
+			WHERE ds.schedule_id=$1::uuid AND ds.status='completed'
+			GROUP BY l.name) t
+	`, scheduleID).Scan(&data.handoverLocation)
+
+	// Delivery dates are the BA Pemeriksaan Barang dates of the forms that
+	// cover them (finalized, current or needing a rebuild).
+	_ = r.pool.QueryRow(ctx, `
+		SELECT COALESCE(to_char(min(document_date) FILTER (WHERE document_type='pemeriksaan:selang_hisap_buang'),'YYYY-MM-DD'),''),
+		       COALESCE(to_char(min(document_date) FILTER (WHERE document_type='pemeriksaan:mesin'),'YYYY-MM-DD'),''),
+		       COALESCE(to_char(min(document_date) FILTER (WHERE document_type='pemeriksaan:tabung_gas'),'YYYY-MM-DD'),'')
+		FROM bast_aggregate_documents WHERE schedule_id=$1::uuid AND status IN ('active','stale')
+	`, scheduleID).Scan(&data.hoseDate, &data.machineDate, &data.gasCylinderDate)
 
 	_ = r.pool.QueryRow(ctx, `SELECT value #>> '{}' FROM system_settings WHERE key='organization_name'`).Scan(&data.consultantDefault)
 	if data.consultantCompanyName == "" {

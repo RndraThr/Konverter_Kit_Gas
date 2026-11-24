@@ -155,38 +155,40 @@ func (s *Service) Preview(ctx context.Context, programID, regencyID string, scop
 		picks[key] = list
 	}
 
-	deliveryStart, deliveryEnd := earliestLatest(settings.DeliveryHoseDate, settings.DeliveryMachineGroupDate, settings.DeliveryGasCylinderDate)
+	deliveryStart, deliveryEnd := earliestLatest(data.hoseDate, data.machineDate, data.gasCylinderDate)
+	// Team counts are blank until the settings are saved once.
+	count := func(n int) string {
+		if settings.UpdatedAt.IsZero() {
+			return blank
+		}
+		return strconv.Itoa(n)
+	}
 
 	return Preview{
 		RegencyLabel:             orBlank(regencyLabel(data.regencyName)),
-		FiscalYear:               orBlank(itoaOrEmpty(data.fiscalYear)),
+		FiscalYear:               orBlank(strconv.Itoa(data.fiscalYear)),
 		AgricultureOfficeName:    orBlank(data.agricultureOfficeName),
 		ConsultantCompanyName:    orBlank(data.consultantCompanyName),
 		MachineManufacturerName:  orBlank(settings.MachineManufacturerName),
-		DeliveryHoseDate:         orBlank(formatIndonesianDate(settings.DeliveryHoseDate)),
-		DeliveryMachineGroupDate: orBlank(formatIndonesianDate(settings.DeliveryMachineGroupDate)),
-		DeliveryGasCylinderDate:  orBlank(formatIndonesianDate(settings.DeliveryGasCylinderDate)),
+		DeliveryHoseDate:         orBlank(formatIndonesianDate(data.hoseDate)),
+		DeliveryMachineGroupDate: orBlank(formatIndonesianDate(data.machineDate)),
+		DeliveryGasCylinderDate:  orBlank(formatIndonesianDate(data.gasCylinderDate)),
 		DeliveryRangeStart:       orBlank(formatIndonesianDate(deliveryStart)),
 		DeliveryRangeEnd:         orBlank(formatIndonesianDate(deliveryEnd)),
 		RakordaDate:              orBlank(formatIndonesianDate(data.rakordaDate)),
 		SosialisasiDate:          orBlank(formatIndonesianDate(data.sosialisasiDate)),
-		LeaderCount:              itoaOrEmpty(settings.LeaderCount),
-		AdminCount:               itoaOrEmpty(settings.AdminCount),
-		TechnicianCount:          itoaOrEmpty(settings.TechnicianCount),
-		HelperCount:              itoaOrEmpty(settings.HelperCount),
+		RakordaLocation:          orBlank(strings.TrimSpace(data.rakordaLocation)),
+		SosialisasiLocation:      orBlank(strings.TrimSpace(data.sosialisasiLocation)),
+		LeaderCount:              count(settings.LeaderCount),
+		AdminCount:               count(settings.AdminCount),
+		TechnicianCount:          count(settings.TechnicianCount),
+		HelperCount:              count(settings.HelperCount),
 		HandoverLocation:         orBlank(data.handoverLocation),
 		DistributionStartDate:    orBlank(formatIndonesianDate(data.distributionStart)),
 		DistributionEndDate:      orBlank(formatIndonesianDate(data.distributionEnd)),
 		DistributionTotal:        orBlank(itoaOrEmptyNonZero(data.distributionTotal)),
 		PhotoPicks:               picks,
 	}, nil
-}
-
-func itoaOrEmpty(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	return strconv.Itoa(n)
 }
 
 func itoaOrEmptyNonZero(n int) string {

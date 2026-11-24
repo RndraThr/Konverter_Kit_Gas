@@ -16,6 +16,8 @@ const (
 	TokenDeliveryRangeEnd         = "{{DELIVERY_RANGE_END}}"
 	TokenRakordaDate              = "{{RAKORDA_DATE}}"
 	TokenSosialisasiDate          = "{{SOSIALISASI_DATE}}"
+	TokenRakordaLocation          = "{{RAKORDA_LOCATION}}"
+	TokenSosialisasiLocation      = "{{SOSIALISASI_LOCATION}}"
 	TokenLeaderCount              = "{{LEADER_COUNT}}"
 	TokenAdminCount               = "{{ADMIN_COUNT}}"
 	TokenTechnicianCount          = "{{TECHNICIAN_COUNT}}"
@@ -32,6 +34,6 @@ var AllTokens = []string{
 	TokenRegencyLabel, TokenFiscalYear, TokenAgricultureOfficeName, TokenConsultantCompanyName,
 	TokenMachineManufacturerName, TokenDeliveryHoseDate, TokenDeliveryMachineGroupDate,
 	TokenDeliveryGasCylinderDate, TokenDeliveryRangeStart, TokenDeliveryRangeEnd, TokenRakordaDate,
-	TokenSosialisasiDate, TokenLeaderCount, TokenAdminCount, TokenTechnicianCount, TokenHelperCount,
+	TokenSosialisasiDate, TokenRakordaLocation, TokenSosialisasiLocation, TokenLeaderCount, TokenAdminCount, TokenTechnicianCount, TokenHelperCount,
 	TokenHandoverLocation, TokenDistributionStartDate, TokenDistributionEndDate, TokenDistributionTotal,
 }
