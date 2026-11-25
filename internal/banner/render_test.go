@@ -70,6 +70,29 @@ func TestRenderEveryKind(t *testing.T) {
 	}
 }
 
+// The seremoni program text is cleaned into lines and printed over the
+// template's own lines; BANNER_OUT also writes the versions for a visual check.
+func TestSeremoniProgram(t *testing.T) {
+	if got := ProgramLines(" program  kemitraan\r\n\n & dpr ri \n"); len(got) != 2 || got[0] != "PROGRAM KEMITRAAN" || got[1] != "& DPR RI" {
+		t.Fatalf("lines = %q", got)
+	}
+	for name, lines := range map[string][]string{
+		"template": ProgramLines(DefaultSeremoniProgram),
+		"one-line": {"PROGRAM KEMITRAAN KEMENTERIAN ESDM & DPR RI"},
+		"two-line": {"PROGRAM KEMITRAAN KEMENTERIAN ESDM", "& DPR RI"},
+	} {
+		out, err := Render(Input{Kind: KindSeremoni, RegencyName: "KAB. BONE", PersonName: "Rico Alviano S.T", Program: lines})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if dir := os.Getenv("BANNER_OUT"); dir != "" {
+			if err := os.WriteFile(filepath.Join(dir, "seremoni-"+name+".pdf"), out, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
+
 func TestRegencyNames(t *testing.T) {
 	for in, want := range map[string]string{"KAB. TANAH DATAR": "Kabupaten Tanah Datar", "KOTA LANGSA": "Kota Langsa", "Kab. Bireuen": "Kabupaten Bireuen", "KABUPATEN BONE": "Kabupaten Bone"} {
 		if got := RegencyDisplayName(in); got != want {

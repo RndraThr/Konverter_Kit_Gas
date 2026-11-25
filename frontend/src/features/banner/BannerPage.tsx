@@ -23,6 +23,8 @@ type TextStyle = { size_percent?: number; color?: string };
 type Settings = {
   service_center_name: string; service_center_address: string; service_center_phone: string;
   seremoni_name: string; plakat_name: string; plakat_place: string; plakat_date: string;
+  /** The seremoni program lines ("PROGRAM KEMITRAAN ... & DPR RI"), separated by a newline. */
+  seremoni_program: string;
   styles?: Record<string, TextStyle>;
 };
 type TextField = Exclude<keyof Settings, 'styles'>;
@@ -33,13 +35,14 @@ type Overview = {
   master_service_center: ServiceCenter; service_center: ServiceCenter; settings: Settings;
   kinds: KindInfo[];
   style_defaults?: Record<string, string>;
+  seremoni_program_default?: string;
 };
 
 /** The fields each banner prints; Pelatihan Teknis has none besides the logo. */
 const kindFields: Record<Kind, TextField[]> = {
   backdrop: ['service_center_name', 'service_center_address', 'service_center_phone'],
   pelatihan: [],
-  seremoni: ['seremoni_name'],
+  seremoni: ['seremoni_program', 'seremoni_name'],
   plakat: ['plakat_name', 'plakat_place', 'plakat_date'],
 };
 
@@ -47,7 +50,7 @@ const kindFields: Record<Kind, TextField[]> = {
 const kindStyles: Record<Kind, { key: string; label: string }[]> = {
   backdrop: [{ key: 'backdrop_service', label: 'Teks lokasi servis' }],
   pelatihan: [],
-  seremoni: [{ key: 'seremoni_name', label: 'Nama' }],
+  seremoni: [{ key: 'seremoni_program', label: 'Teks program' }, { key: 'seremoni_name', label: 'Nama' }],
   plakat: [{ key: 'plakat_date', label: 'Tempat & tanggal' }, { key: 'plakat_name', label: 'Nama' }],
 };
 const sizeMin = 60, sizeMax = 140;
@@ -55,6 +58,7 @@ const sizeMin = 60, sizeMax = 140;
 /** The form shows the service center actually printed: the typed value, or the master data. */
 const formFrom = (o: Overview): Settings => ({
   ...o.settings,
+  seremoni_program: o.settings.seremoni_program ?? o.seremoni_program_default ?? '',
   service_center_name: o.service_center.name, service_center_address: o.service_center.address, service_center_phone: o.service_center.phone,
 });
 
@@ -170,7 +174,23 @@ function BannerSettings({ data, info, canManage }: { data: Overview; info: KindI
       <FormField label="Telepon" name="service_center_phone" value={form.service_center_phone} onChange={set('service_center_phone')} />
     </>;
   } else if (info.kind === 'seremoni') {
-    body = <FormField label="Nama" name="seremoni_name" value={form.seremoni_name} onChange={set('seremoni_name')} hint="Misalnya anggota Komisi XII DPR RI yang hadir. Dicetak huruf besar." />;
+    const programDefault = data.seremoni_program_default ?? '';
+    const program = form.seremoni_program;
+    body = <>
+      <div className="grid gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Label htmlFor="seremoni_program">Teks program</Label>
+          {canManage && <div className="flex gap-1">
+            {program.includes('\n') && <Button type="button" variant="ghost" size="sm" onClick={() => setForm((current) => ({ ...current, seremoni_program: current.seremoni_program.split('\n').map((line) => line.trim()).filter(Boolean).join(' ') }))}>Jadikan 1 baris</Button>}
+            {program !== programDefault && <Button type="button" variant="ghost" size="sm" onClick={() => setForm((current) => ({ ...current, seremoni_program: programDefault }))}><RotateCcw />Bawaan</Button>}
+          </div>}
+        </div>
+        <textarea id="seremoni_program" name="seremoni_program" rows={2} className="min-h-20 rounded-lg border border-input bg-transparent px-3 py-2 font-mono text-sm uppercase outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+          value={program} onChange={set('seremoni_program')} />
+        <p className="text-xs text-muted-foreground">Maksimal 2 baris (Enter untuk baris baru). Font tetap seperti template, ukuran mengecil otomatis bila terlalu panjang.</p>
+      </div>
+      <FormField label="Nama" name="seremoni_name" value={form.seremoni_name} onChange={set('seremoni_name')} hint="Misalnya anggota DPR RI yang hadir. Dicetak huruf besar." />
+    </>;
   } else if (info.kind === 'plakat') {
     body = <>
       <FormField label="Nama" name="plakat_name" value={form.plakat_name} onChange={set('plakat_name')} hint="Dicetak huruf besar." />

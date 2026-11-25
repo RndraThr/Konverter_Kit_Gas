@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"konkit/internal/audit"
 	"konkit/internal/auth"
@@ -25,7 +26,9 @@ var (
 	ErrLogoTooLarge = errors.New("kabupaten logo is too large")
 	ErrInvalidDate  = errors.New("plakat date must be YYYY-MM-DD")
 	ErrInvalidStyle = errors.New("text style must have a known text, a size of 60-140% and a #RRGGBB color")
-	supportedBrands = []string{"shark", "loncin"}
+	// ErrInvalidProgram: the seremoni program text has too many or too long lines.
+	ErrInvalidProgram = errors.New("seremoni program text must have at most 2 lines of 60 characters")
+	supportedBrands   = []string{"shark", "loncin"}
 )
 
 const (
@@ -43,9 +46,13 @@ type Settings struct {
 	ServiceCenterAddress string `json:"service_center_address"`
 	ServiceCenterPhone   string `json:"service_center_phone"`
 	SeremoniName         string `json:"seremoni_name"`
-	PlakatName           string `json:"plakat_name"`
-	PlakatPlace          string `json:"plakat_place"`
-	PlakatDate           string `json:"plakat_date"`
+	// SeremoniProgram is the seremoni banner's program text, lines separated
+	// by a newline; the overview gives the template's own text when none was
+	// typed. Nil on save keeps the stored text, empty restores the template's.
+	SeremoniProgram *string `json:"seremoni_program,omitempty"`
+	PlakatName      string  `json:"plakat_name"`
+	PlakatPlace     string  `json:"plakat_place"`
+	PlakatDate      string  `json:"plakat_date"`
 	// Styles holds the size and color of the typed texts, by text. Nil on
 	// save keeps the stored styles.
 	Styles StyleMap `json:"styles"`
@@ -84,6 +91,8 @@ type Overview struct {
 	Kinds         []KindInfo    `json:"kinds"`
 	// StyleDefaults are the default colors of the styled texts.
 	StyleDefaults map[string]string `json:"style_defaults"`
+	// SeremoniProgramDefault is the program text of the seremoni template.
+	SeremoniProgramDefault string `json:"seremoni_program_default"`
 }
 
 // KindInfo describes one banner for the page.
@@ -181,12 +190,13 @@ func (s *Service) Overview(ctx context.Context, scheduleID string, scope auth.Re
 	}
 	var date *time.Time
 	var styles []byte
+	program := DefaultSeremoniProgram
 	err = s.pool.QueryRow(ctx, `
 		SELECT COALESCE(service_center_name, ''), COALESCE(service_center_address, ''), COALESCE(service_center_phone, ''),
-			seremoni_name, plakat_name, plakat_place, plakat_date, styles
-		FROM banner_settings WHERE schedule_id = $1`, row.id).
+			seremoni_name, COALESCE(seremoni_program, $2), plakat_name, plakat_place, plakat_date, styles
+		FROM banner_settings WHERE schedule_id = $1`, row.id, DefaultSeremoniProgram).
 		Scan(&o.Settings.ServiceCenterName, &o.Settings.ServiceCenterAddress, &o.Settings.ServiceCenterPhone,
-			&o.Settings.SeremoniName, &o.Settings.PlakatName, &o.Settings.PlakatPlace, &date, &styles)
+			&o.Settings.SeremoniName, &program, &o.Settings.PlakatName, &o.Settings.PlakatPlace, &date, &styles)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return Overview{}, fmt.Errorf("get banner settings: %w", err)
 	}
@@ -197,7 +207,9 @@ func (s *Service) Overview(ctx context.Context, scheduleID string, scope auth.Re
 	if len(styles) > 0 {
 		_ = json.Unmarshal(styles, &o.Settings.Styles)
 	}
+	o.Settings.SeremoniProgram = &program
 	o.StyleDefaults = DefaultStyleColors()
+	o.SeremoniProgramDefault = DefaultSeremoniProgram
 	o.ServiceCenter = ServiceCenter{
 		Name:    firstNonEmpty(o.Settings.ServiceCenterName, o.MasterCenter.Name),
 		Address: firstNonEmpty(o.Settings.ServiceCenterAddress, o.MasterCenter.Address),
@@ -260,6 +272,10 @@ func (s *Service) SaveSettings(ctx context.Context, actor auth.Principal, schedu
 		}
 	}
 	stylesJSON, _ := json.Marshal(styles)
+	program, err := programSetting(in.SeremoniProgram, current.Settings.SeremoniProgram)
+	if err != nil {
+		return Overview{}, err
+	}
 	override := func(value, master string) *string {
 		value = strings.Join(strings.Fields(value), " ")
 		if value == "" || value == master {
@@ -274,13 +290,14 @@ func (s *Service) SaveSettings(ctx context.Context, actor auth.Principal, schedu
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO banner_settings (schedule_id, service_center_name, service_center_address, service_center_phone, seremoni_name, plakat_name, plakat_place, plakat_date, styles, updated_by, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, '')::uuid, now())
+		INSERT INTO banner_settings (schedule_id, service_center_name, service_center_address, service_center_phone, seremoni_name, plakat_name, plakat_place, plakat_date, styles, updated_by, seremoni_program, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, '')::uuid, $11, now())
 		ON CONFLICT (schedule_id) DO UPDATE SET service_center_name = EXCLUDED.service_center_name, service_center_address = EXCLUDED.service_center_address,
 			service_center_phone = EXCLUDED.service_center_phone, seremoni_name = EXCLUDED.seremoni_name, plakat_name = EXCLUDED.plakat_name,
-			plakat_place = EXCLUDED.plakat_place, plakat_date = EXCLUDED.plakat_date, styles = EXCLUDED.styles, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+			plakat_place = EXCLUDED.plakat_place, plakat_date = EXCLUDED.plakat_date, styles = EXCLUDED.styles, updated_by = EXCLUDED.updated_by,
+			seremoni_program = EXCLUDED.seremoni_program, updated_at = now()`,
 		current.ScheduleID, override(in.ServiceCenterName, current.MasterCenter.Name), override(in.ServiceCenterAddress, current.MasterCenter.Address),
-		override(in.ServiceCenterPhone, current.MasterCenter.Phone), clean(in.SeremoniName), clean(in.PlakatName), clean(in.PlakatPlace), date, stylesJSON, actor.UserID); err != nil {
+		override(in.ServiceCenterPhone, current.MasterCenter.Phone), clean(in.SeremoniName), clean(in.PlakatName), clean(in.PlakatPlace), date, stylesJSON, actor.UserID, program); err != nil {
 		return Overview{}, fmt.Errorf("save banner settings: %w", err)
 	}
 	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "banner.settings_saved", ResourceType: "program_schedule", ResourceID: current.ScheduleID, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
@@ -290,6 +307,32 @@ func (s *Service) SaveSettings(ctx context.Context, actor auth.Principal, schedu
 		return Overview{}, fmt.Errorf("commit banner settings: %w", err)
 	}
 	return s.Overview(ctx, scheduleID, scope)
+}
+
+// programSetting is the seremoni program text to store: nil (the template's
+// own text) when it is empty or the same as the template's, the current text
+// when none was sent (an older app), and otherwise the cleaned lines.
+func programSetting(in, current *string) (*string, error) {
+	if in == nil {
+		in = current
+	}
+	if in == nil {
+		return nil, nil
+	}
+	lines := ProgramLines(*in)
+	if len(lines) > MaxProgramLines {
+		return nil, ErrInvalidProgram
+	}
+	for _, line := range lines {
+		if utf8.RuneCountInString(line) > MaxProgramLineRunes {
+			return nil, ErrInvalidProgram
+		}
+	}
+	text := strings.Join(lines, "\n")
+	if text == "" || text == DefaultSeremoniProgram {
+		return nil, nil
+	}
+	return &text, nil
 }
 
 // SaveLogo replaces the kabupaten logo of the schedule's regency. The file
@@ -362,6 +405,9 @@ func (s *Service) Banner(ctx context.Context, scheduleID string, kind Kind, scop
 		return nil, "", ErrNotSupported
 	}
 	in := Input{Kind: kind, RegencyName: o.RegencyName, ServiceCenter: o.ServiceCenter, PersonName: o.Settings.SeremoniName, Styles: o.Settings.Styles}
+	if program := o.Settings.SeremoniProgram; kind == KindSeremoni && program != nil && *program != DefaultSeremoniProgram {
+		in.Program = ProgramLines(*program)
+	}
 	if kind == KindPlakat {
 		in.PersonName = o.Settings.PlakatName
 		in.Place = firstNonEmpty(o.Settings.PlakatPlace, o.ShortName)
