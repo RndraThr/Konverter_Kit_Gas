@@ -12,7 +12,7 @@ import { id } from 'date-fns/locale';
 import { todayWIB } from './api';
 import { MonitoringPage } from './MonitoringPage';
 import { zoomAt } from './ZoomableImage';
-import type { MediaReview, Overview, QueueItem, ScheduleRow, SlotDetail } from './types';
+import { activityCellState, activityTypes, type ActivityAlbum, type ActivityCell, type MediaReview, type Overview, type QueueItem, type ScheduleRow, type SlotDetail } from './types';
 
 vi.mock('../../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../../lib/api')>('../../lib/api');
@@ -52,12 +52,23 @@ const detail = (slot: number, reviews: Record<string, MediaReview> = {}): SlotDe
   schedule_name: 'KAB. MALANG', regency_name: 'KAB. MALANG', completed_at: '2026-11-20T02:00:00Z', completed_by: 'Petugas', state: 'pending', reviews,
 });
 
+// Malang has 2 new rakor photos; Tuban's materials arrived (its unloading phase is over) without photos.
+const activityCells: ActivityCell[] = [
+  { schedule_id: 's1', regency_id: 'r1', activity_type: 'rakor', photos: 2, approved: 0, rejected: 0, pending: 2, last_upload_at: null },
+  { schedule_id: 's1', regency_id: 'r1', activity_type: 'training_100', photos: 3, approved: 3, rejected: 0, pending: 0, last_upload_at: null },
+];
+const album: ActivityAlbum = {
+  schedule_id: 's1', regency_id: 'r1', regency_name: 'KAB. MALANG', activity_type: 'rakor',
+  photos: ['rk1', 'rk2'].map((id) => ({ id, content_url: `/media/${id}`, mime_type: 'image/jpeg', display_name: `RAKOR ${id}`, source: 'camera', uploaded_at: '2026-11-26T03:00:00Z', uploaded_by: 'Petugas', review: null })),
+};
+
 afterEach(() => vi.clearAllMocks());
 
 function renderPage(path: string, permissions = ['monitoring.view', 'monitoring.review', 'monitoring.manage']) {
   const calls: { path: string; init?: RequestInit }[] = [];
   // The photo checks made during the test, by slot, as the server would keep them.
   const reviews: Record<number, Record<string, MediaReview>> = {};
+  const activityReviews: Record<string, MediaReview> = {};
   const check = (slot: number, ids: string[], status: MediaReview['status']) => {
     reviews[slot] = { ...reviews[slot], ...Object.fromEntries(ids.map((id) => [id, { status, reason: '', reviewed_by: 'Rendra', reviewed_at: '2026-11-20T05:00:00Z' }])) };
   };
@@ -74,6 +85,14 @@ function renderPage(path: string, permissions = ['monitoring.view', 'monitoring.
       return Promise.resolve({ data: detail(n, reviews[n]) });
     }
     if (url === '/api/v1/monitoring/calendar') return Promise.resolve({ data: { saved: true } });
+    if (url === '/api/v1/monitoring/activities?program_id=p1') return Promise.resolve({ data: activityCells });
+    if (url.startsWith('/api/v1/monitoring/activities/album')) return Promise.resolve({ data: { ...album, photos: album.photos.map((p) => ({ ...p, review: activityReviews[p.id] ?? null })) } });
+    if (url === '/api/v1/monitoring/activities/approve' || url === '/api/v1/monitoring/activities/revision') {
+      const body = JSON.parse(init!.body as string);
+      const ids: string[] = body.media_ids ?? body.flags.map((f: { media_id: string }) => f.media_id);
+      ids.forEach((id) => { activityReviews[id] = { status: body.flags ? 'rejected' : 'approved', reason: '', reviewed_by: 'Rendra', reviewed_at: '2026-11-20T05:00:00Z' }; });
+      return Promise.resolve({ data: { ...album, photos: album.photos.map((p) => ({ ...p, review: activityReviews[p.id] ?? null })) } });
+    }
     return Promise.reject(new Error(`Unexpected request: ${url}`));
   });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -223,4 +242,43 @@ test('the kabupaten list can be searched and shows the photos to check', async (
   await userEvent.type(screen.getByRole('textbox', { name: 'Cari kabupaten' }), 'tuban');
   expect(within(list).queryByRole('option', { name: /KAB. MALANG/ })).toBeNull();
   expect(within(list).getByText('Tidak ada kabupaten.')).toBeVisible();
+});
+
+test('an activity type is missing once its phase is over, and checked or fixed first', () => {
+  const rakor = activityTypes.find((t) => t.code === 'rakor')!;
+  const days = [{ day: '2026-11-26', phase: 'rakor' as const }];
+  expect(activityCellState(undefined, rakor, days, '2026-11-26')).toBe('empty');
+  expect(activityCellState(undefined, rakor, days, '2026-11-27')).toBe('missing');
+  expect(activityCellState(undefined, activityTypes.find((t) => t.code === 'kegiatan')!, days, '2026-12-30')).toBe('empty');
+  const cell = { schedule_id: 's1', regency_id: 'r1', activity_type: 'rakor', photos: 3, approved: 1, rejected: 1, pending: 1, last_upload_at: null };
+  expect(activityCellState(cell, rakor, days, '2026-11-27')).toBe('revision');
+  expect(activityCellState({ ...cell, rejected: 0 }, rakor, days, '2026-11-27')).toBe('pending');
+  expect(activityCellState({ ...cell, rejected: 0, pending: 0 }, rakor, days, '2026-11-27')).toBe('approved');
+});
+
+test('an activity revision notification opens the album, or the activity page for the field', () => {
+  expect(webLink('/kegiatan/rakor?schedule=s1&revisi=1', true)).toBe('/monitoring-distribusi?tab=kegiatan&schedule=s1&activity=rakor');
+  expect(webLink('/kegiatan/unloading_oli?schedule=s1&revisi=1', false)).toBe('/dokumentasi/unloading?type=unloading_oli');
+  expect(webLink('/kegiatan/kegiatan_distribusi?schedule=s1&revisi=1', false)).toBe('/dokumentasi/kegiatan-pendistribusian');
+  expect(webLink('/kegiatan/training_10?schedule=s1&revisi=1', false)).toBe('/dokumentasi/training-10');
+});
+
+test('checks the activity photos of a kabupaten: approves one, sends one back', async () => {
+  const calls = renderPage('/monitoring-distribusi?tab=kegiatan');
+  await waitFor(() => expect(screen.getByRole('tab', { name: /Kegiatan/ })).toHaveTextContent(/2$/));
+  await userEvent.click(await screen.findByRole('checkbox', { name: /Hanya kabupaten saya/ }));
+  await userEvent.click(await screen.findByRole('button', { name: 'Rakor KAB. MALANG' }));
+  const dialog = await screen.findByRole('dialog');
+  expect(await within(dialog).findByAltText('RAKOR rk1')).toBeVisible();
+  fireEvent.keyDown(window, { key: 'a' });
+  await waitFor(() => expect(calls.some((c) => c.path === '/api/v1/monitoring/activities/approve')).toBe(true));
+  expect(JSON.parse(calls.find((c) => c.path === '/api/v1/monitoring/activities/approve')!.init!.body as string)).toEqual({ schedule_id: 's1', activity_type: 'rakor', media_ids: ['rk1'] });
+  expect(await within(dialog).findByAltText('RAKOR rk2')).toBeVisible();
+  await userEvent.click(within(dialog).getByRole('checkbox', { name: /Tandai salah/ }));
+  await userEvent.type(within(dialog).getByRole('textbox', { name: 'Alasan revisi foto' }), 'Bukan rakor');
+  await userEvent.click(within(dialog).getByRole('button', { name: /Kirim revisi \(1\)/ }));
+  await userEvent.click(within(dialog).getByRole('button', { name: /^Kirim revisi$/ }));
+  await waitFor(() => expect(calls.some((c) => c.path === '/api/v1/monitoring/activities/revision')).toBe(true));
+  expect(JSON.parse(calls.find((c) => c.path === '/api/v1/monitoring/activities/revision')!.init!.body as string))
+    .toEqual({ schedule_id: 's1', activity_type: 'rakor', flags: [{ media_id: 'rk2', reason: 'Bukan rakor' }], note: '' });
 });

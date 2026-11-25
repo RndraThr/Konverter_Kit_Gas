@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/api';
 import { useRealtimeSignals } from '@/lib/realtime';
-import type { Overview, PhaseDay, QueueItem, SlotDetail } from './types';
+import type { ActivityAlbum, ActivityCell, Overview, PhaseDay, QueueItem, SlotDetail } from './types';
 
 type DataResponse<T> = { data: T };
 
@@ -66,5 +66,40 @@ export function useMonitoringSignals() {
       void queryClient.invalidateQueries({ queryKey: queueKey(signal.schedule_id) });
       void queryClient.invalidateQueries({ queryKey: [...monitoringKey, 'slot', signal.schedule_id] });
     }
+  });
+}
+
+export const activitiesKey = (programId: string) => [...monitoringKey, 'activities', programId] as const;
+export const albumKey = (scheduleId: string, activityType: string) => [...monitoringKey, 'album', scheduleId, activityType] as const;
+
+export function useActivityCells(programId: string) {
+  return useQuery({
+    queryKey: activitiesKey(programId),
+    queryFn: () => apiRequest<DataResponse<ActivityCell[]>>(`/api/v1/monitoring/activities?${new URLSearchParams({ program_id: programId })}`).then((r) => r.data),
+    enabled: programId !== '',
+  });
+}
+
+export function useActivityAlbum(scheduleId: string, activityType: string) {
+  return useQuery({
+    queryKey: albumKey(scheduleId, activityType),
+    queryFn: () => apiRequest<DataResponse<ActivityAlbum>>(`/api/v1/monitoring/activities/album?${new URLSearchParams({ schedule_id: scheduleId, activity_type: activityType })}`).then((r) => r.data),
+    enabled: scheduleId !== '' && activityType !== '',
+  });
+}
+
+export const approveActivityPhotos = (scheduleId: string, activityType: string, mediaIds: string[] = []) =>
+  apiRequest<DataResponse<ActivityAlbum>>(`/api/v1/monitoring/activities/approve`, { method: 'POST', body: JSON.stringify({ schedule_id: scheduleId, activity_type: activityType, media_ids: mediaIds }) }).then((r) => r.data);
+
+export const requestActivityRevision = (scheduleId: string, activityType: string, body: { flags: { media_id: string; reason: string }[]; note: string }) =>
+  apiRequest<DataResponse<ActivityAlbum>>(`/api/v1/monitoring/activities/revision`, { method: 'POST', body: JSON.stringify({ schedule_id: scheduleId, activity_type: activityType, ...body }) }).then((r) => r.data);
+
+/** Activity photos uploaded, deleted or checked: refresh the grid and the open album. */
+export function useActivitySignals() {
+  const queryClient = useQueryClient();
+  useRealtimeSignals((signal) => {
+    if (signal.t !== 'activities') return;
+    void queryClient.invalidateQueries({ queryKey: [...monitoringKey, 'activities'] });
+    void queryClient.invalidateQueries({ queryKey: [...monitoringKey, 'album'] });
   });
 }

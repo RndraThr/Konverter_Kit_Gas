@@ -36,6 +36,13 @@ function useNotificationSignals() {
  * it opens the slot in the monitoring (central team) or the Pendistribusian page.
  */
 export function webLink(link: string, canMonitor: boolean): string {
+  const activity = /^\/kegiatan\/([a-z0-9_]+)\?(.*)$/.exec(link);
+  if (activity) {
+    const [, type, query] = activity;
+    if (canMonitor) return `/monitoring-distribusi?tab=kegiatan&schedule=${new URLSearchParams(query).get('schedule') ?? ''}&activity=${type}`;
+    if (type.startsWith('unloading_')) return `/dokumentasi/unloading?type=${type}`;
+    return `/dokumentasi/${type === 'kegiatan_distribusi' ? 'kegiatan-pendistribusian' : type.replaceAll('_', '-')}`;
+  }
   const match = /^\/nomor-bagi\/(\d+)\?(.*)$/.exec(link);
   if (!match) return link;
   const schedule = new URLSearchParams(match[2]).get('schedule') ?? '';
