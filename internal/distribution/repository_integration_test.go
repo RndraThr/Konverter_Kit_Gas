@@ -1155,16 +1155,16 @@ func TestFindSerialMatches(t *testing.T) {
 		t.Fatalf("excluded slot still matched: %+v", matches)
 	}
 
-	// A caller scoped to a different regency still learns the serial is taken, but gets no
-	// identifying details about the out-of-scope slot.
+	// A caller scoped to a different regency learns where the serial is taken
+	// (kabupaten and slot number) to check the box, but not the schedule.
 	outside := auth.RegencyScope{RegencyIDs: []string{"00000000-0000-0000-0000-000000000000"}}
 	matches, err = repo.FindSerialMatches(ctx, strings.ToUpper(machine), "", 0, outside)
 	must(t, err)
-	if len(matches) != 1 || !matches[0].OutOfScope || matches[0].Field != "machine" {
-		t.Fatalf("out-of-scope match = %+v, want one redacted machine match", matches)
+	if len(matches) != 1 || matches[0].OutOfScope || matches[0].Field != "machine" || matches[0].RegencyName != "Serial Test" || matches[0].SlotNumber != first.SlotNumber {
+		t.Fatalf("out-of-scope match = %+v, want the kabupaten and slot number", matches)
 	}
-	if matches[0].ScheduleID != "" || matches[0].ScheduleName != "" || matches[0].RegencyName != "" || matches[0].SlotNumber != 0 || matches[0].Status != "" {
-		t.Fatalf("out-of-scope match leaked details: %+v", matches[0])
+	if matches[0].ScheduleID != "" || matches[0].ScheduleName != "" {
+		t.Fatalf("out-of-scope match names the schedule: %+v", matches[0])
 	}
 }
 

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { CalendarRange, Camera, ClipboardCheck, Radio } from 'lucide-react';
+import { CalendarRange, Camera, ClipboardCheck, CopyX, Radio } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { DataState } from '@/components/DataState';
 import { PageHeader } from '@/components/PageHeader';
@@ -8,12 +8,14 @@ import { getBootstrap } from '@/lib/api';
 import { useCan } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import { ActivitiesPanel } from './ActivitiesPanel';
-import { useActivityCells, useMonitoringSignals, useOverview } from './api';
+import { useActivityCells, useMonitoringSignals, useOverview, useSerialDuplicates } from './api';
+import { DuplicatesPanel } from './DuplicatesPanel';
+import { duplicatesBySchedule } from './types';
 import { CalendarPanel } from './CalendarPanel';
 import { LivePanel } from './LivePanel';
 import { QueuePanel } from './QueuePanel';
 
-type Tab = 'live' | 'antrean' | 'kegiatan' | 'jadwal';
+type Tab = 'live' | 'antrean' | 'kegiatan' | 'dobel' | 'jadwal';
 
 /**
  * Monitoring Distribusi: live numbers of the kabupaten distributing today,
@@ -24,7 +26,7 @@ type Tab = 'live' | 'antrean' | 'kegiatan' | 'jadwal';
  */
 export function MonitoringPage() {
   const [params, setParams] = useSearchParams();
-  const tab = (['live', 'antrean', 'kegiatan', 'jadwal'].includes(params.get('tab') ?? '') ? params.get('tab') : 'live') as Tab;
+  const tab = (['live', 'antrean', 'kegiatan', 'dobel', 'jadwal'].includes(params.get('tab') ?? '') ? params.get('tab') : 'live') as Tab;
   const overview = useOverview(params.get('program') ?? '');
   const bootstrap = useQuery({ queryKey: ['bootstrap'], queryFn: getBootstrap });
   const canManage = useCan('monitoring.manage');
@@ -43,10 +45,12 @@ export function MonitoringPage() {
   const activityCells = useActivityCells(data?.program_id ?? '');
   const mineIds = new Set((mine.length ? mine : rows).map((row) => row.schedule_id));
   const activityPending = (activityCells.data ?? []).filter((c) => mineIds.has(c.schedule_id)).reduce((sum, c) => sum + c.pending, 0);
+  const duplicates = useSerialDuplicates(data?.program_id ?? '');
   const tabs: { value: Tab; label: string; hint: string; icon: typeof Radio; count?: number }[] = [
     { value: 'live', label: 'Live', hint: 'Kabupaten yang distribusi hari ini', icon: Radio, count: rows.filter((row) => row.today_phase === 'distribusi').length },
     { value: 'antrean', label: 'Antrean cek', hint: mine.length ? `Belum dicek di ${mine.length} kabupaten Anda` : 'Cek dokumentasi pelanggan', icon: ClipboardCheck, count: (mine.length ? mine : rows).reduce((sum, row) => sum + row.pending, 0) },
     { value: 'kegiatan', label: 'Kegiatan', hint: 'Cek foto dokumentasi kegiatan', icon: Camera, count: activityPending },
+    { value: 'dobel', label: 'Serial dobel', hint: duplicates.data?.length ? 'Cocokkan dengan box di lapangan' : 'Tidak ada serial dobel', icon: CopyX, count: duplicates.data?.length ?? 0 },
     { value: 'jadwal', label: 'Jadwal', hint: 'Tahapan & pembagian tugas', icon: CalendarRange, count: rows.length },
   ];
   return <div className="space-y-5">
@@ -61,7 +65,7 @@ export function MonitoringPage() {
         onValueChange={(program) => update({ program, schedule: null, slot: null })}
       /> : undefined}
     />
-    <div role="tablist" aria-label="Bagian monitoring" className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+    <div role="tablist" aria-label="Bagian monitoring" className="grid gap-2 sm:grid-cols-3 xl:grid-cols-5">
       {tabs.map((t) => {
         const active = tab === t.value;
         const Icon = t.icon;
@@ -85,7 +89,7 @@ export function MonitoringPage() {
     {overview.isPending ? <DataState kind="loading" title="Memuat monitoring" description="Mengambil jadwal dan progres kabupaten." />
       : overview.isError || !data ? <DataState kind="error" title="Monitoring belum dapat dimuat" description={overview.error?.message ?? 'Coba lagi.'} action={{ label: 'Muat ulang', onClick: () => void overview.refetch() }} />
       : data.rows.length === 0 ? <DataState kind="empty" title="Belum ada kabupaten" description="Program ini belum punya jadwal kabupaten." />
-      : tab === 'live' ? <LivePanel overview={data} onOpen={(schedule) => update({ tab: 'antrean', schedule, slot: null })} />
+      : tab === 'live' ? <LivePanel overview={data} duplicates={duplicatesBySchedule(duplicates.data ?? [])} onOpen={(schedule) => update({ tab: 'antrean', schedule, slot: null })} />
       : tab === 'antrean' ? <QueuePanel
         overview={data}
         userId={userId}
@@ -95,6 +99,8 @@ export function MonitoringPage() {
         onSchedule={(schedule) => update({ schedule, slot: null })}
         onSlot={(slot) => update({ slot: slot === null ? null : String(slot) })}
       />
+      : tab === 'dobel' ? <DuplicatesPanel overview={data} duplicates={duplicates} userId={userId}
+        onOpen={(schedule, slot) => update({ tab: 'antrean', schedule, slot: String(slot), activity: null })} />
       : tab === 'kegiatan' ? <ActivitiesPanel
         overview={data}
         userId={userId}

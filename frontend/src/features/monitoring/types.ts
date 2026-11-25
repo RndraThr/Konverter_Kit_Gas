@@ -108,3 +108,16 @@ export function activityCellState(cell: ActivityCell | undefined, type: (typeof 
   const due = days.filter((d) => d.phase === type.phase).map((d) => d.day).sort().at(-1);
   return due && due < today ? 'missing' : 'empty';
 }
+
+/** One slot that recorded a duplicated serial. */
+export type SerialEntry = { schedule_id: string; regency_name: string; slot_number: number; status: string; entered_by: string; entered_at: string | null };
+/** A serial of one kind recorded on several slots. */
+export type SerialDuplicate = { field: 'machine' | 'converter' | 'hose'; serial: string; entries: SerialEntry[] };
+export const serialFieldLabels: Record<SerialDuplicate['field'], string> = { machine: 'Mesin', converter: 'Konkit/Reducer', hose: 'Selang' };
+
+/** How many duplicated serials each schedule has a slot in. */
+export function duplicatesBySchedule(list: SerialDuplicate[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  list.forEach((d) => new Set(d.entries.map((e) => e.schedule_id)).forEach((id) => { out[id] = (out[id] ?? 0) + 1; }));
+  return out;
+}

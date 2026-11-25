@@ -25,6 +25,7 @@ type MonitoringService interface {
 	ApproveActivity(ctx context.Context, actor auth.Principal, input monitoring.ActivityApproveInput, scope auth.RegencyScope, meta auth.ClientMeta) (monitoring.ActivityAlbum, error)
 	RequestActivityRevision(ctx context.Context, actor auth.Principal, input monitoring.ActivityRevisionInput, scope auth.RegencyScope, meta auth.ClientMeta) (monitoring.ActivityAlbum, error)
 	ActivityRejections(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]monitoring.ActivityRejection, error)
+	SerialDuplicates(ctx context.Context, programID string, scope auth.RegencyScope) ([]monitoring.SerialDuplicate, error)
 }
 
 // handleMonitoring serves /api/v1/monitoring/...:
@@ -41,6 +42,7 @@ type MonitoringService interface {
 //	POST activities/approve                approve activity photos (monitoring.review)
 //	POST activities/revision               reject activity photos and tell the field (monitoring.review)
 //	GET  activities/rejections?schedule_id= rejected photos to replace (activities.view: the app)
+//	GET  serial-duplicates?program_id=     equipment serials recorded on several slots
 func (h *Handler) handleMonitoring(w http.ResponseWriter, r *http.Request, rc requestContext, path string) {
 	service := h.deps.Monitoring
 	if service == nil {
@@ -93,6 +95,9 @@ func (h *Handler) handleMonitoring(w http.ResponseWriter, r *http.Request, rc re
 		writeMonitoringResult(w, map[string]bool{"saved": true}, service.SaveAssignments(r.Context(), rc.principal, input, scope, clientMeta(r)))
 	case path == "queue" && r.Method == http.MethodGet:
 		result, err := service.Queue(r.Context(), scheduleID, scope)
+		writeMonitoringResult(w, result, err)
+	case path == "serial-duplicates" && r.Method == http.MethodGet:
+		result, err := service.SerialDuplicates(r.Context(), query.Get("program_id"), scope)
 		writeMonitoringResult(w, result, err)
 	case path == "activities" && r.Method == http.MethodGet:
 		result, err := service.ActivityOverview(r.Context(), query.Get("program_id"), scope)
