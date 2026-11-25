@@ -150,6 +150,33 @@ func TestIntegrationBannerSettingsLogoAndRender(t *testing.T) {
 		t.Fatalf("bad date: %v", err)
 	}
 
+	// The seremoni program text: the template's until typed, cleaned when
+	// typed, kept when an app does not send it, and the template's again when
+	// emptied. Three lines are refused.
+	if *saved.Settings.SeremoniProgram != DefaultSeremoniProgram || saved.SeremoniProgramDefault != DefaultSeremoniProgram {
+		t.Fatalf("default program = %q", *saved.Settings.SeremoniProgram)
+	}
+	program := func(text *string) (Overview, error) {
+		return service.SaveSettings(ctx, auth.Principal{}, scheduleID, Settings{SeremoniName: "ir. lamhot sinaga", SeremoniProgram: text}, scope, auth.ClientMeta{})
+	}
+	typed := " program kemitraan  kementerian esdm & dpr ri \n\n"
+	if o, err := program(&typed); err != nil || *o.Settings.SeremoniProgram != "PROGRAM KEMITRAAN KEMENTERIAN ESDM & DPR RI" {
+		t.Fatalf("typed program: %v %v", o.Settings.SeremoniProgram, err)
+	}
+	if o, err := program(nil); err != nil || *o.Settings.SeremoniProgram != "PROGRAM KEMITRAAN KEMENTERIAN ESDM & DPR RI" {
+		t.Fatalf("program not sent: %v %v", o.Settings.SeremoniProgram, err)
+	}
+	if pdf, _, err := service.Banner(ctx, scheduleID, KindSeremoni, scope); err != nil || len(pdf) == 0 {
+		t.Fatalf("seremoni with program: %v", err)
+	}
+	empty, three := "", "A\nB\nC"
+	if _, err := program(&three); !errors.Is(err, ErrInvalidProgram) {
+		t.Fatalf("three lines: %v", err)
+	}
+	if o, err := program(&empty); err != nil || *o.Settings.SeremoniProgram != DefaultSeremoniProgram {
+		t.Fatalf("emptied program: %v %v", o.Settings.SeremoniProgram, err)
+	}
+
 	if _, err := service.SaveLogo(ctx, auth.Principal{}, scheduleID, "logo.txt", []byte("not an image"), scope, auth.ClientMeta{}); !errors.Is(err, ErrInvalidLogo) {
 		t.Fatalf("text logo: %v", err)
 	}

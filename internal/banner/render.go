@@ -76,6 +76,7 @@ const (
 	StylePlakatDate      = "plakat_date"
 	StylePlakatName      = "plakat_name"
 	StyleBackdropService = "backdrop_service"
+	StyleSeremoniProgram = "seremoni_program"
 	MinSizePercent       = 60
 	MaxSizePercent       = 140
 )
@@ -85,6 +86,28 @@ var defaultStyleColors = map[string]string{
 	StylePlakatDate:      "#222222",
 	StylePlakatName:      "#232C7A",
 	StyleBackdropService: "#1D1819",
+	StyleSeremoniProgram: "#332C2B",
+}
+
+// DefaultSeremoniProgram is the program text the seremoni template prints.
+const DefaultSeremoniProgram = "PROGRAM KEMITRAAN KEMENTERIAN ESDM\n& DPR RI KOMISI XII"
+
+// MaxProgramLines and MaxProgramLineRunes bound the seremoni program text.
+const (
+	MaxProgramLines     = 2
+	MaxProgramLineRunes = 60
+)
+
+// ProgramLines splits a seremoni program text into its printed lines:
+// upper case, single spaces, empty lines dropped.
+func ProgramLines(text string) []string {
+	var lines []string
+	for _, line := range strings.Split(text, "\n") {
+		if line = strings.ToUpper(strings.Join(strings.Fields(line), " ")); line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }
 
 // DefaultStyleColors lists the styled texts with their default colors.
@@ -145,10 +168,12 @@ type Input struct {
 	RegencyName   string // e.g. "KAB. BONE"
 	Logo          []byte // PNG or JPEG; nil leaves the slot empty
 	ServiceCenter ServiceCenter
-	PersonName    string    // seremoni and plakat
-	Place         string    // plakat, e.g. "Bone"
-	Date          time.Time // plakat
-	Styles        map[string]TextStyle
+	PersonName    string // seremoni and plakat
+	// Program replaces the seremoni template's program lines; nil keeps them.
+	Program []string
+	Place   string    // plakat, e.g. "Bone"
+	Date    time.Time // plakat
+	Styles  map[string]TextStyle
 }
 
 // Filename is the download name, e.g. "PLAKAT PETANI KABUPATEN BONE.pdf".
@@ -188,12 +213,15 @@ func drawOverlay(lay layout, in Input) ([]byte, error) {
 	pdf := fpdf.NewCustom(&fpdf.InitType{UnitStr: "pt", Size: fpdf.SizeType{Wd: lay.w, Ht: lay.h}})
 	pdf.SetMargins(0, 0, 0)
 	pdf.SetAutoPageBreak(false, 0)
-	for _, style := range []struct{ name, file string }{{"S", "Montserrat-SemiBold.ttf"}, {"B", "Montserrat-Bold.ttf"}, {"X", "Montserrat-ExtraBold.ttf"}} {
-		data, err := assets.ReadFile("assets/" + style.file)
+	for _, font := range []struct{ name, file string }{
+		{"MontserratS", "Montserrat-SemiBold.ttf"}, {"MontserratB", "Montserrat-Bold.ttf"}, {"MontserratX", "Montserrat-ExtraBold.ttf"},
+		{"ConsolasBI", "Consolas-BoldItalic.ttf"},
+	} {
+		data, err := assets.ReadFile("assets/" + font.file)
 		if err != nil {
 			return nil, err
 		}
-		pdf.AddUTF8FontFromBytes("Montserrat"+style.name, "", data)
+		pdf.AddUTF8FontFromBytes(font.name, "", data)
 	}
 	pdf.AddPage()
 	if len(in.Logo) > 0 {
@@ -206,6 +234,10 @@ func drawOverlay(lay layout, in Input) ([]byte, error) {
 		scale, color := resolveStyle(in.Styles, StyleBackdropService)
 		drawServiceCenter(pdf, in.ServiceCenter, scale, color)
 	case KindSeremoni:
+		if in.Program != nil {
+			scale, color := resolveStyle(in.Styles, StyleSeremoniProgram)
+			drawProgram(pdf, in.Program, scale, color)
+		}
 		// Between the program lines (to y 3989) and the products (from y 4482).
 		scale, color := resolveStyle(in.Styles, StyleSeremoniName)
 		centeredFit(pdf, "MontserratX", strings.ToUpper(strings.TrimSpace(in.PersonName)), 410*scale, 9600, lay.w/2, 4400, color)
@@ -255,6 +287,62 @@ func centeredFit(pdf *fpdf.Fpdf, font, text string, size, maxWidth, cx, y float6
 	}
 	pdf.SetTextColor(color[0], color[1], color[2])
 	pdf.Text(cx-pdf.GetStringWidth(text)/2, y, text)
+}
+
+// drawProgram replaces the seremoni template's program lines ("PROGRAM
+// KEMITRAAN KEMENTERIAN ESDM / & DPR RI KOMISI XII", Consolas Bold Italic
+// 349 pt, letter-spaced, baselines at y 3490 and 3899) with lines in the
+// same font and spacing, centered on the same spot and shrunk to fit.
+func drawProgram(pdf *fpdf.Fpdf, lines []string, scale float64, color [3]int) {
+	// The template text spans x 1291-10221, y 3230-3989; the white behind it
+	// runs from the title (above y 3150) to the name (caps from y 4110).
+	pdf.SetFillColor(255, 255, 255)
+	pdf.Rect(1000, 3170, 9340, 900, "F")
+	if len(lines) == 0 {
+		return
+	}
+	const maxWidth = 9000.0
+	size := 349 * scale
+	pdf.SetFont("ConsolasBI", "", size)
+	widest := 0.0
+	for _, line := range lines {
+		widest = max(widest, spacedWidth(pdf, line, size))
+	}
+	if widest > maxWidth {
+		size *= maxWidth / widest
+		pdf.SetFont("ConsolasBI", "", size)
+	}
+	pdf.SetTextColor(color[0], color[1], color[2])
+	// The lines are centered on the middle of the template's caps (y 3572).
+	pitch := size * 410 / 349
+	y := 3572 - float64(len(lines)-1)*pitch/2 + size*capHeight/2
+	for _, line := range lines {
+		x := 11338.583/2 - spacedWidth(pdf, line, size)/2
+		for _, r := range line {
+			if r == ' ' {
+				x += size * 0.546
+				continue
+			}
+			glyph := string(r)
+			pdf.Text(x, y, glyph)
+			x += pdf.GetStringWidth(glyph) + size*0.2138
+		}
+		y += pitch
+	}
+}
+
+// spacedWidth is the width of a program line as drawProgram writes it: a
+// gap after every letter and a wide space between words.
+func spacedWidth(pdf *fpdf.Fpdf, line string, size float64) float64 {
+	width, gap := 0.0, size*0.2138
+	for _, r := range line {
+		if r == ' ' {
+			width += size * 0.546
+			continue
+		}
+		width += pdf.GetStringWidth(string(r)) + gap
+	}
+	return width - gap
 }
 
 // Plakat: the template ends its title with "Di Kabupaten"; that line is

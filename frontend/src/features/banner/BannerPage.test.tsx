@@ -18,7 +18,7 @@ const overview = {
   master_service_center: { name: 'Bengkel Shark', address: 'Jl. Sawah', phone: '0811' },
   service_center: { name: 'Bengkel Shark', address: 'Jl. Sawah', phone: '0811' },
   settings: { service_center_name: '', service_center_address: '', service_center_phone: '', seremoni_name: '', plakat_name: '', plakat_place: '', plakat_date: '' },
-  style_defaults: { seremoni_name: '#232C7A', plakat_date: '#222222', plakat_name: '#232C7A', backdrop_service: '#1D1819' },
+  style_defaults: { seremoni_program: '#332C2B', seremoni_name: '#232C7A', plakat_date: '#222222', plakat_name: '#232C7A', backdrop_service: '#1D1819' },
   kinds: [
     { kind: 'backdrop', label: 'Backdrop', size: '300 x 200 cm', filename: 'BANNER BACKDROP PETANI KABUPATEN BONE.pdf' },
     { kind: 'seremoni', label: 'Seremoni', size: '400 x 250 cm', filename: 'BANNER SEREMONI PETANI KABUPATEN BONE.pdf' },
@@ -83,5 +83,29 @@ test('changes the size and color of the seremoni name', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'Simpan' }));
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/banners/settings?schedule_id=schedule-1', expect.objectContaining({
     method: 'PUT', body: expect.stringContaining('"seremoni_name":{"size_percent":120,"color":"#8B0000"}'),
+  })));
+});
+
+test('edits the seremoni program text and puts it on one line', async () => {
+  renderPage();
+  vi.mocked(apiRequest).mockImplementation((path, init) => {
+    if (path === '/api/v1/program-setup/schedules') return Promise.resolve({ data: [{ id: 'schedule-1', name: 'Bone 2026', status: 'active', regency: { id: 'r1', name: 'KAB. BONE' } }] });
+    if (path === '/api/v1/banners?schedule_id=schedule-1') return Promise.resolve({ data: { ...overview, seremoni_program_default: 'PROGRAM KEMITRAAN KEMENTERIAN ESDM\n& DPR RI KOMISI XII', settings: { ...overview.settings, seremoni_program: 'PROGRAM KEMITRAAN KEMENTERIAN ESDM\n& DPR RI KOMISI XII' } } });
+    if (init?.method === 'PUT') return Promise.resolve({ data: overview });
+    return Promise.reject(new Error(`Unexpected request: ${path}`));
+  });
+  await userEvent.click(await screen.findByRole('combobox', { name: 'Jadwal' }));
+  await userEvent.click(await screen.findByRole('option', { name: 'KAB. BONE / Bone 2026' }));
+  await userEvent.click(await screen.findByRole('tab', { name: 'Seremoni' }));
+  const program = screen.getByRole('textbox', { name: 'Teks program' });
+  expect(program).toHaveValue('PROGRAM KEMITRAAN KEMENTERIAN ESDM\n& DPR RI KOMISI XII');
+  expect(screen.queryByRole('button', { name: 'Bawaan' })).not.toBeInTheDocument();
+  fireEvent.change(program, { target: { value: 'PROGRAM KEMITRAAN KEMENTERIAN ESDM\n& DPR RI' } });
+  await userEvent.click(screen.getByRole('button', { name: 'Jadikan 1 baris' }));
+  expect(program).toHaveValue('PROGRAM KEMITRAAN KEMENTERIAN ESDM & DPR RI');
+  expect(screen.getByRole('button', { name: 'Bawaan' })).toBeVisible();
+  await userEvent.click(screen.getByRole('button', { name: 'Simpan' }));
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/banners/settings?schedule_id=schedule-1', expect.objectContaining({
+    method: 'PUT', body: expect.stringContaining('"seremoni_program":"PROGRAM KEMITRAAN KEMENTERIAN ESDM & DPR RI"'),
   })));
 });
