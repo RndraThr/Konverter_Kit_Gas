@@ -26,10 +26,17 @@ type SyncCandidate struct {
 	UpdatedAt        time.Time `json:"updated_at"`
 }
 
-// SyncResult carries changed items plus the server time to use as the next cursor.
+// SyncResult carries changed items plus the server time to use as the next
+// cursor, and what the schedule still has: the app drops local copies that
+// are no longer there (a deleted slot or candidate never shows up as a change).
 type SyncResult[T any] struct {
 	Items      []T       `json:"items"`
 	ServerTime time.Time `json:"server_time"`
+	// PresentSlots: every slot number of the schedule (slot sync; null in the
+	// candidate sync). Empty means the schedule has no slot, so it is not omitted.
+	PresentSlots []int `json:"present_slots"`
+	// PresentAllocations: every candidate allocation of the schedule (candidate sync).
+	PresentAllocations []string `json:"present_allocations"`
 }
 
 // SyncCandidates returns candidates of the schedule changed since since (all when nil).
@@ -63,6 +70,15 @@ func (r *Repository) SyncCandidates(ctx context.Context, scheduleID string, sinc
 			return result, fmt.Errorf("scan sync candidate: %w", err)
 		}
 		result.Items = append(result.Items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return result, fmt.Errorf("sync candidates: %w", err)
+	}
+	result.PresentAllocations = []string{}
+	if err := r.pool.QueryRow(ctx, `SELECT COALESCE(array_agg(pa.id::text), '{}') FROM package_allocations pa
+		JOIN program_schedules ps ON ps.id = pa.schedule_id
+		WHERE pa.schedule_id = $1 AND ($2 OR ps.regency_id::text = ANY($3))`, scheduleID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.PresentAllocations); err != nil {
+		return result, fmt.Errorf("sync present candidates: %w", err)
 	}
 	return result, rows.Err()
 }
@@ -110,6 +126,12 @@ func (r *Repository) SyncSlots(ctx context.Context, scheduleID string, since *ti
 			return result, err
 		}
 		result.Items = append(result.Items, slot)
+	}
+	result.PresentSlots = []int{}
+	if err := r.pool.QueryRow(ctx, `SELECT COALESCE(array_agg(ds.slot_number ORDER BY ds.slot_number), '{}') FROM distribution_slots ds
+		JOIN program_schedules ps ON ps.id = ds.schedule_id
+		WHERE ds.schedule_id = $1 AND ($2 OR ps.regency_id::text = ANY($3))`, scheduleID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.PresentSlots); err != nil {
+		return result, fmt.Errorf("sync present slots: %w", err)
 	}
 	return result, nil
 }

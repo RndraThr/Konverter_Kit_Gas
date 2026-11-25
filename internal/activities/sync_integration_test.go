@@ -41,6 +41,9 @@ func TestActivitySyncDeltaIncludesDeletions(t *testing.T) {
 	if len(delta.Items) != 1 || delta.Items[0].ID != removed.ID || delta.Items[0].Status != "deleted" {
 		t.Fatalf("delta after delete = %+v, want only the deleted item", delta.Items)
 	}
+	if len(delta.PresentIDs) != 1 || delta.PresentIDs[0] != kept.ID {
+		t.Fatalf("present after delete = %v, want only the kept item", delta.PresentIDs)
+	}
 
 	// A full sync after the delete no longer lists it.
 	full, err = repository.Sync(ctx, "", fixture.inScopeRegencyID, nil, scope)

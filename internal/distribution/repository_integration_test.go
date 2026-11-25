@@ -1213,6 +1213,11 @@ func TestMobileSyncDelta(t *testing.T) {
 	if len(empty.Items) != 0 {
 		t.Fatalf("delta before change = %d items, want 0", len(empty.Items))
 	}
+	// An empty delta still lists what the schedule has, so the app can drop
+	// local copies of deleted slots and candidates.
+	if len(empty.PresentSlots) != 1 || empty.PresentSlots[0] != slot.SlotNumber || len(candidates.PresentAllocations) != 1 {
+		t.Fatalf("present = slots %v, candidates %v", empty.PresentSlots, candidates.PresentAllocations)
+	}
 	// A later change on the slot shows up in the next delta.
 	_, err = pool.Exec(ctx, `UPDATE distribution_slots SET updated_at = $1 WHERE schedule_id=$2 AND slot_number=$3`, cursor.Add(time.Minute), scheduleID, slot.SlotNumber)
 	must(t, err)
