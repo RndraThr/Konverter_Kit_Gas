@@ -19,6 +19,9 @@ var ErrSyncCursorInvalid = fmt.Errorf("since must be an RFC 3339 time")
 type SyncResult struct {
 	Items      []ActivityMedia `json:"items"`
 	ServerTime time.Time       `json:"server_time"`
+	// PresentIDs: every active media of the program and regency, so the app
+	// drops local copies of media removed without a "deleted" change.
+	PresentIDs []string `json:"present_ids"`
 }
 
 // Sync returns media of the program and regency changed since since (all
@@ -48,7 +51,16 @@ func (r *Repository) Sync(ctx context.Context, programID, regencyID string, sinc
 		item.ContentURL = "/api/v1/activities/media/" + item.ID + "/content"
 		result.Items = append(result.Items, item)
 	}
-	return result, rows.Err()
+	if err := rows.Err(); err != nil {
+		return result, fmt.Errorf("activity sync: %w", err)
+	}
+	result.PresentIDs = []string{}
+	if err := r.pool.QueryRow(ctx, `SELECT COALESCE(array_agg(m.id::text), '{}') FROM activity_media m JOIN regencies r ON r.id = m.regency_id
+		WHERE m.regency_id = $1 AND ($2 = '' OR m.program_id = NULLIF($2,'')::uuid) AND ($3 OR r.id::text = ANY($4)) AND m.status = 'active'`,
+		regencyID, programID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.PresentIDs); err != nil {
+		return result, fmt.Errorf("activity sync present: %w", err)
+	}
+	return result, nil
 }
 
 type syncRepository interface {
