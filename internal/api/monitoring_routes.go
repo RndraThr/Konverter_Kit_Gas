@@ -20,6 +20,11 @@ type MonitoringService interface {
 	Slot(ctx context.Context, scheduleID string, slotNumber int, scope auth.RegencyScope) (monitoring.SlotDetail, error)
 	Approve(ctx context.Context, actor auth.Principal, scheduleID string, slotNumber int, input monitoring.ApproveInput, scope auth.RegencyScope, meta auth.ClientMeta) (monitoring.SlotDetail, error)
 	RequestRevision(ctx context.Context, actor auth.Principal, scheduleID string, slotNumber int, input monitoring.RevisionInput, scope auth.RegencyScope, meta auth.ClientMeta) (monitoring.SlotDetail, error)
+	ActivityOverview(ctx context.Context, programID string, scope auth.RegencyScope) ([]monitoring.ActivityCell, error)
+	ActivityAlbum(ctx context.Context, ref monitoring.ActivityRef, scope auth.RegencyScope) (monitoring.ActivityAlbum, error)
+	ApproveActivity(ctx context.Context, actor auth.Principal, input monitoring.ActivityApproveInput, scope auth.RegencyScope, meta auth.ClientMeta) (monitoring.ActivityAlbum, error)
+	RequestActivityRevision(ctx context.Context, actor auth.Principal, input monitoring.ActivityRevisionInput, scope auth.RegencyScope, meta auth.ClientMeta) (monitoring.ActivityAlbum, error)
+	ActivityRejections(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]monitoring.ActivityRejection, error)
 }
 
 // handleMonitoring serves /api/v1/monitoring/...:
@@ -31,6 +36,11 @@ type MonitoringService interface {
 //	GET  slots/{n}?schedule_id=            one recipient with photos and latest check
 //	POST slots/{n}/approve?schedule_id=    approve photos, default every unchecked one (monitoring.review)
 //	POST slots/{n}/revision?schedule_id=   reject photos and tell the field (monitoring.review)
+//	GET  activities?program_id=            activity photo counts per kabupaten and type
+//	GET  activities/album?schedule_id=&activity_type=   one album with its checks
+//	POST activities/approve                approve activity photos (monitoring.review)
+//	POST activities/revision               reject activity photos and tell the field (monitoring.review)
+//	GET  activities/rejections?schedule_id= rejected photos to replace (activities.view: the app)
 func (h *Handler) handleMonitoring(w http.ResponseWriter, r *http.Request, rc requestContext, path string) {
 	service := h.deps.Monitoring
 	if service == nil {
@@ -38,6 +48,18 @@ func (h *Handler) handleMonitoring(w http.ResponseWriter, r *http.Request, rc re
 		return
 	}
 	permission := "monitoring.view"
+	if path == "activities/rejections" && r.Method == http.MethodGet {
+		if !h.authorizeAny(w, r, rc.principal, "activities.view", "monitoring.view") {
+			return
+		}
+		scope, ok := h.regencyScope(w, r, rc.principal)
+		if !ok {
+			return
+		}
+		result, err := service.ActivityRejections(r.Context(), r.URL.Query().Get("schedule_id"), scope)
+		writeMonitoringResult(w, result, err)
+		return
+	}
 	switch {
 	case path == "calendar" || path == "assignments":
 		permission = "monitoring.manage"
@@ -71,6 +93,26 @@ func (h *Handler) handleMonitoring(w http.ResponseWriter, r *http.Request, rc re
 		writeMonitoringResult(w, map[string]bool{"saved": true}, service.SaveAssignments(r.Context(), rc.principal, input, scope, clientMeta(r)))
 	case path == "queue" && r.Method == http.MethodGet:
 		result, err := service.Queue(r.Context(), scheduleID, scope)
+		writeMonitoringResult(w, result, err)
+	case path == "activities" && r.Method == http.MethodGet:
+		result, err := service.ActivityOverview(r.Context(), query.Get("program_id"), scope)
+		writeMonitoringResult(w, result, err)
+	case path == "activities/album" && r.Method == http.MethodGet:
+		result, err := service.ActivityAlbum(r.Context(), monitoring.ActivityRef{ScheduleID: scheduleID, ActivityType: strings.TrimSpace(query.Get("activity_type"))}, scope)
+		writeMonitoringResult(w, result, err)
+	case path == "activities/approve" && r.Method == http.MethodPost:
+		var input monitoring.ActivityApproveInput
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		result, err := service.ApproveActivity(r.Context(), rc.principal, input, scope, clientMeta(r))
+		writeMonitoringResult(w, result, err)
+	case path == "activities/revision" && r.Method == http.MethodPost:
+		var input monitoring.ActivityRevisionInput
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		result, err := service.RequestActivityRevision(r.Context(), rc.principal, input, scope, clientMeta(r))
 		writeMonitoringResult(w, result, err)
 	case strings.HasPrefix(path, "slots/"):
 		parts := strings.Split(strings.TrimPrefix(path, "slots/"), "/")
@@ -113,7 +155,7 @@ func writeMonitoringResult(w http.ResponseWriter, result any, err error) {
 	switch {
 	case err == nil:
 		writeData(w, http.StatusOK, result)
-	case errors.Is(err, monitoring.ErrProgramNotFound), errors.Is(err, monitoring.ErrScheduleNotFound):
+	case errors.Is(err, monitoring.ErrProgramNotFound), errors.Is(err, monitoring.ErrScheduleNotFound), errors.Is(err, monitoring.ErrActivityAlbumNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "Program atau jadwal tidak ditemukan")
 	case errors.Is(err, monitoring.ErrRakornasForbidden):
 		writeError(w, http.StatusForbidden, "forbidden", "Jadwal Rakornas hanya dapat diubah akun tanpa batasan kabupaten")
@@ -125,6 +167,8 @@ func writeMonitoringResult(w http.ResponseWriter, result any, err error) {
 		writeError(w, http.StatusConflict, "monitoring_nothing_to_approve", "Tidak ada foto baru untuk disetujui")
 	case errors.Is(err, monitoring.ErrRevisionEmpty):
 		writeError(w, http.StatusUnprocessableEntity, "monitoring_revision_empty", "Tandai minimal satu foto yang perlu diperbaiki")
+	case errors.Is(err, monitoring.ErrActivityFlagUnknown):
+		writeError(w, http.StatusUnprocessableEntity, "monitoring_flag_unknown", "Foto yang ditandai bukan bagian dari kegiatan ini")
 	case errors.Is(err, monitoring.ErrFlagUnknown):
 		writeError(w, http.StatusUnprocessableEntity, "monitoring_flag_unknown", "Foto yang ditandai bukan milik pelanggan ini")
 	default:

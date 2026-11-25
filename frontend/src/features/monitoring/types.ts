@@ -55,3 +55,56 @@ export const stateLabels: Record<ReviewState, { label: string; tone: string }> =
 };
 
 export const stageLabels: Record<string, string> = { mesin: 'POS Mesin', dokumen: 'POS Dokumen', penyerahan: 'POS Penyerahan' };
+
+/** Photo counts of one activity type of a kabupaten. */
+export type ActivityCell = {
+  schedule_id: string; regency_id: string; activity_type: string;
+  photos: number; approved: number; rejected: number; pending: number; last_upload_at: string | null;
+};
+
+export type ActivityPhoto = {
+  id: string; content_url: string; mime_type: string; display_name: string; source: string;
+  uploaded_at: string; uploaded_by: string; review: MediaReview | null;
+};
+
+export type ActivityAlbum = { schedule_id: string; regency_id: string; regency_name: string; activity_type: string; photos: ActivityPhoto[] };
+
+/**
+ * Activity types checked by the central team, in the app's order, with the
+ * phase whose last day they are due by. Optional ones never show as missing.
+ */
+export const activityTypes: { code: string; label: string; short: string; phase: Phase; required: boolean }[] = [
+  { code: 'kunjungan_dinas', label: 'Kunjungan Kantor Dinas', short: 'Dinas', phase: 'material', required: false },
+  { code: 'gudang_titik_serah', label: 'Gudang Titik Serah', short: 'Gudang', phase: 'material', required: false },
+  { code: 'unloading_konkit', label: 'Unloading Konkit', short: 'Konkit', phase: 'material', required: true },
+  { code: 'unloading_mesin_pompa', label: 'Unloading Mesin Pompa', short: 'Mesin', phase: 'material', required: true },
+  { code: 'unloading_oli', label: 'Unloading Oli', short: 'Oli', phase: 'material', required: true },
+  { code: 'unloading_selang', label: 'Unloading Selang', short: 'Selang', phase: 'material', required: true },
+  { code: 'unloading_tabung_gas', label: 'Unloading Tabung Gas', short: 'Tabung', phase: 'material', required: true },
+  { code: 'perakitan_mesin', label: 'Perakitan Mesin', short: 'Rakit', phase: 'material', required: false },
+  { code: 'rakor', label: 'Rakor', short: 'Rakor', phase: 'rakor', required: true },
+  { code: 'pemeriksaan_barang', label: 'Pemeriksaan Barang', short: 'Periksa', phase: 'rakor', required: false },
+  { code: 'ceremony_sosialisasi', label: 'Ceremony & Sosialisasi', short: 'Seremoni', phase: 'sosialisasi', required: true },
+  { code: 'training_10', label: 'Training 10%', short: 'Tr 10%', phase: 'sosialisasi', required: true },
+  { code: 'pelatihan_teknis', label: 'Pelatihan Teknis', short: 'Pelatihan', phase: 'sosialisasi', required: true },
+  { code: 'kegiatan_distribusi', label: 'Kegiatan Pendistribusian', short: 'Distribusi', phase: 'distribusi', required: true },
+  { code: 'training_100', label: 'Training 100%', short: 'Tr 100%', phase: 'distribusi', required: true },
+  { code: 'closing_kabupaten', label: 'Closing Kabupaten', short: 'Closing', phase: 'penutupan', required: true },
+  { code: 'kegiatan', label: 'Kegiatan Lainnya', short: 'Lainnya', phase: 'penutupan', required: false },
+];
+export const activityLabel = (code: string) => activityTypes.find((t) => t.code === code)?.label ?? code;
+
+export type ActivityCellState = 'revision' | 'pending' | 'approved' | 'missing' | 'empty';
+
+/**
+ * What a cell shows: photos waiting for a fix or a check first, then all
+ * approved; without photos, missing once its phase is over (required types only).
+ */
+export function activityCellState(cell: ActivityCell | undefined, type: (typeof activityTypes)[number], days: PhaseDay[], today: string): ActivityCellState {
+  if (cell && cell.rejected > 0) return 'revision';
+  if (cell && cell.pending > 0) return 'pending';
+  if (cell && cell.photos > 0) return 'approved';
+  if (!type.required) return 'empty';
+  const due = days.filter((d) => d.phase === type.phase).map((d) => d.day).sort().at(-1);
+  return due && due < today ? 'missing' : 'empty';
+}
