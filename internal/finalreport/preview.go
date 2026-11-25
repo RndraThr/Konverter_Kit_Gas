@@ -5,8 +5,10 @@ package finalreport
 // string field is "Belum diisi" when its source data doesn't exist yet —
 // Preview/Present/Generate never fail because of incomplete data.
 type Preview struct {
-	RegencyLabel             string                 `json:"regency_label"`
-	FiscalYear               string                 `json:"fiscal_year"`
+	RegencyLabel string `json:"regency_label"`
+	FiscalYear   string `json:"fiscal_year"`
+	// ProgramTarget completes the title: "Mesin Pompa Air bagi Petani Sasaran".
+	ProgramTarget            string                 `json:"program_target"`
 	AgricultureOfficeName    string                 `json:"agriculture_office_name"`
 	ConsultantCompanyName    string                 `json:"consultant_company_name"`
 	MachineManufacturerName  string                 `json:"machine_manufacturer_name"`
@@ -17,6 +19,8 @@ type Preview struct {
 	DeliveryRangeEnd         string                 `json:"delivery_range_end"`
 	RakordaDate              string                 `json:"rakorda_date"`
 	SosialisasiDate          string                 `json:"sosialisasi_date"`
+	RakordaLocation          string                 `json:"rakorda_location"`
+	SosialisasiLocation      string                 `json:"sosialisasi_location"`
 	LeaderCount              string                 `json:"leader_count"`
 	AdminCount               string                 `json:"admin_count"`
 	TechnicianCount          string                 `json:"technician_count"`

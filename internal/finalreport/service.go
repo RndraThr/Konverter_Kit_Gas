@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"image"
+	"image/draw"
 	"image/jpeg"
 	"image/png"
 	"io"
@@ -154,38 +155,41 @@ func (s *Service) Preview(ctx context.Context, programID, regencyID string, scop
 		picks[key] = list
 	}
 
-	deliveryStart, deliveryEnd := earliestLatest(settings.DeliveryHoseDate, settings.DeliveryMachineGroupDate, settings.DeliveryGasCylinderDate)
+	deliveryStart, deliveryEnd := earliestLatest(data.hoseDate, data.machineDate, data.gasCylinderDate)
+	// Team counts are blank until the settings are saved once.
+	count := func(n int) string {
+		if settings.UpdatedAt.IsZero() {
+			return blank
+		}
+		return strconv.Itoa(n)
+	}
 
 	return Preview{
 		RegencyLabel:             orBlank(regencyLabel(data.regencyName)),
-		FiscalYear:               orBlank(itoaOrEmpty(data.fiscalYear)),
+		FiscalYear:               orBlank(strconv.Itoa(data.fiscalYear)),
+		ProgramTarget:            programTarget(data.programType),
 		AgricultureOfficeName:    orBlank(data.agricultureOfficeName),
 		ConsultantCompanyName:    orBlank(data.consultantCompanyName),
 		MachineManufacturerName:  orBlank(settings.MachineManufacturerName),
-		DeliveryHoseDate:         orBlank(formatIndonesianDate(settings.DeliveryHoseDate)),
-		DeliveryMachineGroupDate: orBlank(formatIndonesianDate(settings.DeliveryMachineGroupDate)),
-		DeliveryGasCylinderDate:  orBlank(formatIndonesianDate(settings.DeliveryGasCylinderDate)),
+		DeliveryHoseDate:         orBlank(formatIndonesianDate(data.hoseDate)),
+		DeliveryMachineGroupDate: orBlank(formatIndonesianDate(data.machineDate)),
+		DeliveryGasCylinderDate:  orBlank(formatIndonesianDate(data.gasCylinderDate)),
 		DeliveryRangeStart:       orBlank(formatIndonesianDate(deliveryStart)),
 		DeliveryRangeEnd:         orBlank(formatIndonesianDate(deliveryEnd)),
 		RakordaDate:              orBlank(formatIndonesianDate(data.rakordaDate)),
 		SosialisasiDate:          orBlank(formatIndonesianDate(data.sosialisasiDate)),
-		LeaderCount:              itoaOrEmpty(settings.LeaderCount),
-		AdminCount:               itoaOrEmpty(settings.AdminCount),
-		TechnicianCount:          itoaOrEmpty(settings.TechnicianCount),
-		HelperCount:              itoaOrEmpty(settings.HelperCount),
+		RakordaLocation:          orBlank(strings.TrimSpace(data.rakordaLocation)),
+		SosialisasiLocation:      orBlank(strings.TrimSpace(data.sosialisasiLocation)),
+		LeaderCount:              count(settings.LeaderCount),
+		AdminCount:               count(settings.AdminCount),
+		TechnicianCount:          count(settings.TechnicianCount),
+		HelperCount:              count(settings.HelperCount),
 		HandoverLocation:         orBlank(data.handoverLocation),
 		DistributionStartDate:    orBlank(formatIndonesianDate(data.distributionStart)),
 		DistributionEndDate:      orBlank(formatIndonesianDate(data.distributionEnd)),
 		DistributionTotal:        orBlank(itoaOrEmptyNonZero(data.distributionTotal)),
 		PhotoPicks:               picks,
 	}, nil
-}
-
-func itoaOrEmpty(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	return strconv.Itoa(n)
 }
 
 func itoaOrEmptyNonZero(n int) string {
@@ -225,6 +229,15 @@ func formatIndonesianDate(iso string) string {
 	return fmt.Sprintf("%d %s %d", parsed.Day(), indonesianMonths[parsed.Month()-1], parsed.Year())
 }
 
+// programTarget is what the program's LPG packages are for and who receives
+// them, as the title of every activity document words it.
+func programTarget(programType programs.ProgramType) string {
+	if programType == programs.ProgramFisherman {
+		return "Kapal Perikanan bagi Nelayan Sasaran"
+	}
+	return "Mesin Pompa Air bagi Petani Sasaran"
+}
+
 // regencyLabel turns regencies.name ("KAB. BIREUEN", "KOTA LANGSA") into the
 // title-slide label: "KAB. " expands to "KABUPATEN ", anything else is used
 // as-is, uppercased.
@@ -251,25 +264,50 @@ func documentFilename(programType programs.ProgramType, regencyName string) stri
 
 var pngSignature = []byte("\x89PNG\r\n\x1a\n")
 
-// slotJPEG returns bytes suitable for a template .jpg slot: JPEG input
-// passes through unchanged, PNG input is transcoded to JPEG, anything else
-// is an error.
+// slotJPEG returns bytes suitable for a template .jpg slot. The deck's photo
+// frames are 4:3, so a photo of another shape is cut to 4:3 around its
+// centre (instead of being stretched) and re-encoded; a 4:3 JPEG passes
+// through unchanged, a PNG is transcoded. Anything else is an error.
 func slotJPEG(data []byte) ([]byte, error) {
+	var img image.Image
 	if bytes.HasPrefix(data, pngSignature) {
-		img, err := png.Decode(bytes.NewReader(data))
+		decoded, err := png.Decode(bytes.NewReader(data))
 		if err != nil {
 			return nil, fmt.Errorf("decode png: %w", err)
 		}
-		var out bytes.Buffer
-		if err := jpeg.Encode(&out, flattenOnWhite(img), &jpeg.Options{Quality: 90}); err != nil {
-			return nil, fmt.Errorf("encode jpeg: %w", err)
+		img = flattenOnWhite(decoded)
+	} else {
+		cfg, err := jpeg.DecodeConfig(bytes.NewReader(data))
+		if err != nil {
+			return nil, fmt.Errorf("photo is neither JPEG nor PNG: %w", err)
 		}
-		return out.Bytes(), nil
+		if cfg.Width*3 == cfg.Height*4 {
+			return data, nil
+		}
+		if img, err = jpeg.Decode(bytes.NewReader(data)); err != nil {
+			return nil, fmt.Errorf("decode jpeg: %w", err)
+		}
 	}
-	if _, err := jpeg.DecodeConfig(bytes.NewReader(data)); err != nil {
-		return nil, fmt.Errorf("photo is neither JPEG nor PNG: %w", err)
+	var out bytes.Buffer
+	if err := jpeg.Encode(&out, cropFourByThree(img), &jpeg.Options{Quality: 90}); err != nil {
+		return nil, fmt.Errorf("encode jpeg: %w", err)
 	}
-	return data, nil
+	return out.Bytes(), nil
+}
+
+// cropFourByThree cuts the largest centred 4:3 area out of img.
+func cropFourByThree(img image.Image) image.Image {
+	b := img.Bounds()
+	w, h := b.Dx(), b.Dy()
+	if w*3 > h*4 {
+		w = h * 4 / 3
+	} else {
+		h = w * 3 / 4
+	}
+	area := image.Rect(0, 0, w, h).Add(b.Min).Add(image.Pt((b.Dx()-w)/2, (b.Dy()-h)/2))
+	out := image.NewRGBA(image.Rect(0, 0, w, h))
+	draw.Draw(out, out.Bounds(), img, area.Min, draw.Src)
+	return out
 }
 
 // flattenOnWhite composites a possibly-transparent image onto white so

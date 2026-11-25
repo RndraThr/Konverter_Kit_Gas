@@ -16,36 +16,23 @@ import (
 	"konkit/internal/finalreport/template"
 )
 
-// slideImageOrder maps each photo-bearing slide to the ppt/media file names
-// that RenderPPTX overwrites with the picked photos' bytes, in the order the
-// pictures are referenced (and spatially laid out left-to-right) on each
-// slide. Verified directly against the committed
-// internal/finalreport/template/final_report_template.pptx by inspecting
-// ppt/slides/_rels/slide{5,6,7}.xml.rels (slide5 = Pengiriman & Penerimaan,
-// slide6 = Rapat Koordinasi, slide7 = Sosialisasi) and cross-checking the
-// r:embed reference order and <a:off x=.../> positions in each
-// ppt/slides/slideN.xml. image9.png and image5.png appear in all three rels
-// files at identical positions (top-left header logo and bottom-right
-// footer logo) and are excluded here as shared graphics, not content photos.
-//
-// Note: slide5's content images appear in the rels/XML in the order
-// image12.jpg, image2.jpg, image1.jpg (left-to-right by x offset), which is
-// the reverse of a naive numeric sort of the file names - order was
-// confirmed by reading the actual <a:off> positions in slide5.xml rather
-// than assumed.
+// slideImageOrder maps each photo-bearing slide to the ppt/media files that
+// RenderPPTX overwrites with the picked photos' bytes, in the order each
+// slide references them (largest or top-left first). The template is built
+// by template/design/build.py, which prints these names; TestSlotMapMatchesTemplate
+// checks them against the committed template. image1.png (KSM logo) and
+// image2.png (certificates) are shared graphics, not content photos.
 var slideImageOrder = map[string][]string{
-	SlideKeyPengirimanPenerimaan: {"ppt/media/image12.jpg", "ppt/media/image2.jpg", "ppt/media/image1.jpg"},
-	SlideKeyRapatKoordinasi:      {"ppt/media/image8.jpg", "ppt/media/image15.jpg"},
-	SlideKeySosialisasi:          {"ppt/media/image3.jpg", "ppt/media/image6.jpg", "ppt/media/image16.jpg", "ppt/media/image14.jpg"},
+	SlideKeyPengirimanPenerimaan: {"ppt/media/image3.jpg", "ppt/media/image4.jpg", "ppt/media/image5.jpg"},
+	SlideKeyRapatKoordinasi:      {"ppt/media/image6.jpg", "ppt/media/image7.jpg"},
+	SlideKeySosialisasi:          {"ppt/media/image8.jpg", "ppt/media/image9.jpg", "ppt/media/image10.jpg", "ppt/media/image11.jpg"},
 }
 
 // placeholderOnlySlots are content-photo slots that have no photo picker in
-// v1 and are therefore always overwritten with the neutral placeholder.
-// slide8 (Dokumentasi Pendistribusian) references image11.jpg, image13.jpg
-// and image7.jpg left-to-right (verified against slide8.xml.rels and the
-// <a:off x=.../> positions in slide8.xml), plus the shared logos.
+// v1 and are therefore always overwritten with the neutral placeholder
+// (slide8, Dokumentasi Pendistribusian).
 var placeholderOnlySlots = map[string][]string{
-	"dokumentasi_pendistribusian": {"ppt/media/image11.jpg", "ppt/media/image13.jpg", "ppt/media/image7.jpg"},
+	"dokumentasi_pendistribusian": {"ppt/media/image12.jpg", "ppt/media/image13.jpg", "ppt/media/image14.jpg"},
 }
 
 // MaxPicks returns how many photos may be picked for slideKey: exactly the
@@ -97,13 +84,14 @@ func RenderPPTX(templateData []byte, preview Preview, photoBytes map[string][][]
 	}
 
 	replacements := map[string]string{
-		template.TokenRegencyLabel: preview.RegencyLabel, template.TokenFiscalYear: preview.FiscalYear,
+		template.TokenRegencyLabel: preview.RegencyLabel, template.TokenFiscalYear: preview.FiscalYear, template.TokenProgramTarget: preview.ProgramTarget,
 		template.TokenAgricultureOfficeName: preview.AgricultureOfficeName, template.TokenConsultantCompanyName: preview.ConsultantCompanyName,
 		template.TokenMachineManufacturerName: preview.MachineManufacturerName,
 		template.TokenDeliveryHoseDate:        preview.DeliveryHoseDate, template.TokenDeliveryMachineGroupDate: preview.DeliveryMachineGroupDate,
 		template.TokenDeliveryGasCylinderDate: preview.DeliveryGasCylinderDate,
 		template.TokenDeliveryRangeStart:      preview.DeliveryRangeStart, template.TokenDeliveryRangeEnd: preview.DeliveryRangeEnd,
 		template.TokenRakordaDate: preview.RakordaDate, template.TokenSosialisasiDate: preview.SosialisasiDate,
+		template.TokenRakordaLocation: preview.RakordaLocation, template.TokenSosialisasiLocation: preview.SosialisasiLocation,
 		template.TokenLeaderCount: preview.LeaderCount, template.TokenAdminCount: preview.AdminCount,
 		template.TokenTechnicianCount: preview.TechnicianCount, template.TokenHelperCount: preview.HelperCount,
 		template.TokenHandoverLocation:      preview.HandoverLocation,

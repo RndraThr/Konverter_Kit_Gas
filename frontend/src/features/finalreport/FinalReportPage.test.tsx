@@ -15,7 +15,7 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 afterEach(() => { vi.restoreAllMocks(); vi.mocked(toast.error).mockClear(); vi.mocked(toast.success).mockClear(); });
 
-const settings = { program_id: 'p1', regency_id: 'r1', leader_count: 0, admin_count: 0, technician_count: 0, helper_count: 0, machine_manufacturer_name: '', delivery_hose_date: '', delivery_machine_group_date: '', delivery_gas_cylinder_date: '' };
+const settings = { program_id: 'p1', regency_id: 'r1', leader_count: 0, admin_count: 0, technician_count: 0, helper_count: 0, machine_manufacturer_name: '' };
 
 function media(id: string, mime_type = 'image/jpeg', media_type = 'image') {
   return { id, display_name: `Foto ${id}`, content_url: `/api/v1/activities/media/${id}/content`, media_type, mime_type };
@@ -42,6 +42,9 @@ test('renders settings form and photo sections for a manager', async () => {
   expect(await screen.findByText('Susunan Tim & Rincian Pengiriman')).toBeVisible();
   expect(await screen.findByText('Pengiriman & Penerimaan Barang')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Generate PPTX' })).toBeVisible();
+  // Delivery dates come from BA Pemeriksaan Barang, not from this form.
+  expect(screen.queryByLabelText('Tanggal Kirim Selang Buang')).not.toBeInTheDocument();
+  expect(screen.getByText(/BA Pemeriksaan Barang/)).toBeVisible();
 });
 
 test('hides the settings form, Generate and checkboxes for a viewer without manage', async () => {
