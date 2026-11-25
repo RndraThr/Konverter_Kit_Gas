@@ -38,7 +38,7 @@ function Bar({ value, of, className }: { value: number; of: number; className: s
   </div>;
 }
 
-function RegencyCard({ row, onOpen }: { row: ScheduleRow; onOpen: () => void }) {
+function RegencyCard({ row, onOpen, duplicates = 0 }: { row: ScheduleRow; onOpen: () => void; duplicates?: number }) {
   const phase = phaseInfo(row.today_phase);
   return <button type="button" onClick={onOpen} className="group rounded-xl border bg-card p-4 text-left transition hover:border-primary/50 hover:shadow-sm focus-visible:outline-2 focus-visible:outline-primary">
     <div className="flex items-start justify-between gap-2">
@@ -64,6 +64,7 @@ function RegencyCard({ row, onOpen }: { row: ScheduleRow; onOpen: () => void }) 
       <span className="rounded-md bg-sky-50 px-2 py-0.5 text-sky-900 dark:bg-sky-950/40 dark:text-sky-200">+{row.completed_today} hari ini</span>
       {row.pending_photos > 0 ? <span className="rounded-md bg-amber-100 px-2 py-0.5 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">{row.pending_photos} foto belum dicek</span> : null}
       {row.revision > 0 ? <span className="rounded-md bg-destructive/10 px-2 py-0.5 text-destructive">{row.revision} revisi</span> : null}
+      {duplicates > 0 ? <span className="rounded-md bg-destructive px-2 py-0.5 font-medium text-white">{duplicates} serial dobel</span> : null}
     </div>
     <div className="mt-3 flex items-center justify-between gap-2 border-t pt-2.5 text-xs text-muted-foreground">
       <span className="truncate">{row.reviewers.length ? row.reviewers.map((r) => r.name).join(', ') : 'Belum ada pemeriksa'}</span>
@@ -73,7 +74,7 @@ function RegencyCard({ row, onOpen }: { row: ScheduleRow; onOpen: () => void }) 
 }
 
 /** Live: headline numbers and one card per kabupaten distributing today. */
-export function LivePanel({ overview, onOpen }: { overview: Overview; onOpen: (scheduleId: string) => void }) {
+export function LivePanel({ overview, onOpen, duplicates = {} }: { overview: Overview; onOpen: (scheduleId: string) => void; duplicates?: Record<string, number> }) {
   const [showAll, setShowAll] = useState(false);
   const active = overview.rows.filter((row) => row.today_phase === 'distribusi');
   const shown = showAll ? overview.rows : active;
@@ -104,7 +105,7 @@ export function LivePanel({ overview, onOpen }: { overview: Overview; onOpen: (s
     </div>
     {shown.length === 0
       ? <p className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">Tidak ada kabupaten yang dijadwalkan distribusi hari ini. Atur tahapan di tab Jadwal atau tampilkan semua kabupaten.</p>
-      : <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{shown.map((row) => <RegencyCard key={row.schedule_id} row={row} onOpen={() => onOpen(row.schedule_id)} />)}</div>}
+      : <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{shown.map((row) => <RegencyCard key={row.schedule_id} row={row} duplicates={duplicates[row.schedule_id]} onOpen={() => onOpen(row.schedule_id)} />)}</div>}
     {!showAll && others.length > 0 ? <div className="rounded-lg border bg-muted/20 p-3">
       <p className="mb-2 text-xs font-medium text-muted-foreground">Tahap lain hari ini</p>
       <div className="flex flex-wrap gap-1.5">{others.map((row) => {

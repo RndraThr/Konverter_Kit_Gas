@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/api';
 import { useRealtimeSignals } from '@/lib/realtime';
-import type { ActivityAlbum, ActivityCell, Overview, PhaseDay, QueueItem, SlotDetail } from './types';
+import type { ActivityAlbum, ActivityCell, Overview, PhaseDay, QueueItem, SerialDuplicate, SlotDetail } from './types';
 
 type DataResponse<T> = { data: T };
 
@@ -62,6 +62,7 @@ export function useMonitoringSignals() {
   useRealtimeSignals((signal) => {
     if (!signal.t || !['slots', 'reviews', 'phases'].includes(signal.t)) return;
     void queryClient.invalidateQueries({ queryKey: [...monitoringKey, 'overview'] });
+    if (signal.t === 'slots') void queryClient.invalidateQueries({ queryKey: [...monitoringKey, 'serial-duplicates'] });
     if (signal.schedule_id && signal.t !== 'phases') {
       void queryClient.invalidateQueries({ queryKey: queueKey(signal.schedule_id) });
       void queryClient.invalidateQueries({ queryKey: [...monitoringKey, 'slot', signal.schedule_id] });
@@ -101,5 +102,16 @@ export function useActivitySignals() {
     if (signal.t !== 'activities') return;
     void queryClient.invalidateQueries({ queryKey: [...monitoringKey, 'activities'] });
     void queryClient.invalidateQueries({ queryKey: [...monitoringKey, 'album'] });
+  });
+}
+
+export const duplicatesKey = (programId: string) => [...monitoringKey, 'serial-duplicates', programId] as const;
+
+/** Serials recorded on several slots; refreshed by the slot signals of useMonitoringSignals. */
+export function useSerialDuplicates(programId: string) {
+  return useQuery({
+    queryKey: duplicatesKey(programId),
+    queryFn: () => apiRequest<DataResponse<SerialDuplicate[]>>(`/api/v1/monitoring/serial-duplicates?${new URLSearchParams({ program_id: programId })}`).then((r) => r.data),
+    enabled: programId !== '',
   });
 }

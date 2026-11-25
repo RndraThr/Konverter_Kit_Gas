@@ -1745,9 +1745,10 @@ func (r *Repository) CompleteSlot(ctx context.Context, actor auth.Principal, inp
 
 // FindSerialMatches returns up to 5 non-cancelled slots across all schedules
 // whose machine or converter serial equals serial (already uppercased). The
-// search spans every regency on purpose — a unit recorded anywhere is still a
-// duplicate — but matches in a regency outside scope are redacted to a bare
-// "used elsewhere" signal so another regency's distribution data is not leaked.
+// search spans every regency on purpose: a unit recorded anywhere is still a
+// duplicate. A match in a regency outside scope names only the kabupaten, the
+// slot number and its state, so both teams can check the physical box; the
+// schedule is left out, so the app cannot open that slot.
 func (r *Repository) FindSerialMatches(ctx context.Context, serial, excludeScheduleID string, excludeSlotNumber int, scope auth.RegencyScope) ([]SerialMatch, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT ps.id::text, ps.name, rg.name, rg.id::text, ds.slot_number,
@@ -1774,9 +1775,9 @@ func (r *Repository) FindSerialMatches(ctx context.Context, serial, excludeSched
 			return nil, fmt.Errorf("scan serial match: %w", err)
 		}
 		if !scope.Allows(regencyID) {
-			// Keep only that the serial clashes and which field; drop everything that
-			// identifies the out-of-scope slot's schedule, regency, number, and state.
-			match = SerialMatch{Field: match.Field, OutOfScope: true}
+			// Kabupaten and slot number are what the teams need to settle the
+			// clash. OutOfScope stays false: the apps show the details only then.
+			match.ScheduleID, match.ScheduleName = "", ""
 		}
 		matches = append(matches, match)
 	}

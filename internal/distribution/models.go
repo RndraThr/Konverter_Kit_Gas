@@ -386,9 +386,9 @@ type SerialMatch struct {
 	// Field is "machine" or "converter".
 	Field  string `json:"field"`
 	Status string `json:"status"`
-	// OutOfScope is true when the clashing slot sits in a regency the caller cannot access.
-	// For those matches the identifying details (schedule, regency, slot, status) are redacted
-	// to a bare "serial already used elsewhere" signal, so global serial uniqueness is still
-	// enforced without leaking another regency's distribution data.
+	// OutOfScope was set for matches outside the caller's regency scope, whose
+	// details were hidden. Such matches now carry the kabupaten, slot number
+	// and state (no schedule), so the field teams can settle the clash; it
+	// stays false because the apps show the details only then.
 	OutOfScope bool `json:"out_of_scope"`
 }

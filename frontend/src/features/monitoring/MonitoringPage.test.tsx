@@ -12,7 +12,8 @@ import { id } from 'date-fns/locale';
 import { todayWIB } from './api';
 import { MonitoringPage } from './MonitoringPage';
 import { zoomAt } from './ZoomableImage';
-import { activityCellState, activityTypes, type ActivityAlbum, type ActivityCell, type MediaReview, type Overview, type QueueItem, type ScheduleRow, type SlotDetail } from './types';
+import { duplicatesMessage } from './DuplicatesPanel';
+import { activityCellState, activityTypes, duplicatesBySchedule, type SerialDuplicate, type ActivityAlbum, type ActivityCell, type MediaReview, type Overview, type QueueItem, type ScheduleRow, type SlotDetail } from './types';
 
 vi.mock('../../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../../lib/api')>('../../lib/api');
@@ -62,6 +63,12 @@ const album: ActivityAlbum = {
   photos: ['rk1', 'rk2'].map((id) => ({ id, content_url: `/media/${id}`, mime_type: 'image/jpeg', display_name: `RAKOR ${id}`, source: 'camera', uploaded_at: '2026-11-26T03:00:00Z', uploaded_by: 'Petugas', review: null })),
 };
 
+// Malang #35 and Tuban #157 recorded the same reducer.
+const serialDuplicates: SerialDuplicate[] = [{ field: 'converter', serial: '0626001192', entries: [
+  { schedule_id: 's1', regency_name: 'KAB. MALANG', slot_number: 35, status: 'open', entered_by: 'Reza', entered_at: '2026-11-25T08:29:00Z' },
+  { schedule_id: 's2', regency_name: 'KAB. TUBAN', slot_number: 157, status: 'open', entered_by: 'Saefi', entered_at: '2026-11-25T12:49:00Z' },
+] }];
+
 afterEach(() => vi.clearAllMocks());
 
 function renderPage(path: string, permissions = ['monitoring.view', 'monitoring.review', 'monitoring.manage']) {
@@ -86,6 +93,7 @@ function renderPage(path: string, permissions = ['monitoring.view', 'monitoring.
     }
     if (url === '/api/v1/monitoring/calendar') return Promise.resolve({ data: { saved: true } });
     if (url === '/api/v1/monitoring/activities?program_id=p1') return Promise.resolve({ data: activityCells });
+    if (url === '/api/v1/monitoring/serial-duplicates?program_id=p1') return Promise.resolve({ data: serialDuplicates });
     if (url.startsWith('/api/v1/monitoring/activities/album')) return Promise.resolve({ data: { ...album, photos: album.photos.map((p) => ({ ...p, review: activityReviews[p.id] ?? null })) } });
     if (url === '/api/v1/monitoring/activities/approve' || url === '/api/v1/monitoring/activities/revision') {
       const body = JSON.parse(init!.body as string);
@@ -281,4 +289,19 @@ test('checks the activity photos of a kabupaten: approves one, sends one back', 
   await waitFor(() => expect(calls.some((c) => c.path === '/api/v1/monitoring/activities/revision')).toBe(true));
   expect(JSON.parse(calls.find((c) => c.path === '/api/v1/monitoring/activities/revision')!.init!.body as string))
     .toEqual({ schedule_id: 's1', activity_type: 'rakor', flags: [{ media_id: 'rk2', reason: 'Bukan rakor' }], note: '' });
+});
+
+test('lists serials recorded twice, copies them for the group, and opens a slot', async () => {
+  expect(duplicatesBySchedule(serialDuplicates)).toEqual({ s1: 1, s2: 1 });
+  expect(duplicatesMessage(serialDuplicates)).toContain('1. Konkit/Reducer 0626001192: MALANG #35 (Reza) dan TUBAN #157 (Saefi)');
+  renderPage('/monitoring-distribusi?tab=dobel');
+  await waitFor(() => expect(screen.getByRole('tab', { name: /Serial dobel/ })).toHaveTextContent(/1$/));
+  expect(await screen.findByText('0626001192')).toBeVisible();
+  await userEvent.click(screen.getByRole('button', { name: 'Nomor bagi 157 KAB. TUBAN' }));
+  expect(await screen.findByRole('dialog')).toBeVisible();
+});
+
+test('live marks a kabupaten with a serial recorded twice', async () => {
+  renderPage('/monitoring-distribusi');
+  expect(await screen.findByText('1 serial dobel')).toBeVisible();
 });
