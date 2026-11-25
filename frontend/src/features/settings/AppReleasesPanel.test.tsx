@@ -41,13 +41,14 @@ test('uploads a new release only with a version code above the latest', async ()
 
   await user.type(screen.getByLabelText('Nama versi'), '1.3.0');
   await user.type(screen.getByLabelText('Kode versi'), '3');
-  await user.upload(screen.getByLabelText('Berkas APK'), new File(['PK'], 'konkit.apk', { type: 'application/vnd.android.package-archive' }));
+  await user.upload(screen.getByLabelText('Berkas APK (64-bit)'), new File(['PK'], 'konkit.apk', { type: 'application/vnd.android.package-archive' }));
   expect(submit).toBeDisabled();
   expect(screen.getByText('Harus lebih dari 3.')).toBeVisible();
 
   await user.clear(screen.getByLabelText('Kode versi'));
   await user.type(screen.getByLabelText('Kode versi'), '4');
   await user.click(screen.getByText('Wajib dipasang'));
+  await user.upload(screen.getByLabelText('APK 32-bit (opsional)'), new File(['PK'], 'konkit-32.apk', { type: 'application/vnd.android.package-archive' }));
   expect(submit).toBeEnabled();
   await user.click(submit);
 
@@ -56,6 +57,7 @@ test('uploads a new release only with a version code above the latest', async ()
   expect(form.get('version_name')).toBe('1.3.0');
   expect(form.get('version_code')).toBe('4');
   expect(form.get('mandatory')).toBe('true');
+  expect((form.get('apk_variant') as File).name).toBe('konkit-32.apk');
 });
 
 test('read-only accounts see the list without the upload form', async () => {

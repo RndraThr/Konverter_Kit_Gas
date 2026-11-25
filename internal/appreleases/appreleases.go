@@ -51,7 +51,9 @@ type Release struct {
 	// (website list only).
 	Patches        []PatchSummary `json:"patches,omitempty"`
 	PatchesPending bool           `json:"patches_pending,omitempty"`
-	storageKey     string
+	// Variants are the APKs for other phone types (32-bit phones).
+	Variants   []Variant `json:"variants,omitempty"`
+	storageKey string
 }
 
 // Update is what a phone on CurrentCode is offered: the newest release, and
@@ -124,9 +126,14 @@ func (s *Service) List(ctx context.Context) ([]Release, error) {
 	if err != nil {
 		return nil, err
 	}
+	variants, err := s.variantsByRelease(ctx)
+	if err != nil {
+		return nil, err
+	}
 	for i := range result {
 		result[i].Patches = patches[result[i].ID]
 		result[i].PatchesPending = pending[result[i].ID]
+		result[i].Variants = variants[result[i].ID]
 	}
 	return result, nil
 }
@@ -258,6 +265,13 @@ func (s *Service) Delete(ctx context.Context, actor auth.Principal, id string, m
 	patchKeys, err := s.patchStorageKeys(ctx, id)
 	if err != nil {
 		return err
+	}
+	variants, err := s.variantsByRelease(ctx)
+	if err != nil {
+		return err
+	}
+	for _, variant := range variants[id] {
+		patchKeys = append(patchKeys, variant.storageKey)
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {

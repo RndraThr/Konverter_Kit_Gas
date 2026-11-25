@@ -25,7 +25,11 @@ export type AppRelease = {
   patches?: { from_version_name: string; from_version_code: number; size_bytes: number; ready: boolean }[];
   /** The server is still making its patches: phones are not offered it yet. */
   patches_pending?: boolean;
+  /** APKs for other phone types: 32-bit phones (armeabi-v7a) get theirs. */
+  variants?: { abi: string; size_bytes: number }[];
 };
+
+const abiLabels: Record<string, string> = { 'armeabi-v7a': '32-bit', x86_64: 'x86_64' };
 
 const queryKey = ['app-releases'];
 
@@ -54,6 +58,7 @@ export function AppReleasesPanel() {
   const [notes, setNotes] = useState('');
   const [mandatory, setMandatory] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  const [variantFile, setVariantFile] = useState<File | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
   const [fileKey, setFileKey] = useState(0);
 
@@ -65,6 +70,7 @@ export function AppReleasesPanel() {
       form.append('notes', notes.trim());
       form.append('mandatory', mandatory ? 'true' : 'false');
       form.append('apk', file as File);
+      if (variantFile) form.append('apk_variant', variantFile);
       setProgress(0);
       return uploadRequest<{ data: AppRelease }>('/api/v1/app/releases', form, { onProgress: setProgress });
     },
@@ -75,6 +81,7 @@ export function AppReleasesPanel() {
       setNotes('');
       setMandatory(false);
       setFile(null);
+      setVariantFile(null);
       setFileKey((key) => key + 1);
       void client.invalidateQueries({ queryKey });
     },
@@ -86,6 +93,19 @@ export function AppReleasesPanel() {
     mutationFn: (release: AppRelease) => apiRequest(`/api/v1/app/releases/${release.id}`, { method: 'PATCH', body: JSON.stringify({ mandatory: !release.mandatory }) }),
     onSuccess: () => void client.invalidateQueries({ queryKey }),
     onError: (error: Error) => toast.error(error.message),
+  });
+
+  const addVariant = useMutation({
+    mutationFn: ({ release, apk }: { release: AppRelease; apk: File }) => {
+      const form = new FormData();
+      form.append('apk', apk);
+      return uploadRequest<{ data: { abi: string } }>(`/api/v1/app/releases/${release.id}/variants`, form, {});
+    },
+    onSuccess: ({ data }, { release }) => {
+      toast.success(`APK ${abiLabels[data.abi] ?? data.abi} versi ${release.version_name} ditambahkan.`);
+      void client.invalidateQueries({ queryKey });
+    },
+    onError: (error: Error) => toast.error(error.message || 'APK belum dapat diunggah.'),
   });
 
   const remove = useMutation({
@@ -127,8 +147,14 @@ export function AppReleasesPanel() {
         <textarea id="release-notes" rows={3} maxLength={4000} className="min-h-20 rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Apa yang baru di versi ini (tampil di HP petugas)." />
       </div>
       <div className="grid gap-2">
-        <Label htmlFor="release-apk">Berkas APK</Label>
+        <Label htmlFor="release-apk">Berkas APK (64-bit)</Label>
         <input key={fileKey} id="release-apk" type="file" accept=".apk,application/vnd.android.package-archive" className="text-sm" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+        <p className="text-xs text-muted-foreground">app-arm64-v8a-release.apk, untuk hampir semua HP.</p>
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor="release-apk-32">APK 32-bit (opsional)</Label>
+        <input key={fileKey} id="release-apk-32" type="file" accept=".apk,application/vnd.android.package-archive" className="text-sm" onChange={(event) => setVariantFile(event.target.files?.[0] ?? null)} />
+        <p className="text-xs text-muted-foreground">app-armeabi-v7a-release.apk, untuk HP Android Go yang hanya bisa aplikasi 32-bit. HP memilih otomatis.</p>
       </div>
       <label className="flex items-start gap-2 text-sm sm:self-end">
         <Checkbox checked={mandatory} onCheckedChange={(value) => setMandatory(value === true)} />
@@ -159,10 +185,20 @@ export function AppReleasesPanel() {
               {release.patches?.some((patch) => patch.ready) ? <p className="mt-1 text-xs text-muted-foreground">
                 Update delta: {release.patches.filter((patch) => patch.ready).map((patch) => `dari ${patch.from_version_name} ${megabytes(patch.size_bytes)}`).join(' · ')}
               </p> : null}
+              <p className="mt-1 text-xs text-muted-foreground">
+                {release.variants?.length
+                  ? <>HP 32-bit: {release.variants.map((variant) => <a key={variant.abi} className="underline-offset-2 hover:underline" href={`/api/v1/app/releases/${release.id}/apk?abi=${variant.abi}`}>APK {abiLabels[variant.abi] ?? variant.abi} {megabytes(variant.size_bytes)}</a>)}</>
+                  : 'Belum ada APK 32-bit: HP 32-bit tetap di versi lamanya.'}
+              </p>
             </div>
             <div className="flex shrink-0 gap-2">
               <Button variant="outline" size="sm" nativeButton={false} render={<a href={`/api/v1/app/releases/${release.id}/apk`} />}><Download aria-hidden="true" />APK</Button>
               {canManage ? <>
+                <Button variant="outline" size="sm" disabled={addVariant.isPending} nativeButton={false} render={<label />} title="Tambah atau ganti APK 32-bit (app-armeabi-v7a-release.apk)">
+                  <Upload aria-hidden="true" />{release.variants?.length ? 'Ganti 32-bit' : 'APK 32-bit'}
+                  <input type="file" accept=".apk,application/vnd.android.package-archive" className="sr-only" aria-label={`APK 32-bit versi ${release.version_name}`}
+                    onChange={(event) => { const apk = event.target.files?.[0]; event.target.value = ''; if (apk) addVariant.mutate({ release, apk }); }} />
+                </Button>
                 <Button variant="outline" size="sm" disabled={toggleMandatory.isPending} onClick={() => toggleMandatory.mutate(release)}>{release.mandatory ? 'Jadikan opsional' : 'Jadikan wajib'}</Button>
                 <Button variant="outline" size="sm" aria-label={`Hapus versi ${release.version_name}`} disabled={remove.isPending} onClick={() => { if (window.confirm(`Hapus rilis versi ${release.version_name}?`)) remove.mutate(release); }}><Trash2 aria-hidden="true" /></Button>
               </> : null}
