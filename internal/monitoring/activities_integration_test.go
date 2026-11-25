@@ -32,7 +32,9 @@ func TestActivityPhotoReview(t *testing.T) {
 	rakor1, rakor2 := photo("rakor", "camera", f.uploader), photo("rakor", "gallery", f.field)
 	copied := photo("training_100", "distribution", f.field)
 	photo("dokumen_pendukung", "camera", f.field)
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM activity_media WHERE regency_id = $1`, f.regencyID) })
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM activity_media WHERE regency_id = $1`, f.regencyID)
+	})
 
 	cells, err := service.ActivityOverview(ctx, f.programID, all)
 	must(t, err)
