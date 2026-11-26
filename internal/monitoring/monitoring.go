@@ -113,6 +113,10 @@ type ScheduleRow struct {
 	Revision       int        `json:"revision"`
 	PendingPhotos  int        `json:"pending_photos"`
 	LastActivityAt *time.Time `json:"last_activity_at"`
+	// BAPending and BARevision count the kabupaten's uploaded BA (BA
+	// Perorangan included) not checked yet and sent back.
+	BAPending  int `json:"ba_pending"`
+	BARevision int `json:"ba_revision"`
 }
 
 // Overview is the whole monitoring page of one program on one date.
@@ -144,9 +148,11 @@ type QueueItem struct {
 	RejectedPhotos   int        `json:"rejected_photos"`
 	PendingPhotos    int        `json:"pending_photos"`
 	State            string     `json:"state"`
-	LastUploadAt     *time.Time `json:"last_upload_at"`
-	ReviewedBy       string     `json:"reviewed_by"`
-	ReviewedAt       *time.Time `json:"reviewed_at"`
+	// BAState is the recipient's BA Perorangan: "" (not final yet), pending, approved or rejected.
+	BAState      string     `json:"ba_state"`
+	LastUploadAt *time.Time `json:"last_upload_at"`
+	ReviewedBy   string     `json:"reviewed_by"`
+	ReviewedAt   *time.Time `json:"reviewed_at"`
 }
 
 // MediaReview is the check of one photo.
@@ -168,6 +174,8 @@ type SlotDetail struct {
 	// Reviews holds the check of each current photo, by media id; a photo
 	// without an entry is not checked yet.
 	Reviews map[string]MediaReview `json:"reviews"`
+	// BA is the recipient's BA Perorangan once final (checked last), else nil.
+	BA *BAItem `json:"ba"`
 }
 
 // CalendarInput saves the phase days of some kabupaten and the Rakornas days.

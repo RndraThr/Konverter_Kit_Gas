@@ -36,6 +36,11 @@ function useNotificationSignals() {
  * it opens the slot in the monitoring (central team) or the Pendistribusian page.
  */
 export function webLink(link: string, canMonitor: boolean): string {
+  const ba = /^\/ba\/([a-z0-9-]+)\/[0-9-]+\?(.*)$/.exec(link);
+  if (ba) {
+    const schedule = new URLSearchParams(ba[2]).get('schedule') ?? '';
+    return canMonitor ? `/monitoring-distribusi?tab=ba&schedule=${schedule}&ba=${ba[1]}` : '/berita-acara';
+  }
   const activity = /^\/kegiatan\/([a-z0-9_]+)\?(.*)$/.exec(link);
   if (activity) {
     const [, type, query] = activity;

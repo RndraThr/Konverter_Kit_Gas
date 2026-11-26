@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/api';
 import { useRealtimeSignals } from '@/lib/realtime';
-import type { ActivityAlbum, ActivityCell, Overview, PhaseDay, QueueItem, SerialDuplicate, SlotDetail } from './types';
+import type { ActivityAlbum, ActivityCell, BACell, BAItem, Overview, PhaseDay, QueueItem, SerialDuplicate, SlotDetail } from './types';
 
 type DataResponse<T> = { data: T };
 
@@ -63,6 +63,7 @@ export function useMonitoringSignals() {
     if (!signal.t || !['slots', 'reviews', 'phases'].includes(signal.t)) return;
     void queryClient.invalidateQueries({ queryKey: [...monitoringKey, 'overview'] });
     if (signal.t === 'slots') void queryClient.invalidateQueries({ queryKey: [...monitoringKey, 'serial-duplicates'] });
+    if (signal.t === 'reviews') void queryClient.invalidateQueries({ queryKey: [...monitoringKey, 'ba'] });
     if (signal.schedule_id && signal.t !== 'phases') {
       void queryClient.invalidateQueries({ queryKey: queueKey(signal.schedule_id) });
       void queryClient.invalidateQueries({ queryKey: [...monitoringKey, 'slot', signal.schedule_id] });
@@ -115,3 +116,30 @@ export function useSerialDuplicates(programId: string) {
     enabled: programId !== '',
   });
 }
+
+export const baKey = (programId: string) => [...monitoringKey, 'ba', programId] as const;
+export const baItemsKey = (scheduleId: string, type: string) => [...monitoringKey, 'ba', 'items', scheduleId, type] as const;
+
+/** Uploaded BA per kabupaten and type; uploads raise no signal, so it also refreshes every minute. */
+export function useBACells(programId: string) {
+  return useQuery({
+    queryKey: baKey(programId),
+    queryFn: () => apiRequest<DataResponse<BACell[]>>(`/api/v1/monitoring/ba?${new URLSearchParams({ program_id: programId })}`).then((r) => r.data),
+    enabled: programId !== '',
+    refetchInterval: 60_000,
+  });
+}
+
+export function useBAItems(scheduleId: string, type: string) {
+  return useQuery({
+    queryKey: baItemsKey(scheduleId, type),
+    queryFn: () => apiRequest<DataResponse<BAItem[]>>(`/api/v1/monitoring/ba/items?${new URLSearchParams({ schedule_id: scheduleId, type })}`).then((r) => r.data),
+    enabled: scheduleId !== '' && type !== '',
+  });
+}
+
+export const approveBA = (scheduleId: string, keys: string[]) =>
+  apiRequest(`/api/v1/monitoring/ba/approve`, { method: 'POST', body: JSON.stringify({ schedule_id: scheduleId, keys }) });
+
+export const requestBARevision = (scheduleId: string, flags: { key: string; reason: string }[], note = '') =>
+  apiRequest(`/api/v1/monitoring/ba/revision`, { method: 'POST', body: JSON.stringify({ schedule_id: scheduleId, flags, note }) });

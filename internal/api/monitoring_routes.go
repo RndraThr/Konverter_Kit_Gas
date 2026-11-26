@@ -26,6 +26,10 @@ type MonitoringService interface {
 	RequestActivityRevision(ctx context.Context, actor auth.Principal, input monitoring.ActivityRevisionInput, scope auth.RegencyScope, meta auth.ClientMeta) (monitoring.ActivityAlbum, error)
 	ActivityRejections(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]monitoring.ActivityRejection, error)
 	SerialDuplicates(ctx context.Context, programID string, scope auth.RegencyScope) ([]monitoring.SerialDuplicate, error)
+	BAOverview(ctx context.Context, programID string, scope auth.RegencyScope) ([]monitoring.BACell, error)
+	BAItems(ctx context.Context, scheduleID, baType string, scope auth.RegencyScope) ([]monitoring.BAItem, error)
+	ApproveBA(ctx context.Context, actor auth.Principal, input monitoring.BAApproveInput, scope auth.RegencyScope, meta auth.ClientMeta) error
+	RequestBARevision(ctx context.Context, actor auth.Principal, input monitoring.BARevisionInput, scope auth.RegencyScope, meta auth.ClientMeta) error
 }
 
 // handleMonitoring serves /api/v1/monitoring/...:
@@ -43,6 +47,10 @@ type MonitoringService interface {
 //	POST activities/revision               reject activity photos and tell the field (monitoring.review)
 //	GET  activities/rejections?schedule_id= rejected photos to replace (activities.view: the app)
 //	GET  serial-duplicates?program_id=     equipment serials recorded on several slots
+//	GET  ba?program_id=                    uploaded BA counts per kabupaten and type
+//	GET  ba/items?schedule_id=&type=       uploaded BA of one type with their checks
+//	POST ba/approve                        approve BA (monitoring.review)
+//	POST ba/revision                       send BA back with reasons (monitoring.review)
 func (h *Handler) handleMonitoring(w http.ResponseWriter, r *http.Request, rc requestContext, path string) {
 	service := h.deps.Monitoring
 	if service == nil {
@@ -96,6 +104,24 @@ func (h *Handler) handleMonitoring(w http.ResponseWriter, r *http.Request, rc re
 	case path == "queue" && r.Method == http.MethodGet:
 		result, err := service.Queue(r.Context(), scheduleID, scope)
 		writeMonitoringResult(w, result, err)
+	case path == "ba" && r.Method == http.MethodGet:
+		result, err := service.BAOverview(r.Context(), query.Get("program_id"), scope)
+		writeMonitoringResult(w, result, err)
+	case path == "ba/items" && r.Method == http.MethodGet:
+		result, err := service.BAItems(r.Context(), scheduleID, strings.TrimSpace(query.Get("type")), scope)
+		writeMonitoringResult(w, result, err)
+	case path == "ba/approve" && r.Method == http.MethodPost:
+		var input monitoring.BAApproveInput
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		writeMonitoringResult(w, map[string]bool{"saved": true}, service.ApproveBA(r.Context(), rc.principal, input, scope, clientMeta(r)))
+	case path == "ba/revision" && r.Method == http.MethodPost:
+		var input monitoring.BARevisionInput
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		writeMonitoringResult(w, map[string]bool{"saved": true}, service.RequestBARevision(r.Context(), rc.principal, input, scope, clientMeta(r)))
 	case path == "serial-duplicates" && r.Method == http.MethodGet:
 		result, err := service.SerialDuplicates(r.Context(), query.Get("program_id"), scope)
 		writeMonitoringResult(w, result, err)
@@ -172,6 +198,8 @@ func writeMonitoringResult(w http.ResponseWriter, result any, err error) {
 		writeError(w, http.StatusConflict, "monitoring_nothing_to_approve", "Tidak ada foto baru untuk disetujui")
 	case errors.Is(err, monitoring.ErrRevisionEmpty):
 		writeError(w, http.StatusUnprocessableEntity, "monitoring_revision_empty", "Tandai minimal satu foto yang perlu diperbaiki")
+	case errors.Is(err, monitoring.ErrBAItemUnknown):
+		writeError(w, http.StatusUnprocessableEntity, "monitoring_ba_unknown", "BA ini sudah diganti atau bukan milik kabupaten ini; muat ulang")
 	case errors.Is(err, monitoring.ErrActivityFlagUnknown):
 		writeError(w, http.StatusUnprocessableEntity, "monitoring_flag_unknown", "Foto yang ditandai bukan bagian dari kegiatan ini")
 	case errors.Is(err, monitoring.ErrFlagUnknown):
