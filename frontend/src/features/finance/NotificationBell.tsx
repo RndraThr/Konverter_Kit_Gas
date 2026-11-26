@@ -36,6 +36,11 @@ function useNotificationSignals() {
  * it opens the slot in the monitoring (central team) or the Pendistribusian page.
  */
 export function webLink(link: string, canMonitor: boolean): string {
+  const docs = /^\/dokumen-pendukung\?(.*)$/.exec(link);
+  if (docs) {
+    const schedule = new URLSearchParams(docs[1]).get('schedule') ?? '';
+    return canMonitor ? `/monitoring-distribusi?tab=kegiatan&schedule=${schedule}&activity=dokumen_pendukung` : '/dokumen-pendukung';
+  }
   const ba = /^\/ba\/([a-z0-9-]+)\/[0-9-]+\?(.*)$/.exec(link);
   if (ba) {
     const schedule = new URLSearchParams(ba[2]).get('schedule') ?? '';

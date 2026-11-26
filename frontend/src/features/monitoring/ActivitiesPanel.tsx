@@ -42,7 +42,7 @@ export function ActivitiesPanel({ overview, userId, scheduleId, activity, onOpen
       const state = activityCellState(cell, type, row.days, today);
       sum.pending += cell?.pending ?? 0;
       sum.revision += cell?.rejected ?? 0;
-      if (state === 'missing') sum.missing += 1;
+      if (state === 'missing') sum.missing += cell?.missing || 1;
     });
     return sum;
   }, { pending: 0, revision: 0, missing: 0 });
@@ -54,7 +54,7 @@ export function ActivitiesPanel({ overview, userId, scheduleId, activity, onOpen
     <div className="grid gap-3 sm:grid-cols-3">
       <Card className="p-4"><p className="text-xs text-muted-foreground">Foto belum dicek</p><p className="text-2xl font-semibold tabular-nums text-amber-600">{totals.pending}</p></Card>
       <Card className="p-4"><p className="text-xs text-muted-foreground">Foto menunggu revisi lapangan</p><p className="text-2xl font-semibold tabular-nums text-destructive">{totals.revision}</p></Card>
-      <Card className="p-4"><p className="text-xs text-muted-foreground">Kegiatan belum ada foto (tahap sudah lewat)</p><p className="text-2xl font-semibold tabular-nums">{totals.missing}</p></Card>
+      <Card className="p-4"><p className="text-xs text-muted-foreground">Belum ada foto / dokumen (tahap sudah lewat)</p><p className="text-2xl font-semibold tabular-nums">{totals.missing}</p></Card>
     </div>
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
@@ -88,10 +88,11 @@ export function ActivitiesPanel({ overview, userId, scheduleId, activity, onOpen
               const state = activityCellState(cell, type, row.days, today);
               const label = `${type.label} ${row.regency_name}`;
               return <td key={type.code} className="p-0.5 text-center">
-                {cell ? <button type="button" aria-label={label} title={`${label}: ${cell.photos} foto, ${cell.pending} baru, ${cell.rejected} revisi`}
+                {cell ? <button type="button" aria-label={label} title={`${label}: ${cell.photos} file, ${cell.pending} baru, ${cell.rejected} revisi${cell.missing ? `, ${cell.missing} dokumen belum ada` : ''}`}
                   onClick={() => onOpen(row.schedule_id, type.code)}
                   className={cn('flex h-9 w-full min-w-12 items-center justify-center gap-1 rounded-md text-xs font-semibold tabular-nums transition', cellTone[state])}>
-                  {state === 'revision' ? <><Flag className="size-3" />{cell.rejected}</> : state === 'pending' ? cell.pending : <><Check className="size-3.5" />{cell.photos}</>}
+                  {state === 'revision' ? <><Flag className="size-3" />{cell.rejected}</> : state === 'pending' ? cell.pending
+                    : state === 'missing' ? <><ImageOff className="size-3.5" />{cell.missing}</> : <><Check className="size-3.5" />{cell.photos}</>}
                 </button> : <span title={state === 'missing' ? `${label}: belum ada foto` : label}
                   className={cn('flex h-9 w-full min-w-12 items-center justify-center rounded-md', cellTone[state])}>
                   {state === 'missing' ? <ImageOff className="size-3.5" /> : '·'}

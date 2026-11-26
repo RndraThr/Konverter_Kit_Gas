@@ -277,6 +277,9 @@ test('an activity type is missing once its phase is over, and checked or fixed f
   expect(activityCellState(cell, rakor, days, '2026-11-27')).toBe('revision');
   expect(activityCellState({ ...cell, rejected: 0 }, rakor, days, '2026-11-27')).toBe('pending');
   expect(activityCellState({ ...cell, rejected: 0, pending: 0 }, rakor, days, '2026-11-27')).toBe('approved');
+  const docs = activityTypes.find((t) => t.code === 'dokumen_pendukung')!;
+  expect(activityCellState({ ...cell, activity_type: 'dokumen_pendukung', rejected: 0, pending: 0, missing: 2 }, docs, days, '2026-11-27')).toBe('missing');
+  expect(activityCellState({ ...cell, activity_type: 'dokumen_pendukung', rejected: 0, pending: 0, missing: 0 }, docs, days, '2026-11-27')).toBe('approved');
 });
 
 test('an activity revision notification opens the album, or the activity page for the field', () => {
@@ -286,6 +289,8 @@ test('an activity revision notification opens the album, or the activity page fo
   expect(webLink('/kegiatan/training_10?schedule=s1&revisi=1', false)).toBe('/dokumentasi/training-10');
   expect(webLink('/ba/dp3/2026-11-28?schedule=s1&revisi=1', true)).toBe('/monitoring-distribusi?tab=ba&schedule=s1&ba=dp3');
   expect(webLink('/ba/dp3/2026-11-28?schedule=s1&revisi=1', false)).toBe('/berita-acara');
+  expect(webLink('/dokumen-pendukung?schedule=s1&revisi=1', true)).toBe('/monitoring-distribusi?tab=kegiatan&schedule=s1&activity=dokumen_pendukung');
+  expect(webLink('/dokumen-pendukung?schedule=s1&revisi=1', false)).toBe('/dokumen-pendukung');
 });
 
 test('checks the activity photos of a kabupaten: approves one, sends one back', async () => {

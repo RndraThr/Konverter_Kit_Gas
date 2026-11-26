@@ -31,7 +31,6 @@ func TestActivityPhotoReview(t *testing.T) {
 	}
 	rakor1, rakor2 := photo("rakor", "camera", f.uploader), photo("rakor", "gallery", f.field)
 	copied := photo("training_100", "distribution", f.field)
-	photo("dokumen_pendukung", "camera", f.field)
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM activity_media WHERE regency_id = $1`, f.regencyID)
 	})
@@ -93,7 +92,7 @@ func TestActivityPhotoReview(t *testing.T) {
 	if _, err := service.ActivityRejections(ctx, f.scheduleID, auth.RegencyScope{RegencyIDs: []string{"00000000-0000-0000-0000-000000000000"}}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.ActivityAlbum(ctx, ActivityRef{ScheduleID: f.scheduleID, ActivityType: "dokumen_pendukung"}, all); !errors.Is(err, ErrActivityAlbumNotFound) {
+	if _, err := service.ActivityAlbum(ctx, ActivityRef{ScheduleID: f.scheduleID, ActivityType: "unknown"}, all); !errors.Is(err, ErrActivityAlbumNotFound) {
 		t.Fatalf("supporting documents album: %v", err)
 	}
 }

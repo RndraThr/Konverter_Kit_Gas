@@ -64,14 +64,18 @@ export const stageLabels: Record<string, string> = { mesin: 'POS Mesin', dokumen
 export type ActivityCell = {
   schedule_id: string; regency_id: string; activity_type: string;
   photos: number; approved: number; rejected: number; pending: number; last_upload_at: string | null;
+  /** Supporting documents of the kabupaten's list without a file. */
+  missing?: number;
 };
 
 export type ActivityPhoto = {
   id: string; content_url: string; mime_type: string; display_name: string; source: string;
   uploaded_at: string; uploaded_by: string; review: MediaReview | null;
+  /** Supporting document: the name in the kabupaten's list it is for. */
+  slot?: string;
 };
 
-export type ActivityAlbum = { schedule_id: string; regency_id: string; regency_name: string; activity_type: string; photos: ActivityPhoto[] };
+export type ActivityAlbum = { schedule_id: string; regency_id: string; regency_name: string; activity_type: string; photos: ActivityPhoto[]; slots?: { name: string; files: number }[] };
 
 /**
  * Activity types checked by the central team, in the app's order, with the
@@ -95,6 +99,7 @@ export const activityTypes: { code: string; label: string; short: string; phase:
   { code: 'training_100', label: 'Training 100%', short: 'Tr 100%', phase: 'distribusi', required: true },
   { code: 'closing_kabupaten', label: 'Closing Kabupaten', short: 'Closing', phase: 'penutupan', required: true },
   { code: 'kegiatan', label: 'Kegiatan Lainnya', short: 'Lainnya', phase: 'penutupan', required: false },
+  { code: 'dokumen_pendukung', label: 'Dokumen Pendukung', short: 'Dok. Pend', phase: 'material', required: false },
 ];
 export const activityLabel = (code: string) => activityTypes.find((t) => t.code === code)?.label ?? code;
 
@@ -107,6 +112,7 @@ export type ActivityCellState = 'revision' | 'pending' | 'approved' | 'missing' 
 export function activityCellState(cell: ActivityCell | undefined, type: (typeof activityTypes)[number], days: PhaseDay[], today: string): ActivityCellState {
   if (cell && cell.rejected > 0) return 'revision';
   if (cell && cell.pending > 0) return 'pending';
+  if (cell && (cell.missing ?? 0) > 0) return 'missing';
   if (cell && cell.photos > 0) return 'approved';
   if (!type.required) return 'empty';
   const due = days.filter((d) => d.phase === type.phase).map((d) => d.day).sort().at(-1);

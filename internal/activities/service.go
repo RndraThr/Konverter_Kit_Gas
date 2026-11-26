@@ -289,3 +289,7 @@ func newStorageKey() (string, error) {
 	value[8] = (value[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x", value[0:4], value[4:6], value[6:8], value[8:10], value[10:16]), nil
 }
+
+// SanitizeSlotName is the file-name segment of a supporting document name, as
+// used in its display name (CODE-SEGMENT-YYYYMMDD-HHMMSS).
+func SanitizeSlotName(name string) string { return sanitizeSlotName(name) }
