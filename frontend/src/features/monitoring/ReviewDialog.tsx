@@ -10,7 +10,9 @@ import { Label } from '@/components/ui/label';
 import { useCan } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import type { MediaFile } from '../distribution/types';
-import { approvePhotos, monitoringKey, requestRevision, slotKey, useSlotDetail } from './api';
+import { apiRequest } from '@/lib/api';
+import { approveBA, approvePhotos, monitoringKey, requestBARevision, requestRevision, slotKey, useSlotDetail } from './api';
+import { BADocument } from './BADocument';
 import { stageLabels, stateLabels, type SlotDetail } from './types';
 import { ZoomableImage, type ZoomHandle } from './ZoomableImage';
 
@@ -18,6 +20,10 @@ type Photo = { id: string; url: string; video: boolean; label: string; stage: st
 const stageOrder = ['mesin', 'dokumen', 'penyerahan'];
 
 /** Every photo of a recipient in POS order, then the recipient's signature. */
+/** The recipient again, after a check made outside the slot endpoints (BA). */
+const loadSlot = (scheduleId: string, slot: number) =>
+  apiRequest<{ data: SlotDetail }>(`/api/v1/monitoring/slots/${slot}?schedule_id=${scheduleId}`).then((r) => r.data);
+
 export function photosOf(detail: SlotDetail): Photo[] {
   const docs = [...detail.slot.documentation].sort((a, b) => stageOrder.indexOf(a.stage) - stageOrder.indexOf(b.stage));
   const photos: Photo[] = docs.flatMap((doc) => (doc.files ?? []).map((file) => ({
@@ -26,6 +32,8 @@ export function photosOf(detail: SlotDetail): Photo[] {
   if (detail.slot.recipient_signed_at) {
     photos.push({ id: 'signature', url: `/api/v1/distribution/slots/${detail.slot.slot_number}/signature?schedule_id=${encodeURIComponent(detail.slot.schedule_id)}`, video: false, label: 'Tanda tangan penerima', stage: 'dokumen' });
   }
+  // Last: the recipient's BA Perorangan, once final.
+  if (detail.ba) photos.push({ id: 'ba', url: '', video: false, label: 'BA Perorangan', stage: 'ba' });
   return photos;
 }
 
@@ -63,7 +71,7 @@ export function ReviewDialog({ scheduleId, slot, onClose, onNext, onStep }: {
   const data = detail.data;
   const photos = useMemo(() => (data ? photosOf(data) : []), [data]);
   const current = photos[Math.min(index, Math.max(photos.length - 1, 0))];
-  const reviewOf = (id: string) => data?.reviews[id];
+  const reviewOf = (id: string) => (id === 'ba' ? data?.ba?.review ?? undefined : data?.reviews[id]);
   const checkable = photos.filter((p) => p.id !== 'signature');
   const flagged = Object.keys(flags);
   const fresh = checkable.filter((p) => !reviewOf(p.id) && flags[p.id] === undefined);
@@ -75,25 +83,36 @@ export function ReviewDialog({ scheduleId, slot, onClose, onNext, onStep }: {
     queryClient.setQueryData(slotKey(scheduleId, slot!), result);
     void queryClient.invalidateQueries({ queryKey: [...monitoringKey, 'overview'] });
     void queryClient.invalidateQueries({ queryKey: [...monitoringKey, 'queue', scheduleId] });
-    const left = photosOf(result).findIndex((p) => p.id !== 'signature' && !result.reviews[p.id] && flags[p.id] === undefined);
+    const left = photosOf(result).findIndex((p) => p.id !== 'signature' && !(p.id === 'ba' ? result.ba?.review : result.reviews[p.id]) && flags[p.id] === undefined);
     if (left >= 0) { setIndex(left); toast.success(message); return; }
     if (Object.keys(flags).length === 0) { toast.success(`${message} · nomor bagi #${slot} selesai dicek`); onNext(slot!); return; }
     toast.success(message);
   };
   const approve = useMutation({
-    mutationFn: (ids: string[]) => approvePhotos(scheduleId, slot!, ids),
+    // The BA Perorangan is approved on its own endpoint; then the recipient is read again.
+    mutationFn: async (ids: string[]) => {
+      if (ids.includes('ba') && data?.ba) await approveBA(scheduleId, [data.ba.key]);
+      const photoIds = ids.filter((id) => id !== 'ba');
+      return photoIds.length ? approvePhotos(scheduleId, slot!, photoIds) : loadSlot(scheduleId, slot!);
+    },
     onSuccess: (result, ids) => settle(result, ids.length === 1 ? 'Foto disetujui' : `${ids.length} foto disetujui`),
     onError: (e) => toast.error(e.message),
   });
   const revise = useMutation({
-    mutationFn: () => requestRevision(scheduleId, slot!, { flags: flagged.map((media_id) => ({ media_id, reason: flags[media_id].trim() })), note: note.trim() }),
+    mutationFn: async () => {
+      if (flags.ba !== undefined && data?.ba) await requestBARevision(scheduleId, [{ key: data.ba.key, reason: flags.ba.trim() }], note.trim());
+      const photoFlags = flagged.filter((id) => id !== 'ba');
+      return photoFlags.length
+        ? requestRevision(scheduleId, slot!, { flags: photoFlags.map((media_id) => ({ media_id, reason: flags[media_id].trim() })), note: note.trim() })
+        : loadSlot(scheduleId, slot!);
+    },
     onSuccess: (result) => {
       const count = flagged.length;
       setFlags({}); setNote(''); setConfirming(false);
       queryClient.setQueryData(slotKey(scheduleId, slot!), result);
       void queryClient.invalidateQueries({ queryKey: monitoringKey });
       toast.success(`${count} foto dikirim untuk revisi`);
-      if (!photosOf(result).some((p) => p.id !== 'signature' && !result.reviews[p.id])) onNext(slot!);
+      if (!photosOf(result).some((p) => p.id !== 'signature' && !(p.id === 'ba' ? result.ba?.review : result.reviews[p.id]))) onNext(slot!);
     },
     onError: (e) => toast.error(e.message),
   });
@@ -146,7 +165,8 @@ export function ReviewDialog({ scheduleId, slot, onClose, onNext, onStep }: {
         : <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_400px]">
           <div className="flex min-h-0 flex-col bg-neutral-950">
             <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden">
-              {current ? (current.video
+              {current?.id === 'ba' && data.ba ? <BADocument key={data.ba.key + data.ba.uploaded_at} item={data.ba} />
+                : current ? (current.video
                 ? <video key={current.id} src={current.url} controls className="max-h-full max-w-full" />
                 : <ZoomableImage ref={zoom} src={current.url} alt={current.label} />)
                 : <p className="text-sm text-neutral-400">Belum ada foto</p>}
@@ -166,7 +186,8 @@ export function ReviewDialog({ scheduleId, slot, onClose, onNext, onStep }: {
                 const marked = flags[photo.id] !== undefined;
                 return <button key={photo.id} type="button" onClick={() => setIndex(i)} title={photo.label}
                   className={cn('relative size-16 shrink-0 overflow-hidden rounded-md border-2 bg-neutral-800', i === index ? 'border-white' : 'border-transparent opacity-70 hover:opacity-100', marked && 'border-destructive opacity-100')}>
-                  {photo.video ? <video src={photo.url} preload="metadata" className="size-full object-cover" /> : <img src={photo.url} alt="" loading="lazy" className="size-full object-cover" />}
+                  {photo.id === 'ba' ? <span className="flex size-full items-center justify-center bg-white text-[11px] font-bold text-neutral-800">BA</span>
+                    : photo.video ? <video src={photo.url} preload="metadata" className="size-full object-cover" /> : <img src={photo.url} alt="" loading="lazy" className="size-full object-cover" />}
                   {marked || review?.status === 'rejected' ? <Flag className="absolute top-1 right-1 size-3.5 fill-destructive text-destructive" />
                     : review?.status === 'approved' ? <CircleCheck className="absolute top-1 right-1 size-4 fill-emerald-500 text-white" />
                     : photo.id !== 'signature' ? <span className="absolute top-1 right-1 size-2.5 rounded-full bg-amber-400 ring-2 ring-neutral-900" title="Belum dicek" /> : null}
@@ -237,7 +258,7 @@ export function ReviewDialog({ scheduleId, slot, onClose, onNext, onStep }: {
             {canReview ? <div className="space-y-2 border-t p-3">
               {flagged.length > 0 ? <Input value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} placeholder="Catatan revisi (opsional)" aria-label="Catatan revisi" /> : null}
               {confirming ? <div className="space-y-2 rounded-lg bg-destructive/5 p-2.5 text-xs">
-                <p>{s.status === 'completed'
+                <p>{s.status === 'completed' && flagged.some((id) => id !== 'ba')
                   ? <>Nomor bagi dibuka lagi di <b>{stageLabels[earliest]}</b> dan BA yang sudah dibuat perlu dibuat ulang. </>
                   : null}Petugas dan leader kabupaten mendapat notifikasi untuk mengganti {flagged.length} foto.</p>
                 <div className="flex gap-2">

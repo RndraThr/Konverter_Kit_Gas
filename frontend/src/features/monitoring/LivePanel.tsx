@@ -65,6 +65,8 @@ function RegencyCard({ row, onOpen, duplicates = 0 }: { row: ScheduleRow; onOpen
       {row.pending_photos > 0 ? <span className="rounded-md bg-amber-100 px-2 py-0.5 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">{row.pending_photos} foto belum dicek</span> : null}
       {row.revision > 0 ? <span className="rounded-md bg-destructive/10 px-2 py-0.5 text-destructive">{row.revision} revisi</span> : null}
       {duplicates > 0 ? <span className="rounded-md bg-destructive px-2 py-0.5 font-medium text-white">{duplicates} serial dobel</span> : null}
+      {row.ba_pending ? <span className="rounded-md bg-amber-100 px-2 py-0.5 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">BA {row.ba_pending} belum dicek</span> : null}
+      {row.ba_revision ? <span className="rounded-md bg-destructive/10 px-2 py-0.5 text-destructive">BA {row.ba_revision} revisi</span> : null}
     </div>
     <div className="mt-3 flex items-center justify-between gap-2 border-t pt-2.5 text-xs text-muted-foreground">
       <span className="truncate">{row.reviewers.length ? row.reviewers.map((r) => r.name).join(', ') : 'Belum ada pemeriksa'}</span>

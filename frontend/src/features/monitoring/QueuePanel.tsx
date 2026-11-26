@@ -188,6 +188,8 @@ function QueueRow({ item, onOpen }: { item: QueueItem; onOpen: () => void }) {
     <td className="px-3 py-2 text-xs">{item.status === 'completed' ? <>{formatTime(item.completed_at)}<p className="text-muted-foreground">{item.completed_by}</p></> : <span className="text-muted-foreground">Belum selesai</span>}</td>
     <td className="px-3 py-2">
       <span className={cn('rounded-md px-2 py-0.5 text-xs font-medium', state.tone)}>{state.label}</span>
+      {item.ba_state ? <span className={cn('ml-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium', item.ba_state === 'approved' ? 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200' : item.ba_state === 'rejected' ? 'bg-destructive/10 text-destructive' : 'bg-amber-100 text-amber-900 dark:bg-amber-950/40 dark:text-amber-200')}
+        title="BA Perorangan">BA {item.ba_state === 'approved' ? '✓' : item.ba_state === 'rejected' ? 'revisi' : 'baru'}</span> : null}
       {item.reviewed_by ? <p className="mt-0.5 text-xs text-muted-foreground">{item.reviewed_by}</p> : null}
     </td>
   </tr>;

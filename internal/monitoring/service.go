@@ -129,6 +129,23 @@ func (s *Service) Overview(ctx context.Context, programID, date string, scope au
 	for i := range out.Rows {
 		out.Rows[i].TodayPhase, out.Rows[i].DistributionDay, out.Rows[i].DistributionOf = todayPhase(out.Rows[i].Days, date)
 	}
+	ids := make([]string, 0, len(out.Rows))
+	for _, row := range out.Rows {
+		ids = append(ids, row.ScheduleID)
+	}
+	baByRow, err := s.baItems(ctx, s.pool, ids)
+	if err != nil {
+		return out, err
+	}
+	for i := range out.Rows {
+		for _, it := range baByRow[out.Rows[i].ScheduleID] {
+			if it.Review == nil {
+				out.Rows[i].BAPending++
+			} else if it.Review.Status == "rejected" {
+				out.Rows[i].BARevision++
+			}
+		}
+	}
 
 	rows, err = s.pool.Query(ctx, `SELECT a.schedule_id::text, a.kind, u.id::text, `+userName("u")+` FROM monitoring_assignments a
 		JOIN users u ON u.id = a.user_id JOIN program_schedules ps ON ps.id = a.schedule_id
@@ -304,7 +321,7 @@ func (s *Service) SaveAssignments(ctx context.Context, actor auth.Principal, inp
 func (s *Service) Queue(ctx context.Context, scheduleID string, scope auth.RegencyScope) ([]QueueItem, error) {
 	rows, err := s.pool.Query(ctx, `
 		WITH photos AS (`+photoCounts+`)
-		SELECT ds.slot_number, COALESCE(p.full_name, ''), COALESCE(p.nik, ''), COALESCE(p.village, ''), COALESCE(ds.machine_serial_number, ''),
+		SELECT ds.id::text, ds.slot_number, COALESCE(p.full_name, ''), COALESCE(p.nik, ''), COALESCE(p.village, ''), COALESCE(ds.machine_serial_number, ''),
 			COALESCE(ds.distribution_date::text, ''), ds.status, ds.completed_at, `+userName("cu")+`,
 			m.photos, m.approved, m.rejected, m.last_upload, COALESCE(lr.name, ''), lr.reviewed_at
 		FROM distribution_slots ds
@@ -325,15 +342,27 @@ func (s *Service) Queue(ctx context.Context, scheduleID string, scope auth.Regen
 		return nil, fmt.Errorf("list check queue: %w", err)
 	}
 	defer rows.Close()
+	baBySlot := map[string]string{}
+	if items, err := s.baItems(ctx, s.pool, []string{strings.TrimSpace(scheduleID)}); err == nil {
+		for _, list := range items {
+			for _, it := range list {
+				if it.Individual != nil {
+					baBySlot[it.Individual.SlotID] = baState(it.Review)
+				}
+			}
+		}
+	}
 	out := []QueueItem{}
 	for rows.Next() {
 		var item QueueItem
-		if err := rows.Scan(&item.SlotNumber, &item.FullName, &item.NIK, &item.Village, &item.MachineSerial, &item.DistributionDate, &item.Status,
+		var slotID string
+		if err := rows.Scan(&slotID, &item.SlotNumber, &item.FullName, &item.NIK, &item.Village, &item.MachineSerial, &item.DistributionDate, &item.Status,
 			&item.CompletedAt, &item.CompletedBy, &item.Photos, &item.ApprovedPhotos, &item.RejectedPhotos, &item.LastUploadAt, &item.ReviewedBy, &item.ReviewedAt); err != nil {
 			return nil, fmt.Errorf("scan check queue: %w", err)
 		}
 		item.PendingPhotos = item.Photos - item.ApprovedPhotos - item.RejectedPhotos
 		item.State = reviewState(item.Photos, item.ApprovedPhotos, item.RejectedPhotos, item.Status == "completed")
+		item.BAState = baBySlot[slotID]
 		out = append(out, item)
 	}
 	return out, rows.Err()
@@ -418,8 +447,12 @@ func (s *Service) Slot(ctx context.Context, scheduleID string, slotNumber int, s
 			}
 		}
 	}
+	ba, err := s.SlotBA(ctx, slot.ScheduleID, m.id)
+	if err != nil {
+		return SlotDetail{}, err
+	}
 	return SlotDetail{Slot: slot, ScheduleName: m.scheduleName, RegencyName: m.regencyName, CompletedAt: m.completedAt, CompletedBy: m.completedBy,
-		State: reviewState(photos, approved, rejected, m.status == "completed"), Reviews: reviews}, nil
+		State: reviewState(photos, approved, rejected, m.status == "completed"), Reviews: reviews, BA: ba}, nil
 }
 
 // currentMedia maps the slot's current photos to their check status ("" when not checked).

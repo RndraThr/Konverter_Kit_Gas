@@ -12,6 +12,7 @@ export type ScheduleRow = {
   today_phase: Phase | ''; distribution_day: number; distribution_of: number;
   completed: number; completed_today: number; approved: number; pending: number; revision: number; pending_photos: number;
   last_activity_at: string | null;
+  ba_pending?: number; ba_revision?: number;
 };
 
 export type Overview = {
@@ -26,6 +27,7 @@ export type QueueItem = {
   distribution_date: string; status: string; completed_at: string | null; completed_by: string;
   photos: number; approved_photos: number; rejected_photos: number; pending_photos: number;
   state: ReviewState; last_upload_at: string | null; reviewed_by: string; reviewed_at: string | null;
+  ba_state?: '' | BAState;
 };
 
 /** The check of one photo; a photo without one is not checked yet. */
@@ -34,6 +36,8 @@ export type MediaReview = { status: 'approved' | 'rejected'; reason: string; rev
 export type SlotDetail = {
   slot: DistributionSlot; schedule_name: string; regency_name: string;
   completed_at: string | null; completed_by: string; state: ReviewState; reviews: Record<string, MediaReview>;
+  /** The recipient's BA Perorangan once final, checked last. */
+  ba?: BAItem | null;
 };
 
 /** Phases in calendar order, with the colors of the "Jadwal Pendistribusian" sheet. */
@@ -54,7 +58,7 @@ export const stateLabels: Record<ReviewState, { label: string; tone: string }> =
   approved: { label: 'Disetujui', tone: 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200' },
 };
 
-export const stageLabels: Record<string, string> = { mesin: 'POS Mesin', dokumen: 'POS Dokumen', penyerahan: 'POS Penyerahan' };
+export const stageLabels: Record<string, string> = { mesin: 'POS Mesin', dokumen: 'POS Dokumen', penyerahan: 'POS Penyerahan', ba: 'BA' };
 
 /** Photo counts of one activity type of a kabupaten. */
 export type ActivityCell = {
@@ -121,3 +125,33 @@ export function duplicatesBySchedule(list: SerialDuplicate[]): Record<string, nu
   list.forEach((d) => new Set(d.entries.map((e) => e.schedule_id)).forEach((id) => { out[id] = (out[id] ?? 0) + 1; }));
   return out;
 }
+
+export type BAState = 'pending' | 'approved' | 'rejected';
+
+/** An uploaded BA to check: full scan (PDF), signature page (image), signed sheets (archive) or a recipient's BA Perorangan. */
+export type BAItem = {
+  key: string; type: string; label: string; date: string; source: 'scan' | 'wet' | 'archive' | 'digital';
+  content_url: string; mime_type: string; uploaded_by: string; uploaded_at: string; review: MediaReview | null;
+  individual?: { program_id: string; regency_id: string; local_date: string; slot_id: string; slot_number: number };
+};
+
+export type BACell = { schedule_id: string; type: string; items: number; approved: number; rejected: number; pending: number };
+
+/** BA checked in the BA tab, in the app's order; BA Perorangan is checked in the recipient's review. */
+export const baTypes: { code: string; label: string; short: string }[] = [
+  { code: 'gas-elpiji', label: 'BA Gas LPG', short: 'Gas LPG' },
+  { code: 'rakorda', label: 'Rakorda', short: 'Rakorda' },
+  { code: 'pemeriksaan', label: 'BA Pemeriksaan', short: 'Periksa' },
+  { code: 'sosialisasi', label: 'Sosialisasi', short: 'Sosialisasi' },
+  { code: 'training-10', label: 'Training 10%', short: 'Tr 10%' },
+  { code: 'dp3', label: 'DP3', short: 'DP3' },
+  { code: 'daily-recap', label: 'Rekap Harian', short: 'Rekap' },
+  { code: 'training-100', label: 'Training 100%', short: 'Tr 100%' },
+  { code: 'closing-titik-serah', label: 'Closing Titik Serah', short: 'Cls Titik' },
+  { code: 'closing-kabupaten', label: 'Closing Kabupaten', short: 'Cls Kab' },
+  { code: 'servis-berkala', label: 'Servis Berkala', short: 'Servis' },
+  { code: 'tkdn', label: 'TKDN', short: 'TKDN' },
+  { code: 'individual', label: 'BA Perorangan', short: 'Perorangan' },
+];
+export const baLabel = (code: string) => baTypes.find((t) => t.code === code)?.label ?? code;
+export const baSourceLabels: Record<BAItem['source'], string> = { scan: 'Pindaian lengkap', wet: 'Halaman tanda tangan', archive: 'Lembar bertanda tangan', digital: 'BA digital' };

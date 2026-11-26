@@ -13,7 +13,7 @@ import { todayWIB } from './api';
 import { MonitoringPage } from './MonitoringPage';
 import { zoomAt } from './ZoomableImage';
 import { duplicatesMessage } from './DuplicatesPanel';
-import { activityCellState, activityTypes, duplicatesBySchedule, type SerialDuplicate, type ActivityAlbum, type ActivityCell, type MediaReview, type Overview, type QueueItem, type ScheduleRow, type SlotDetail } from './types';
+import { activityCellState, activityTypes, duplicatesBySchedule, type BACell, type BAItem, type SerialDuplicate, type ActivityAlbum, type ActivityCell, type MediaReview, type Overview, type QueueItem, type ScheduleRow, type SlotDetail } from './types';
 
 vi.mock('../../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../../lib/api')>('../../lib/api');
@@ -69,6 +69,12 @@ const serialDuplicates: SerialDuplicate[] = [{ field: 'converter', serial: '0626
   { schedule_id: 's2', regency_name: 'KAB. TUBAN', slot_number: 157, status: 'open', entered_by: 'Saefi', entered_at: '2026-11-25T12:49:00Z' },
 ] }];
 
+// Malang uploaded the wet-signed DP3 of two days.
+const baCells: BACell[] = [{ schedule_id: 's1', type: 'dp3', items: 2, approved: 0, rejected: 0, pending: 2 }];
+const baItems: BAItem[] = ['2026-11-28', '2026-11-29'].map((date) => ({
+  key: `wet:dp3:${date}`, type: 'dp3', label: 'DP3', date, source: 'wet', content_url: `/scan/${date}`, mime_type: 'image/png', uploaded_by: 'Reza', uploaded_at: '2026-11-28T09:00:00Z', review: null,
+}));
+
 afterEach(() => vi.clearAllMocks());
 
 function renderPage(path: string, permissions = ['monitoring.view', 'monitoring.review', 'monitoring.manage']) {
@@ -76,6 +82,7 @@ function renderPage(path: string, permissions = ['monitoring.view', 'monitoring.
   // The photo checks made during the test, by slot, as the server would keep them.
   const reviews: Record<number, Record<string, MediaReview>> = {};
   const activityReviews: Record<string, MediaReview> = {};
+  const baReviews: Record<string, MediaReview> = {};
   const check = (slot: number, ids: string[], status: MediaReview['status']) => {
     reviews[slot] = { ...reviews[slot], ...Object.fromEntries(ids.map((id) => [id, { status, reason: '', reviewed_by: 'Rendra', reviewed_at: '2026-11-20T05:00:00Z' }])) };
   };
@@ -94,6 +101,14 @@ function renderPage(path: string, permissions = ['monitoring.view', 'monitoring.
     if (url === '/api/v1/monitoring/calendar') return Promise.resolve({ data: { saved: true } });
     if (url === '/api/v1/monitoring/activities?program_id=p1') return Promise.resolve({ data: activityCells });
     if (url === '/api/v1/monitoring/serial-duplicates?program_id=p1') return Promise.resolve({ data: serialDuplicates });
+    if (url === '/api/v1/monitoring/ba?program_id=p1') return Promise.resolve({ data: baCells });
+    if (url.startsWith('/api/v1/monitoring/ba/items')) return Promise.resolve({ data: baItems.map((item) => ({ ...item, review: baReviews[item.key] ?? null })) });
+    if (url === '/api/v1/monitoring/ba/approve' || url === '/api/v1/monitoring/ba/revision') {
+      const body = JSON.parse(init!.body as string);
+      const keys: string[] = body.keys ?? body.flags.map((f: { key: string }) => f.key);
+      keys.forEach((key) => { baReviews[key] = { status: body.keys ? 'approved' : 'rejected', reason: '', reviewed_by: 'Rendra', reviewed_at: '2026-11-28T05:00:00Z' }; });
+      return Promise.resolve({ data: { saved: true } });
+    }
     if (url.startsWith('/api/v1/monitoring/activities/album')) return Promise.resolve({ data: { ...album, photos: album.photos.map((p) => ({ ...p, review: activityReviews[p.id] ?? null })) } });
     if (url === '/api/v1/monitoring/activities/approve' || url === '/api/v1/monitoring/activities/revision') {
       const body = JSON.parse(init!.body as string);
@@ -269,6 +284,8 @@ test('an activity revision notification opens the album, or the activity page fo
   expect(webLink('/kegiatan/unloading_oli?schedule=s1&revisi=1', false)).toBe('/dokumentasi/unloading?type=unloading_oli');
   expect(webLink('/kegiatan/kegiatan_distribusi?schedule=s1&revisi=1', false)).toBe('/dokumentasi/kegiatan-pendistribusian');
   expect(webLink('/kegiatan/training_10?schedule=s1&revisi=1', false)).toBe('/dokumentasi/training-10');
+  expect(webLink('/ba/dp3/2026-11-28?schedule=s1&revisi=1', true)).toBe('/monitoring-distribusi?tab=ba&schedule=s1&ba=dp3');
+  expect(webLink('/ba/dp3/2026-11-28?schedule=s1&revisi=1', false)).toBe('/berita-acara');
 });
 
 test('checks the activity photos of a kabupaten: approves one, sends one back', async () => {
@@ -304,4 +321,22 @@ test('lists serials recorded twice, copies them for the group, and opens a slot'
 test('live marks a kabupaten with a serial recorded twice', async () => {
   renderPage('/monitoring-distribusi');
   expect(await screen.findByText('1 serial dobel')).toBeVisible();
+});
+
+test('checks the signed BA of a kabupaten: approves one day, sends the other back', async () => {
+  const calls = renderPage('/monitoring-distribusi?tab=ba');
+  await waitFor(() => expect(screen.getByRole('tab', { name: /^BA/ })).toHaveTextContent(/2$/));
+  await userEvent.click(await screen.findByRole('button', { name: 'DP3 KAB. MALANG' }));
+  const dialog = await screen.findByRole('dialog');
+  expect(await within(dialog).findByAltText('DP3 2026-11-28')).toBeVisible();
+  fireEvent.keyDown(window, { key: 'a' });
+  await waitFor(() => expect(calls.some((c) => c.path === '/api/v1/monitoring/ba/approve')).toBe(true));
+  expect(JSON.parse(calls.find((c) => c.path === '/api/v1/monitoring/ba/approve')!.init!.body as string)).toEqual({ schedule_id: 's1', keys: ['wet:dp3:2026-11-28'] });
+  expect(await within(dialog).findByAltText('DP3 2026-11-29')).toBeVisible();
+  await userEvent.click(within(dialog).getByRole('button', { name: /Minta revisi/ }));
+  await userEvent.type(within(dialog).getByRole('textbox', { name: 'Alasan revisi BA' }), 'Stempel belum ada');
+  await userEvent.click(within(dialog).getByRole('button', { name: /^Kirim revisi$/ }));
+  await waitFor(() => expect(calls.some((c) => c.path === '/api/v1/monitoring/ba/revision')).toBe(true));
+  expect(JSON.parse(calls.find((c) => c.path === '/api/v1/monitoring/ba/revision')!.init!.body as string))
+    .toEqual({ schedule_id: 's1', flags: [{ key: 'wet:dp3:2026-11-29', reason: 'Stempel belum ada' }], note: '' });
 });
