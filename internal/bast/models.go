@@ -7,8 +7,10 @@ import (
 )
 
 var (
-	ErrNotFound              = errors.New("bast resource not found")
-	ErrInvalidInput          = errors.New("bast input is invalid")
+	ErrNotFound     = errors.New("bast resource not found")
+	ErrInvalidInput = errors.New("bast input is invalid")
+	// ErrFormDeleteForbidden: only a super admin may remove a BA Pemeriksaan form.
+	ErrFormDeleteForbidden   = errors.New("only a super admin can remove a BA Pemeriksaan form")
 	ErrFinalTotalMissing     = errors.New("final regency total has not been locked")
 	ErrFinalTotalLocked      = errors.New("final regency total cannot change after documents are finalized")
 	ErrSlotOutOfRange        = errors.New("distribution slot number exceeds the final regency total")

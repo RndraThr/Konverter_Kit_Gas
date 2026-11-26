@@ -47,6 +47,49 @@ func (r *Repository) GetZonePONumbers(ctx context.Context, zoneID string) (map[s
 	return numbers, rows.Err()
 }
 
+// GetSchedulePONumbers mengembalikan No. PO khusus kabupaten jadwal dengan
+// kunci poKey(jenis, kode); menimpa No. PO zona.
+func (r *Repository) GetSchedulePONumbers(ctx context.Context, scheduleID string) (map[string]string, error) {
+	numbers := map[string]string{}
+	rows, err := r.pool.Query(ctx, `SELECT item_kind,item_code,po_number FROM bast_schedule_po_numbers WHERE schedule_id::text=$1`, scheduleID)
+	if err != nil {
+		return nil, fmt.Errorf("list schedule PO numbers: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var kind, code, number string
+		if err := rows.Scan(&kind, &code, &number); err != nil {
+			return nil, err
+		}
+		numbers[poKey(kind, code)] = number
+	}
+	return numbers, rows.Err()
+}
+
+// SaveSchedulePONumber menyimpan No. PO khusus kabupaten untuk satu barang;
+// nomor kosong menghapusnya (kembali memakai No. PO zona).
+func (r *Repository) SaveSchedulePONumber(ctx context.Context, actor auth.Principal, scheduleID, kind, code, number string, meta auth.ClientMeta) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if number == "" {
+		_, err = tx.Exec(ctx, `DELETE FROM bast_schedule_po_numbers WHERE schedule_id=$1::uuid AND item_kind=$2 AND item_code=$3`, scheduleID, kind, code)
+	} else {
+		_, err = tx.Exec(ctx, `INSERT INTO bast_schedule_po_numbers(schedule_id,item_kind,item_code,po_number,updated_by) VALUES($1::uuid,$2,$3,$4,NULLIF($5,'')::uuid)
+			ON CONFLICT (schedule_id,item_kind,item_code) DO UPDATE SET po_number=EXCLUDED.po_number,updated_by=EXCLUDED.updated_by,updated_at=now()`, scheduleID, kind, code, number, actor.UserID)
+	}
+	if err != nil {
+		return fmt.Errorf("save schedule PO number: %w", err)
+	}
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "bast.schedule_po_saved", ResourceType: "program_schedule", ResourceID: scheduleID,
+		Metadata: map[string]any{"item_kind": kind, "item_code": code, "po_number": number}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // ZoneTemplateValues adalah values_json template paket yang dipakai jadwal di
 // satu zona program.
 type ZoneTemplateValues struct {

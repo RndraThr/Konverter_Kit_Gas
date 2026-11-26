@@ -195,7 +195,21 @@ type PemeriksaanFormSummary struct {
 	Title    string           `json:"title"`
 	PONumber string           `json:"po_number"`
 	Rows     []PemeriksaanRow `json:"rows"`
+	// KabupatenPO is set for a form whose No. PO is filled per kabupaten (the
+	// LPG tank: each kabupaten has its own loading order); the item it is for
+	// and the kabupaten's number ("" until filled).
+	KabupatenPO *KabupatenPO `json:"kabupaten_po,omitempty"`
 }
+
+// KabupatenPO is the per-kabupaten No. PO of one item of a form.
+type KabupatenPO struct {
+	ItemKind string `json:"item_kind"`
+	ItemCode string `json:"item_code"`
+	PONumber string `json:"po_number"`
+}
+
+// KabupatenPORefs are the items whose No. PO differs per kabupaten.
+var KabupatenPORefs = []string{"component:lpg_tank"}
 
 // PemeriksaanSummary memberi panel jumlah paket, daftar form, dan isi tiap
 // form untuk kabupaten jadwal.
