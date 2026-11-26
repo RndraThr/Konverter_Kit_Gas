@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"konkit/internal/auth"
@@ -20,6 +21,7 @@ const pemeriksaanFolder = "10. BA PEMERIKSAAN"
 
 type pemeriksaanRepository interface {
 	GetDP3Context(context.Context, string, auth.RegencyScope) (DP3Context, error)
+	SaveSchedulePONumber(context.Context, auth.Principal, string, string, string, string, auth.ClientMeta) error
 	ListPlannedPackageRows(context.Context, string, auth.RegencyScope) ([]ClosingKabupatenRow, int, error)
 	ListActiveLogos(context.Context, string) ([]LogoSnapshot, error)
 	GetScheduleSettings(context.Context, string, auth.RegencyScope) (ScheduleSettings, error)
@@ -58,10 +60,49 @@ func (s *PemeriksaanService) SaveProfile(ctx context.Context, actor auth.Princip
 	if err := profile.normalize(); err != nil {
 		return PemeriksaanProfile{}, err
 	}
-	if _, err := s.repository.GetPemeriksaanProfile(ctx, profile.ProgramID); err != nil {
+	current, err := s.repository.GetPemeriksaanProfile(ctx, profile.ProgramID)
+	if err != nil {
 		return PemeriksaanProfile{}, err
 	}
+	// Removing a form drops a BA every kabupaten prints: super admin only.
+	if !actor.IsSuperAdmin() && len(removedForms(current.Forms, profile.Forms)) > 0 {
+		return PemeriksaanProfile{}, ErrFormDeleteForbidden
+	}
 	return s.repository.UpsertPemeriksaanProfile(ctx, actor, profile, meta)
+}
+
+// SaveKabupatenPO stores the kabupaten's own No. PO of an item whose number
+// differs per kabupaten; an empty number clears it.
+func (s *PemeriksaanService) SaveKabupatenPO(ctx context.Context, actor auth.Principal, scheduleID string, po KabupatenPO, scope auth.RegencyScope, meta auth.ClientMeta) error {
+	ctxData, err := s.repository.GetDP3Context(ctx, strings.TrimSpace(scheduleID), scope)
+	if err != nil {
+		return err
+	}
+	po.ItemKind, po.ItemCode = strings.TrimSpace(po.ItemKind), strings.TrimSpace(po.ItemCode)
+	po.PONumber = strings.Join(strings.Fields(po.PONumber), " ")
+	ref := po.ItemKind
+	if po.ItemKind == ItemKindComponent {
+		ref = ItemKindComponent + ":" + po.ItemCode
+	}
+	if !slices.Contains(KabupatenPORefs, ref) || len(po.PONumber) > 120 {
+		return ErrInvalidInput
+	}
+	return s.repository.SaveSchedulePONumber(ctx, actor, ctxData.ScheduleID, po.ItemKind, po.ItemCode, po.PONumber, meta)
+}
+
+// removedForms lists the codes of current forms missing from next.
+func removedForms(current, next []PemeriksaanForm) []string {
+	kept := map[string]bool{}
+	for _, f := range next {
+		kept[strings.ToLower(strings.TrimSpace(f.Code))] = true
+	}
+	var removed []string
+	for _, f := range current {
+		if code := strings.ToLower(strings.TrimSpace(f.Code)); !kept[code] {
+			removed = append(removed, code)
+		}
+	}
+	return removed
 }
 
 func (s *PemeriksaanService) Summary(ctx context.Context, scheduleID string, scope auth.RegencyScope) (PemeriksaanSummary, error) {
@@ -81,10 +122,21 @@ func (s *PemeriksaanService) Summary(ctx context.Context, scheduleID string, sco
 	if err != nil {
 		return PemeriksaanSummary{}, err
 	}
+	own, err := s.repository.GetSchedulePONumbers(ctx, ctxData.ScheduleID)
+	if err != nil {
+		return PemeriksaanSummary{}, err
+	}
 	forms := make([]PemeriksaanFormSummary, 0, len(profile.Forms))
 	for _, form := range profile.Forms {
 		formRows, poNumber := pemeriksaanRowsFor(form, entries, resolved)
-		forms = append(forms, PemeriksaanFormSummary{Code: form.Code, Title: form.Title, PONumber: poNumber, Rows: formRows})
+		summary := PemeriksaanFormSummary{Code: form.Code, Title: form.Title, PONumber: poNumber, Rows: formRows}
+		for _, row := range form.Rows {
+			if r, ok := resolved[row.Ref]; ok && slices.Contains(KabupatenPORefs, row.Ref) {
+				summary.KabupatenPO = &KabupatenPO{ItemKind: r.Entry.Kind, ItemCode: r.Variant.Code, PONumber: own[poKey(r.Entry.Kind, r.Variant.Code)]}
+				break
+			}
+		}
+		forms = append(forms, summary)
 	}
 	return PemeriksaanSummary{TotalPackages: total, Profile: profile, Forms: forms, Entries: entries}, nil
 }

@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -24,6 +25,8 @@ func (h *Handler) handleBASTPemeriksaan(w http.ResponseWriter, r *http.Request, 
 		h.handlePemeriksaanProfile(w, r, rc)
 	case "summary":
 		h.handlePemeriksaanSummary(w, r, rc)
+	case "kabupaten-po":
+		h.handlePemeriksaanKabupatenPO(w, r, rc)
 	case "preview":
 		h.handlePemeriksaanPreview(w, r, rc)
 	case "finalize":
@@ -71,6 +74,10 @@ func (h *Handler) handlePemeriksaanProfile(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		result, err := h.deps.Pemeriksaan.SaveProfile(r.Context(), rc.principal, bast.PemeriksaanProfile{ProgramID: input.ProgramID, Forms: input.Forms}, clientMeta(r))
+		if errors.Is(err, bast.ErrFormDeleteForbidden) {
+			writeError(w, http.StatusForbidden, "pemeriksaan_form_delete_forbidden", "Form BA Pemeriksaan hanya dapat dihapus oleh super admin")
+			return
+		}
 		if err != nil {
 			writeServiceError(w, err)
 			return
@@ -104,6 +111,35 @@ func (h *Handler) handlePemeriksaanSummary(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	writeData(w, http.StatusOK, result)
+}
+
+// handlePemeriksaanKabupatenPO: PUT {schedule_id, item_kind, item_code,
+// po_number} stores the kabupaten's own No. PO of an item whose number
+// differs per kabupaten (the LPG tank); an empty number clears it.
+func (h *Handler) handlePemeriksaanKabupatenPO(w http.ResponseWriter, r *http.Request, rc requestContext) {
+	if r.Method != http.MethodPut {
+		methodNotAllowed(w, http.MethodPut)
+		return
+	}
+	if !h.authorize(w, r, rc.principal, "bast.manage") {
+		return
+	}
+	var input struct {
+		ScheduleID string `json:"schedule_id"`
+		bast.KabupatenPO
+	}
+	if !decodeJSON(w, r, &input) {
+		return
+	}
+	scope, ok := h.regencyScope(w, r, rc.principal)
+	if !ok {
+		return
+	}
+	if err := h.deps.Pemeriksaan.SaveKabupatenPO(r.Context(), rc.principal, input.ScheduleID, input.KabupatenPO, scope, clientMeta(r)); err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	writeData(w, http.StatusOK, map[string]bool{"saved": true})
 }
 
 func decodePemeriksaanDocumentRequest(w http.ResponseWriter, r *http.Request) (pemeriksaanDocumentRequest, bool) {

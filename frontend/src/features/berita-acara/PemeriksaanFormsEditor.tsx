@@ -10,7 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { templateEntryLabel } from './TemplateEntrySelect';
 import type { PemeriksaanChecklist, PemeriksaanForm, TemplateEntry } from './types';
 
-type Props = { forms: PemeriksaanForm[]; entries: TemplateEntry[]; canManage: boolean; saving: boolean; onChange: (forms: PemeriksaanForm[]) => void; onSave: () => void };
+/** canDelete: removing a form is for super admins only (the server refuses others). */
+type Props = { forms: PemeriksaanForm[]; entries: TemplateEntry[]; canManage: boolean; canDelete?: boolean; saving: boolean; onChange: (forms: PemeriksaanForm[]) => void; onSave: () => void };
 
 type ChoiceKey = Exclude<keyof PemeriksaanChecklist, 'documents' | 'other_document'>;
 
@@ -37,7 +38,7 @@ export const pemeriksaanFormsValid = (forms: PemeriksaanForm[]) => {
 const slug = (value: string) => value.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
 
 /** Editor daftar form BA Pemeriksaan per program: pilih form di kiri, ubah isinya di kanan. */
-export function PemeriksaanFormsEditor({ forms, entries, canManage, saving, onChange, onSave }: Props) {
+export function PemeriksaanFormsEditor({ forms, entries, canManage, saving, onChange, onSave, canDelete = false }: Props) {
   const [selected, setSelected] = useState(0);
   const index = Math.min(selected, forms.length - 1);
   const form = forms[index];
@@ -66,7 +67,7 @@ export function PemeriksaanFormsEditor({ forms, entries, canManage, saving, onCh
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_14rem_auto] sm:items-end">
             <FormField label="Judul form" name="pemeriksaan_form_title" value={form.title} disabled={!canManage} onChange={(e) => update({ title: e.target.value })} />
             <FormField label="Kode (file & dokumen)" name="pemeriksaan_form_code" value={form.code} disabled={!canManage} placeholder="huruf_kecil_angka" onChange={(e) => update({ code: slug(e.target.value) })} />
-            {canManage && forms.length > 1 && <Button variant="ghost" className="text-destructive hover:text-destructive" onClick={() => { onChange(forms.filter((_, i) => i !== index)); setSelected(0); }}><Trash2 />Hapus form</Button>}
+            {canManage && canDelete && forms.length > 1 && <Button variant="ghost" className="text-destructive hover:text-destructive" onClick={() => { onChange(forms.filter((_, i) => i !== index)); setSelected(0); }}><Trash2 />Hapus form</Button>}
           </div>
           <p className="text-xs text-muted-foreground">Kode dipakai untuk nama file dan jenis dokumen: huruf kecil, angka, dan garis bawah.</p>
         </div>

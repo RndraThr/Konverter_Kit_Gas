@@ -9,7 +9,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { apiBlobRequest, ApiError, apiRequest } from '@/lib/api';
+import { apiBlobRequest, ApiError, apiRequest, getBootstrap } from '@/lib/api';
+import { KabupatenPOCard } from './KabupatenPOCard';
 import { useCan } from '@/lib/permissions';
 import type { ProgramType } from '../programs/types';
 import { PdfPreview } from './PdfPreview';
@@ -33,6 +34,8 @@ export function PemeriksaanPanel({ scheduleID, programID, regencyName, programTy
   const queryClient = useQueryClient();
   const [documentDate, setDocumentDate] = useState(defaultDate);
   const [forms, setForms] = useState<PemeriksaanForm[]>([]);
+  const bootstrap = useQuery({ queryKey: ['bootstrap'], queryFn: getBootstrap });
+  const isSuperAdmin = bootstrap.data?.data.roles?.includes('super_admin') ?? false;
   const [previewPage, setPreviewPage] = useState<number | undefined>();
   const [showEditor, setShowEditor] = useState(false);
   const [showSignatures, setShowSignatures] = useState(false);
@@ -90,6 +93,7 @@ export function PemeriksaanPanel({ scheduleID, programID, regencyName, programTy
       <Card>
         <CardHeader className="border-b"><div className="flex items-center justify-between gap-2"><CardTitle className="text-base">Form barang</CardTitle><Badge variant="outline">{finalizedCount}/{savedForms.length} final</Badge></div></CardHeader>
         <CardContent className="grid gap-3 pt-4">
+          {savedForms.filter((form) => form.kabupaten_po).map((form) => <KabupatenPOCard key={form.code} scheduleID={scheduleID} form={form} canManage={canManage} />)}
           <ul className="grid divide-y rounded-lg border" aria-label="Form BA Pemeriksaan">
             {savedForms.map((form, index) => {
               const doc = activeByType.get(`pemeriksaan:${form.code}`);
@@ -134,7 +138,11 @@ export function PemeriksaanPanel({ scheduleID, programID, regencyName, programTy
             </div>}
           <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
             <Button variant="ghost" onClick={() => setShowSignatures((value) => !value)}><Signature />{showSignatures ? 'Tutup penandatangan' : 'Penandatangan'}</Button>
-            {canManage && <Button disabled={finalize.isPending || !ready || documentDate === '' || wetBlocked} onClick={() => finalize.mutate()}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi semua form'}</Button>}
+            {canManage && <Button disabled={finalize.isPending || !ready || documentDate === '' || wetBlocked} onClick={() => {
+              const missing = savedForms.filter((form) => form.kabupaten_po && !form.kabupaten_po.po_number).map((form) => form.title);
+              if (missing.length && !window.confirm(`No. PO ${missing.join(', ')} belum diisi. Tetap finalisasi tanpa No. PO?`)) return;
+              finalize.mutate();
+            }}><RefreshCw className={finalize.isPending ? 'animate-spin' : ''} />{finalize.isPending ? 'Menyinkronkan...' : 'Finalisasi semua form'}</Button>}
           </div>
 
           {ready && documentDate !== '' && <WetSignatureHint scheduleID={scheduleID} document="ba-pemeriksaan" date={documentDate} open={showSignatures} onOpen={() => setShowSignatures(true)} />}
@@ -147,7 +155,7 @@ export function PemeriksaanPanel({ scheduleID, programID, regencyName, programTy
     </div>
     {ready && documentDate !== '' && <FullScanCard scheduleID={scheduleID} document="ba-pemeriksaan" date={documentDate} label="BA Pemeriksaan" />}
 
-    {showEditor && <PemeriksaanFormsEditor forms={forms} entries={summary.data.data.entries ?? []} canManage={canManage} saving={saveProfile.isPending} onChange={setForms} onSave={() => saveProfile.mutate()} />}
+    {showEditor && <PemeriksaanFormsEditor forms={forms} entries={summary.data.data.entries ?? []} canManage={canManage} canDelete={isSuperAdmin} saving={saveProfile.isPending} onChange={setForms} onSave={() => saveProfile.mutate()} />}
   </div>;
 }
 

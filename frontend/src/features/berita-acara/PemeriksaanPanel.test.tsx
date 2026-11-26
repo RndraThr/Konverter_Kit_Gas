@@ -1,12 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { apiBlobRequest, apiRequest } from '@/lib/api'
 import { PermissionsProvider } from '@/lib/permissions'
 import { PemeriksaanPanel } from './PemeriksaanPanel'
 
-vi.mock('@/lib/api', () => ({ apiRequest: vi.fn(), apiBlobRequest: vi.fn() }))
+vi.mock('@/lib/api', () => ({ apiRequest: vi.fn(), apiBlobRequest: vi.fn(), getBootstrap: vi.fn().mockResolvedValue({ data: { id: 'me', roles: ['super_admin'] }, meta: { csrf_token: '' } }) }))
 
 const checklist = { packaging: 'baik', quantity: 'lengkap', specification: 'sesuai', condition: 'baru_baik', documents: [], other_document: '', function_test: 'ya', conclusion: 'diterima' }
 const profile = {
@@ -97,6 +97,19 @@ test('picks form rows by ticking package template items', async () => {
   expect(body.forms[0].rows.map((row: { ref: string }) => row.ref)).toEqual(['machine', 'component:oil'])
 })
 
+test('only a super admin sees the button to remove a form', async () => {
+  const { getBootstrap } = await import('@/lib/api')
+  renderPanel()
+  await userEvent.click(await screen.findByRole('button', { name: 'Atur daftar form' }))
+  expect(await screen.findByRole('button', { name: /Hapus form/ })).toBeVisible()
+  cleanup()
+  vi.mocked(getBootstrap).mockResolvedValueOnce({ data: { id: 'me', roles: ['leader_tim_02'] }, meta: { csrf_token: '' } } as never)
+  renderPanel()
+  await userEvent.click(await screen.findByRole('button', { name: 'Atur daftar form' }))
+  await screen.findByRole('button', { name: 'Simpan daftar form' })
+  expect(screen.queryByRole('button', { name: /Hapus form/ })).toBeNull()
+})
+
 test('jumps the combined preview to the selected form and finalizes all forms at once', async () => {
   renderPanel()
   await screen.findByTitle('Preview BA Pemeriksaan')
@@ -105,4 +118,24 @@ test('jumps the combined preview to the selected form and finalizes all forms at
 
   await userEvent.click(screen.getByRole('button', { name: 'Finalisasi semua form' }))
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/bast/pemeriksaan/finalize', expect.objectContaining({ method: 'POST' })))
+})
+
+test('asks for the kabupaten No. PO of the LPG tank, then shows it on one line', async () => {
+  const tank = { code: 'tabung_gas', title: 'Tabung Gas', po_number: '', rows: [{ ref: 'component:lpg_tank', description: 'TABUNG LPG', unit: 'BUAH', quantity_per_package: 1, notes: '' }], kabupaten_po: { item_kind: 'component', item_code: 'lpg_tank', po_number: '' } }
+  let saved = ''
+  vi.mocked(apiRequest).mockImplementation(async (path, init) => {
+    if (path.includes('/pemeriksaan/summary')) return { data: { total_packages: 12, profile, forms: [...forms, { ...tank, kabupaten_po: { ...tank.kabupaten_po, po_number: saved } }], entries: [] } }
+    if (path.includes('/pemeriksaan/documents')) return { data: [] }
+    if (path.includes('/pemeriksaan/kabupaten-po') && init?.method === 'PUT') { saved = JSON.parse(init.body as string).po_number; return { data: { saved: true } } }
+    throw new Error(`unexpected ${path}`)
+  })
+  renderPanel()
+  expect(await screen.findByText(/No. PO Tabung Gas belum diisi/)).toBeVisible()
+  await userEvent.type(screen.getByRole('textbox', { name: 'No. PO Tabung Gas' }), 'LO/WJO/01')
+  await userEvent.click(screen.getByRole('button', { name: 'Simpan' }))
+  await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/bast/pemeriksaan/kabupaten-po', expect.objectContaining({
+    method: 'PUT', body: JSON.stringify({ schedule_id: 'schedule-1', item_kind: 'component', item_code: 'lpg_tank', po_number: 'LO/WJO/01' }),
+  })))
+  expect(await screen.findByText('LO/WJO/01')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Ubah' })).toBeVisible()
 })

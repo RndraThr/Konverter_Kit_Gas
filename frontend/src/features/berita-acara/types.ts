@@ -94,7 +94,8 @@ export type PemeriksaanForm = { code: string; title: string; rows: PemeriksaanRo
 
 export type PemeriksaanProfile = { program_id: string; forms: PemeriksaanForm[]; is_default: boolean; updated_at?: string };
 
-export type PemeriksaanFormSummary = { code: string; title: string; po_number: string; rows: PemeriksaanRow[] };
+/** kabupaten_po: the form's No. PO is filled per kabupaten (LPG tank); po_number is "" until filled. */
+export type PemeriksaanFormSummary = { code: string; title: string; po_number: string; rows: PemeriksaanRow[]; kabupaten_po?: { item_kind: string; item_code: string; po_number: string } };
 
 export type PemeriksaanSummary = { total_packages: number; profile: PemeriksaanProfile; forms: PemeriksaanFormSummary[]; entries: TemplateEntry[] };
 

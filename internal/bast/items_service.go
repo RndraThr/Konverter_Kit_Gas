@@ -12,6 +12,7 @@ type itemResolverRepository interface {
 	GetScheduleTemplateEntries(context.Context, string) ([]TemplateEntry, error)
 	GetScheduleItemSelection(context.Context, string) (map[string]string, error)
 	GetZonePONumbers(context.Context, string) (map[string]string, error)
+	GetSchedulePONumbers(context.Context, string) (map[string]string, error)
 }
 
 // resolveScheduleItems memilih merk tiap barang template jadwal untuk
@@ -33,6 +34,14 @@ func resolveScheduleItems(ctx context.Context, repository itemResolverRepository
 	poNumbers, err := repository.GetZonePONumbers(ctx, zoneID)
 	if err != nil {
 		return nil, nil, "", err
+	}
+	// A kabupaten's own number (e.g. its LPG loading order) wins over the zone's.
+	own, err := repository.GetSchedulePONumbers(ctx, ctxData.ScheduleID)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	for key, number := range own {
+		poNumbers[key] = number
 	}
 	machineBrand := dominantMachineBrand(closingRows)
 	return entries, resolveEntries(entries, selection, machineBrand, poNumbers), machineBrand, nil

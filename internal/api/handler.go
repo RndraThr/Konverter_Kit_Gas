@@ -226,6 +226,7 @@ type PemeriksaanService interface {
 	Profile(context.Context, string) (bast.PemeriksaanProfile, error)
 	SaveProfile(context.Context, auth.Principal, bast.PemeriksaanProfile, auth.ClientMeta) (bast.PemeriksaanProfile, error)
 	Summary(context.Context, string, auth.RegencyScope) (bast.PemeriksaanSummary, error)
+	SaveKabupatenPO(context.Context, auth.Principal, string, bast.KabupatenPO, auth.RegencyScope, auth.ClientMeta) error
 	Preview(context.Context, string, string, []string, auth.RegencyScope) (bast.AggregatePreview, error)
 	Finalize(context.Context, auth.Principal, string, string, []string, auth.RegencyScope, auth.ClientMeta) ([]bast.AggregateDocument, error)
 	Documents(context.Context, string, string, auth.RegencyScope) ([]bast.AggregateDocument, error)
