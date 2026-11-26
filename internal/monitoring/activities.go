@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"konkit/internal/activities"
 	"konkit/internal/audit"
 	"konkit/internal/auth"
 	"konkit/internal/notifications"
@@ -15,9 +16,9 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Activity photos (rakor, sosialisasi, unloading, ...) are checked per photo
-// like the distribution photos, grouped per kabupaten and activity type.
-// Supporting documents are not part of it, and photos copied from the
+// Activity photos (rakor, sosialisasi, unloading, ...) and supporting
+// documents (DO, LO, SPP, surat kuasa, ...) are checked per file like the
+// distribution photos, grouped per kabupaten and type. Photos copied from the
 // distribution (source "distribution") were checked there already.
 
 var (
@@ -35,6 +36,8 @@ type ActivityCell struct {
 	Rejected     int        `json:"rejected"`
 	Pending      int        `json:"pending"`
 	LastUploadAt *time.Time `json:"last_upload_at"`
+	// Missing: supporting documents of the kabupaten's list without a file.
+	Missing int `json:"missing"`
 }
 
 // ActivityPhoto is one photo or video of an album, with its check.
@@ -47,6 +50,15 @@ type ActivityPhoto struct {
 	UploadedAt  time.Time    `json:"uploaded_at"`
 	UploadedBy  string       `json:"uploaded_by"`
 	Review      *MediaReview `json:"review"`
+	// Slot: for a supporting document, the name in the kabupaten's list it is for.
+	Slot string `json:"slot,omitempty"`
+}
+
+// DocumentSlot is one supporting document of a kabupaten's list and how many
+// files it has.
+type DocumentSlot struct {
+	Name  string `json:"name"`
+	Files int    `json:"files"`
 }
 
 // ActivityAlbum is every current photo of one activity type of a kabupaten.
@@ -56,6 +68,8 @@ type ActivityAlbum struct {
 	RegencyName  string          `json:"regency_name"`
 	ActivityType string          `json:"activity_type"`
 	Photos       []ActivityPhoto `json:"photos"`
+	// Slots: for supporting documents, the kabupaten's list with its files.
+	Slots []DocumentSlot `json:"slots,omitempty"`
 }
 
 // ActivityRef names an album: the program and kabupaten of a schedule and the activity type.
@@ -86,7 +100,37 @@ type ActivityRejection struct {
 
 // activityReviewable is the condition on activity_media m of the photos the
 // central team checks.
-const activityReviewable = `m.status = 'active' AND m.activity_type <> 'dokumen_pendukung'`
+const activityReviewable = `m.status = 'active'`
+
+const supportingDocuments = "dokumen_pendukung"
+
+// documentSegment is the slot-name segment of a supporting document's
+// display name (CODE-SEGMENT-YYYYMMDD-HHMMSS).
+func documentSegment(displayName string) string {
+	_, rest, ok := strings.Cut(displayName, "-")
+	if !ok || len(rest) < 17 {
+		return ""
+	}
+	return rest[:len(rest)-16]
+}
+
+// regencySlots lists the active supporting document names of regencies, by regency id.
+func (s *Service) regencySlots(ctx context.Context, regencyIDs []string) (map[string][]string, error) {
+	rows, err := s.pool.Query(ctx, `SELECT regency_id::text, name FROM supporting_document_slots WHERE is_active AND regency_id::text = ANY($1) ORDER BY sort_order, name`, regencyIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list supporting document slots: %w", err)
+	}
+	defer rows.Close()
+	out := map[string][]string{}
+	for rows.Next() {
+		var regency, name string
+		if err := rows.Scan(&regency, &name); err != nil {
+			return nil, fmt.Errorf("scan supporting document slot: %w", err)
+		}
+		out[regency] = append(out[regency], name)
+	}
+	return out, rows.Err()
+}
 
 // ActivityOverview counts, per kabupaten and activity type of the program,
 // the photos and how many are approved, rejected or not checked yet.
@@ -113,6 +157,78 @@ func (s *Service) ActivityOverview(ctx context.Context, programID string, scope 
 			return nil, fmt.Errorf("scan activity photos: %w", err)
 		}
 		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	return s.withMissingDocuments(ctx, programID, out, scope)
+}
+
+// withMissingDocuments counts, per kabupaten, the supporting documents of its
+// list without a file, adding a cell for a kabupaten that has none yet.
+func (s *Service) withMissingDocuments(ctx context.Context, programID string, cells []ActivityCell, scope auth.RegencyScope) ([]ActivityCell, error) {
+	type schedule struct{ id, regency string }
+	rows, err := s.pool.Query(ctx, `SELECT id::text, regency_id::text FROM program_schedules WHERE program_id::text = $1 AND status <> 'cancelled' AND ($2 OR regency_id::text = ANY($3))`,
+		strings.TrimSpace(programID), scope.Unrestricted, scope.RegencyIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list schedules: %w", err)
+	}
+	var schedules []schedule
+	var regencies []string
+	for rows.Next() {
+		var sc schedule
+		if err := rows.Scan(&sc.id, &sc.regency); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		schedules = append(schedules, sc)
+		regencies = append(regencies, sc.regency)
+	}
+	rows.Close()
+	slots, err := s.regencySlots(ctx, regencies)
+	if err != nil {
+		return nil, err
+	}
+	names, err := s.documentNames(ctx, programID, regencies)
+	if err != nil {
+		return nil, err
+	}
+	for _, sc := range schedules {
+		missing := 0
+		for _, slot := range slots[sc.regency] {
+			if names[sc.regency][activities.SanitizeSlotName(slot)] == 0 {
+				missing++
+			}
+		}
+		i := slices.IndexFunc(cells, func(c ActivityCell) bool { return c.ScheduleID == sc.id && c.ActivityType == supportingDocuments })
+		if i >= 0 {
+			cells[i].Missing = missing
+		} else if missing > 0 {
+			cells = append(cells, ActivityCell{ScheduleID: sc.id, RegencyID: sc.regency, ActivityType: supportingDocuments, Missing: missing})
+		}
+	}
+	return cells, nil
+}
+
+// documentNames counts the active supporting documents per regency and slot segment.
+func (s *Service) documentNames(ctx context.Context, programID string, regencies []string) (map[string]map[string]int, error) {
+	rows, err := s.pool.Query(ctx, `SELECT regency_id::text, display_name FROM activity_media
+		WHERE activity_type = 'dokumen_pendukung' AND status = 'active' AND program_id::text = $1 AND regency_id::text = ANY($2)`, strings.TrimSpace(programID), regencies)
+	if err != nil {
+		return nil, fmt.Errorf("list supporting documents: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]map[string]int{}
+	for rows.Next() {
+		var regency, name string
+		if err := rows.Scan(&regency, &name); err != nil {
+			return nil, err
+		}
+		if out[regency] == nil {
+			out[regency] = map[string]int{}
+		}
+		out[regency][documentSegment(name)]++
 	}
 	return out, rows.Err()
 }
@@ -165,12 +281,50 @@ func (s *Service) ActivityAlbum(ctx context.Context, ref ActivityRef, scope auth
 			return out, fmt.Errorf("scan activity photo: %w", err)
 		}
 		p.ContentURL = "/api/v1/activities/media/" + p.ID + "/content"
+		if ref.ActivityType == supportingDocuments {
+			p.Slot = documentSegment(p.DisplayName)
+		}
 		if status != nil && reviewedAt != nil {
 			p.Review = &MediaReview{Status: *status, Reason: reason, ReviewedBy: reviewer, ReviewedAt: *reviewedAt}
 		}
 		out.Photos = append(out.Photos, p)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return out, err
+	}
+	rows.Close()
+	if ref.ActivityType == supportingDocuments {
+		if err := s.matchDocumentSlots(ctx, m.regencyID, &out); err != nil {
+			return out, err
+		}
+	}
+	return out, nil
+}
+
+// matchDocumentSlots lists the kabupaten's supporting documents with their
+// files and names each file after its document ("" when typed by name).
+func (s *Service) matchDocumentSlots(ctx context.Context, regencyID string, album *ActivityAlbum) error {
+	slots, err := s.regencySlots(ctx, []string{regencyID})
+	if err != nil {
+		return err
+	}
+	named := make([]string, len(album.Photos))
+	album.Slots = []DocumentSlot{}
+	for _, name := range slots[regencyID] {
+		segment := activities.SanitizeSlotName(name)
+		files := 0
+		for i, p := range album.Photos {
+			if p.Slot == segment {
+				files++
+				named[i] = name
+			}
+		}
+		album.Slots = append(album.Slots, DocumentSlot{Name: name, Files: files})
+	}
+	for i := range album.Photos {
+		album.Photos[i].Slot = named[i]
+	}
+	return nil
 }
 
 // albumMedia maps the album's photos that can be checked (not copied from the
@@ -313,7 +467,7 @@ func (s *Service) RequestActivityRevision(ctx context.Context, actor auth.Princi
 			Category: notifications.CategoryDistributionRevision,
 			Title:    "Revisi foto " + label,
 			Body:     body,
-			Link:     fmt.Sprintf("/kegiatan/%s?schedule=%s&revisi=1", input.ActivityType, m.scheduleID),
+			Link:     activityLink(input.ActivityType, m.scheduleID),
 		})
 	})
 	if err != nil {
@@ -351,6 +505,14 @@ func (s *Service) ActivityRejections(ctx context.Context, scheduleID string, sco
 	return out, rows.Err()
 }
 
+// activityLink opens the album in the app: supporting documents have their own page.
+func activityLink(activityType, scheduleID string) string {
+	if activityType == supportingDocuments {
+		return "/dokumen-pendukung?schedule=" + scheduleID + "&revisi=1"
+	}
+	return fmt.Sprintf("/kegiatan/%s?schedule=%s&revisi=1", activityType, scheduleID)
+}
+
 // activityLabels are the activity types the central team checks, as the app names them.
 var activityLabels = map[string]string{
 	"kunjungan_dinas": "Kunjungan Kantor Dinas", "gudang_titik_serah": "Gudang Titik Serah",
@@ -360,6 +522,7 @@ var activityLabels = map[string]string{
 	"ceremony_sosialisasi": "Ceremony & Sosialisasi", "training_10": "Training 10%", "pelatihan_teknis": "Pelatihan Teknis",
 	"kegiatan_distribusi": "Kegiatan Pendistribusian", "training_100": "Training 100%",
 	"closing_kabupaten": "Closing Kabupaten", "kegiatan": "Kegiatan Lainnya",
+	"dokumen_pendukung": "Dokumen Pendukung",
 }
 
 func isActivityType(code string) bool { _, ok := activityLabels[code]; return ok }

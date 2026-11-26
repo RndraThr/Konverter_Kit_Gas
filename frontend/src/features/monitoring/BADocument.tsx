@@ -28,6 +28,7 @@ export function BADocument({ item }: { item: BAItem }) {
   if (pdf.isPending) return <p className="m-auto text-sm text-neutral-400">Membuka dokumen…</p>;
   if (pdf.isError) return <p className="m-auto text-sm text-red-400">Dokumen belum dapat dibuka.</p>;
   return <Suspense fallback={<p className="m-auto text-sm text-neutral-400">Menyiapkan penampil…</p>}>
-    <PdfCanvasPreview blob={pdf.data} label={label} className="grid h-full w-full content-start gap-3 overflow-y-auto p-3" />
+    <PdfCanvasPreview blob={pdf.data} label={label} fit="contain" wrapperClassName="flex size-full min-h-0 flex-col"
+      className="grid min-h-0 w-full flex-1 content-start gap-3 overflow-y-auto p-3" />
   </Suspense>;
 }

@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { albumKey, approveActivityPhotos, monitoringKey, requestActivityRevision, useActivityAlbum } from './api';
 import { activityLabel, type ActivityAlbum, type ActivityPhoto } from './types';
 import { ZoomableImage, type ZoomHandle } from './ZoomableImage';
+import { BADocument } from './BADocument';
 
 const formatTime = (value?: string | null) => value ? new Date(value).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
 /** Photos copied from the distribution were checked there already. */
@@ -92,6 +93,8 @@ export function ActivityReviewDialog({ scheduleId, activity, onClose }: { schedu
     return next;
   });
   const video = current?.mime_type.startsWith('video/');
+  const pdf = current?.mime_type === 'application/pdf';
+  const missingSlots = (album.data?.slots ?? []).filter((slot) => slot.files === 0);
 
   return <Dialog open={open} onOpenChange={(value) => { if (!value) onClose(); }}>
     <DialogContent className="flex h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none p-0 ring-0 sm:max-w-none">
@@ -101,11 +104,16 @@ export function ActivityReviewDialog({ scheduleId, activity, onClose }: { schedu
       </div>
       {album.isPending ? <p className="m-auto text-sm text-muted-foreground">Memuat foto…</p>
         : album.isError || !album.data ? <p className="m-auto text-sm text-destructive">{album.error?.message ?? 'Data tidak ditemukan'}</p>
-        : photos.length === 0 ? <p className="m-auto text-sm text-muted-foreground">Belum ada foto untuk kegiatan ini.</p>
+        : photos.length === 0 ? <div className="m-auto max-w-md text-center text-sm text-muted-foreground">
+          <p>Belum ada file untuk {activityLabel(activity)}.</p>
+          {missingSlots.length ? <ul className="mt-2 text-xs text-destructive">{missingSlots.map((slot) => <li key={slot.name}>{slot.name}</li>)}</ul> : null}
+        </div>
         : <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="flex min-h-0 flex-col bg-neutral-950">
             <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden">
-              {current ? (video
+              {current ? (pdf
+                ? <div className="size-full bg-neutral-100"><BADocument key={current.id} item={{ key: current.id, type: activity, label: current.slot || current.display_name, date: '', source: 'archive', content_url: current.content_url, mime_type: current.mime_type, uploaded_by: current.uploaded_by, uploaded_at: current.uploaded_at, review: null }} /></div>
+                : video
                 ? <video key={current.id} src={current.content_url} controls className="max-h-full max-w-full" />
                 : <ZoomableImage ref={zoom} src={current.content_url} alt={current.display_name} />) : null}
               {current ? <div className="pointer-events-none absolute top-3 left-3 flex items-center gap-2 rounded-md bg-black/60 px-2.5 py-1 text-xs text-white">
@@ -124,7 +132,8 @@ export function ActivityReviewDialog({ scheduleId, activity, onClose }: { schedu
                 const marked = flags[photo.id] !== undefined;
                 return <button key={photo.id} type="button" onClick={() => setIndex(i)} aria-label={`Foto ${i + 1}`}
                   className={cn('relative size-16 shrink-0 overflow-hidden rounded-md border-2 bg-neutral-800', i === index ? 'border-white' : 'border-transparent opacity-70 hover:opacity-100', marked && 'border-destructive opacity-100')}>
-                  {photo.mime_type.startsWith('video/') ? <video src={photo.content_url} preload="metadata" className="size-full object-cover" /> : <img src={photo.content_url} alt="" loading="lazy" className="size-full object-cover" />}
+                  {photo.mime_type === 'application/pdf' ? <span className="flex size-full items-center justify-center bg-white text-[11px] font-bold text-red-700">PDF</span>
+                    : photo.mime_type.startsWith('video/') ? <video src={photo.content_url} preload="metadata" className="size-full object-cover" /> : <img src={photo.content_url} alt="" loading="lazy" className="size-full object-cover" />}
                   {marked || photo.review?.status === 'rejected' ? <Flag className="absolute top-1 right-1 size-3.5 fill-destructive text-destructive" />
                     : photo.review?.status === 'approved' || !checkable(photo) ? <CircleCheck className="absolute top-1 right-1 size-4 fill-emerald-500 text-white" />
                     : <span className="absolute top-1 right-1 size-2.5 rounded-full bg-amber-400 ring-2 ring-neutral-900" title="Belum dicek" />}
@@ -135,7 +144,8 @@ export function ActivityReviewDialog({ scheduleId, activity, onClose }: { schedu
           <aside className="flex min-h-0 flex-col border-l">
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
               {current ? <section className="rounded-lg border p-3">
-                <p className="truncate text-sm font-medium" title={current.display_name}>{current.display_name}</p>
+                <p className="truncate text-sm font-medium" title={current.display_name}>{current.slot || current.display_name}</p>
+                {current.slot ? <p className="truncate text-xs text-muted-foreground">{current.display_name}</p> : null}
                 <p className="text-xs text-muted-foreground">Diunggah {formatTime(current.uploaded_at)}{current.uploaded_by ? ` · ${current.uploaded_by}` : ''}</p>
                 {!checkable(current) ? <p className="mt-2 rounded-md bg-sky-50 px-2 py-1 text-xs text-sky-900 dark:bg-sky-950/40 dark:text-sky-200">Disalin dari foto distribusi, dicek di antrean distribusi.</p> : null}
                 {current.review ? <p className={cn('mt-2 rounded-md px-2 py-1 text-xs', current.review.status === 'approved' ? 'bg-emerald-50 text-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200' : 'bg-destructive/10 text-destructive')}>
@@ -151,6 +161,12 @@ export function ActivityReviewDialog({ scheduleId, activity, onClose }: { schedu
                   {flags[current.id] !== undefined ? <Input autoFocus value={flags[current.id]} maxLength={300} placeholder="Alasan, mis. bukan foto rakor" aria-label="Alasan revisi foto"
                     onChange={(e) => setFlags((value) => ({ ...value, [current.id]: e.target.value }))} /> : null}
                 </div> : null}
+              </section> : null}
+              {album.data?.slots ? <section>
+                <h3 className="mb-1 text-xs font-semibold text-muted-foreground uppercase">Daftar dokumen ({album.data.slots.length - missingSlots.length}/{album.data.slots.length})</h3>
+                <ul className="space-y-0.5 text-xs">{album.data.slots.map((slot) => <li key={slot.name} className={cn('flex justify-between gap-2', slot.files === 0 && 'text-destructive')}>
+                  <span className="truncate">{slot.name}</span><span className="shrink-0">{slot.files ? `${slot.files} file` : 'belum ada'}</span>
+                </li>)}</ul>
               </section> : null}
               {flagged.length > 0 ? <section>
                 <h3 className="mb-1 text-xs font-semibold text-destructive uppercase">Foto ditandai ({flagged.length})</h3>

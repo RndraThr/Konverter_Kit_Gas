@@ -24,9 +24,12 @@ const (
 	// CategoryDistributionRevision: the central monitoring sent a recipient's
 	// documentation back to the field.
 	CategoryDistributionRevision = "distribution_revision"
+	// CategoryDistributionProgress: hourly, milestone and daily progress of
+	// the kabupaten a phone watches (Mode Pusat).
+	CategoryDistributionProgress = "distribution_progress"
 )
 
-var Categories = []string{CategoryReview, CategoryResult, CategoryPayment, CategoryReminder, CategoryDistributionRevision}
+var Categories = []string{CategoryReview, CategoryResult, CategoryPayment, CategoryReminder, CategoryDistributionRevision, CategoryDistributionProgress}
 
 const (
 	maxPushAttempts = 5
@@ -51,12 +54,14 @@ type Notification struct {
 	CreatedAt time.Time  `json:"created_at"`
 }
 
-// Message is one notification for one or more users.
+// Message is one notification for one or more users. With RegencyID the
+// push goes only to the phones that watch that kabupaten (or chose none).
 type Message struct {
-	Category string
-	Title    string
-	Body     string
-	Link     string
+	Category  string
+	Title     string
+	Body      string
+	Link      string
+	RegencyID string
 }
 
 // Push is what a Sender delivers to one device.
@@ -109,8 +114,8 @@ func Enqueue(ctx context.Context, tx pgx.Tx, userIDs []string, message Message) 
 			continue
 		}
 		seen[id] = true
-		if _, err := tx.Exec(ctx, `INSERT INTO notifications (user_id, category, title, body, link) VALUES ($1::uuid, $2, $3, $4, $5)`,
-			id, message.Category, message.Title, message.Body, message.Link); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO notifications (user_id, category, title, body, link, regency_id) VALUES ($1::uuid, $2, $3, $4, $5, NULLIF($6, '')::uuid)`,
+			id, message.Category, message.Title, message.Body, message.Link, message.RegencyID); err != nil {
 			return fmt.Errorf("add notification: %w", err)
 		}
 	}
@@ -229,6 +234,24 @@ func (s *Service) RegisterDevice(ctx context.Context, userID, token, platform st
 	return nil
 }
 
+// WatchRegencies sets the kabupaten the user's phone watches; nil clears the
+// choice. Only notifications tied to one of them (or to none) reach it.
+func (s *Service) WatchRegencies(ctx context.Context, userID, token string, regencyIDs []string) error {
+	var value any
+	if regencyIDs != nil {
+		value = regencyIDs
+	}
+	tag, err := s.pool.Exec(ctx, `UPDATE device_tokens SET regency_ids = $3::uuid[], updated_at = now() WHERE token = $1 AND user_id = $2::uuid`,
+		strings.TrimSpace(token), userID, value)
+	if err != nil {
+		return fmt.Errorf("save watched kabupaten: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // RemoveDevice stops pushes to the phone at sign-out.
 func (s *Service) RemoveDevice(ctx context.Context, userID, token string) error {
 	if _, err := s.pool.Exec(ctx, `DELETE FROM device_tokens WHERE token = $1 AND user_id = $2::uuid`, strings.TrimSpace(token), userID); err != nil {
@@ -300,8 +323,8 @@ func (s *Service) RunPush(ctx context.Context) {
 }
 
 type pendingPush struct {
-	id, userID, category, title, body, link string
-	attempts                                int
+	id, userID, category, title, body, link, regencyID string
+	attempts                                           int
 }
 
 // pushBatch sends one batch; more is true when the batch was full.
@@ -310,14 +333,14 @@ func (s *Service) pushBatch(ctx context.Context) (bool, error) {
 		_, err := s.pool.Exec(ctx, `UPDATE notifications SET push_state = 'skipped' WHERE push_state = 'pending'`)
 		return false, err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT id::text, user_id::text, category, title, body, link, push_attempts
+	rows, err := s.pool.Query(ctx, `SELECT id::text, user_id::text, category, title, body, link, COALESCE(regency_id::text, ''), push_attempts
 		FROM notifications WHERE push_state = 'pending' AND next_push_at <= now() ORDER BY created_at LIMIT $1`, pushBatch)
 	if err != nil {
 		return false, fmt.Errorf("list pending pushes: %w", err)
 	}
 	batch, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (pendingPush, error) {
 		var p pendingPush
-		return p, row.Scan(&p.id, &p.userID, &p.category, &p.title, &p.body, &p.link, &p.attempts)
+		return p, row.Scan(&p.id, &p.userID, &p.category, &p.title, &p.body, &p.link, &p.regencyID, &p.attempts)
 	})
 	if err != nil {
 		return false, fmt.Errorf("list pending pushes: %w", err)
@@ -338,7 +361,7 @@ func (s *Service) deliver(ctx context.Context, item pendingPush) error {
 	if enabled, known := preferences[item.category]; known && !enabled {
 		return s.finish(ctx, item.id, "skipped")
 	}
-	tokens, err := s.tokens(ctx, item.userID)
+	tokens, err := s.watchingTokens(ctx, item.userID, item.regencyID, item.category == CategoryDistributionProgress)
 	if err != nil {
 		return err
 	}
@@ -389,6 +412,24 @@ func (s *Service) finish(ctx context.Context, id, state string) error {
 		return fmt.Errorf("finish push: %w", err)
 	}
 	return nil
+}
+
+// watchingTokens: the user's phones that watch regencyID or, unless strict,
+// chose no kabupaten; without regencyID, every phone.
+func (s *Service) watchingTokens(ctx context.Context, userID, regencyID string, strict bool) ([]string, error) {
+	if regencyID == "" {
+		return s.tokens(ctx, userID)
+	}
+	rows, err := s.pool.Query(ctx, `SELECT token FROM device_tokens WHERE user_id = $1::uuid
+		AND ((regency_ids IS NULL AND NOT $3) OR $2::uuid = ANY(regency_ids))`, userID, regencyID, strict)
+	if err != nil {
+		return nil, fmt.Errorf("list devices: %w", err)
+	}
+	result, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, fmt.Errorf("list devices: %w", err)
+	}
+	return result, nil
 }
 
 func (s *Service) tokens(ctx context.Context, userID string) ([]string, error) {

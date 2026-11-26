@@ -273,7 +273,7 @@ export function CalendarPanel({ overview, canManage }: { overview: Overview; can
     return out;
   }, [dates]);
   const weekend = (day: string) => [0, 6].includes(new Date(`${day}T00:00:00Z`).getUTCDay());
-  const fixed = canManage ? 5 : 4;
+  const fixed = 5;
   const cursor = !canManage ? '' : tool === 'geser' ? 'cursor-cell' : tool === 'rakornas' ? '' : 'cursor-crosshair';
   const selectedDays = selection ? daysBetween(selection.from, selection.to) + 1 : 0;
 
@@ -361,7 +361,7 @@ export function CalendarPanel({ overview, canManage }: { overview: Overview; can
                 <th rowSpan={2} className={cn(cell, 'px-2 text-left text-sm')}>Provinsi</th>
                 <th rowSpan={2} className={cn(cell, 'sticky left-9 z-20 min-w-40 bg-[#C6E0B4] px-2 text-left text-sm')}>Kab/Kota</th>
                 <th rowSpan={2} className={cn(cell, 'px-2 text-right text-sm')}>Target</th>
-                {canManage ? <th rowSpan={2} className={cn(cell, 'px-2 text-left text-sm')}>Pemeriksa</th> : null}
+                <th rowSpan={2} className={cn(cell, 'px-2 text-left text-sm')}>Lead</th>
                 {months.map((m) => <th key={m.label} colSpan={m.count} className={cn(cell, 'px-2 py-0.5 text-center text-sm font-bold capitalize')}>{m.label}</th>)}
               </tr>
               <tr className="bg-[#E2EFDA]">
@@ -383,12 +383,13 @@ export function CalendarPanel({ overview, canManage }: { overview: Overview; can
                   <td className={cn(cell, 'px-2 whitespace-nowrap')}>{row.province_name}</td>
                   <td className={cn(cell, 'sticky left-9 z-5 px-2 whitespace-nowrap font-medium', tone.rows)}>{row.regency_name}{changed ? <span className="ml-1 text-blue-600" title="Belum disimpan">●</span> : null}</td>
                   <td className={cn(cell, 'px-2 text-right tabular-nums')}>{row.quota.toLocaleString('id-ID')}</td>
-                  {canManage ? <td className={cn(cell, 'px-1')}>
-                    <button type="button" onClick={() => setAssigning(row)} className="flex max-w-44 items-center gap-1 rounded px-1 py-0.5 text-left hover:bg-white/70">
+                  {/* Field leaders by name, so who runs each kabupaten is seen at a glance. */}
+                  <td className={cn(cell, 'px-1 whitespace-nowrap')}>
+                    {canManage ? <button type="button" onClick={() => setAssigning(row)} title="Atur lead dan pemeriksa" className="flex items-center gap-1 rounded px-1 py-0.5 text-left hover:bg-white/70">
                       <UserRoundCog className="size-3.5 shrink-0 text-neutral-500" />
-                      <span className={cn('truncate', row.reviewers.length === 0 && 'text-neutral-500 italic')}>{row.reviewers.length ? row.reviewers.map((r) => r.name).join(', ') : 'Atur'}</span>
-                    </button>
-                  </td> : null}
+                      <span className={cn(row.leaders.length === 0 && 'text-neutral-500 italic')}>{row.leaders.length ? row.leaders.map((r) => r.name).join(', ') : 'Atur'}</span>
+                    </button> : <span className="px-1">{row.leaders.map((r) => r.name).join(', ') || '-'}</span>}
+                  </td>
                   {dates.map((day) => {
                     const phase = days[day];
                     const style = phases.find((p) => p.phase === phase);

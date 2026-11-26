@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlarmClock, Banknote, Bell, CheckCheck, ClipboardList, ImageOff, ShieldCheck } from 'lucide-react';
+import { AlarmClock, Banknote, Bell, CheckCheck, ClipboardList, ImageOff, ShieldCheck, TrendingUp } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,7 @@ const categoryStyles: Record<string, { icon: typeof Bell; tone: string }> = {
   finance_payment: { icon: Banknote, tone: 'bg-sky-100 text-sky-900 dark:bg-sky-950/40 dark:text-sky-200' },
   finance_reminder: { icon: AlarmClock, tone: 'bg-destructive/10 text-destructive' },
   distribution_revision: { icon: ImageOff, tone: 'bg-orange-100 text-orange-900 dark:bg-orange-950/40 dark:text-orange-200' },
+  distribution_progress: { icon: TrendingUp, tone: 'bg-cyan-100 text-cyan-900 dark:bg-cyan-950/40 dark:text-cyan-200' },
 };
 /** Sinyal realtime: notifikasi baru langsung memuat ulang kotak dan data keuangan. */
 function useNotificationSignals() {
@@ -36,6 +37,11 @@ function useNotificationSignals() {
  * it opens the slot in the monitoring (central team) or the Pendistribusian page.
  */
 export function webLink(link: string, canMonitor: boolean): string {
+  const docs = /^\/dokumen-pendukung\?(.*)$/.exec(link);
+  if (docs) {
+    const schedule = new URLSearchParams(docs[1]).get('schedule') ?? '';
+    return canMonitor ? `/monitoring-distribusi?tab=kegiatan&schedule=${schedule}&activity=dokumen_pendukung` : '/dokumen-pendukung';
+  }
   const ba = /^\/ba\/([a-z0-9-]+)\/[0-9-]+\?(.*)$/.exec(link);
   if (ba) {
     const schedule = new URLSearchParams(ba[2]).get('schedule') ?? '';
