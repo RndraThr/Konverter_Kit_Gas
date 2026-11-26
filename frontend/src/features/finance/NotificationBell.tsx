@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlarmClock, Banknote, Bell, CheckCheck, ClipboardList, ImageOff, ShieldCheck } from 'lucide-react';
+import { AlarmClock, Banknote, Bell, CheckCheck, ClipboardList, ImageOff, ShieldCheck, TrendingUp } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,7 @@ const categoryStyles: Record<string, { icon: typeof Bell; tone: string }> = {
   finance_payment: { icon: Banknote, tone: 'bg-sky-100 text-sky-900 dark:bg-sky-950/40 dark:text-sky-200' },
   finance_reminder: { icon: AlarmClock, tone: 'bg-destructive/10 text-destructive' },
   distribution_revision: { icon: ImageOff, tone: 'bg-orange-100 text-orange-900 dark:bg-orange-950/40 dark:text-orange-200' },
+  distribution_progress: { icon: TrendingUp, tone: 'bg-cyan-100 text-cyan-900 dark:bg-cyan-950/40 dark:text-cyan-200' },
 };
 /** Sinyal realtime: notifikasi baru langsung memuat ulang kotak dan data keuangan. */
 function useNotificationSignals() {

@@ -1,4 +1,7 @@
-import { CircleCheck, Copy } from 'lucide-react';
+import { BellRing, CircleCheck, Copy } from 'lucide-react';
+import { useMutation } from '@tanstack/react-query';
+import { apiRequest } from '@/lib/api';
+import { useCan } from '@/lib/permissions';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { DataState } from '@/components/DataState';
@@ -29,6 +32,14 @@ export function DuplicatesPanel({ overview, duplicates, userId, onOpen }: {
 }) {
   const mine = new Set(overview.rows.filter((row) => row.reviewers.some((r) => r.id === userId)).map((row) => row.schedule_id));
   const [onlyMine, setOnlyMine] = useState(false);
+  const canReview = useCan('monitoring.review');
+  const notify = useMutation({
+    mutationFn: (d: SerialDuplicate) => apiRequest<{ data: { notified: number } }>('/api/v1/monitoring/serial-duplicates/notify', {
+      method: 'POST', body: JSON.stringify({ program_id: overview.program_id, field: d.field, serial: d.serial }),
+    }),
+    onSuccess: (r, d) => toast.success(`${r.data.notified} orang dikabari tentang serial ${d.serial}.`),
+    onError: (e) => toast.error(e.message),
+  });
   if (duplicates.isPending) return <DataState kind="loading" title="Memeriksa serial" description="Mencari serial yang tercatat lebih dari sekali." />;
   if (duplicates.isError) return <DataState kind="error" title="Daftar serial dobel belum dapat dimuat" description={duplicates.error.message} action={{ label: 'Muat ulang', onClick: () => void duplicates.refetch() }} />;
   const all = duplicates.data;
@@ -58,7 +69,11 @@ export function DuplicatesPanel({ overview, duplicates, userId, onOpen }: {
         </tr></thead>
         <tbody>
           {list.map((d) => d.entries.map((e, i) => <tr key={`${d.field}|${d.serial}|${e.schedule_id}|${e.slot_number}`} className={i === d.entries.length - 1 ? 'border-b last:border-0' : ''}>
-            {i === 0 ? <td rowSpan={d.entries.length} className="px-3 py-2 align-top font-mono text-xs font-semibold">{d.serial}</td> : null}
+            {i === 0 ? <td rowSpan={d.entries.length} className="px-3 py-2 align-top">
+              <p className="font-mono text-xs font-semibold">{d.serial}</p>
+              {canReview ? <Button variant="outline" size="sm" className="mt-1.5 h-7 text-xs" disabled={notify.isPending} onClick={() => notify.mutate(d)}
+                title="Kirim notifikasi ke penginput dan lead kabupaten terkait"><BellRing className="size-3.5" />Kabari PIC</Button> : null}
+            </td> : null}
             {i === 0 ? <td rowSpan={d.entries.length} className="px-3 py-2 align-top">{serialFieldLabels[d.field]}</td> : null}
             <td className="px-3 py-1.5">{e.regency_name}</td>
             <td className="px-3 py-1.5"><button type="button" className="font-medium text-primary hover:underline" onClick={() => onOpen(e.schedule_id, e.slot_number)} aria-label={`Nomor bagi ${e.slot_number} ${e.regency_name}`}>#{e.slot_number}</button></td>

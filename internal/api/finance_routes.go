@@ -62,6 +62,7 @@ type NotificationService interface {
 	SetPreferences(context.Context, string, map[string]bool) (map[string]bool, error)
 	RegisterDevice(context.Context, string, string, string) error
 	RemoveDevice(context.Context, string, string) error
+	WatchRegencies(ctx context.Context, userID, token string, regencyIDs []string) error
 	Status(context.Context, string) (notifications.PushStatus, error)
 	TestPush(context.Context, string) (notifications.TestResult, error)
 }
@@ -612,6 +613,23 @@ func (h *Handler) handleNotifications(w http.ResponseWriter, r *http.Request, rc
 			err = service.RemoveDevice(r.Context(), userID, input.Token)
 		}
 		if err != nil {
+			writeNotificationError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	case path == "devices/regencies" && r.Method == http.MethodPut:
+		// Kabupaten this phone watches (Mode Pusat); regency_ids null clears it.
+		if !h.authorize(w, r, rc.principal, "monitoring.view") {
+			return
+		}
+		var input struct {
+			Token      string   `json:"token"`
+			RegencyIDs []string `json:"regency_ids"`
+		}
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		if err := service.WatchRegencies(r.Context(), userID, input.Token, input.RegencyIDs); err != nil {
 			writeNotificationError(w, err)
 			return
 		}
