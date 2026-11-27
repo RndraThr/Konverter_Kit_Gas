@@ -123,20 +123,20 @@ func (r *Repository) SaveMedia(ctx context.Context, actor auth.Principal, input 
 func (r *Repository) GetMedia(ctx context.Context, mediaID string, scope auth.RegencyScope) (MediaFile, error) {
 	var result MediaFile
 	err := r.pool.QueryRow(ctx, `
-		SELECT m.id::text,m.documentation_slot_id::text,m.storage_key::text,m.original_filename,m.mime_type,m.byte_size,m.source,m.captured_at,m.latitude::float8,m.longitude::float8,m.status,m.storage_state,m.storage_last_error,m.uploaded_at
+		SELECT m.id::text,m.documentation_slot_id::text,m.storage_key::text,m.original_filename,m.mime_type,m.byte_size,m.source,m.captured_at,m.latitude::float8,m.longitude::float8,m.status,m.storage_state,m.storage_last_error,m.uploaded_at,m.content_version
 		FROM media_files m
 		JOIN documentation_slots s ON s.id=m.documentation_slot_id
 		JOIN distribution_slots dsl ON dsl.id=s.distribution_slot_id
 		JOIN program_schedules ps ON ps.id=dsl.schedule_id
 		WHERE m.id=$1 AND m.status='accepted' AND ($2 OR ps.regency_id::text = ANY($3))
-	`, mediaID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.SlotID, &result.StorageKey, &result.OriginalFilename, &result.MimeType, &result.ByteSize, &result.Source, &result.CapturedAt, &result.Latitude, &result.Longitude, &result.Status, &result.StorageState, &result.StorageLastError, &result.UploadedAt)
+	`, mediaID, scope.Unrestricted, scope.RegencyIDs).Scan(&result.ID, &result.SlotID, &result.StorageKey, &result.OriginalFilename, &result.MimeType, &result.ByteSize, &result.Source, &result.CapturedAt, &result.Latitude, &result.Longitude, &result.Status, &result.StorageState, &result.StorageLastError, &result.UploadedAt, &result.ContentVersion)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return MediaFile{}, ErrMediaNotFound
 	}
 	if err != nil {
 		return MediaFile{}, fmt.Errorf("get documentation media: %w", err)
 	}
-	result.ContentURL = "/api/v1/distribution/media/" + result.ID + "/content"
+	result.ContentURL = MediaContentURL(result.ID, result.ContentVersion)
 	return result, nil
 }
 
@@ -214,7 +214,7 @@ func (r *Repository) RestoreMedia(ctx context.Context, mediaID string) error {
 }
 
 func (r *Repository) listMedia(ctx context.Context, slotID string) ([]MediaFile, error) {
-	rows, err := r.pool.Query(ctx, `SELECT id::text,documentation_slot_id::text,original_filename,mime_type,byte_size,source,captured_at,latitude::float8,longitude::float8,status,storage_state,storage_last_error,uploaded_at FROM media_files WHERE documentation_slot_id=$1 AND status='accepted' ORDER BY uploaded_at,id`, slotID)
+	rows, err := r.pool.Query(ctx, `SELECT id::text,documentation_slot_id::text,original_filename,mime_type,byte_size,source,captured_at,latitude::float8,longitude::float8,status,storage_state,storage_last_error,uploaded_at,content_version FROM media_files WHERE documentation_slot_id=$1 AND status='accepted' ORDER BY uploaded_at,id`, slotID)
 	if err != nil {
 		return nil, err
 	}
@@ -222,10 +222,10 @@ func (r *Repository) listMedia(ctx context.Context, slotID string) ([]MediaFile,
 	result := []MediaFile{}
 	for rows.Next() {
 		var item MediaFile
-		if err := rows.Scan(&item.ID, &item.SlotID, &item.OriginalFilename, &item.MimeType, &item.ByteSize, &item.Source, &item.CapturedAt, &item.Latitude, &item.Longitude, &item.Status, &item.StorageState, &item.StorageLastError, &item.UploadedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.SlotID, &item.OriginalFilename, &item.MimeType, &item.ByteSize, &item.Source, &item.CapturedAt, &item.Latitude, &item.Longitude, &item.Status, &item.StorageState, &item.StorageLastError, &item.UploadedAt, &item.ContentVersion); err != nil {
 			return nil, err
 		}
-		item.ContentURL = "/api/v1/distribution/media/" + item.ID + "/content"
+		item.ContentURL = MediaContentURL(item.ID, item.ContentVersion)
 		result = append(result, item)
 	}
 	return result, rows.Err()
@@ -1044,7 +1044,7 @@ func (r *Repository) listSlotDocumentation(ctx context.Context, distributionSlot
 // it exists so this file compiles in isolation while POS Mesin lands ahead of the other POS stations.
 func (r *Repository) listMediaFiles(ctx context.Context, documentationSlotID string) ([]MediaFile, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, documentation_slot_id::text, storage_key::text, original_filename, mime_type, byte_size, source, captured_at, latitude, longitude, status, storage_state, storage_last_error, uploaded_at
+		SELECT id::text, documentation_slot_id::text, storage_key::text, original_filename, mime_type, byte_size, source, captured_at, latitude, longitude, status, storage_state, storage_last_error, uploaded_at, content_version
 		FROM media_files WHERE documentation_slot_id=$1 AND status='accepted' ORDER BY uploaded_at
 	`, documentationSlotID)
 	if err != nil {
@@ -1054,10 +1054,10 @@ func (r *Repository) listMediaFiles(ctx context.Context, documentationSlotID str
 	var files []MediaFile
 	for rows.Next() {
 		var file MediaFile
-		if err := rows.Scan(&file.ID, &file.SlotID, &file.StorageKey, &file.OriginalFilename, &file.MimeType, &file.ByteSize, &file.Source, &file.CapturedAt, &file.Latitude, &file.Longitude, &file.Status, &file.StorageState, &file.StorageLastError, &file.UploadedAt); err != nil {
+		if err := rows.Scan(&file.ID, &file.SlotID, &file.StorageKey, &file.OriginalFilename, &file.MimeType, &file.ByteSize, &file.Source, &file.CapturedAt, &file.Latitude, &file.Longitude, &file.Status, &file.StorageState, &file.StorageLastError, &file.UploadedAt, &file.ContentVersion); err != nil {
 			return nil, fmt.Errorf("scan media file: %w", err)
 		}
-		file.ContentURL = "/api/v1/distribution/media/" + file.ID + "/content"
+		file.ContentURL = MediaContentURL(file.ID, file.ContentVersion)
 		files = append(files, file)
 	}
 	return files, rows.Err()

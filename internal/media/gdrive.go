@@ -28,6 +28,7 @@ type driveFilesAPI interface {
 	deleteFile(ctx context.Context, id string) error
 	getFileMeta(ctx context.Context, id string) (driveFileMeta, error)
 	updateFile(ctx context.Context, fileID, name, addParentID string, removeParentIDs []string) error
+	replaceContent(ctx context.Context, fileID string, r io.Reader) error
 }
 
 // driveFileMeta is the part of a Drive file the move flow needs: its display name and current
@@ -115,6 +116,14 @@ func (a *realDriveFilesAPI) updateFile(ctx context.Context, fileID, name, addPar
 	}
 	if _, err := call.Context(ctx).Do(); err != nil {
 		return fmt.Errorf("update drive file %q: %w", fileID, err)
+	}
+	return nil
+}
+
+// replaceContent uploads new bytes for an existing file: same ID, name and folder.
+func (a *realDriveFilesAPI) replaceContent(ctx context.Context, fileID string, r io.Reader) error {
+	if _, err := a.service.Files.Update(fileID, &drive.File{}).Media(r, googleapi.ChunkSize(driveUploadChunkSize)).Context(ctx).Do(); err != nil {
+		return fmt.Errorf("replace drive file %q content: %w", fileID, err)
 	}
 	return nil
 }
@@ -237,6 +246,15 @@ func (s *GoogleDriveStorage) PutNamed(ctx context.Context, key, filename string,
 // even after a server restart.
 func (s *GoogleDriveStorage) Open(ctx context.Context, storageKey string) (io.ReadCloser, error) {
 	return s.api.downloadFile(ctx, storageKey)
+}
+
+// Replace overwrites the content of a Drive file; its ID, name and folder stay.
+func (s *GoogleDriveStorage) Replace(ctx context.Context, storageKey string, source io.Reader) (int64, string, error) {
+	hashing := newHashingReader(source)
+	if err := s.api.replaceContent(ctx, storageKey, hashing); err != nil {
+		return 0, "", err
+	}
+	return hashing.size(), hashing.checksum(), nil
 }
 
 func (s *GoogleDriveStorage) Delete(ctx context.Context, storageKey string) error {

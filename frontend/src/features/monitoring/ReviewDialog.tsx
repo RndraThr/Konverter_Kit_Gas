@@ -15,6 +15,7 @@ import { approveBA, approvePhotos, monitoringKey, requestBARevision, requestRevi
 import { BADocument } from './BADocument';
 import { stageLabels, stateLabels, type SlotDetail } from './types';
 import { ZoomableImage, type ZoomHandle } from './ZoomableImage';
+import { useRotateFile } from './useRotateFile';
 
 type Photo = { id: string; url: string; video: boolean; label: string; stage: string; file?: MediaFile & { latitude?: number; longitude?: number } };
 const stageOrder = ['mesin', 'dokumen', 'penyerahan'];
@@ -65,6 +66,7 @@ export function ReviewDialog({ scheduleId, slot, onClose, onNext, onStep }: {
   const [flags, setFlags] = useState<Record<string, string>>({});
   const [note, setNote] = useState('');
   const [confirming, setConfirming] = useState(false);
+  const rotation = useRotateFile(scheduleId);
 
   useEffect(() => { setIndex(0); setFlags({}); setNote(''); setConfirming(false); }, [slot, scheduleId]);
 
@@ -118,6 +120,8 @@ export function ReviewDialog({ scheduleId, slot, onClose, onNext, onStep }: {
   });
   const busy = approve.isPending || revise.isPending;
   const canApproveCurrent = canReview && !!current && current.id !== 'signature' && reviewOf(current.id)?.status !== 'approved' && flags[current.id] === undefined;
+  // The photo itself turns (saved to its file); not the signature, the BA or a video.
+  const canRotate = canReview && !!current && !current.video && current.id !== 'signature' && current.id !== 'ba';
 
   useEffect(() => {
     if (slot === null) return;
@@ -129,6 +133,7 @@ export function ReviewDialog({ scheduleId, slot, onClose, onNext, onStep }: {
       else if (event.key === '+' || event.key === '=') zoom.current?.zoomIn();
       else if (event.key === '-') zoom.current?.zoomOut();
       else if (event.key === '0') zoom.current?.reset();
+      else if ((event.key === 'r' || event.key === 'R') && canRotate) rotation.rotate('photo', current.id, event.shiftKey ? -90 : 90);
       else if ((event.key === 'a' || event.key === 'A') && event.shiftKey && canReview && fresh.length > 0 && !busy) approve.mutate(fresh.map((p) => p.id));
       else if ((event.key === 'a' || event.key === 'A') && canApproveCurrent && !busy) approve.mutate([current.id]);
       else return;
@@ -138,7 +143,7 @@ export function ReviewDialog({ scheduleId, slot, onClose, onNext, onStep }: {
     // Capture phase: the dialog's own focus handling must not take the arrow keys.
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [slot, photos.length, canReview, canApproveCurrent, current, fresh, busy, approve]);
+  }, [slot, photos.length, canReview, canApproveCurrent, canRotate, rotation, current, fresh, busy, approve]);
 
   const toggleFlag = (id: string, on: boolean) => setFlags((value) => {
     const next = { ...value };
@@ -168,7 +173,8 @@ export function ReviewDialog({ scheduleId, slot, onClose, onNext, onStep }: {
               {current?.id === 'ba' && data.ba ? <BADocument key={data.ba.key + data.ba.uploaded_at} item={data.ba} />
                 : current ? (current.video
                 ? <video key={current.id} src={current.url} controls className="max-h-full max-w-full" />
-                : <ZoomableImage ref={zoom} src={current.url} alt={current.label} />)
+                : <ZoomableImage ref={zoom} src={current.url} alt={current.label} rotation={rotation.angle('photo', current.id)}
+                  onRotate={canRotate ? (delta) => rotation.rotate('photo', current.id, delta) : undefined} rotating={rotation.saving('photo', current.id)} />)
                 : <p className="text-sm text-neutral-400">Belum ada foto</p>}
               {current ? <div className="pointer-events-none absolute top-3 left-3 flex items-center gap-2 rounded-md bg-black/60 px-2.5 py-1 text-xs text-white">
                 {stageLabels[current.stage] ?? current.stage} · {current.label} <span className="opacity-70">({index + 1}/{photos.length})</span>
@@ -272,7 +278,7 @@ export function ReviewDialog({ scheduleId, slot, onClose, onNext, onStep }: {
                 </Button>
               </div>}
               {fresh.length === 0 && flagged.length === 0 ? <Button variant="ghost" size="sm" className="w-full" onClick={() => slot !== null && onNext(slot)}><SkipForward />Pelanggan berikutnya yang ada foto baru</Button> : null}
-              <p className="text-center text-[11px] text-muted-foreground">← → ganti foto · A setujui foto · Shift+A setujui semua baru · scroll zoom</p>
+              <p className="text-center text-[11px] text-muted-foreground">← → ganti foto · A setujui foto · Shift+A setujui semua baru · R putar · scroll zoom</p>
             </div> : <div className="border-t p-3">
               <Button variant="outline" className="w-full" onClick={() => slot !== null && onNext(slot)}><SkipForward />Berikutnya ada foto baru</Button>
             </div>}

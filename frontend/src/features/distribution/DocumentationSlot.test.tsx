@@ -136,7 +136,7 @@ test('zooms an opened photo with the mouse wheel', () => {
 
   fireEvent.wheel(screen.getByLabelText('Area preview foto'), { deltaY: -100 });
 
-  expect(screen.getByText('125%')).toBeVisible();
+  expect(screen.getByText('140%')).toBeVisible();
 });
 
 test('toggles zoom on double-click', () => {

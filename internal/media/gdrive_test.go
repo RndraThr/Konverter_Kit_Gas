@@ -156,6 +156,18 @@ func (f *fakeDriveFilesAPI) downloadFile(_ context.Context, id string) (io.ReadC
 	return io.NopCloser(bytes.NewReader(content)), nil
 }
 
+func (f *fakeDriveFilesAPI) replaceContent(_ context.Context, id string, r io.Reader) error {
+	if _, ok := f.uploaded[id]; !ok {
+		return errors.New("not found")
+	}
+	content, err := io.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	f.uploaded[id] = content
+	return nil
+}
+
 func (f *fakeDriveFilesAPI) deleteFile(_ context.Context, id string) error {
 	if f.deleteErr != nil {
 		return f.deleteErr

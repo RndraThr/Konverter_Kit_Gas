@@ -67,7 +67,7 @@ func (s *Service) List(ctx context.Context, filter Filter, scope auth.RegencySco
 		return Page{}, err
 	}
 	for i := range page.Items {
-		page.Items[i].ContentURL = "/api/v1/activities/media/" + page.Items[i].ID + "/content"
+		page.Items[i].ContentURL = MediaContentURL(page.Items[i].ID, page.Items[i].ContentVersion)
 	}
 	return page, nil
 }

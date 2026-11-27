@@ -46,6 +46,23 @@ type MovableStorage interface {
 	Move(ctx context.Context, storageKey string, targetPath []string, targetFilename string) error
 }
 
+// ReplaceableStorage overwrites the content of a stored object in place: the
+// storage key (Drive file ID, folder, name) stays, only the bytes change.
+type ReplaceableStorage interface {
+	Replace(ctx context.Context, storageKey string, source io.Reader) (size int64, checksum string, err error)
+}
+
+// ErrReplaceUnsupported: the storage backend cannot overwrite content.
+var ErrReplaceUnsupported = errors.New("media storage cannot replace content")
+
+// Replace overwrites a stored object when the backend supports it.
+func Replace(ctx context.Context, storage Storage, storageKey string, source io.Reader) (int64, string, error) {
+	if replaceable, ok := storage.(ReplaceableStorage); ok {
+		return replaceable.Replace(ctx, storageKey, source)
+	}
+	return 0, "", ErrReplaceUnsupported
+}
+
 type namedStorage interface {
 	PutNamed(ctx context.Context, key, filename string, folderPath []string, source io.Reader) (storageKey string, size int64, checksum string, err error)
 }
@@ -121,6 +138,19 @@ func (s *LocalStorage) Put(ctx context.Context, key string, folderPath []string,
 		return "", 0, "", fmt.Errorf("commit media file: %w", err)
 	}
 	return key, size, hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+// Replace overwrites the file under key atomically (temporary file, then rename).
+func (s *LocalStorage) Replace(ctx context.Context, key string, source io.Reader) (int64, string, error) {
+	path, err := s.path(key)
+	if err != nil {
+		return 0, "", err
+	}
+	if _, err := os.Stat(path); err != nil {
+		return 0, "", fmt.Errorf("find media file: %w", err)
+	}
+	_, size, checksum, err := s.Put(ctx, key, nil, source)
+	return size, checksum, err
 }
 
 func (s *LocalStorage) Open(ctx context.Context, key string) (io.ReadCloser, error) {

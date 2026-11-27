@@ -48,7 +48,7 @@ func (r *Repository) Sync(ctx context.Context, programID, regencyID string, sinc
 		if err != nil {
 			return result, err
 		}
-		item.ContentURL = "/api/v1/activities/media/" + item.ID + "/content"
+		item.ContentURL = MediaContentURL(item.ID, item.ContentVersion)
 		result.Items = append(result.Items, item)
 	}
 	if err := rows.Err(); err != nil {

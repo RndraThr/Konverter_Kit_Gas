@@ -260,7 +260,7 @@ func (s *Service) ActivityAlbum(ctx context.Context, ref ActivityRef, scope auth
 	}
 	out := ActivityAlbum{ScheduleID: m.scheduleID, RegencyID: m.regencyID, RegencyName: m.regencyName, ActivityType: ref.ActivityType, Photos: []ActivityPhoto{}}
 	rows, err := s.pool.Query(ctx, `
-		SELECT m.id::text, m.mime_type, m.display_name, m.source, m.uploaded_at, `+userName("up")+`,
+		SELECT m.id::text, m.mime_type, m.display_name, m.source, m.uploaded_at, `+userName("up")+`, m.content_version,
 			rv.status, COALESCE(rv.reason, ''), `+userName("ru")+`, rv.reviewed_at
 		FROM activity_media m
 		LEFT JOIN users up ON up.id = m.uploaded_by
@@ -277,10 +277,11 @@ func (s *Service) ActivityAlbum(ctx context.Context, ref ActivityRef, scope auth
 		var status *string
 		var reason, reviewer string
 		var reviewedAt *time.Time
-		if err := rows.Scan(&p.ID, &p.MimeType, &p.DisplayName, &p.Source, &p.UploadedAt, &p.UploadedBy, &status, &reason, &reviewer, &reviewedAt); err != nil {
+		var version int
+		if err := rows.Scan(&p.ID, &p.MimeType, &p.DisplayName, &p.Source, &p.UploadedAt, &p.UploadedBy, &version, &status, &reason, &reviewer, &reviewedAt); err != nil {
 			return out, fmt.Errorf("scan activity photo: %w", err)
 		}
-		p.ContentURL = "/api/v1/activities/media/" + p.ID + "/content"
+		p.ContentURL = activities.MediaContentURL(p.ID, version)
 		if ref.ActivityType == supportingDocuments {
 			p.Slot = documentSegment(p.DisplayName)
 		}

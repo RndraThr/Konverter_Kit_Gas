@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"konkit/internal/auth"
+	"konkit/internal/media"
 	"konkit/internal/monitoring"
 )
 
@@ -31,6 +32,7 @@ type MonitoringService interface {
 	BAItems(ctx context.Context, scheduleID, baType string, scope auth.RegencyScope) ([]monitoring.BAItem, error)
 	ApproveBA(ctx context.Context, actor auth.Principal, input monitoring.BAApproveInput, scope auth.RegencyScope, meta auth.ClientMeta) error
 	RequestBARevision(ctx context.Context, actor auth.Principal, input monitoring.BARevisionInput, scope auth.RegencyScope, meta auth.ClientMeta) error
+	Rotate(ctx context.Context, actor auth.Principal, input monitoring.RotateInput, scope auth.RegencyScope, meta auth.ClientMeta) (monitoring.RotateResult, error)
 }
 
 // handleMonitoring serves /api/v1/monitoring/...:
@@ -53,6 +55,7 @@ type MonitoringService interface {
 //	GET  ba/items?schedule_id=&type=       uploaded BA of one type with their checks
 //	POST ba/approve                        approve BA (monitoring.review)
 //	POST ba/revision                       send BA back with reasons (monitoring.review)
+//	POST rotate                            turn a photo or BA file and save it (monitoring.review)
 func (h *Handler) handleMonitoring(w http.ResponseWriter, r *http.Request, rc requestContext, path string) {
 	service := h.deps.Monitoring
 	if service == nil {
@@ -124,6 +127,13 @@ func (h *Handler) handleMonitoring(w http.ResponseWriter, r *http.Request, rc re
 			return
 		}
 		writeMonitoringResult(w, map[string]bool{"saved": true}, service.RequestBARevision(r.Context(), rc.principal, input, scope, clientMeta(r)))
+	case path == "rotate" && r.Method == http.MethodPost:
+		var input monitoring.RotateInput
+		if !decodeJSON(w, r, &input) {
+			return
+		}
+		result, err := service.Rotate(r.Context(), rc.principal, input, scope, clientMeta(r))
+		writeMonitoringResult(w, result, err)
 	case path == "serial-duplicates/notify" && r.Method == http.MethodPost:
 		var input struct {
 			ProgramID string `json:"program_id"`
@@ -217,6 +227,12 @@ func writeMonitoringResult(w http.ResponseWriter, result any, err error) {
 		writeError(w, http.StatusUnprocessableEntity, "monitoring_ba_unknown", "BA ini sudah diganti atau bukan milik kabupaten ini; muat ulang")
 	case errors.Is(err, monitoring.ErrActivityFlagUnknown):
 		writeError(w, http.StatusUnprocessableEntity, "monitoring_flag_unknown", "Foto yang ditandai bukan bagian dari kegiatan ini")
+	case errors.Is(err, monitoring.ErrRotateTarget):
+		writeError(w, http.StatusNotFound, "monitoring_rotate_not_found", "File sudah diganti atau dihapus; muat ulang")
+	case errors.Is(err, media.ErrRotateUnsupported), errors.Is(err, media.ErrReplaceUnsupported), errors.Is(err, monitoring.ErrRotateUnavailable):
+		writeError(w, http.StatusUnprocessableEntity, "monitoring_rotate_unsupported", "File ini tidak dapat diputar")
+	case errors.Is(err, media.ErrRotateDegrees):
+		writeError(w, http.StatusUnprocessableEntity, "monitoring_rotate_degrees", "Putaran harus kelipatan 90 derajat")
 	case errors.Is(err, monitoring.ErrFlagUnknown):
 		writeError(w, http.StatusUnprocessableEntity, "monitoring_flag_unknown", "Foto yang ditandai bukan milik pelanggan ini")
 	default:
