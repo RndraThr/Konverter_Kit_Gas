@@ -237,6 +237,7 @@ export function ReviewDialog({ scheduleId, slot, onClose, onNext, onStep }: {
                 <dl>
                   <Info label="Nama">{s.full_name}</Info>
                   <Info label="NIK" mono>{s.nik}</Info>
+                  <Info label={data.program_type === 'fisherman' ? 'No. KUSUKA' : 'No. kartu tani'} mono>{s.sector_identifier}</Info>
                   <Info label="Nomor bagi">#{s.slot_number}</Info>
                   <Info label="Desa / Kec.">{[s.village, s.district].filter(Boolean).join(', ')}</Info>
                   <Info label="Alamat">{s.address}</Info>

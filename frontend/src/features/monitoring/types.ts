@@ -34,7 +34,7 @@ export type QueueItem = {
 export type MediaReview = { status: 'approved' | 'rejected'; reason: string; reviewed_by: string; reviewed_at: string };
 
 export type SlotDetail = {
-  slot: DistributionSlot; schedule_name: string; regency_name: string;
+  slot: DistributionSlot; schedule_name: string; program_type?: 'farmer' | 'fisherman'; regency_name: string;
   completed_at: string | null; completed_by: string; state: ReviewState; reviews: Record<string, MediaReview>;
   /** The recipient's BA Perorangan once final, checked last. */
   ba?: BAItem | null;

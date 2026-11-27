@@ -372,8 +372,8 @@ func (s *Service) Queue(ctx context.Context, scheduleID string, scope auth.Regen
 
 // slotMeta is what the check needs about a slot beyond its photos.
 type slotMeta struct {
-	id, status, scheduleName, regencyName, regencyID, completedBy, completedByID string
-	completedAt                                                                  *time.Time
+	id, status, scheduleName, regencyName, regencyID, completedBy, completedByID, programType string
+	completedAt                                                                               *time.Time
 }
 
 type queryer interface {
@@ -384,9 +384,10 @@ type queryer interface {
 func slotMetaOf(ctx context.Context, q queryer, scheduleID string, slotNumber int, scope auth.RegencyScope, lock bool) (slotMeta, error) {
 	var m slotMeta
 	query := `
-		SELECT ds.id::text, ds.status, ds.completed_at, ps.name, r.name, r.id::text, ` + userName("cu") + `, COALESCE(ds.distributed_by::text, '')
+		SELECT ds.id::text, ds.status, ds.completed_at, ps.name, r.name, r.id::text, ` + userName("cu") + `, COALESCE(ds.distributed_by::text, ''), pr.program_type
 		FROM distribution_slots ds
 		JOIN program_schedules ps ON ps.id = ds.schedule_id
+		JOIN programs pr ON pr.id = ps.program_id
 		JOIN regencies r ON r.id = ps.regency_id
 		LEFT JOIN users cu ON cu.id = ds.distributed_by
 		WHERE ds.schedule_id::text = $1 AND ds.slot_number = $2 AND ($3 OR ps.regency_id::text = ANY($4))`
@@ -394,7 +395,7 @@ func slotMetaOf(ctx context.Context, q queryer, scheduleID string, slotNumber in
 		query += ` FOR UPDATE OF ds`
 	}
 	err := q.QueryRow(ctx, query, scheduleID, slotNumber, scope.Unrestricted, scope.RegencyIDs).
-		Scan(&m.id, &m.status, &m.completedAt, &m.scheduleName, &m.regencyName, &m.regencyID, &m.completedBy, &m.completedByID)
+		Scan(&m.id, &m.status, &m.completedAt, &m.scheduleName, &m.regencyName, &m.regencyID, &m.completedBy, &m.completedByID, &m.programType)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return m, distribution.ErrSlotNotFound
 	}
@@ -453,7 +454,7 @@ func (s *Service) Slot(ctx context.Context, scheduleID string, slotNumber int, s
 	if err != nil {
 		return SlotDetail{}, err
 	}
-	return SlotDetail{Slot: slot, ScheduleName: m.scheduleName, RegencyName: m.regencyName, CompletedAt: m.completedAt, CompletedBy: m.completedBy,
+	return SlotDetail{Slot: slot, ScheduleName: m.scheduleName, ProgramType: m.programType, RegencyName: m.regencyName, CompletedAt: m.completedAt, CompletedBy: m.completedBy,
 		State: reviewState(photos, approved, rejected, m.status == "completed"), Reviews: reviews, BA: ba}, nil
 }
 
