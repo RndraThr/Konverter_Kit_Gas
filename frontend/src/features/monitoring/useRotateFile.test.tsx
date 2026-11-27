@@ -19,7 +19,7 @@ function Harness() {
   const rotation = useRotateFile('schedule-1')
   return <div>
     <span data-testid="angle">{rotation.angle('photo', 'm1')}</span>
-    <RotateButtons angle={rotation.angle('photo', 'm1')} saving={rotation.saving('photo', 'm1')} onRotate={(delta) => rotation.rotate('photo', 'm1', delta)} />
+    <RotateButtons angle={rotation.angle('photo', 'm1')} saving={rotation.saving('photo', 'm1')} onRotate={(delta) => rotation.rotate('photo', 'm1', delta, false)} />
   </div>
 }
 

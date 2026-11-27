@@ -14,15 +14,31 @@ export const rotateFile = (body: { schedule_id: string; kind: RotateKind; id: st
 
 const quarter = (degrees: number) => ((degrees % 360) + 360) % 360;
 
+/** ?v= of a content URL (0 before any rotation). */
+const versionOf = (url: string) => Number(new URL(url, window.location.origin).searchParams.get('v') ?? 0);
+
+/** Loads and decodes an image so showing it later is instant. */
+function preload(url: string): Promise<void> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => { void img.decode().catch(() => undefined).then(() => resolve()); };
+    img.onerror = () => resolve();
+    img.src = url;
+  });
+}
+
 /**
  * Rotation of files in the monitoring: each click turns the preview at once;
  * shortly after the last click the turn is saved to the file itself (Drive
- * and database), then the monitoring data is read again with its new URL.
+ * and database). The rotated image is loaded first, then shown in place of
+ * the turned preview in the same render, so the photo never jumps back.
  */
 export function useRotateFile(scheduleId: string) {
   const queryClient = useQueryClient();
   const [pending, setPending] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState<Record<string, boolean>>({});
+  // New URL of a rotated file until the monitoring data has it too.
+  const [saved, setSaved] = useState<Record<string, string>>({});
   const pendingRef = useRef(pending);
   const timers = useRef(new Map<string, number>());
   useEffect(() => { pendingRef.current = pending; }, [pending]);
@@ -31,7 +47,7 @@ export function useRotateFile(scheduleId: string) {
     return () => all.forEach((timer) => window.clearTimeout(timer));
   }, []);
 
-  const rotate = useCallback((kind: RotateKind, id: string, delta: number) => {
+  const rotate = useCallback((kind: RotateKind, id: string, delta: number, image = true) => {
     const key = `${kind}:${id}`;
     setPending((value) => {
       const next = { ...value, [key]: (value[key] ?? 0) + delta };
@@ -43,16 +59,22 @@ export function useRotateFile(scheduleId: string) {
       timers.current.delete(key);
       const degrees = pendingRef.current[key] ?? 0;
       const settle = () => setPending((value) => ({ ...value, [key]: (value[key] ?? 0) - degrees }));
+      let ok = false;
       if (quarter(degrees) === 0) { settle(); return; }
       setSaving((value) => ({ ...value, [key]: true }));
       try {
-        await rotateFile({ schedule_id: scheduleId, kind, id, degrees: quarter(degrees) });
-        await queryClient.invalidateQueries({ queryKey: monitoringKey });
+        const result = await rotateFile({ schedule_id: scheduleId, kind, id, degrees: quarter(degrees) });
+        if (image) await preload(result.content_url);
+        // One render: the rotated file replaces the turned preview.
+        setSaved((value) => ({ ...value, [key]: result.content_url }));
+        settle();
+        ok = true;
         toast.success('Putaran disimpan ke file');
+        void queryClient.invalidateQueries({ queryKey: monitoringKey });
       } catch (error) {
         toast.error(error instanceof Error ? error.message : 'Putaran belum tersimpan');
       } finally {
-        settle();
+        if (!ok) settle();
         setSaving((value) => ({ ...value, [key]: false }));
       }
     }, 900));
@@ -62,6 +84,11 @@ export function useRotateFile(scheduleId: string) {
     rotate,
     angle: (kind: RotateKind, id: string) => pending[`${kind}:${id}`] ?? 0,
     saving: (kind: RotateKind, id: string) => Boolean(saving[`${kind}:${id}`]),
+    /** The file's URL: the rotated one until the loaded data is as new. */
+    src: (kind: RotateKind, id: string, url: string) => {
+      const own = saved[`${kind}:${id}`];
+      return own && versionOf(own) > versionOf(url) ? own : url;
+    },
   };
 }
 

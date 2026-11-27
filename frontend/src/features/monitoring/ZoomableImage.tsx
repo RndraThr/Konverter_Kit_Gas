@@ -91,7 +91,8 @@ export const ZoomableImage = forwardRef<ZoomHandle, { src: string; alt: string; 
   >
     <div className={cn('size-full', !panning && 'transition-transform duration-100 ease-out')}
       style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, transformOrigin: '0 0' }}>
-      <img src={src} alt={alt} draggable={false} onLoad={(e) => setNatural({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight, box: { width: box.current?.clientWidth ?? 0, height: box.current?.clientHeight ?? 0 } })}
+      {/* A new file (e.g. just rotated) is a new element: no turn animation on it. */}
+      <img key={src} src={src} alt={alt} draggable={false} onLoad={(e) => setNatural({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight, box: { width: box.current?.clientWidth ?? 0, height: box.current?.clientHeight ?? 0 } })}
         className="size-full select-none object-contain transition-transform duration-200 ease-out"
         style={turn ? { transform: turn } : undefined} />
     </div>
