@@ -456,12 +456,15 @@ func maskNIK(value string) string {
 	return value[:4] + strings.Repeat("*", len(value)-8) + value[len(value)-4:]
 }
 
+// normalizeIdentifier upper-cases a kartu tani / KUSUKA number and drops
+// whitespace. Symbols stay: some recipients only have a surat keterangan
+// numbered like "288/SKT/WN/PRB-2026".
 func normalizeIdentifier(value string) string {
 	return strings.Map(func(character rune) rune {
-		if unicode.IsLetter(character) || unicode.IsDigit(character) {
-			return unicode.ToUpper(character)
+		if unicode.IsSpace(character) || !unicode.IsPrint(character) {
+			return -1
 		}
-		return -1
+		return unicode.ToUpper(character)
 	}, value)
 }
 

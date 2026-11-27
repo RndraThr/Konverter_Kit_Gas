@@ -44,6 +44,8 @@ export function useRotateFile(scheduleId: string) {
   // New URL of a rotated file until the monitoring data has it too.
   const [saved, setSaved] = useState<Record<string, string>>({});
   const pendingRef = useRef(pending);
+  // URL last shown per file (and the saved URL it was picked with).
+  const shown = useRef(new Map<string, { url: string; own?: string }>());
   const timers = useRef(new Map<string, number>());
   useEffect(() => { pendingRef.current = pending; }, [pending]);
   useEffect(() => {
@@ -89,10 +91,20 @@ export function useRotateFile(scheduleId: string) {
     rotate,
     angle: (kind: RotateKind, id: string) => pending[`${kind}:${id}`] ?? 0,
     saving: (kind: RotateKind, id: string) => Boolean(saving[`${kind}:${id}`]),
-    /** The file's URL: the rotated one until the loaded data is as new. */
+    /**
+     * The file's URL: the rotated one until the loaded data is as new. While
+     * a turn is shown but not saved yet, the URL it was turned on stays (data
+     * refreshed meanwhile, e.g. a live update, would show the turn twice).
+     */
     src: (kind: RotateKind, id: string, url: string) => {
-      const own = saved[`${kind}:${id}`];
-      return own && versionOf(own) > versionOf(url) ? own : url;
+      const key = `${kind}:${id}`;
+      const own = saved[key];
+      const fresh = own && versionOf(own) > versionOf(url) ? own : url;
+      const busy = (pending[key] ?? 0) !== 0 || Boolean(saving[key]);
+      const last = shown.current.get(key);
+      const next = busy && last && last.own === own ? last.url : fresh;
+      shown.current.set(key, { url: next, own });
+      return next;
     },
   };
 }

@@ -159,7 +159,7 @@ func TestUpdateRecipientNormalizesEditableFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if repo.seenUpdate.ScheduleID != "schedule-1" || repo.seenUpdate.Address != "JL. TANI" || repo.seenUpdate.Village != "DESA BARU" || repo.seenUpdate.District != "WAJO" || repo.seenUpdate.PhoneNumber != "081234567890" || repo.seenUpdate.SectorIdentifier != "KP01" {
+	if repo.seenUpdate.ScheduleID != "schedule-1" || repo.seenUpdate.Address != "JL. TANI" || repo.seenUpdate.Village != "DESA BARU" || repo.seenUpdate.District != "WAJO" || repo.seenUpdate.PhoneNumber != "081234567890" || repo.seenUpdate.SectorIdentifier != "KP-01" {
 		t.Fatalf("input not normalized: %+v", repo.seenUpdate)
 	}
 }
@@ -175,7 +175,7 @@ func TestReplaceRecipientNormalizesNIKAndEditableFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if repo.seenReplace.NIK != "9171031707010004" || repo.seenReplace.Address != "JL. TANI" || repo.seenReplace.PhoneNumber != "081234567890" || repo.seenReplace.SectorIdentifier != "KP01" {
+	if repo.seenReplace.NIK != "9171031707010004" || repo.seenReplace.Address != "JL. TANI" || repo.seenReplace.PhoneNumber != "081234567890" || repo.seenReplace.SectorIdentifier != "KP-01" {
 		t.Fatalf("input not normalized: %+v", repo.seenReplace)
 	}
 	if repo.seenReplace.FullName != "PENGGANTI BARU" || repo.seenReplace.Reason != "penerima awal tidak dapat hadir" {
