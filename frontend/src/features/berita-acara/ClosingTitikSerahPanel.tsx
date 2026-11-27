@@ -26,7 +26,7 @@ const validationMessage: Record<string, string> = {
   zone_not_configured: 'Kabupaten belum dikonfigurasi ke zona.',
   ba_logo_required: 'Minimal satu logo BA aktif harus dikonfigurasi.',
   handover_location_required: 'Belum ada penerima dengan titik serah. Titik serah dipilih petugas di POS Dokumen.',
-  no_location_recipients: 'Belum ada distribusi selesai pada titik serah ini.',
+  no_location_recipients: 'Belum ada distribusi selesai pada titik serah ini: preview berupa format kosong.',
   signatory_required: 'Penandatangan dokumen belum lengkap.',
   no_recipients: 'Belum ada distribusi selesai pada jadwal ini.',
   verification_snapshot_incomplete: 'Snapshot verifikasi distribusi belum lengkap.',
@@ -79,7 +79,8 @@ export function ClosingTitikSerahPanel({ scheduleID, regencyName, programType, d
   const preview = useQuery({
     queryKey: ['bast', 'closing-titik-serah', 'preview', scheduleID, locationID, documentDate],
     queryFn: () => apiBlobRequest('/api/v1/bast/closing-titik-serah/preview', { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, location_id: locationID, document_date: documentDate }) }),
-    enabled: programType === 'farmer' && status === 'ready' && documentDate !== '',
+    // Belum ada distribusi selesai di titik ini: preview berupa format kosong.
+    enabled: programType === 'farmer' && locationID !== '' && !rows.isError && documentDate !== '',
   });
   const finalize = useMutation({
     mutationFn: () => apiRequest<DataResponse<AggregateDocument>>('/api/v1/bast/closing-titik-serah/finalize', { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, location_id: locationID, document_date: documentDate }) }),
@@ -163,7 +164,7 @@ export function ClosingTitikSerahPanel({ scheduleID, regencyName, programType, d
               {historicalDocs.map((doc) => <div className="flex items-center justify-between gap-3 text-sm" key={doc.id}><span className="flex flex-wrap items-center gap-2 text-muted-foreground">Versi {doc.version} · {doc.document_date}{doc.status === 'stale' && <Badge variant="destructive">Perlu dibuat ulang</Badge>}</span><Button nativeButton={false} render={<a href={`/api/v1/bast/closing-titik-serah/documents/${doc.id}/content`} />} variant="ghost" size="sm"><Download />Unduh</Button></div>)}
             </div>}
 
-            {status === 'ready' && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="Closing Titik Serah" />}
+            {locationID !== '' && !rows.isError && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="Closing Titik Serah" />}
 
             <Button className="justify-start" variant="ghost" onClick={() => setShowRows((value) => !value)}>{showRows ? 'Sembunyikan rincian' : `Lihat ${rowItems.length} baris closing harian`}</Button>
           </CardContent>

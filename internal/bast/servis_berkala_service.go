@@ -236,6 +236,11 @@ func (s *ServisBerkalaService) snapshot(ctx context.Context, scheduleID, documen
 	if err != nil {
 		return ServisBerkalaSnapshot{}, DP3Context{}, err
 	}
+	// Preview sebelum distribusi selesai memakai kuota paket kabupaten agar
+	// dokumen bisa diperiksa lebih dulu; finalisasi tetap menuntut distribusi.
+	if !requireSchedule && total == 0 {
+		total = ctxData.SlotQuota
+	}
 	if total == 0 {
 		return ServisBerkalaSnapshot{}, DP3Context{}, ErrAggregateNoRecipients
 	}

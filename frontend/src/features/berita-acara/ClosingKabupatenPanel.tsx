@@ -26,7 +26,7 @@ const validationMessage: Record<string, string> = {
   handover_location_required: 'Titik serah belum diatur di BA Closing Titik Serah.',
   not_final: 'Finalkan dulu BA Serah Terima setiap titik serah. Baris yang belum final memakai data distribusi berjalan.',
   signatory_required: 'Penandatangan dokumen belum lengkap.',
-  no_recipients: 'Belum ada distribusi selesai pada jadwal ini.',
+  no_recipients: 'Belum ada distribusi selesai pada jadwal ini: preview berupa format kosong.',
   verification_snapshot_incomplete: 'Snapshot verifikasi distribusi belum lengkap.',
 };
 
@@ -56,7 +56,8 @@ export function ClosingKabupatenPanel({ scheduleID, regencyName, programType, de
   const preview = useQuery({
     queryKey: ['bast', 'closing-kabupaten', 'preview', scheduleID, documentDate],
     queryFn: () => apiBlobRequest('/api/v1/bast/closing-kabupaten/preview', { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, document_date: documentDate }) }),
-    enabled: programType === 'farmer' && status === 'ready' && documentDate !== '',
+    // Tanpa distribusi selesai preview tetap dibuat sebagai format kosong.
+    enabled: programType === 'farmer' && !rows.isError && documentDate !== '',
   });
   const finalize = useMutation({
     mutationFn: () => apiRequest<DataResponse<AggregateDocument>>('/api/v1/bast/closing-kabupaten/finalize', { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, document_date: documentDate }) }),
@@ -115,7 +116,7 @@ export function ClosingKabupatenPanel({ scheduleID, regencyName, programType, de
               {historicalDocs.map((doc) => <div className="flex items-center justify-between gap-3 text-sm" key={doc.id}><span className="flex flex-wrap items-center gap-2 text-muted-foreground">Versi {doc.version} · {doc.document_date}{doc.status === 'stale' && <Badge variant="destructive">Perlu dibuat ulang</Badge>}</span><Button nativeButton={false} render={<a href={`/api/v1/bast/closing-kabupaten/documents/${doc.id}/content`} />} variant="ghost" size="sm"><Download />Unduh</Button></div>)}
             </div>}
 
-            {status === 'ready' && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="Closing Kabupaten" />}
+            {!rows.isError && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="Closing Kabupaten" />}
 
             <Button className="justify-start" variant="ghost" onClick={() => setShowRows((value) => !value)}>{showRows ? 'Sembunyikan rincian' : `Lihat ${rowItems.length} baris titik serah`}</Button>
           </CardContent>

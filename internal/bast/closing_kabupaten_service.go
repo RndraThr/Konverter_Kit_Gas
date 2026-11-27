@@ -61,8 +61,12 @@ func (s *ClosingKabupatenService) handoverRows(ctx context.Context, scheduleID s
 	if err != nil {
 		return nil, err
 	}
+	// Preview sebelum titik serah dan distribusi ada tetap dibuat (tabel kosong).
 	if len(locations) == 0 {
-		return nil, ErrHandoverLocationRequired
+		if strict {
+			return nil, ErrHandoverLocationRequired
+		}
+		return nil, nil
 	}
 	recipients, err := s.repository.ListHandoverRecipients(ctx, scheduleID, scope)
 	if err != nil {
@@ -251,9 +255,6 @@ func (s *ClosingKabupatenService) load(ctx context.Context, scheduleID string, s
 	rows, err := s.handoverRows(ctx, scheduleID, scope, strict)
 	if err != nil {
 		return DP3Context{}, nil, ScheduleSettings{}, err
-	}
-	if !strict && len(rows) == 0 {
-		return DP3Context{}, nil, ScheduleSettings{}, ErrAggregateNoRecipients
 	}
 	if strict {
 		if err := validateClosingKabupatenRows(rows); err != nil {

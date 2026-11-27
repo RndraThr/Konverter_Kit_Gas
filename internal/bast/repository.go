@@ -148,25 +148,68 @@ func (r *Repository) LoadSourceData(ctx context.Context, recipient RecipientDocu
 			}
 		}
 	}
+	source.Components = handoverComponents(values)
+	source.Render.Logos, err = r.visibleBALogos(ctx, sourceContext.ProgramID)
+	return source, err
+}
+
+// LoadBlankSourceData memuat data BA Perorangan tanpa penerima (preview
+// kosong sebelum ada distribusi selesai): komponen paket, logo, dan
+// penandatangan jadwal; identitas penerima dan alat dibiarkan kosong.
+func (r *Repository) LoadBlankSourceData(ctx context.Context, sourceContext SourceContext, localDate string, scope auth.RegencyScope) (SourceData, error) {
+	var source SourceData
+	var packageJSON []byte
+	err := r.pool.QueryRow(ctx, `
+		SELECT p.program_type,p.fiscal_year,r.name,pt.id::text,pt.values_json,COALESCE(st.installer_name,''),COALESCE(NULLIF(st.supervisor_name,''),ps.supervisor_name,'')
+		FROM program_schedules ps
+		JOIN programs p ON p.id=ps.program_id JOIN regencies r ON r.id=ps.regency_id
+		JOIN package_template_versions pt ON pt.id=ps.package_template_version_id
+		LEFT JOIN bast_schedule_settings st ON st.schedule_id=ps.id
+		WHERE ps.program_id=$1 AND ps.regency_id=$2 AND ($3 OR ps.regency_id::text=ANY($4))
+		ORDER BY ps.created_at DESC LIMIT 1
+	`, sourceContext.ProgramID, sourceContext.RegencyID, scope.Unrestricted, scope.RegencyIDs).Scan(&source.ProgramType, &source.Render.FiscalYear, &source.Recipient.Regency, &source.PackageTemplateVersionID, &packageJSON, &source.ExecutorName, &source.SupervisorName)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return SourceData{}, ErrNotFound
+	}
+	if err != nil {
+		return SourceData{}, fmt.Errorf("load blank BA source: %w", err)
+	}
+	var values packageValues
+	if err := json.Unmarshal(packageJSON, &values); err != nil {
+		return SourceData{}, fmt.Errorf("decode BA package: %w", err)
+	}
+	source.ProgramID, source.RegencyID, source.LocalDate = sourceContext.ProgramID, sourceContext.RegencyID, localDate
+	source.Components = handoverComponents(values)
+	source.Render.Logos, err = r.visibleBALogos(ctx, sourceContext.ProgramID)
+	return source, err
+}
+
+func handoverComponents(values packageValues) []ComponentSnapshot {
+	var components []ComponentSnapshot
 	for _, component := range values.Components {
 		if component.HandoverHidden {
 			continue
 		}
-		source.Components = append(source.Components, ComponentSnapshot{Code: component.Code, Label: component.Label, Quantity: component.Quantity, Unit: component.Unit, Checked: true})
+		components = append(components, ComponentSnapshot{Code: component.Code, Label: component.Label, Quantity: component.Quantity, Unit: component.Unit, Checked: true})
 	}
-	rows, err := r.pool.Query(ctx, `SELECT id::text,storage_key,mime_type,sort_order,max_width_mm::float8,max_height_mm::float8 FROM program_ba_logo_assets WHERE program_id=$1 AND is_visible=true ORDER BY sort_order,id`, sourceContext.ProgramID)
+	return components
+}
+
+func (r *Repository) visibleBALogos(ctx context.Context, programID string) ([]LogoSnapshot, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id::text,storage_key,mime_type,sort_order,max_width_mm::float8,max_height_mm::float8 FROM program_ba_logo_assets WHERE program_id=$1 AND is_visible=true ORDER BY sort_order,id`, programID)
 	if err != nil {
-		return SourceData{}, err
+		return nil, err
 	}
 	defer rows.Close()
+	var logos []LogoSnapshot
 	for rows.Next() {
 		var logo LogoSnapshot
 		if err := rows.Scan(&logo.AssetID, &logo.StorageKey, &logo.MimeType, &logo.SortOrder, &logo.MaxWidthMM, &logo.MaxHeightMM); err != nil {
-			return SourceData{}, err
+			return nil, err
 		}
-		source.Render.Logos = append(source.Render.Logos, logo)
+		logos = append(logos, logo)
 	}
-	return source, rows.Err()
+	return logos, rows.Err()
 }
 
 func joinHosePair(first, second, legacy string) string {

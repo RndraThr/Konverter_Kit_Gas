@@ -75,11 +75,11 @@ test('summarises every handover location and warns about recipients without one'
   expect(await screen.findByText('BA Serah Terima · Lapangan Sabbangparu')).toBeVisible()
 })
 
-test('shows a configuration message and skips the preview fetch when the location has no completed distributions', async () => {
+test('previews the blank format when the location has no completed distributions', async () => {
   mockApi([])
   renderPanel()
-  expect(await screen.findByText('Belum ada distribusi selesai pada titik serah ini.')).toBeVisible()
-  expect(apiBlobRequest).not.toHaveBeenCalled()
+  expect(await screen.findByText('Belum ada distribusi selesai pada titik serah ini: preview berupa format kosong.')).toBeVisible()
+  await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledWith('/api/v1/bast/closing-titik-serah/preview', expect.objectContaining({ method: 'POST' })))
 })
 
 test('keeps a stale closing titik serah downloadable while allowing finalization again', async () => {

@@ -53,7 +53,9 @@ export function TrainingPanel({ config, scheduleID, regencyName, programType }: 
   const dates = useQuery({ queryKey: ['bast', config.apiPath, 'dates', scheduleID], queryFn: () => apiRequest<DataResponse<TrainingDate[]>>(`${apiBase}/dates?schedule_id=${encodeURIComponent(scheduleID)}`), enabled });
   const dateItems = dates.data?.data ?? [];
   // Manual: daftar kosong untuk tanggal bebas; bawaan bila belum ada distribusi selesai.
-  const manual = Boolean(config.manual) && (manualChoice ?? (dates.isSuccess && dateItems.length === 0));
+  // Tanpa distribusi selesai, jenis lain pun hanya bisa preview format kosong.
+  const noDistribution = dates.isSuccess && dateItems.length === 0;
+  const manual = config.manual ? (manualChoice ?? noDistribution) : noDistribution;
   const distributionDate = dateItems.some((item) => item.local_date === chosenDate) ? chosenDate : dateItems[0]?.local_date ?? '';
   const selectedDate = manual ? manualDate : distributionDate;
   const selected = manual ? undefined : dateItems.find((item) => item.local_date === selectedDate);
@@ -77,7 +79,6 @@ export function TrainingPanel({ config, scheduleID, regencyName, programType }: 
   if (programType === 'fisherman') return <DataState kind="empty" title={`${config.name} Nelayan belum tersedia`} description="Format daftar hadir saat ini mengikuti program Petani." />;
   if (dates.isPending || settings.isPending) return <DataState kind="loading" title={`Memuat ${config.name}`} description="Menyiapkan tanggal distribusi selesai." />;
   if (dates.isError || settings.isError) return <DataState kind="error" title={`${config.name} belum dapat dimuat`} description="Periksa koneksi lalu coba kembali." action={{ label: 'Coba lagi', onClick: () => { dates.refetch(); settings.refetch(); } }} />;
-  if (dateItems.length === 0 && !config.manual) return <DataState kind="empty" title="Belum ada distribusi selesai" description={`Belum ditemukan distribusi selesai untuk ${regencyName}. Tanggal akan muncul otomatis setelah penyerahan diselesaikan.`} />;
 
   const fileName = `${config.filenamePrefix}${manual ? '-MANUAL' : ''}-${regencyName}-${selectedDate}.pdf`;
   const rowCount = settings.data?.data.training_10_row_count;
@@ -106,7 +107,9 @@ export function TrainingPanel({ config, scheduleID, regencyName, programType }: 
             <label className="grid gap-1.5 text-sm font-medium">Tanggal pelaksanaan
               <Input type="date" aria-label="Tanggal pelaksanaan" value={manualDate} onChange={(e) => setManualDate(e.target.value)} />
             </label>
-            <p className="text-xs leading-5 text-muted-foreground">Daftar hadir kosong{rowCount ? ` (${rowCount} baris, atur di Pengaturan BA)` : ''} untuk Training yang dilakukan sebelum distribusi. Cetak, isi dan tanda tangan basah, lalu unggah hasil scan di arsip di bawah dengan tanggal yang sama.</p>
+            {config.manual
+              ? <p className="text-xs leading-5 text-muted-foreground">Daftar hadir kosong{rowCount ? ` (${rowCount} baris, atur di Pengaturan BA)` : ''} untuk Training yang dilakukan sebelum distribusi. Cetak, isi dan tanda tangan basah, lalu unggah hasil scan di arsip di bawah dengan tanggal yang sama.</p>
+              : <p className="text-xs leading-5 text-muted-foreground">Belum ada distribusi selesai di {regencyName}: preview berupa format kosong. Peserta terisi otomatis setelah penyerahan diselesaikan.</p>}
           </div>}
           {!manual && dateItems.map((item) => <button key={item.local_date} type="button" aria-pressed={item.local_date === selectedDate} onClick={() => setChosenDate(item.local_date)}
             className="flex min-h-16 w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition-colors hover:bg-muted aria-pressed:border-primary aria-pressed:bg-primary/5">

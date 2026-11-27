@@ -132,6 +132,11 @@ func (s *RakordaService) preview(ctx context.Context, spec rakordaDocumentSpec, 
 		if participants, err = s.repository.ListTrainingParticipants(ctx, ctxData.ScheduleID, strings.TrimSpace(documentDate), scope); err != nil {
 			return AggregatePreview{}, err
 		}
+		// Belum ada distribusi selesai pada tanggal ini: preview berupa lembar
+		// kosong agar format bisa diperiksa lebih dulu.
+		if len(participants) == 0 {
+			spec.participants = participantsNone
+		}
 	}
 	snapshot, err := buildRakordaSnapshot(spec, ctxData, settings, logos, documentDate, participants)
 	if err != nil {

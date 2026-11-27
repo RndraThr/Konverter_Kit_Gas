@@ -40,15 +40,16 @@ test('shows the closing kabupaten preview inline once rows are available, withou
   expect(window.open).not.toHaveBeenCalled()
 })
 
-test('shows a configuration message and skips the preview fetch when there are no completed distributions', async () => {
+test('previews the blank format but blocks finalization when there are no completed distributions', async () => {
   vi.mocked(apiRequest).mockImplementation(async (path) => {
     if (path.includes('/rows')) return { data: [] }
     if (path.includes('/documents')) return { data: [] }
     throw new Error(`unexpected ${path}`)
   })
   renderPanel()
-  expect(await screen.findByText('Belum ada distribusi selesai pada jadwal ini.')).toBeVisible()
-  expect(apiBlobRequest).not.toHaveBeenCalled()
+  expect(await screen.findByText('Belum ada distribusi selesai pada jadwal ini: preview berupa format kosong.')).toBeVisible()
+  await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledWith('/api/v1/bast/closing-kabupaten/preview', expect.objectContaining({ method: 'POST' })))
+  expect(screen.queryByRole('button', { name: /Finalisasi/ })?.hasAttribute('disabled') ?? true).toBe(true)
 })
 
 test('keeps a stale closing kabupaten downloadable while allowing finalization again', async () => {

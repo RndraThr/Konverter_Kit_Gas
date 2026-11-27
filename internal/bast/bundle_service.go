@@ -126,6 +126,19 @@ func (s *BundleService) PreviewBundle(ctx context.Context, request BundleRequest
 		request.LocalDate = date
 	}
 	documents, _, _, err := s.prepareDocuments(ctx, auth.Principal{}, request, scope, auth.ClientMeta{}, false)
+	if errors.Is(err, ErrNoRecipients) && request.SlotID == "" {
+		// Belum ada distribusi selesai pada tanggal ini: preview berupa satu BA
+		// kosong agar format bisa diperiksa lebih dulu.
+		blank, blankErr := s.blankDocument(ctx, request, scope)
+		if blankErr != nil {
+			return BundlePreview{}, blankErr
+		}
+		rendered, checksum, renderErr := s.render(ctx, request.ProgramID, request.RegencyID, request.LocalDate, []RecipientDocument{blank})
+		if renderErr != nil {
+			return BundlePreview{}, renderErr
+		}
+		return BundlePreview{PDF: rendered.PDF, Filename: rendered.Filename, PageCount: rendered.PageCount, Checksum: checksum}, nil
+	}
 	if err != nil {
 		return BundlePreview{}, err
 	}
@@ -155,6 +168,33 @@ func (s *BundleService) PreviewBundle(ctx context.Context, request BundleRequest
 		}
 	}
 	return BundlePreview{PDF: rendered.PDF, Filename: rendered.Filename, RecipientCount: len(documents), PageCount: rendered.PageCount, Checksum: checksum}, nil
+}
+
+// blankSourceLoader memuat data BA Perorangan tanpa penerima.
+type blankSourceLoader interface {
+	LoadBlankSourceData(context.Context, SourceContext, string, auth.RegencyScope) (SourceData, error)
+}
+
+// blankDocument menyusun satu BA Perorangan kosong (tanpa penerima, nomor,
+// dan alat) untuk preview sebelum ada distribusi selesai.
+func (s *BundleService) blankDocument(ctx context.Context, request BundleRequest, scope auth.RegencyScope) (RecipientDocument, error) {
+	loader, ok := s.repository.(blankSourceLoader)
+	if !ok {
+		return RecipientDocument{}, ErrNoRecipients
+	}
+	sourceContext, err := s.repository.GetSourceContext(ctx, request.ProgramID, request.RegencyID, scope)
+	if err != nil {
+		return RecipientDocument{}, err
+	}
+	source, err := loader.LoadBlankSourceData(ctx, sourceContext, request.LocalDate, scope)
+	if err != nil {
+		return RecipientDocument{}, err
+	}
+	snapshot, err := BuildPreviewSnapshot(source)
+	if err != nil {
+		return RecipientDocument{}, err
+	}
+	return RecipientDocument{LocalDate: request.LocalDate, Snapshot: snapshot}, nil
 }
 
 // recipientScanPages cuts one recipient's BA out of the day's full scan

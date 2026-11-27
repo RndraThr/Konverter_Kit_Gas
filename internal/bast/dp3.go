@@ -110,6 +110,11 @@ type DP3Snapshot struct {
 	Recipients            []dp3RecipientSnapshot `json:"recipients"`
 }
 
+// blankPreviewRows adalah jumlah baris kosong pada preview BA distribusi
+// sebelum ada distribusi selesai, agar format bisa diperiksa lebih dulu.
+// Finalisasi tetap menuntut penerima.
+const blankPreviewRows = 10
+
 func buildDP3Snapshot(ctx DP3Context, settings ScheduleSettings, logos []LogoSnapshot, documentDate string, recipients []DP3Recipient) (DP3Snapshot, error) {
 	sortedLogos := append([]LogoSnapshot(nil), logos...)
 	sort.SliceStable(sortedLogos, func(i, j int) bool { return sortedLogos[i].SortOrder < sortedLogos[j].SortOrder })
@@ -123,6 +128,9 @@ func buildDP3Snapshot(ctx DP3Context, settings ScheduleSettings, logos []LogoSna
 			MachineType: recipient.MachineType, MachinePower: recipient.MachinePower,
 			MachineFuelType: recipient.MachineFuelType, Source: recipient.Source,
 		})
+	}
+	if len(rows) == 0 {
+		rows = make([]dp3RecipientSnapshot, blankPreviewRows)
 	}
 	return DP3Snapshot{
 		DocumentType:          AggregateDocumentDP3,
