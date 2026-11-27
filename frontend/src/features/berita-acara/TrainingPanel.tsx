@@ -52,12 +52,14 @@ export function TrainingPanel({ config, scheduleID, regencyName, programType }: 
   useEffect(() => setLocation(savedLocation), [savedLocation]);
   const dates = useQuery({ queryKey: ['bast', config.apiPath, 'dates', scheduleID], queryFn: () => apiRequest<DataResponse<TrainingDate[]>>(`${apiBase}/dates?schedule_id=${encodeURIComponent(scheduleID)}`), enabled });
   const dateItems = dates.data?.data ?? [];
-  // Manual: daftar kosong untuk tanggal bebas; bawaan bila belum ada distribusi selesai.
-  // Tanpa distribusi selesai, jenis lain pun hanya bisa preview format kosong.
+  // Manual: daftar kosong untuk tanggal bebas (Training sebelum distribusi).
+  // Per distribusi tanpa distribusi selesai: tanggal bebas, server mencetak
+  // format kosong sampai peserta tanggal itu ada.
   const noDistribution = dates.isSuccess && dateItems.length === 0;
-  const manual = config.manual ? (manualChoice ?? noDistribution) : noDistribution;
+  const manual = Boolean(config.manual && (manualChoice ?? noDistribution));
+  const freeDate = manual || noDistribution;
   const distributionDate = dateItems.some((item) => item.local_date === chosenDate) ? chosenDate : dateItems[0]?.local_date ?? '';
-  const selectedDate = manual ? manualDate : distributionDate;
+  const selectedDate = freeDate ? manualDate : distributionDate;
   const selected = manual ? undefined : dateItems.find((item) => item.local_date === selectedDate);
   // Lokasi boleh kosong: dicetak kosong.
   const ready = /^\d{4}-\d{2}-\d{2}$/.test(selectedDate);
@@ -100,14 +102,14 @@ export function TrainingPanel({ config, scheduleID, regencyName, programType }: 
         <CardHeader><CardTitle className="flex items-center gap-2 text-base"><CalendarDays className="size-4 text-primary" />{manual ? 'Tanggal kegiatan' : 'Tanggal distribusi'}</CardTitle></CardHeader>
         <CardContent className="grid gap-2">
           {config.manual && <div role="group" aria-label="Cara cetak" className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1 text-sm">
-            <button type="button" aria-pressed={!manual} disabled={dateItems.length === 0} onClick={() => setManualChoice(false)} className="rounded-md px-2 py-1.5 font-medium text-muted-foreground disabled:opacity-50 aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-xs">Per distribusi</button>
+            <button type="button" aria-pressed={!manual} onClick={() => setManualChoice(false)} className="rounded-md px-2 py-1.5 font-medium text-muted-foreground aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-xs">Per distribusi</button>
             <button type="button" aria-pressed={manual} onClick={() => setManualChoice(true)} className="rounded-md px-2 py-1.5 font-medium text-muted-foreground aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-xs">Manual (kosong)</button>
           </div>}
-          {manual && <div className="grid gap-2">
+          {freeDate && <div className="grid gap-2">
             <label className="grid gap-1.5 text-sm font-medium">Tanggal pelaksanaan
               <Input type="date" aria-label="Tanggal pelaksanaan" value={manualDate} onChange={(e) => setManualDate(e.target.value)} />
             </label>
-            {config.manual
+            {manual
               ? <p className="text-xs leading-5 text-muted-foreground">Daftar hadir kosong{rowCount ? ` (${rowCount} baris, atur di Pengaturan BA)` : ''} untuk Training yang dilakukan sebelum distribusi. Cetak, isi dan tanda tangan basah, lalu unggah hasil scan di arsip di bawah dengan tanggal yang sama.</p>
               : <p className="text-xs leading-5 text-muted-foreground">Belum ada distribusi selesai di {regencyName}: preview berupa format kosong. Peserta terisi otomatis setelah penyerahan diselesaikan.</p>}
           </div>}

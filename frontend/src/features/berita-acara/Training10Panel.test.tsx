@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, expect, test, vi } from 'vitest'
 import { apiBlobRequest, apiRequest } from '@/lib/api'
 import { PermissionsProvider } from '@/lib/permissions'
@@ -46,8 +46,14 @@ test('prints a blank manual sheet for any date, also before any distribution', a
   </PermissionsProvider></QueryClientProvider>)
   const date = await screen.findByLabelText('Tanggal pelaksanaan')
   expect(screen.getByRole('button', { name: 'Manual (kosong)' })).toHaveAttribute('aria-pressed', 'true')
-  expect(screen.getByRole('button', { name: 'Per distribusi' })).toBeDisabled()
   expect(screen.getByText('Daftar kosong')).toBeVisible()
   await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledWith('/api/v1/bast/training-10/preview',
     expect.objectContaining({ body: JSON.stringify({ schedule_id: 'schedule-1', date: (date as HTMLInputElement).value, blank: true }) })))
+
+  // Per distribusi stays available: any date, the server prints the blank format.
+  fireEvent.click(screen.getByRole('button', { name: 'Per distribusi' }))
+  expect(screen.getByRole('button', { name: 'Per distribusi' })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByLabelText('Tanggal pelaksanaan')).toBeVisible()
+  await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledWith('/api/v1/bast/training-10/preview',
+    expect.objectContaining({ body: JSON.stringify({ schedule_id: 'schedule-1', date: (date as HTMLInputElement).value }) })))
 })
