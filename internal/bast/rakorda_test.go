@@ -154,10 +154,12 @@ func TestActivityNarrativeFollowsReference(t *testing.T) {
 	cases := []struct {
 		document activityDocument
 		opening  string
+		closing  string
 	}{
-		{sosialisasiDocument, "Pada Hari ini, Sabtu, Tanggal 3 Oktober 2026, Telah dilakukan Sosialisasi kepada 10% penerima "},
-		{training10Document, "Pada Hari ini, Sabtu, Tanggal 3 Oktober 2026, Telah dilakukan Training kepada 10% penerima "},
-		{training100Document, "Pada Hari ini, Sabtu, Tanggal 3 Oktober 2026, Telah dilakukan Training kepada penerima "},
+		// Format terbaru dari lead (Ceremony dan Sosialisasi, Sosialisasi dan Training 10%).
+		{sosialisasiDocument, "Pada Hari ini, Sabtu, Tanggal 3 Oktober Tahun 2026, Telah dilakukan Ceremony dan Sosialisasi ", "Patra Niaga Zona 4 (empat)"},
+		{training10Document, "Pada Hari ini, Sabtu, Tanggal 3 Oktober Tahun 2026, Telah dilakukan Sosialisasi dan Training kepada 10% penerima ", "Patra Niaga Zona 4 (empat)"},
+		{training100Document, "Pada Hari ini, Sabtu, Tanggal 3 Oktober 2026, Telah dilakukan Training kepada penerima ", "(Termasuk Pendistribusian Dan Pemasangan) Zona 4 (Empat)"},
 	}
 	for _, tc := range cases {
 		segments := activityNarrative(tc.document, "2026-10-03", 2026, "ZONA 4")
@@ -168,12 +170,14 @@ func TestActivityNarrativeFollowsReference(t *testing.T) {
 		if segments[1].style != "B" || segments[2].text != "Liquefied Petroleum Gas" || segments[2].style != "BI" || segments[3].style != "B" {
 			t.Fatalf("styles=%+v", segments)
 		}
-		if !strings.HasSuffix(segments[3].text, "(Termasuk Pendistribusian Dan Pemasangan) Zona 4 (Empat)") {
+		if !strings.HasSuffix(segments[3].text, tc.closing) {
 			t.Fatalf("closing=%q", segments[3].text)
 		}
 	}
-	if training100Document.title != "BERITA ACARA TELAH DILAKSANAKANNYA TRAINING" {
-		t.Fatalf("title=%q", training100Document.title)
+	if strings.Join(sosialisasiDocument.title, " ") != "BERITA ACARA TELAH DILAKSANAKANNYA CEREMONY DAN SOSIALISASI" ||
+		strings.Join(training10Document.title, " ") != "BERITA ACARA TELAH DILAKSANAKANNYA SOSIALISASI DAN TRAINING 10%" ||
+		strings.Join(training100Document.title, " ") != "BERITA ACARA TELAH DILAKSANAKANNYA TRAINING" {
+		t.Fatalf("titles=%q %q %q", sosialisasiDocument.title, training10Document.title, training100Document.title)
 	}
 }
 
