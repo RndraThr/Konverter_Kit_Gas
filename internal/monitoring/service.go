@@ -12,6 +12,7 @@ import (
 	"konkit/internal/audit"
 	"konkit/internal/auth"
 	"konkit/internal/distribution"
+	"konkit/internal/media"
 	"konkit/internal/notifications"
 
 	"github.com/jackc/pgx/v5"
@@ -32,6 +33,7 @@ type Service struct {
 	pool     *pgxpool.Pool
 	slots    Slots
 	notifier Notifier
+	storage  media.Storage
 }
 
 func NewService(pool *pgxpool.Pool, slots Slots, notifier Notifier) *Service {

@@ -9,6 +9,7 @@ import { useCan } from '@/lib/permissions';
 import { cn } from '@/lib/utils';
 import { approveBA, monitoringKey, requestBARevision, useBAItems } from './api';
 import { BADocument } from './BADocument';
+import { RotateButtons, useRotateFile } from './useRotateFile';
 import { baLabel, baSourceLabels, type BAItem } from './types';
 
 const formatDate = (day: string) => new Date(`${day}T00:00:00`).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
@@ -34,6 +35,7 @@ export function BAReviewDialog({ scheduleId, type, regencyName, onClose }: { sch
   const [index, setIndex] = useState(0);
   const [reason, setReason] = useState('');
   const [flagging, setFlagging] = useState(false);
+  const rotation = useRotateFile(scheduleId);
   useEffect(() => { setIndex(0); setReason(''); setFlagging(false); }, [scheduleId, type]);
 
   const list = items.data ?? [];
@@ -53,6 +55,8 @@ export function BAReviewDialog({ scheduleId, type, regencyName, onClose }: { sch
   });
   const busy = approve.isPending || revise.isPending;
   const canApprove = canReview && !!current && current.review?.status !== 'approved';
+  // Uploaded scans and sheets turn (saved to the file); BA Perorangan is drawn from the BA.
+  const canRotate = canReview && !!current && !current.individual;
 
   useEffect(() => {
     if (!open) return;
@@ -62,12 +66,13 @@ export function BAReviewDialog({ scheduleId, type, regencyName, onClose }: { sch
       if (event.key === 'ArrowDown' || event.key === 'ArrowRight') setIndex((i) => Math.min(i + 1, list.length - 1));
       else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') setIndex((i) => Math.max(i - 1, 0));
       else if ((event.key === 'a' || event.key === 'A') && canApprove && !busy) approve.mutate([current.key]);
+      else if ((event.key === 'r' || event.key === 'R') && canRotate) rotation.rotate('ba', current.key, event.shiftKey ? -90 : 90);
       else return;
       event.preventDefault();
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [open, list.length, canApprove, busy, current, approve]);
+  }, [open, list.length, canApprove, canRotate, rotation, busy, current, approve]);
 
   return <Dialog open={open} onOpenChange={(value) => { if (!value) onClose(); }}>
     <DialogContent className="flex h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none p-0 ring-0 sm:max-w-none">
@@ -87,7 +92,10 @@ export function BAReviewDialog({ scheduleId, type, regencyName, onClose }: { sch
               </button>
             </li>)}
           </ul>
-          <div className="flex min-h-0 bg-neutral-100 dark:bg-neutral-900">{current ? <BADocument key={current.key} item={current} /> : null}</div>
+          <div className="relative flex min-h-0 bg-neutral-100 dark:bg-neutral-900">{current ? <>
+            <BADocument key={current.key} item={current} rotation={current.mime_type.startsWith('image/') ? rotation.angle('ba', current.key) : 0} />
+            {canRotate ? <RotateButtons angle={rotation.angle('ba', current.key)} saving={rotation.saving('ba', current.key)} onRotate={(delta) => rotation.rotate('ba', current.key, delta)} /> : null}
+          </> : null}</div>
           <aside className="flex min-h-0 flex-col border-l">
             {current ? <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 text-sm">
               <div>
@@ -114,7 +122,7 @@ export function BAReviewDialog({ scheduleId, type, regencyName, onClose }: { sch
                   <Button variant="outline" className="flex-1" disabled={busy || fresh.length === 0} onClick={() => approve.mutate(fresh.map((item) => item.key))}><CheckCheck />Setujui {fresh.length || ''} baru</Button>
                 </div>
               </>}
-              <p className="text-center text-[11px] text-muted-foreground">↑ ↓ ganti dokumen · A setujui</p>
+              <p className="text-center text-[11px] text-muted-foreground">↑ ↓ ganti dokumen · A setujui · R putar</p>
             </div> : null}
           </aside>
         </div>}

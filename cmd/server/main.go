@@ -171,7 +171,7 @@ func run(ctx context.Context, cfg config.Config) error {
 	realtimeHub := realtime.NewHub()
 	go realtime.Listen(ctx, cfg.DatabaseURL, realtimeHub)
 
-	monitoringService := monitoring.NewService(pool, distributionRepository, notificationService)
+	monitoringService := monitoring.NewService(pool, distributionRepository, notificationService).WithStorage(mediaStorage)
 	go monitoringService.RunProgress(ctx)
 	apiHandler := apihttp.NewHandler(apihttp.Dependencies{
 		Auth:                  authService,

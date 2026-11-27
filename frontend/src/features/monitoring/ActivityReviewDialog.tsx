@@ -13,6 +13,7 @@ import { albumKey, approveActivityPhotos, monitoringKey, requestActivityRevision
 import { activityLabel, type ActivityAlbum, type ActivityPhoto } from './types';
 import { ZoomableImage, type ZoomHandle } from './ZoomableImage';
 import { BADocument } from './BADocument';
+import { RotateButtons, useRotateFile } from './useRotateFile';
 
 const formatTime = (value?: string | null) => value ? new Date(value).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
 /** Photos copied from the distribution were checked there already. */
@@ -34,6 +35,7 @@ export function ActivityReviewDialog({ scheduleId, activity, onClose }: { schedu
   const [flags, setFlags] = useState<Record<string, string>>({});
   const [note, setNote] = useState('');
   const [confirming, setConfirming] = useState(false);
+  const rotation = useRotateFile(scheduleId);
   useEffect(() => { setIndex(0); setFlags({}); setNote(''); setConfirming(false); }, [scheduleId, activity]);
 
   const photos = album.data?.photos ?? [];
@@ -66,6 +68,8 @@ export function ActivityReviewDialog({ scheduleId, activity, onClose }: { schedu
   });
   const busy = approve.isPending || revise.isPending;
   const canApproveCurrent = canReview && !!current && checkable(current) && current.review?.status !== 'approved' && flags[current.id] === undefined;
+  // Photos and PDFs turn and are saved so; videos not.
+  const canRotate = canReview && !!current && !current.mime_type.startsWith('video/');
 
   useEffect(() => {
     if (!open) return;
@@ -77,6 +81,7 @@ export function ActivityReviewDialog({ scheduleId, activity, onClose }: { schedu
       else if (event.key === '+' || event.key === '=') zoom.current?.zoomIn();
       else if (event.key === '-') zoom.current?.zoomOut();
       else if (event.key === '0') zoom.current?.reset();
+      else if ((event.key === 'r' || event.key === 'R') && canRotate) rotation.rotate('activity', current.id, event.shiftKey ? -90 : 90);
       else if ((event.key === 'a' || event.key === 'A') && event.shiftKey && canReview && fresh.length > 0 && !busy) approve.mutate(fresh.map((p) => p.id));
       else if ((event.key === 'a' || event.key === 'A') && canApproveCurrent && !busy) approve.mutate([current.id]);
       else return;
@@ -85,7 +90,7 @@ export function ActivityReviewDialog({ scheduleId, activity, onClose }: { schedu
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [open, photos.length, canReview, canApproveCurrent, current, fresh, busy, approve]);
+  }, [open, photos.length, canReview, canApproveCurrent, canRotate, rotation, current, fresh, busy, approve]);
 
   const toggleFlag = (id: string, on: boolean) => setFlags((value) => {
     const next = { ...value };
@@ -112,10 +117,12 @@ export function ActivityReviewDialog({ scheduleId, activity, onClose }: { schedu
           <div className="flex min-h-0 flex-col bg-neutral-950">
             <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden">
               {current ? (pdf
-                ? <div className="size-full bg-neutral-100"><BADocument key={current.id} item={{ key: current.id, type: activity, label: current.slot || current.display_name, date: '', source: 'archive', content_url: current.content_url, mime_type: current.mime_type, uploaded_by: current.uploaded_by, uploaded_at: current.uploaded_at, review: null }} /></div>
+                ? <div className="relative size-full bg-neutral-100"><BADocument key={current.id} item={{ key: current.id, type: activity, label: current.slot || current.display_name, date: '', source: 'archive', content_url: current.content_url, mime_type: current.mime_type, uploaded_by: current.uploaded_by, uploaded_at: current.uploaded_at, review: null }} />
+                  {canRotate ? <RotateButtons angle={rotation.angle('activity', current.id)} saving={rotation.saving('activity', current.id)} onRotate={(delta) => rotation.rotate('activity', current.id, delta)} /> : null}</div>
                 : video
                 ? <video key={current.id} src={current.content_url} controls className="max-h-full max-w-full" />
-                : <ZoomableImage ref={zoom} src={current.content_url} alt={current.display_name} />) : null}
+                : <ZoomableImage ref={zoom} src={current.content_url} alt={current.display_name} rotation={rotation.angle('activity', current.id)}
+                  onRotate={canRotate ? (delta) => rotation.rotate('activity', current.id, delta) : undefined} rotating={rotation.saving('activity', current.id)} />) : null}
               {current ? <div className="pointer-events-none absolute top-3 left-3 flex items-center gap-2 rounded-md bg-black/60 px-2.5 py-1 text-xs text-white">
                 {index + 1}/{photos.length}
                 {!checkable(current) ? <span className="rounded bg-sky-500 px-1.5 font-semibold">Dari distribusi</span>

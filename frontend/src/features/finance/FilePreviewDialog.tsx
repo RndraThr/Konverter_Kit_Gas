@@ -17,7 +17,7 @@ const pdfZoomMax = 300;
 const imageZoomMin = 1;
 const imageZoomMax = 8;
 const imageZoomStep = 1.25;
-const wheelSpeed = 0.0015;
+const wheelSpeed = 0.004;
 const toolbarButton = 'text-white hover:bg-white/10 hover:text-white disabled:text-white/40';
 
 type Preview = { url: string; blob: Blob; pdf: boolean };

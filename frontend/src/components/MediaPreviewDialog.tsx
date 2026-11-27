@@ -83,7 +83,7 @@ export function MediaPreviewDialog({ items, index, onIndexChange }: Props) {
     if (!node || isVideo) return;
     const handleWheel = (event: globalThis.WheelEvent) => {
       event.preventDefault();
-      applyZoom(zoom + (event.deltaY < 0 ? ZOOM_STEP : -ZOOM_STEP), focalPoint(node, event.clientX, event.clientY));
+      applyZoom(Math.round(zoom * (event.deltaY < 0 ? 1.4 : 1 / 1.4)), focalPoint(node, event.clientX, event.clientY));
     };
     node.addEventListener('wheel', handleWheel, { passive: false });
     return () => node.removeEventListener('wheel', handleWheel);

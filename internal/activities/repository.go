@@ -40,7 +40,7 @@ func (r *Repository) GetRegency(ctx context.Context, regencyID string, scope aut
 const activityMediaSelect = `
 SELECT m.id::text, m.program_id::text, m.regency_id::text, r.name, r.document_code, m.activity_type, m.storage_key,
 	m.display_name, m.original_filename, m.media_type, m.mime_type, m.byte_size, m.checksum,
-	m.source, m.status, m.uploaded_by, m.uploaded_at, m.created_at, m.updated_at
+	m.source, m.status, m.uploaded_by, m.uploaded_at, m.created_at, m.updated_at, m.content_version
 FROM activity_media m
 JOIN regencies r ON r.id = m.regency_id
 `
@@ -55,9 +55,10 @@ func scanActivityMedia(row rowScanner) (ActivityMedia, error) {
 	if err := row.Scan(&item.ID, &item.ProgramID, &item.RegencyID, &item.RegencyName, &item.RegencyDocumentCode, &item.ActivityType,
 		&item.StorageKey, &item.DisplayName, &item.OriginalFilename, &item.MediaType, &item.MimeType,
 		&item.ByteSize, &item.Checksum, &item.Source, &item.Status, &uploadedBy, &item.UploadedAt,
-		&item.CreatedAt, &item.UpdatedAt); err != nil {
+		&item.CreatedAt, &item.UpdatedAt, &item.ContentVersion); err != nil {
 		return ActivityMedia{}, fmt.Errorf("scan activity media: %w", err)
 	}
+	item.ContentURL = MediaContentURL(item.ID, item.ContentVersion)
 	item.UploadedBy = uploadedBy
 	return item, nil
 }

@@ -1,4 +1,4 @@
-import { Maximize, ZoomIn, ZoomOut } from 'lucide-react';
+import { Loader2, Maximize, RotateCcw, RotateCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -21,18 +21,34 @@ export function zoomAt(view: View, factor: number, px: number, py: number): View
   return { scale, x: px - (px - view.x) * ratio, y: py - (py - view.y) * ratio };
 }
 
+/**
+ * CSS turn of a photo shown with object-contain in box, scaled so the turned
+ * photo still fits (a preview until the rotated file is saved).
+ */
+export function rotationFit(rotation: number, box?: { width: number; height: number }, natural?: { w: number; h: number } | null): string | undefined {
+  const deg = ((rotation % 360) + 360) % 360;
+  if (deg === 0) return undefined;
+  if (deg === 180 || !box || !natural || !box.width || !box.height) return `rotate(${rotation}deg)`;
+  const fit = Math.min(box.width / natural.w, box.height / natural.h);
+  const w = natural.w * fit, h = natural.h * fit;
+  const scale = Math.min(box.width / h, box.height / w);
+  return `rotate(${rotation}deg) scale(${scale})`;
+}
+
 export type ZoomHandle = { zoomIn: () => void; zoomOut: () => void; reset: () => void };
 
 /**
  * A photo that zooms with the mouse wheel toward the cursor, with buttons
  * (+, −, reset) and drag to pan when zoomed. A new src starts unzoomed.
  */
-export const ZoomableImage = forwardRef<ZoomHandle, { src: string; alt: string; className?: string }>(function ZoomableImage({ src, alt, className }, ref) {
+export const ZoomableImage = forwardRef<ZoomHandle, { src: string; alt: string; className?: string; rotation?: number; onRotate?: (delta: number) => void; rotating?: boolean }>(function ZoomableImage({ src, alt, className, rotation = 0, onRotate, rotating }, ref) {
   const box = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<View>(reset);
   const [panning, setPanning] = useState<{ x: number; y: number } | null>(null);
+  const [natural, setNatural] = useState<{ w: number; h: number; box: { width: number; height: number } } | null>(null);
 
-  useEffect(() => { setView(reset); }, [src]);
+  useEffect(() => { setView(reset); }, [src, rotation]);
+  const turn = rotationFit(rotation, natural?.box, natural);
 
   const center = useCallback((factor: number) => {
     const rect = box.current?.getBoundingClientRect();
@@ -47,7 +63,9 @@ export const ZoomableImage = forwardRef<ZoomHandle, { src: string; alt: string; 
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
       const rect = el.getBoundingClientRect();
-      const factor = Math.exp(-event.deltaY * 0.0015);
+      // One wheel notch (~100 px; Firefox counts lines) zooms about 1.5×.
+      const pixels = event.deltaMode === 1 ? event.deltaY * 33 : event.deltaMode === 2 ? event.deltaY * 400 : event.deltaY;
+      const factor = Math.exp(-Math.max(-250, Math.min(250, pixels)) * 0.004);
       setView((v) => zoomAt(v, factor, event.clientX - rect.left, event.clientY - rect.top));
     };
     el.addEventListener('wheel', onWheel, { passive: false });
@@ -71,14 +89,22 @@ export const ZoomableImage = forwardRef<ZoomHandle, { src: string; alt: string; 
     onPointerUp={() => setPanning(null)}
     onPointerCancel={() => setPanning(null)}
   >
-    <img src={src} alt={alt} draggable={false}
-      className={cn('size-full select-none object-contain', !panning && 'transition-transform duration-100 ease-out')}
-      style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, transformOrigin: '0 0' }} />
+    <div className={cn('size-full', !panning && 'transition-transform duration-100 ease-out')}
+      style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, transformOrigin: '0 0' }}>
+      <img src={src} alt={alt} draggable={false} onLoad={(e) => setNatural({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight, box: { width: box.current?.clientWidth ?? 0, height: box.current?.clientHeight ?? 0 } })}
+        className="size-full select-none object-contain transition-transform duration-200 ease-out"
+        style={turn ? { transform: turn } : undefined} />
+    </div>
     <div className="absolute right-3 bottom-3 flex items-center gap-1 rounded-lg bg-black/60 p-1 text-white backdrop-blur" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
       <Button variant="ghost" size="icon-sm" className="text-white hover:bg-white/20 hover:text-white" aria-label="Perkecil" disabled={!zoomed} onClick={() => center(1 / step)}><ZoomOut /></Button>
       <span className="w-12 text-center text-xs tabular-nums">{Math.round(view.scale * 100)}%</span>
       <Button variant="ghost" size="icon-sm" className="text-white hover:bg-white/20 hover:text-white" aria-label="Perbesar" disabled={view.scale >= maxScale} onClick={() => center(step)}><ZoomIn /></Button>
       <Button variant="ghost" size="icon-sm" className="text-white hover:bg-white/20 hover:text-white" aria-label="Reset zoom" disabled={!zoomed} onClick={() => setView(reset)}><Maximize /></Button>
+      {onRotate ? <>
+        <span className="mx-0.5 h-5 w-px bg-white/30" aria-hidden="true" />
+        <Button variant="ghost" size="icon-sm" className="text-white hover:bg-white/20 hover:text-white" aria-label="Putar ke kiri" title="Putar ke kiri (Shift+R), tersimpan ke file" onClick={() => onRotate(-90)}><RotateCcw /></Button>
+        <Button variant="ghost" size="icon-sm" className="text-white hover:bg-white/20 hover:text-white" aria-label="Putar ke kanan" title="Putar ke kanan (R), tersimpan ke file" onClick={() => onRotate(90)}>{rotating ? <Loader2 className="animate-spin" /> : <RotateCw />}</Button>
+      </> : null}
     </div>
   </div>;
 });

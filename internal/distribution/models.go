@@ -3,6 +3,7 @@ package distribution
 import (
 	"errors"
 	"io"
+	"strconv"
 	"time"
 )
 
@@ -360,6 +361,17 @@ type MediaFile struct {
 	StorageLastError string     `json:"storage_last_error,omitempty"`
 	ContentURL       string     `json:"content_url"`
 	UploadedAt       time.Time  `json:"uploaded_at"`
+	ContentVersion   int        `json:"-"`
+}
+
+// MediaContentURL is where a distribution photo is read; the version (bumped
+// when the content is replaced, e.g. rotated) makes caches fetch it again.
+func MediaContentURL(id string, version int) string {
+	url := "/api/v1/distribution/media/" + id + "/content"
+	if version > 0 {
+		url += "?v=" + strconv.Itoa(version)
+	}
+	return url
 }
 
 type MediaContent struct {

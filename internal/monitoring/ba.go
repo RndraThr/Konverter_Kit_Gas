@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -117,30 +118,30 @@ func (s *Service) baItems(ctx context.Context, q queryer, scheduleIDs []string) 
 		WITH items AS (
 			SELECT f.schedule_id, 'scan:' || f.document_key || ':' || f.document_date AS key, f.document_key AS wet_key, '' AS archive_kind,
 				f.document_date::text AS day, 'scan' AS source, f.content_code || '@' || f.uploaded_at AS version,
-				f.uploaded_by, f.uploaded_at, 'application/pdf' AS mime, '' AS upload_id
+				f.uploaded_by, f.uploaded_at, 'application/pdf' AS mime, '' AS upload_id, f.content_version AS cv
 			FROM bast_full_scans f WHERE f.schedule_id = ANY($1::uuid[]) AND f.document_key <> 'ba-perorangan'
 			UNION ALL
 			SELECT w.schedule_id, 'wet:' || w.document_key || ':' || w.document_date, w.document_key, '', w.document_date::text, 'wet',
-				w.content_code || '@' || w.uploaded_at, w.uploaded_by, w.uploaded_at, 'image/png', ''
+				w.content_code || '@' || w.uploaded_at, w.uploaded_by, w.uploaded_at, 'image/png', '', w.content_version
 			FROM bast_wet_signature_scans w
 			WHERE w.schedule_id = ANY($1::uuid[]) AND w.document_key <> 'ba-perorangan'
 				AND NOT EXISTS (SELECT 1 FROM bast_full_scans f WHERE f.schedule_id = w.schedule_id AND f.document_key = w.document_key AND f.document_date = w.document_date)
 			UNION ALL
 			SELECT u.schedule_id, 'archive:' || u.id, '', u.document_kind, u.event_date::text, 'archive', u.id::text,
-				u.uploaded_by, u.created_at, u.mime_type, u.id::text
+				u.uploaded_by, u.created_at, u.mime_type, u.id::text, u.content_version
 			FROM bast_rakorda_uploads u WHERE u.schedule_id = ANY($1::uuid[])
 			UNION ALL
 			SELECT ds.schedule_id, 'individual:' || d.distribution_slot_id, 'ba-perorangan', '', d.local_date::text,
 				CASE WHEN f.schedule_id IS NULL THEN 'digital' ELSE 'scan' END,
 				d.id || '@' || COALESCE(f.uploaded_at::text, ''), COALESCE(f.uploaded_by, d.finalized_by), COALESCE(f.uploaded_at, d.finalized_at), 'application/pdf',
-				d.distribution_slot_id::text || '|' || d.program_id || '|' || d.regency_id || '|' || d.slot_number
+				d.distribution_slot_id::text || '|' || d.program_id || '|' || d.regency_id || '|' || d.slot_number, COALESCE(f.content_version, 0)
 			FROM bast_individual_documents d
 			JOIN distribution_slots ds ON ds.id = d.distribution_slot_id
 			LEFT JOIN bast_full_scans f ON f.schedule_id = ds.schedule_id AND f.document_key = 'ba-perorangan' AND f.document_date = d.local_date
 			WHERE d.status = 'final' AND ds.schedule_id = ANY($1::uuid[])
 		)
 		SELECT i.schedule_id::text, i.key, i.wet_key, i.archive_kind, i.day, i.source, i.version, COALESCE(i.uploaded_by::text, ''), `+userName("up")+`,
-			i.uploaded_at, i.mime, i.upload_id, rv.status, COALESCE(rv.reason, ''), `+userName("ru")+`, rv.reviewed_at
+			i.uploaded_at, i.mime, i.upload_id, i.cv, rv.status, COALESCE(rv.reason, ''), `+userName("ru")+`, rv.reviewed_at
 		FROM items i
 		LEFT JOIN users up ON up.id = i.uploaded_by
 		LEFT JOIN ba_reviews rv ON rv.schedule_id = i.schedule_id AND rv.item_key = i.key AND rv.version = i.version
@@ -153,12 +154,13 @@ func (s *Service) baItems(ctx context.Context, q queryer, scheduleIDs []string) 
 	out := map[string][]BAItem{}
 	for rows.Next() {
 		var scheduleID, wetKey, archiveKind, uploadID string
+		var version int
 		var it BAItem
 		var status *string
 		var reason, reviewer string
 		var reviewedAt *time.Time
 		if err := rows.Scan(&scheduleID, &it.Key, &wetKey, &archiveKind, &it.Date, &it.Source, &it.version, &it.uploaderID, &it.UploadedBy,
-			&it.UploadedAt, &it.MimeType, &uploadID, &status, &reason, &reviewer, &reviewedAt); err != nil {
+			&it.UploadedAt, &it.MimeType, &uploadID, &version, &status, &reason, &reviewer, &reviewedAt); err != nil {
 			return nil, fmt.Errorf("scan BA upload: %w", err)
 		}
 		if status != nil && reviewedAt != nil {
@@ -179,7 +181,7 @@ func (s *Service) baItems(ctx context.Context, q queryer, scheduleIDs []string) 
 			if it.Type == "" {
 				continue
 			}
-			it.ContentURL = baContentURL(it.Source, wetKey, it.Type, scheduleID, it.Date, uploadID)
+			it.ContentURL = baContentURL(it.Source, wetKey, it.Type, scheduleID, it.Date, uploadID, version)
 		}
 		out[scheduleID] = append(out[scheduleID], it)
 	}
@@ -195,11 +197,18 @@ func baState(r *MediaReview) string {
 }
 
 // baContentURL is where the web reads an uploaded BA.
-func baContentURL(source, wetKey, baType, scheduleID, day, uploadID string) string {
+func baContentURL(source, wetKey, baType, scheduleID, day, uploadID string, version int) string {
 	if source == "archive" {
-		return "/api/v1/bast/" + baType + "/uploads/" + uploadID + "/content"
+		u := "/api/v1/bast/" + baType + "/uploads/" + uploadID + "/content"
+		if version > 0 {
+			u += "?v=" + strconv.Itoa(version)
+		}
+		return u
 	}
 	q := url.Values{"schedule_id": {scheduleID}, "date": {day}}
+	if version > 0 {
+		q.Set("v", strconv.Itoa(version))
+	}
 	if location, ok := strings.CutPrefix(wetKey, "closing-titik-serah@"); ok {
 		q.Set("document", "closing-titik-serah")
 		q.Set("location_id", location)

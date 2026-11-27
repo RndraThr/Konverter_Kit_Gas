@@ -63,7 +63,7 @@ describe('FilePreviewButton', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Perbesar' }));
     expect(screen.getByText('125%')).toBeInTheDocument();
     fireEvent.wheel(stage, { deltaY: -200 });
-    expect(screen.getByText('169%')).toBeInTheDocument();
+    expect(screen.getByText('278%')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Kembali ke ukuran awal' }));
     expect(screen.getByText('100%')).toBeInTheDocument();
   });

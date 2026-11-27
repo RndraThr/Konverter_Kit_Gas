@@ -3,6 +3,7 @@ package activities
 import (
 	"errors"
 	"io"
+	"strconv"
 	"time"
 )
 
@@ -90,6 +91,17 @@ type ActivityMedia struct {
 	CreatedAt           time.Time `json:"created_at"`
 	UpdatedAt           time.Time `json:"updated_at"`
 	ContentURL          string    `json:"content_url"`
+	ContentVersion      int       `json:"-"`
+}
+
+// MediaContentURL is where an activity file is read; the version (bumped when
+// the content is replaced, e.g. rotated) makes caches fetch it again.
+func MediaContentURL(id string, version int) string {
+	url := "/api/v1/activities/media/" + id + "/content"
+	if version > 0 {
+		url += "?v=" + strconv.Itoa(version)
+	}
+	return url
 }
 
 type Filter struct {
