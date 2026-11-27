@@ -279,9 +279,7 @@ func (s *DailyRecapService) load(ctx context.Context, scheduleID, localDate stri
 	if err != nil {
 		return DP3Context{}, nil, ScheduleSettings{}, err
 	}
-	if !strict && len(recipients) == 0 {
-		return DP3Context{}, nil, ScheduleSettings{}, ErrAggregateNoRecipients
-	}
+	// Belum ada distribusi selesai: preview tetap dibuat sebagai daftar kosong.
 	if strict {
 		if err := validateDailyRecapRecipients(recipients); err != nil {
 			return DP3Context{}, nil, ScheduleSettings{}, err

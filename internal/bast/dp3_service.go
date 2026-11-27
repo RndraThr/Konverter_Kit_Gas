@@ -327,9 +327,7 @@ func (s *DP3Service) load(ctx context.Context, scheduleID, localDate string, sco
 	if err != nil {
 		return DP3Context{}, nil, err
 	}
-	if !strict && len(recipients) == 0 {
-		return DP3Context{}, nil, ErrAggregateNoRecipients
-	}
+	// Belum ada distribusi selesai: preview tetap dibuat sebagai daftar kosong.
 	if strict {
 		if err := validateDP3Recipients(recipients); err != nil {
 			return DP3Context{}, nil, err

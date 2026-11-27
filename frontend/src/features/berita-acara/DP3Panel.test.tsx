@@ -45,6 +45,17 @@ test('does not fetch a preview while the document is not ready', async () => {
   expect(apiBlobRequest).not.toHaveBeenCalled()
 })
 
+test('previews the blank DP3 format before any distribution is completed', async () => {
+  vi.mocked(apiRequest).mockImplementation(async (path) => {
+    if (path.includes('/dates')) return { data: [] }
+    throw new Error(`unexpected ${path}`)
+  })
+  renderPanel()
+  expect(await screen.findByText(/preview berupa format kosong/)).toBeVisible()
+  await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledWith('/api/v1/bast/dp3/preview', expect.objectContaining({ method: 'POST' })))
+  expect(screen.queryByRole('button', { name: /Finalisasi/ })).not.toBeInTheDocument()
+})
+
 test('shows a stale DP3 as downloadable history and keeps finalization available', async () => {
   vi.mocked(apiRequest).mockImplementation(async (path) => {
     if (path.includes('/dates')) return { data: [{ local_date: '2026-10-03', recipient_count: 2, validation_status: 'ready' }] }

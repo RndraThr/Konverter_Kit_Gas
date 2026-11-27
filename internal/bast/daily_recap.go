@@ -88,6 +88,9 @@ func buildDailyRecapSnapshot(ctx DP3Context, settings ScheduleSettings, logos []
 			MachinePower: recipient.MachinePower, MachineFuelType: recipient.MachineFuelType,
 		})
 	}
+	if len(rows) == 0 {
+		rows = make([]dailyRecapRecipientSnapshot, blankPreviewRows)
+	}
 	variants := groupDailyRecapVariants(recipients)
 	return DailyRecapSnapshot{
 		DocumentType:          AggregateDocumentDailyRecap,

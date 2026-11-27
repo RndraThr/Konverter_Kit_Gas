@@ -14,6 +14,7 @@ import { PdfPreview } from './PdfPreview';
 import { FullScanCard, useFullScanStatus } from './FullScanBar';
 import { SignatureSettingsPanel } from './SignatureSettingsPanel';
 import { WetSignatureHint } from './WetSignatureBar';
+import { BlankDistributionPreview } from './BlankDistributionPreview';
 import type { BundleRequest, DailyBundle, DateSummary, RecipientDocument } from './types';
 
 // scheduleID: jadwal kabupaten ini, dipakai panel tanda tangan Pelaksana/Konsultan.
@@ -95,7 +96,7 @@ export function BAIndividualPanel({ programID, regencyID, regencyName, programTy
   if (programType === 'fisherman') return <DataState kind="empty" title="BA Perorangan Nelayan belum tersedia" description="Data dan template Nelayan tetap dipisahkan dari Petani. Konfigurasi khusus Nelayan akan ditambahkan pada tahap berikutnya." />;
   if (dates.isPending) return <DataState kind="loading" title="Memuat BA Perorangan" description="Menyiapkan kumpulan pembagian per tanggal." />;
   if (dates.isError) return <DataState kind="error" title="BA Perorangan belum dapat dimuat" description="Periksa konfigurasi program atau koneksi, lalu coba lagi." action={{ label: 'Coba lagi', onClick: () => dates.refetch() }} />;
-  if (dateItems.length === 0) return <DataState kind="empty" title="Belum ada pembagian selesai" description={`Belum ditemukan distribusi selesai untuk ${regencyName}. Tanggal akan muncul otomatis setelah penyerahan diselesaikan.`} />;
+  if (dateItems.length === 0) return <BlankDistributionPreview documentKey="individual" label="BA Perorangan" regencyName={regencyName} endpoint="/api/v1/bast/individual/bundles/preview" body={request} />;
 
   const sortedRecipients = [...(recipients.data?.data ?? [])].sort((a, b) => a.slot_number - b.slot_number);
   const pending = dateItems.filter(needsSync);

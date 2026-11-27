@@ -15,6 +15,7 @@ import { SignatureSettingsPanel } from './SignatureSettingsPanel';
 import { FullScanCard } from './FullScanBar';
 import { useWetSignatureBlocked, WetSignatureHint } from './WetSignatureBar';
 import { incompletePreviewNote, previewBlockingStatus } from './previewStatus';
+import { BlankDistributionPreview } from './BlankDistributionPreview';
 import { DocumentInfoFields } from './DocumentInfoFields';
 import type { AggregateDocument, DailyRecapDate, DailyRecapRecipient } from './types';
 
@@ -79,7 +80,7 @@ export function DailyRecapPanel({ scheduleID, regencyName, programType }: Props)
   if (programType === 'fisherman') return <DataState kind="empty" title="Rekap Harian Nelayan belum tersedia" description="Fase pertama hanya mendukung program Petani." />;
   if (dates.isPending) return <DataState kind="loading" title="Memuat Rekap Harian" description="Menyiapkan tanggal distribusi selesai." />;
   if (dates.isError) return <DataState kind="error" title="Rekap Harian belum dapat dimuat" description="Periksa konfigurasi program atau koneksi, lalu coba lagi." action={{ label: 'Coba lagi', onClick: () => dates.refetch() }} />;
-  if (dateItems.length === 0) return <DataState kind="empty" title="Belum ada distribusi selesai" description={`Belum ditemukan distribusi selesai untuk ${regencyName}. Tanggal akan muncul otomatis setelah penyerahan diselesaikan.`} />;
+  if (dateItems.length === 0) return <BlankDistributionPreview documentKey="daily-recap" label="Rekap Harian" regencyName={regencyName} endpoint="/api/v1/bast/daily-recap/preview" body={(date) => ({ schedule_id: scheduleID, local_date: date })} />;
 
   const selected = dateItems.find((item) => item.local_date === selectedDate);
   const selectedReady = selected?.validation_status === 'ready';

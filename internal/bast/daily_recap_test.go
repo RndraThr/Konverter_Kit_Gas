@@ -124,9 +124,15 @@ func TestDailyRecapPreviewAllowsIncompleteDataButFinalizeDoesNot(t *testing.T) {
 	if _, err := service.Finalize(context.Background(), auth.Principal{}, "schedule-1", "2026-10-02", scope, auth.ClientMeta{}); !errors.Is(err, ErrVerificationSnapshotIncomplete) {
 		t.Fatalf("finalize err=%v", err)
 	}
+	// Belum ada distribusi selesai: preview tetap dibuat sebagai format kosong,
+	// finalisasi tetap ditolak.
 	repository.recipients = nil
-	if _, err := service.Preview(context.Background(), "schedule-1", "2026-10-02", scope); !errors.Is(err, ErrAggregateNoRecipients) {
-		t.Fatalf("empty preview err=%v", err)
+	empty, err := service.Preview(context.Background(), "schedule-1", "2026-10-02", scope)
+	if err != nil || empty.RecipientCount != 0 || len(empty.PDF) == 0 {
+		t.Fatalf("empty preview=%d bytes err=%v", len(empty.PDF), err)
+	}
+	if _, err := service.Finalize(context.Background(), auth.Principal{}, "schedule-1", "2026-10-02", scope, auth.ClientMeta{}); err == nil {
+		t.Fatal("empty finalize succeeded")
 	}
 }
 

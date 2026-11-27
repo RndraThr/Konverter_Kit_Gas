@@ -278,9 +278,7 @@ func (s *ClosingTitikSerahService) load(ctx context.Context, scheduleID string, 
 	if err != nil {
 		return fail(err)
 	}
-	if !strict && len(rows) == 0 {
-		return fail(ErrAggregateNoRecipients)
-	}
+	// Preview sebelum ada distribusi selesai di titik ini tetap dibuat (tabel kosong).
 	if strict {
 		if err := validateClosingRows(rows); err != nil {
 			return fail(err)

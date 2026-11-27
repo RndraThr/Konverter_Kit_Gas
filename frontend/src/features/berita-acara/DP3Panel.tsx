@@ -16,6 +16,7 @@ import { FullScanCard } from './FullScanBar';
 import { useWetSignatureBlocked, WetSignatureHint } from './WetSignatureBar';
 import { incompletePreviewNote, previewBlockingStatus } from './previewStatus';
 import { DocumentInfoFields } from './DocumentInfoFields';
+import { BlankDistributionPreview } from './BlankDistributionPreview';
 import type { AggregateDocument, DailyRecapDate, DP3Recipient } from './types';
 
 type Props = { scheduleID: string; regencyName: string; programType: ProgramType };
@@ -83,7 +84,7 @@ export function DP3Panel({ scheduleID, regencyName, programType }: Props) {
   if (programType === 'fisherman') return <DataState kind="empty" title="DP3 Nelayan belum tersedia" description="Fase pertama hanya mendukung program Petani." />;
   if (dates.isPending) return <DataState kind="loading" title="Memuat DP3" description="Menyiapkan tanggal distribusi selesai." />;
   if (dates.isError) return <DataState kind="error" title="DP3 belum dapat dimuat" description="Periksa konfigurasi program atau koneksi, lalu coba lagi." action={{ label: 'Coba lagi', onClick: () => dates.refetch() }} />;
-  if (dateItems.length === 0) return <DataState kind="empty" title="Belum ada distribusi selesai" description={`Belum ditemukan distribusi selesai untuk ${regencyName}. Tanggal akan muncul otomatis setelah penyerahan diselesaikan.`} />;
+  if (dateItems.length === 0) return <BlankDistributionPreview documentKey="dp3" label="DP3" regencyName={regencyName} endpoint="/api/v1/bast/dp3/preview" body={(date) => ({ schedule_id: scheduleID, document_date: date })} />;
 
   const selected = dateItems.find((item) => item.local_date === selectedDate);
   const selectedReady = selected?.validation_status === 'ready';

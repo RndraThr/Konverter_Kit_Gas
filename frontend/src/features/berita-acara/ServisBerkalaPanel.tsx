@@ -63,7 +63,8 @@ export function ServisBerkalaPanel({ scheduleID, regencyName, programType, defau
   const preview = useQuery({
     queryKey: ['bast', 'servis-berkala', 'preview', scheduleID, documentDate, summary.data?.data.services],
     queryFn: () => apiBlobRequest('/api/v1/bast/servis-berkala/preview', { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, document_date: documentDate }) }),
-    enabled: programType === 'farmer' && status !== 'no_recipients' && documentDate !== '',
+    // Tanpa distribusi selesai, preview memakai kuota paket kabupaten.
+    enabled: programType === 'farmer' && documentDate !== '',
   });
   const saveDates = useMutation({
     mutationFn: async () => {
@@ -140,7 +141,7 @@ export function ServisBerkalaPanel({ scheduleID, regencyName, programType, defau
             </div>
             <WetSignatureHint scheduleID={scheduleID} document="servis-berkala" date={documentDate} open={showSignatures} onOpen={() => setShowSignatures(true)} />
 
-            {status === 'no_recipients' && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">Belum ada distribusi selesai pada jadwal ini.</div>}
+            {status === 'no_recipients' && <div className="rounded-lg border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">Belum ada distribusi selesai pada jadwal ini: preview memakai kuota paket kabupaten dan tanggal servis dibiarkan kosong. Finalisasi setelah distribusi selesai.</div>}
             {status === 'servis_schedule_required' && <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">Tanggal servis belum lengkap: dibiarkan kosong di preview. Isi jadwal servis, atau tunggu distribusi selesai agar tanggal dihitung otomatis.</p>}
 
             {activeDoc && <div className="grid gap-3 rounded-lg border p-4 sm:grid-cols-[1fr_auto] sm:items-center">
@@ -153,7 +154,7 @@ export function ServisBerkalaPanel({ scheduleID, regencyName, programType, defau
               {versions.filter((doc) => doc.status === 'superseded').map((doc) => <div className="flex items-center justify-between gap-3 text-sm" key={doc.id}><span className="text-muted-foreground">Versi {doc.version} · {doc.document_date}</span><Button nativeButton={false} render={<a href={`/api/v1/bast/servis-berkala/documents/${doc.id}/content`} />} variant="ghost" size="sm"><Download />Unduh</Button></div>)}
             </div>}
 
-            {status !== 'no_recipients' && documentDate !== '' && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="BA Servis Berkala" />}
+            {documentDate !== '' && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} label="BA Servis Berkala" />}
           </CardContent>
         </Card>
         <FullScanCard scheduleID={scheduleID} document="servis-berkala" date={documentDate} label="BA Servis Berkala" />
