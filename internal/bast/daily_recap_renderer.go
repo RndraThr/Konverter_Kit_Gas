@@ -17,7 +17,8 @@ const (
 
 // Kolom: No., Nama Petani, No. Kartu Petani, Merek Mesin, Tipe Mesin, No. Seri
 // Mesin. Jumlahnya persis lebar konten (pageWidthMM-2*marginMM = 178 mm).
-var dailyRecapColumnWidths = []float64{12, 44, 36, 24, 32, 30}
+// No. Seri Mesin 36 mm agar nomor seri (mis. SP065ABF320005) tetap satu baris.
+var dailyRecapColumnWidths = []float64{10, 43, 36, 24, 29, 36}
 
 var dailyRecapHeaders = []string{"No.", "Nama Petani", "No. Kartu Petani", "Merek Mesin", "Tipe Mesin", "No. Seri Mesin"}
 
