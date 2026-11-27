@@ -32,3 +32,22 @@ test('uses the Training 10% endpoints and shows the first ten percent of the day
   expect(screen.getByLabelText('Lokasi kegiatan')).toHaveValue('Aula Kecamatan Tempe')
   await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledWith('/api/v1/bast/training-10/preview', expect.objectContaining({ method: 'POST' })))
 })
+
+test('prints a blank manual sheet for any date, also before any distribution', async () => {
+  vi.mocked(apiRequest).mockImplementation(async (path) => {
+    if (path.includes('/settings')) return { data: settings }
+    if (path.includes('/uploads')) return { data: [] }
+    if (path.includes('/training-10/dates')) return { data: [] }
+    throw new Error(`unexpected ${path}`)
+  })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  render(<QueryClientProvider client={client}><PermissionsProvider permissions={['bast.view', 'bast.manage']}>
+    <Training10Panel scheduleID="schedule-1" regencyName="Wajo" programType="farmer" defaultDate="2026-10-03" />
+  </PermissionsProvider></QueryClientProvider>)
+  const date = await screen.findByLabelText('Tanggal pelaksanaan')
+  expect(screen.getByRole('button', { name: 'Manual (kosong)' })).toHaveAttribute('aria-pressed', 'true')
+  expect(screen.getByRole('button', { name: 'Per distribusi' })).toBeDisabled()
+  expect(screen.getByText('Daftar kosong')).toBeVisible()
+  await waitFor(() => expect(apiBlobRequest).toHaveBeenCalledWith('/api/v1/bast/training-10/preview',
+    expect.objectContaining({ body: JSON.stringify({ schedule_id: 'schedule-1', date: (date as HTMLInputElement).value, blank: true }) })))
+})
