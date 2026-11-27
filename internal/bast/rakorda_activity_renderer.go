@@ -47,17 +47,28 @@ const (
 var activityColumnWidths = []float64{12, 38, 22, 28, 61, 17}
 
 // activityDocument membedakan BA kegiatan yang berbagi tata letak daftar
-// hadir: judul, kata kegiatan, dan sasaran peserta pada narasi pembuka.
+// hadir: judul (satu baris per elemen), kata kegiatan, dan sasaran peserta
+// pada narasi pembuka (kosong: tanpa "kepada ...").
 type activityDocument struct {
-	title    string
+	title    []string
 	activity string
 	audience string
+	// leadFormat mengikuti format terbaru dari lead (Ceremony dan Sosialisasi,
+	// Sosialisasi dan Training 10%): "Tanggal 27 November Tahun 2026", tanpa
+	// "(Termasuk Pendistribusian Dan Pemasangan)", dan "Zona 1 (satu)".
+	leadFormat bool
 }
 
 var (
-	sosialisasiDocument = activityDocument{title: "BERITA ACARA TELAH DILAKSANAKANNYA SOSIALISASI", activity: "Sosialisasi", audience: "10% penerima"}
-	training10Document  = activityDocument{title: "BERITA ACARA TELAH DILAKSANAKANNYA TRAINING", activity: "Training", audience: "10% penerima"}
-	training100Document = activityDocument{title: "BERITA ACARA TELAH DILAKSANAKANNYA TRAINING", activity: "Training", audience: "penerima"}
+	sosialisasiDocument = activityDocument{
+		title:    []string{"BERITA ACARA TELAH DILAKSANAKANNYA", "CEREMONY DAN SOSIALISASI"},
+		activity: "Ceremony dan Sosialisasi", leadFormat: true,
+	}
+	training10Document = activityDocument{
+		title:    []string{"BERITA ACARA TELAH DILAKSANAKANNYA", "SOSIALISASI DAN TRAINING 10%"},
+		activity: "Sosialisasi dan Training", audience: "10% penerima", leadFormat: true,
+	}
+	training100Document = activityDocument{title: []string{"BERITA ACARA TELAH DILAKSANAKANNYA TRAINING"}, activity: "Training", audience: "penerima"}
 )
 
 func RenderSosialisasi(snapshot RakordaSnapshot, logoBytes map[string][]byte) (RenderedAggregate, error) {
@@ -84,7 +95,7 @@ func renderActivityAttendance(document activityDocument, snapshot RakordaSnapsho
 	fixPDFDates(pdf, snapshot.DocumentDate)
 	pdf.SetMargins(marginMM, topMarginMM, marginMM)
 	pdf.SetAutoPageBreak(false, bottomMarginMM)
-	pdf.SetTitle(document.title, false)
+	pdf.SetTitle(strings.Join(document.title, " "), false)
 	pdf.SetAuthor("KONKIT", false)
 	registerArial(pdf)
 
@@ -147,7 +158,15 @@ func renderActivityHeader(pdf *fpdf.Fpdf, document activityDocument, snapshot Ra
 
 	pdf.SetXY(marginMM, stripBottom+3)
 	pdf.SetFont(activityFont, "BU", activityTitlePt)
-	pdf.CellFormat(contentWidth, 7, document.title, "", 1, "C", false, 0, "")
+	// Judul dua baris (seperti referensi) lebih rapat agar halaman pertama
+	// tetap memuat 20 baris hadir.
+	titleLineMM := 7.0
+	if len(document.title) > 1 {
+		titleLineMM = 5.8
+	}
+	for _, line := range document.title {
+		pdf.CellFormat(contentWidth, titleLineMM, line, "", 1, "C", false, 0, "")
+	}
 	pdf.Ln(1)
 	renderActivityProcurementHeading(pdf, contentWidth, snapshot.FiscalYear, activitySubtitlePt)
 	pdf.Ln(3)
@@ -218,11 +237,22 @@ func activityNarrative(document activityDocument, documentDate string, fiscalYea
 	}
 	days := [...]string{"Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"}
 	months := [...]string{"", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"}
+	year, scope, zone := fmt.Sprint(date.Year()), " (Termasuk Pendistribusian Dan Pemasangan)", zoneWithWords(titleCaseWords(zoneName))
+	if document.leadFormat {
+		year, scope = "Tahun "+year, ""
+		if i := strings.LastIndex(zone, " ("); i >= 0 {
+			zone = zone[:i] + strings.ToLower(zone[i:])
+		}
+	}
+	audience := ""
+	if document.audience != "" {
+		audience = " kepada " + document.audience
+	}
 	return []textSegment{
-		{text: fmt.Sprintf("Pada Hari ini, %s, Tanggal %d %s %d, Telah dilakukan %s kepada %s ", days[date.Weekday()], date.Day(), months[date.Month()], date.Year(), document.activity, document.audience), style: ""},
+		{text: fmt.Sprintf("Pada Hari ini, %s, Tanggal %d %s %s, Telah dilakukan %s%s ", days[date.Weekday()], date.Day(), months[date.Month()], year, document.activity, audience), style: ""},
 		{text: "Pengadaan Barang Penyediaan dan Pendistribusian Paket Perdana ", style: "B"},
 		{text: "Liquefied Petroleum Gas", style: "BI"},
-		{text: fmt.Sprintf(" (LPG) untuk Mesin Pompa Air Bagi Petani Sasaran Tahun Anggaran %d di PT Pertamina Patra Niaga (Termasuk Pendistribusian Dan Pemasangan) %s", fiscalYear, zoneWithWords(titleCaseWords(zoneName))), style: "B"},
+		{text: fmt.Sprintf(" (LPG) untuk Mesin Pompa Air Bagi Petani Sasaran Tahun Anggaran %d di PT Pertamina Patra Niaga%s %s", fiscalYear, scope, zone), style: "B"},
 	}
 }
 
