@@ -61,7 +61,7 @@ export function TrainingPanel({ config, scheduleID, regencyName, programType }: 
   const ready = /^\d{4}-\d{2}-\d{2}$/.test(selectedDate);
   const preview = useQuery({
     queryKey: ['bast', config.apiPath, 'preview', scheduleID, selectedDate, savedLocation, manual],
-    queryFn: () => apiBlobRequest(`${apiBase}/preview`, { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, date: selectedDate, blank: manual }) }),
+    queryFn: () => apiBlobRequest(`${apiBase}/preview`, { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, date: selectedDate, ...(manual ? { blank: true } : {}) }) }),
     enabled: enabled && ready,
   });
   const saveLocation = useMutation({
