@@ -87,7 +87,8 @@ func TestBASTIndividualSlotPreviewIsOpenToDistributionOfficers(t *testing.T) {
 	secret := []byte("01234567890123456789012345678901")
 	officer := &fakeAuthService{principal: auth.Principal{UserID: "officer"}, allowedPermissions: map[string]bool{"distribution.view": true}}
 	service := &fakeBASTService{preview: bast.BundlePreview{PDF: []byte("%PDF-slot"), Filename: "BA.pdf", RecipientCount: 1}}
-	slot := authenticatedRequest(http.MethodPost, "/api/v1/bast/individual/bundles/preview", `{"program_id":"p","regency_id":"r","local_date":"2024-12-10","slot_id":"slot-1"}`, secret)
+	// The monitoring's BA Perorangan reference also carries slot_number.
+	slot := authenticatedRequest(http.MethodPost, "/api/v1/bast/individual/bundles/preview", `{"program_id":"p","regency_id":"r","local_date":"2024-12-10","slot_id":"slot-1","slot_number":7}`, secret)
 	slotRec := httptest.NewRecorder()
 	NewHandler(Dependencies{Auth: officer, BAST: service, SessionSecret: secret}).ServeHTTP(slotRec, slot)
 	if slotRec.Code != http.StatusOK || slotRec.Body.String() != "%PDF-slot" || service.request.SlotID != "slot-1" {

@@ -5,9 +5,13 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { apiRequest } from '@/lib/api';
 import { monitoringKey } from './api';
+import { prefetchPdfPages } from './pdfPages';
 
 /** photo: distribution photo, activity: activity file, ba: uploaded BA (id = item key). */
 export type RotateKind = 'photo' | 'activity' | 'ba';
+
+/** What to load before the rotated file is shown: an image, PDF pages, or nothing. */
+export type RotateFile = 'image' | 'pdf' | 'none';
 
 export const rotateFile = (body: { schedule_id: string; kind: RotateKind; id: string; degrees: number }) =>
   apiRequest<{ data: { content_url: string } }>('/api/v1/monitoring/rotate', { method: 'POST', body: JSON.stringify(body) }).then((r) => r.data);
@@ -40,6 +44,8 @@ export function useRotateFile(scheduleId: string) {
   // New URL of a rotated file until the monitoring data has it too.
   const [saved, setSaved] = useState<Record<string, string>>({});
   const pendingRef = useRef(pending);
+  // URL last shown per file (and the saved URL it was picked with).
+  const shown = useRef(new Map<string, { url: string; own?: string }>());
   const timers = useRef(new Map<string, number>());
   useEffect(() => { pendingRef.current = pending; }, [pending]);
   useEffect(() => {
@@ -47,7 +53,7 @@ export function useRotateFile(scheduleId: string) {
     return () => all.forEach((timer) => window.clearTimeout(timer));
   }, []);
 
-  const rotate = useCallback((kind: RotateKind, id: string, delta: number, image = true) => {
+  const rotate = useCallback((kind: RotateKind, id: string, delta: number, file: RotateFile = 'image') => {
     const key = `${kind}:${id}`;
     setPending((value) => {
       const next = { ...value, [key]: (value[key] ?? 0) + delta };
@@ -64,7 +70,8 @@ export function useRotateFile(scheduleId: string) {
       setSaving((value) => ({ ...value, [key]: true }));
       try {
         const result = await rotateFile({ schedule_id: scheduleId, kind, id, degrees: quarter(degrees) });
-        if (image) await preload(result.content_url);
+        if (file === 'image') await preload(result.content_url);
+        else if (file === 'pdf') await prefetchPdfPages(queryClient, result.content_url);
         // One render: the rotated file replaces the turned preview.
         setSaved((value) => ({ ...value, [key]: result.content_url }));
         settle();
@@ -84,10 +91,20 @@ export function useRotateFile(scheduleId: string) {
     rotate,
     angle: (kind: RotateKind, id: string) => pending[`${kind}:${id}`] ?? 0,
     saving: (kind: RotateKind, id: string) => Boolean(saving[`${kind}:${id}`]),
-    /** The file's URL: the rotated one until the loaded data is as new. */
+    /**
+     * The file's URL: the rotated one until the loaded data is as new. While
+     * a turn is shown but not saved yet, the URL it was turned on stays (data
+     * refreshed meanwhile, e.g. a live update, would show the turn twice).
+     */
     src: (kind: RotateKind, id: string, url: string) => {
-      const own = saved[`${kind}:${id}`];
-      return own && versionOf(own) > versionOf(url) ? own : url;
+      const key = `${kind}:${id}`;
+      const own = saved[key];
+      const fresh = own && versionOf(own) > versionOf(url) ? own : url;
+      const busy = (pending[key] ?? 0) !== 0 || Boolean(saving[key]);
+      const last = shown.current.get(key);
+      const next = busy && last && last.own === own ? last.url : fresh;
+      shown.current.set(key, { url: next, own });
+      return next;
     },
   };
 }

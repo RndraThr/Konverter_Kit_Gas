@@ -170,7 +170,7 @@ export function ReviewDialog({ scheduleId, slot, onClose, onNext, onStep }: {
         : <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_400px]">
           <div className="flex min-h-0 flex-col bg-neutral-950">
             <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden">
-              {current?.id === 'ba' && data.ba ? <BADocument key={data.ba.key + data.ba.uploaded_at} item={data.ba} />
+              {current?.id === 'ba' && data.ba ? <BADocument ref={zoom} key={data.ba.key + data.ba.uploaded_at} item={data.ba} />
                 : current ? (current.video
                 ? <video key={current.id} src={current.url} controls className="max-h-full max-w-full" />
                 : <ZoomableImage ref={zoom} src={rotation.src('photo', current.id, current.url)} alt={current.label} rotation={rotation.angle('photo', current.id)}

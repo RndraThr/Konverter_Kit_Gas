@@ -51,6 +51,10 @@ type BundleRequest struct {
 	// diabaikan) dan nomor BA tetap dihitung dari seluruh penerima hari itu.
 	// Tidak berlaku untuk finalisasi (satu berkas per tanggal).
 	SlotID string `json:"slot_id,omitempty"`
+	// SlotNumber is ignored: the monitoring sends its BA Perorangan reference
+	// (which carries the slot number for display) as is, and unknown fields
+	// are rejected.
+	SlotNumber int `json:"slot_number,omitempty"`
 }
 
 type BundlePreview struct {

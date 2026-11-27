@@ -109,7 +109,7 @@ func TestDistributionUppercasesSerialsAndRecipientBusinessText(t *testing.T) {
 	}, auth.ClientMeta{}, auth.RegencyScope{}); err != nil {
 		t.Fatal(err)
 	}
-	if repository.linkInput.SectorIdentifier != "KP01" || repository.linkInput.Address != "JL. TANI" || repository.linkInput.Village != "DESA BARU" || repository.linkInput.District != "WAJO" {
+	if repository.linkInput.SectorIdentifier != "KP-01" || repository.linkInput.Address != "JL. TANI" || repository.linkInput.Village != "DESA BARU" || repository.linkInput.District != "WAJO" {
 		t.Fatalf("link input=%+v", repository.linkInput)
 	}
 	if repository.linkInput.NIK != "9171031707010004" || repository.linkInput.PhoneNumber != "081234567890" {
@@ -502,5 +502,17 @@ func TestUploadLargeVideoToStagingRemainsStreaming(t *testing.T) {
 	}
 	if repository.saveInput.StorageState != "staging" || !strings.Contains(strings.Join(storage.folderPath, "/"), "PENDISTRIBUSIAN/_PENDING/schedule-1/25") {
 		t.Fatalf("state=%q path=%v", repository.saveInput.StorageState, storage.folderPath)
+	}
+}
+
+func TestNormalizeIdentifierKeepsSuratKeteranganSymbols(t *testing.T) {
+	for input, want := range map[string]string{
+		" 288/skt/wn/prb-2026 ": "288/SKT/WN/PRB-2026",
+		"424/SK/Pem/CBD-2026":   "424/SK/PEM/CBD-2026",
+		"3312 0101 0001":        "331201010001",
+	} {
+		if got := normalizeIdentifier(input); got != want {
+			t.Fatalf("normalizeIdentifier(%q)=%q, want %q", input, got, want)
+		}
 	}
 }

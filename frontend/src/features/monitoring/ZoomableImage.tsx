@@ -35,6 +35,9 @@ export function rotationFit(rotation: number, box?: { width: number; height: num
   return `rotate(${rotation}deg) scale(${scale})`;
 }
 
+/** Same file, maybe another version: the URL without its query. */
+const sameFile = (a: string, b: string) => !a.startsWith('data:') && a.split('?')[0] === b.split('?')[0];
+
 export type ZoomHandle = { zoomIn: () => void; zoomOut: () => void; reset: () => void };
 
 /**
@@ -46,9 +49,18 @@ export const ZoomableImage = forwardRef<ZoomHandle, { src: string; alt: string; 
   const [view, setView] = useState<View>(reset);
   const [panning, setPanning] = useState<{ x: number; y: number } | null>(null);
   const [natural, setNatural] = useState<{ w: number; h: number; box: { width: number; height: number } } | null>(null);
+  // What is on screen. A new version of the same file (?v=, e.g. just
+  // rotated) replaces it only once loaded, with the turn it came with, so the
+  // turned preview never jumps back meanwhile. Another file shows at once.
+  const [shown, setShown] = useState({ src, rotation });
+  const latest = useRef({ src, rotation });
+  useEffect(() => { latest.current = { src, rotation }; }, [src, rotation]);
+  const waiting = src !== shown.src && sameFile(src, shown.src);
+  if (!waiting && (src !== shown.src || rotation !== shown.rotation)) setShown({ src, rotation });
+  const measure = (img: HTMLImageElement) => setNatural({ w: img.naturalWidth, h: img.naturalHeight, box: { width: box.current?.clientWidth ?? 0, height: box.current?.clientHeight ?? 0 } });
 
-  useEffect(() => { setView(reset); }, [src, rotation]);
-  const turn = rotationFit(rotation, natural?.box, natural);
+  useEffect(() => { setView(reset); }, [shown.src, shown.rotation]);
+  const turn = rotationFit(shown.rotation, natural?.box, natural);
 
   const center = useCallback((factor: number) => {
     const rect = box.current?.getBoundingClientRect();
@@ -92,10 +104,12 @@ export const ZoomableImage = forwardRef<ZoomHandle, { src: string; alt: string; 
     <div className={cn('size-full', !panning && 'transition-transform duration-100 ease-out')}
       style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, transformOrigin: '0 0' }}>
       {/* A new file (e.g. just rotated) is a new element: no turn animation on it. */}
-      <img key={src} src={src} alt={alt} draggable={false} onLoad={(e) => setNatural({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight, box: { width: box.current?.clientWidth ?? 0, height: box.current?.clientHeight ?? 0 } })}
+      <img key={shown.src} src={shown.src} alt={alt} draggable={false} onLoad={(e) => measure(e.currentTarget)}
         className="size-full select-none object-contain transition-transform duration-200 ease-out"
         style={turn ? { transform: turn } : undefined} />
     </div>
+    {waiting ? <img key={src} src={src} alt="" aria-hidden="true" draggable={false} className="pointer-events-none absolute inset-0 size-full object-contain opacity-0"
+      onLoad={(e) => { measure(e.currentTarget); setShown(latest.current); }} onError={() => setShown(latest.current)} /> : null}
     <div className="absolute right-3 bottom-3 flex items-center gap-1 rounded-lg bg-black/60 p-1 text-white backdrop-blur" onPointerDown={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
       <Button variant="ghost" size="icon-sm" className="text-white hover:bg-white/20 hover:text-white" aria-label="Perkecil" disabled={!zoomed} onClick={() => center(1 / step)}><ZoomOut /></Button>
       <span className="w-12 text-center text-xs tabular-nums">{Math.round(view.scale * 100)}%</span>

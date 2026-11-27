@@ -13,7 +13,7 @@ import { albumKey, approveActivityPhotos, monitoringKey, requestActivityRevision
 import { activityLabel, type ActivityAlbum, type ActivityPhoto } from './types';
 import { ZoomableImage, type ZoomHandle } from './ZoomableImage';
 import { BADocument } from './BADocument';
-import { RotateButtons, useRotateFile } from './useRotateFile';
+import { useRotateFile } from './useRotateFile';
 
 const formatTime = (value?: string | null) => value ? new Date(value).toLocaleString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-';
 /** Photos copied from the distribution were checked there already. */
@@ -81,7 +81,7 @@ export function ActivityReviewDialog({ scheduleId, activity, onClose }: { schedu
       else if (event.key === '+' || event.key === '=') zoom.current?.zoomIn();
       else if (event.key === '-') zoom.current?.zoomOut();
       else if (event.key === '0') zoom.current?.reset();
-      else if ((event.key === 'r' || event.key === 'R') && canRotate) rotation.rotate('activity', current.id, event.shiftKey ? -90 : 90);
+      else if ((event.key === 'r' || event.key === 'R') && canRotate) rotation.rotate('activity', current.id, event.shiftKey ? -90 : 90, current.mime_type === 'application/pdf' ? 'pdf' : 'image');
       else if ((event.key === 'a' || event.key === 'A') && event.shiftKey && canReview && fresh.length > 0 && !busy) approve.mutate(fresh.map((p) => p.id));
       else if ((event.key === 'a' || event.key === 'A') && canApproveCurrent && !busy) approve.mutate([current.id]);
       else return;
@@ -117,8 +117,9 @@ export function ActivityReviewDialog({ scheduleId, activity, onClose }: { schedu
           <div className="flex min-h-0 flex-col bg-neutral-950">
             <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden">
               {current ? (pdf
-                ? <div className="relative size-full bg-neutral-100"><BADocument key={current.id} item={{ key: current.id, type: activity, label: current.slot || current.display_name, date: '', source: 'archive', content_url: rotation.src('activity', current.id, current.content_url), mime_type: current.mime_type, uploaded_by: current.uploaded_by, uploaded_at: current.uploaded_at, review: null }} />
-                  {canRotate ? <RotateButtons angle={rotation.angle('activity', current.id)} saving={rotation.saving('activity', current.id)} onRotate={(delta) => rotation.rotate('activity', current.id, delta, false)} /> : null}</div>
+                ? <div className="relative size-full bg-neutral-900"><BADocument ref={zoom} key={current.id} item={{ key: current.id, type: activity, label: current.slot || current.display_name, date: '', source: 'archive', content_url: rotation.src('activity', current.id, current.content_url), mime_type: current.mime_type, uploaded_by: current.uploaded_by, uploaded_at: current.uploaded_at, review: null }}
+                  rotation={rotation.angle('activity', current.id)} rotating={rotation.saving('activity', current.id)}
+                  onRotate={canRotate ? (delta) => rotation.rotate('activity', current.id, delta, 'pdf') : undefined} /></div>
                 : video
                 ? <video key={current.id} src={current.content_url} controls className="max-h-full max-w-full" />
                 : <ZoomableImage ref={zoom} src={rotation.src('activity', current.id, current.content_url)} alt={current.display_name} rotation={rotation.angle('activity', current.id)}
