@@ -159,15 +159,19 @@ test('can mount a recipient first and save the date afterward', async () => {
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/slots/7/date?schedule_id=schedule-1', { method: 'PATCH', body: JSON.stringify({ distribution_date: '2026-10-22' }) }));
 });
 
-test('edits recipient details without allowing NIK mutation and supports replacement search', async () => {
+test('edits recipient details, name and NIK included, and supports replacement search', async () => {
   const linked = { ...openSlot, status: 'linked' as const, full_name: candidate.full_name, nik: candidate.nik, address: 'Alamat Lama', village: 'Tempe', district: 'Wajo', phone_number: '081234567890', sector_identifier: 'KP01' };
   vi.mocked(apiRequest).mockImplementation((path) => path.includes('candidate-suggestions') ? Promise.resolve({ data: [candidate] }) : Promise.resolve({ data: linked }));
   renderSection(linked);
 
-  expect(screen.getByLabelText('NIK terpasang')).toBeDisabled();
+  // A typo from DCP3 is corrected in place; another person is Ganti penerima.
+  fireEvent.change(screen.getByLabelText('Nama lengkap'), { target: { value: 'nama diperbaiki' } });
+  fireEvent.change(screen.getByLabelText('NIK terpasang'), { target: { value: '7306 0141 0190 0001' } });
   fireEvent.change(screen.getByLabelText('Alamat'), { target: { value: 'Alamat Baru' } });
   fireEvent.click(screen.getByRole('button', { name: 'Simpan data penerima' }));
   await waitFor(() => expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/slots/7/recipient?schedule_id=schedule-1', expect.objectContaining({ method: 'PATCH' })));
+  const patch = vi.mocked(apiRequest).mock.calls.find(([path]) => path.includes('/recipient?'))!
+  expect(JSON.parse(String(patch[1]?.body))).toMatchObject({ full_name: 'NAMA DIPERBAIKI', nik: '7306014101900001' })
 
   await userEvent.click(screen.getByRole('button', { name: 'Ganti penerima' }));
   expect(screen.getByLabelText('NIK pengganti')).toBeVisible();
