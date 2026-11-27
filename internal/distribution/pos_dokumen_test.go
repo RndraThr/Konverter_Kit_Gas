@@ -275,3 +275,19 @@ func TestReopenSlotTrimsReasonAndDelegates(t *testing.T) {
 		t.Fatalf("result=%+v input=%+v", result, repo.seen)
 	}
 }
+
+func TestUpdateRecipientNormalizesIdentity(t *testing.T) {
+	repo := &dokumenRepositoryStub{}
+	service := NewService(repo)
+	if _, err := service.UpdateRecipient(context.Background(), auth.Principal{}, UpdateRecipientInput{
+		ScheduleID: "s1", SlotNumber: 1, FullName: "  siti   aminah ", NIK: "9171 0317 0701 0004",
+	}, auth.ClientMeta{}, auth.RegencyScope{}); err != nil {
+		t.Fatal(err)
+	}
+	if repo.seenUpdate.FullName != "SITI AMINAH" || repo.seenUpdate.NIK != "9171031707010004" {
+		t.Fatalf("identity=%q %q", repo.seenUpdate.FullName, repo.seenUpdate.NIK)
+	}
+	if _, err := service.UpdateRecipient(context.Background(), auth.Principal{}, UpdateRecipientInput{ScheduleID: "s1", SlotNumber: 1, NIK: "1234"}, auth.ClientMeta{}, auth.RegencyScope{}); !errors.Is(err, ErrNIKInvalid) {
+		t.Fatalf("short NIK err=%v", err)
+	}
+}

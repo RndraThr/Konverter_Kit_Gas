@@ -32,17 +32,20 @@ export function normalizePhoneInput(value: string): string {
   return digits.slice(0, 13);
 }
 
-type RecipientFields = Pick<LinkSlotInput, 'address' | 'village' | 'district' | 'phone_number' | 'sector_identifier'>;
+type RecipientFields = Pick<LinkSlotInput, 'address' | 'village' | 'district' | 'phone_number' | 'sector_identifier'> & { full_name?: string; nik?: string };
 type RecipientErrors = Partial<Record<keyof RecipientFields, string>>;
 
 // Address, village, district and phone number are mandatory for every recipient the web form
 // saves. The farmer card number is mandatory for farmer programs; the KUSUKA number of fisherman
 // programs stays optional.
-export function recipientErrors(values: RecipientFields, programType?: 'farmer' | 'fisherman'): RecipientErrors {
+export function recipientErrors(values: RecipientFields, programType?: 'farmer' | 'fisherman', identity = false): RecipientErrors {
   const errors: RecipientErrors = {};
   if (programType === 'farmer' && !values.sector_identifier.trim()) errors.sector_identifier = 'Nomor kartu tani wajib diisi.';
   if (!values.phone_number) errors.phone_number = 'Nomor HP wajib diisi.';
   else if (!PHONE_PATTERN.test(values.phone_number)) errors.phone_number = 'Nomor HP harus diawali 08 dan terdiri dari 10–13 digit.';
+  // Name and NIK only on the form that corrects a linked recipient.
+  if (identity && !values.full_name?.trim()) errors.full_name = 'Nama wajib diisi.';
+  if (identity && values.nik?.length !== 16) errors.nik = 'NIK harus 16 digit.';
   if (!values.address.trim()) errors.address = 'Alamat wajib diisi.';
   if (!values.village.trim()) errors.village = 'Desa/kelurahan wajib diisi.';
   if (!values.district.trim()) errors.district = 'Kecamatan wajib diisi.';
@@ -87,12 +90,15 @@ function withLegacyOption(options: EquipmentOption[], code?: string): EquipmentO
 export function SlotDokumenSection({ slot, machineOptions = [], converterOptions = [], hoseOptions = [], onChanged, programType }: Props) {
   const canManage = useCan('distribution.pos_dokumen');
   const [currentSlot, setCurrentSlot] = useState(slot);
-  const { schedule_id: scheduleID, slot_number: slotNumber, distribution_date: distributionDate, address, village, district, phone_number: phoneNumber, sector_identifier: sectorIdentifier,
+  const { schedule_id: scheduleID, slot_number: slotNumber, distribution_date: distributionDate, full_name: fullName, nik: mountedNIK, address, village, district, phone_number: phoneNumber, sector_identifier: sectorIdentifier,
     machine_option_code: machineOptionCode, machine_serial_number: machineSerial, hose_option_code: hoseOptionCode, converter_option_code: converterOptionCode, converter_serial_number: converterSerial } = slot;
   const [date, setDate] = useState(slot.distribution_date ?? '');
   const [revisionOpen, setRevisionOpen] = useState(false);
   const [replaceMode, setReplaceMode] = useState(false);
   const editable = canManage && currentSlot.status !== 'completed';
+  // The recipient's data (name and NIK included) stays correctable after the
+  // handover; its final BA is then marked to be made again.
+  const recipientEditable = canManage && currentSlot.status !== 'open';
   const canCorrectHandover = useCan('bast.manage');
   const [addOpen, setAddOpen] = useState(false);
 
@@ -104,7 +110,7 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
   const [hasSearched, setHasSearched] = useState(false);
   const [suggestionError, setSuggestionError] = useState<Error | null>(null);
   const [linkInput, setLinkInput] = useState<LinkSlotInput>(() => emptyLinkInput(slot.schedule_id, slot.slot_number));
-  const [recipient, setRecipient] = useState<UpdateRecipientInput>({ schedule_id: slot.schedule_id, slot_number: slot.slot_number, address: slot.address ?? '', village: slot.village ?? '', district: slot.district ?? '', phone_number: slot.phone_number ?? '', sector_identifier: slot.sector_identifier ?? '' });
+  const [recipient, setRecipient] = useState<UpdateRecipientInput>({ schedule_id: slot.schedule_id, slot_number: slot.slot_number, full_name: slot.full_name ?? '', nik: slot.nik ?? '', address: slot.address ?? '', village: slot.village ?? '', district: slot.district ?? '', phone_number: slot.phone_number ?? '', sector_identifier: slot.sector_identifier ?? '' });
   // Equipment not chosen yet starts at the template's default (Shark, ERGAS, Figo); a completed
   // nomor bagi shows only what was saved.
   const autofill = slot.status !== 'completed';
@@ -128,9 +134,9 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
   // documentation (media moving to the final folder) does not wipe what the officer is typing.
   useEffect(() => setDate(distributionDate ?? ''), [distributionDate]);
   useEffect(() => {
-    setRecipient({ schedule_id: scheduleID, slot_number: slotNumber, address: address ?? '', village: village ?? '', district: district ?? '', phone_number: phoneNumber ?? '', sector_identifier: sectorIdentifier ?? '' });
+    setRecipient({ schedule_id: scheduleID, slot_number: slotNumber, full_name: fullName ?? '', nik: mountedNIK ?? '', address: address ?? '', village: village ?? '', district: district ?? '', phone_number: phoneNumber ?? '', sector_identifier: sectorIdentifier ?? '' });
     setRecipientAttempted(false);
-  }, [address, district, phoneNumber, scheduleID, sectorIdentifier, slotNumber, village]);
+  }, [address, district, fullName, mountedNIK, phoneNumber, scheduleID, sectorIdentifier, slotNumber, village]);
   useEffect(() => {
     setEquipment(equipmentFrom(machineOptionCode, machineSerial, hoseOptionCode, converterOptionCode, converterSerial));
     // equipmentFrom only reads the options, which come with the schedule.
@@ -251,7 +257,8 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
   };
   const linkProgramType = candidate?.program_type ?? programType;
   const linkErrors = recipientErrors(linkInput, linkProgramType);
-  const recipientFormErrors = recipientErrors(recipient, programType);
+  const recipientFormErrors = recipientErrors(recipient, programType, true);
+  const recipientUpdateErrors = (recipientUpdate.error instanceof ApiError ? recipientUpdate.error.fields : undefined) ?? {};
   const cardLabel = (type?: 'farmer' | 'fisherman') => type === 'fisherman' ? 'Nomor KUSUKA' : type === 'farmer' ? 'Nomor kartu tani' : 'Nomor kartu/KUSUKA';
   const updateDocumentation = (next: DistributionSlot['documentation'][number]) => publish({ ...currentSlot, documentation: currentSlot.documentation.map((item) => item.code === next.code ? next : item) });
   const extraSlotError = extraSlot.isError && <p role="alert" className="text-sm text-destructive">{extraSlot.error instanceof ApiError ? extraSlot.error.message : 'Slot belum dapat diubah.'}</p>;
@@ -350,15 +357,17 @@ export function SlotDokumenSection({ slot, machineOptions = [], converterOptions
     <section aria-labelledby={`recipient-heading-${currentSlot.id}`} className="space-y-3 rounded-lg border p-4"><h4 id={`recipient-heading-${currentSlot.id}`} className="font-medium">Penerima</h4>
       {currentSlot.status === 'open' ? (editable ? candidatePicker(false) : <p className="text-sm text-muted-foreground">Menunggu penerima</p>) : <>
         <form noValidate className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => { event.preventDefault(); setRecipientAttempted(true); if (hasErrors(recipientFormErrors)) return; recipientUpdate.mutate(); }}>
-          <FormField className="sm:col-span-2" label="NIK terpasang" name="mounted_nik" value={currentSlot.nik ?? ''} disabled onChange={() => {}} />
+          <FormField className="sm:col-span-2" label="Nama lengkap" name="mounted_full_name" requirement="required" error={recipientEditable && recipientAttempted ? recipientFormErrors.full_name : undefined} value={recipient.full_name ?? ''} disabled={!recipientEditable} onChange={(event) => setRecipient({ ...recipient, full_name: uppercaseBusinessText(event.target.value) })} />
+          <FormField className="sm:col-span-2" label="NIK terpasang" name="mounted_nik" requirement="required" inputMode="numeric" maxLength={16} autoComplete="off" hint={recipientEditable ? 'Perbaiki bila salah ketik. Penerima lain: pakai Ganti penerima.' : undefined} error={recipientEditable && recipientAttempted ? (recipientFormErrors.nik ?? recipientUpdateErrors.nik) : undefined} value={recipient.nik ?? ''} disabled={!recipientEditable} onChange={(event) => setRecipient({ ...recipient, nik: event.target.value.replace(/\D/g, '') })} />
           <p className="sr-only">{currentSlot.nik}</p>
-          <FormField label={cardLabel(programType)} name="mounted_sector_identifier" requirement={programType === 'farmer' ? 'required' : 'optional'} error={editable && recipientAttempted ? recipientFormErrors.sector_identifier : undefined} value={recipient.sector_identifier} disabled={!editable} onChange={(event) => setRecipient({ ...recipient, sector_identifier: uppercaseBusinessText(event.target.value) })} />
-          <FormField label="Nomor HP" name="mounted_phone_number" requirement="required" type="tel" inputMode="numeric" autoComplete="off" maxLength={13} placeholder="08xxxxxxxxxx" hint={editable ? PHONE_HINT : undefined} error={editable && recipientAttempted ? recipientFormErrors.phone_number : undefined} value={recipient.phone_number} disabled={!editable} onChange={(event) => setRecipient({ ...recipient, phone_number: normalizePhoneInput(event.target.value) })} />
-          <FormField className="sm:col-span-2" label="Alamat" name="mounted_address" requirement="required" error={editable && recipientAttempted ? recipientFormErrors.address : undefined} value={recipient.address} disabled={!editable} onChange={(event) => setRecipient({ ...recipient, address: uppercaseBusinessText(event.target.value) })} />
-          <FormField label="Desa/kelurahan" name="mounted_village" requirement="required" error={editable && recipientAttempted ? recipientFormErrors.village : undefined} value={recipient.village} disabled={!editable} onChange={(event) => setRecipient({ ...recipient, village: uppercaseBusinessText(event.target.value) })} />
-          <FormField label="Kecamatan" name="mounted_district" requirement="required" error={editable && recipientAttempted ? recipientFormErrors.district : undefined} value={recipient.district} disabled={!editable} onChange={(event) => setRecipient({ ...recipient, district: uppercaseBusinessText(event.target.value) })} />
-          {editable && <div className="flex flex-wrap gap-2 sm:col-span-2"><Button type="submit" disabled={recipientUpdate.isPending}>Simpan data penerima</Button><Button type="button" variant="outline" onClick={() => { if (replaceMode) { closeReplacement(); return; } setReplaceMode(true); setNik(''); setCandidate(null); setLookup(null); setLookupNIK(''); setReplacementName(''); setReplacementReason(''); }}>Ganti penerima</Button></div>}
-          {editable && recipientAttempted && hasErrors(recipientFormErrors) && <p role="alert" className="text-sm text-destructive sm:col-span-2">Data penerima belum lengkap. Periksa kolom bertanda merah.</p>}
+          <FormField label={cardLabel(programType)} name="mounted_sector_identifier" requirement={programType === 'farmer' ? 'required' : 'optional'} error={recipientEditable && recipientAttempted ? recipientFormErrors.sector_identifier : undefined} value={recipient.sector_identifier} disabled={!recipientEditable} onChange={(event) => setRecipient({ ...recipient, sector_identifier: uppercaseBusinessText(event.target.value) })} />
+          <FormField label="Nomor HP" name="mounted_phone_number" requirement="required" type="tel" inputMode="numeric" autoComplete="off" maxLength={13} placeholder="08xxxxxxxxxx" hint={recipientEditable ? PHONE_HINT : undefined} error={recipientEditable && recipientAttempted ? recipientFormErrors.phone_number : undefined} value={recipient.phone_number} disabled={!recipientEditable} onChange={(event) => setRecipient({ ...recipient, phone_number: normalizePhoneInput(event.target.value) })} />
+          <FormField className="sm:col-span-2" label="Alamat" name="mounted_address" requirement="required" error={recipientEditable && recipientAttempted ? recipientFormErrors.address : undefined} value={recipient.address} disabled={!recipientEditable} onChange={(event) => setRecipient({ ...recipient, address: uppercaseBusinessText(event.target.value) })} />
+          <FormField label="Desa/kelurahan" name="mounted_village" requirement="required" error={recipientEditable && recipientAttempted ? recipientFormErrors.village : undefined} value={recipient.village} disabled={!recipientEditable} onChange={(event) => setRecipient({ ...recipient, village: uppercaseBusinessText(event.target.value) })} />
+          <FormField label="Kecamatan" name="mounted_district" requirement="required" error={recipientEditable && recipientAttempted ? recipientFormErrors.district : undefined} value={recipient.district} disabled={!recipientEditable} onChange={(event) => setRecipient({ ...recipient, district: uppercaseBusinessText(event.target.value) })} />
+          {recipientEditable && <div className="flex flex-wrap gap-2 sm:col-span-2"><Button type="submit" disabled={recipientUpdate.isPending}>Simpan data penerima</Button>{editable && <Button type="button" variant="outline" onClick={() => { if (replaceMode) { closeReplacement(); return; } setReplaceMode(true); setNik(''); setCandidate(null); setLookup(null); setLookupNIK(''); setReplacementName(''); setReplacementReason(''); }}>Ganti penerima</Button>}</div>}
+          {recipientEditable && !editable && <p className="text-xs text-muted-foreground sm:col-span-2">Distribusi sudah selesai: perubahan data penerima menandai BA-nya untuk dibuat ulang.</p>}
+          {recipientEditable && recipientAttempted && hasErrors(recipientFormErrors) && <p role="alert" className="text-sm text-destructive sm:col-span-2">Data penerima belum lengkap. Periksa kolom bertanda merah.</p>}
           {recipientUpdate.isError && <p role="alert" className="text-sm text-destructive sm:col-span-2">{recipientUpdate.error instanceof ApiError ? recipientUpdate.error.message : 'Data penerima belum dapat disimpan.'}</p>}
         </form>
         {replaceMode && editable && candidatePicker(true)}

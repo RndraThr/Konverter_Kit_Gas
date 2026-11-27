@@ -1098,9 +1098,16 @@ func TestLinkSlotReturnsRecipientIdentity(t *testing.T) {
 		_, err := pool.Exec(ctx, `UPDATE distribution_slots SET status='completed' WHERE id=$1`, created.ID)
 		return err
 	}())
-	if _, err := repo.UpdateRecipient(ctx, auth.Principal{}, UpdateRecipientInput{ScheduleID: scheduleID, SlotNumber: created.SlotNumber, Address: "DITOLAK"}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrAlreadyCompleted) {
-		t.Fatalf("completed update err=%v", err)
+	// A completed handover can still have its recipient corrected (name, NIK).
+	fixedNIK := fmt.Sprintf("%016d", (time.Now().UnixNano()+3)%1e16)
+	corrected, err := repo.UpdateRecipient(ctx, auth.Principal{}, UpdateRecipientInput{ScheduleID: scheduleID, SlotNumber: created.SlotNumber, FullName: "NAMA DIPERBAIKI", NIK: fixedNIK, Address: "JL. SESUDAH"}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true})
+	if err != nil || corrected.FullName != "NAMA DIPERBAIKI" || corrected.NIK != fixedNIK || corrected.Address != "JL. SESUDAH" {
+		t.Fatalf("completed correction slot=%+v err=%v", corrected, err)
 	}
+	if _, err := repo.UpdateRecipient(ctx, auth.Principal{}, UpdateRecipientInput{ScheduleID: scheduleID, SlotNumber: created.SlotNumber, NIK: conflictNIK}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrNIKInUse) {
+		t.Fatalf("NIK of another person err=%v, want ErrNIKInUse", err)
+	}
+	wantNIK = fixedNIK
 	if _, err := repo.ReplaceRecipient(ctx, auth.Principal{}, ReplaceRecipientInput{ScheduleID: scheduleID, SlotNumber: created.SlotNumber, NIK: wantNIK, Reason: "Percobaan pada slot selesai"}, auth.ClientMeta{}, auth.RegencyScope{Unrestricted: true}); !errors.Is(err, ErrAlreadyCompleted) {
 		t.Fatalf("completed replace err=%v", err)
 	}

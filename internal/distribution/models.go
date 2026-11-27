@@ -11,6 +11,7 @@ var (
 	ErrScheduleRequired          = errors.New("distribution schedule is required")
 	ErrQueryRequired             = errors.New("recipient search query is required")
 	ErrNIKInvalid                = errors.New("NIK must contain 16 digits")
+	ErrNIKInUse                  = errors.New("NIK sudah terdaftar atas nama penerima lain; gunakan Ganti penerima")
 	ErrPhoneInvalid              = errors.New("Nomor HP harus diawali 08 dan terdiri dari 10-13 digit")
 	ErrSerialInvalid             = errors.New("serial number must contain 1 to 100 characters")
 	ErrSyncCursorInvalid         = errors.New("sync cursor must be an RFC3339 timestamp")
@@ -204,8 +205,12 @@ type LinkSlotInput struct {
 }
 
 type UpdateRecipientInput struct {
-	ScheduleID       string `json:"schedule_id"`
-	SlotNumber       int    `json:"slot_number"`
+	ScheduleID string `json:"schedule_id"`
+	SlotNumber int    `json:"slot_number"`
+	// FullName and NIK correct the recipient's identity (e.g. a typo from
+	// DCP3); empty keeps the current value, so older apps can leave them out.
+	FullName         string `json:"full_name,omitempty"`
+	NIK              string `json:"nik,omitempty"`
 	Address          string `json:"address"`
 	Village          string `json:"village"`
 	District         string `json:"district"`
