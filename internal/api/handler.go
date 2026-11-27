@@ -276,6 +276,7 @@ type ServisBerkalaService interface {
 // preview lembar kosong dan arsip hasil terisi.
 type RakordaService interface {
 	Preview(context.Context, string, string, auth.RegencyScope) (bast.AggregatePreview, error)
+	PreviewBlank(context.Context, string, string, auth.RegencyScope) (bast.AggregatePreview, error)
 	Dates(context.Context, string, auth.RegencyScope) ([]bast.TrainingDate, error)
 	Upload(context.Context, auth.Principal, bast.RakordaUploadInput, auth.RegencyScope, auth.ClientMeta) (bast.RakordaUpload, error)
 	List(context.Context, string, string, auth.RegencyScope) ([]bast.RakordaUpload, error)

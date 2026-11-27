@@ -304,3 +304,19 @@ func TestAttendanceSheetsRenderUpTo500Rows(t *testing.T) {
 		t.Fatal("501 rows accepted")
 	}
 }
+
+func TestManualTraining10PrintsBlankRowsBeforeDistribution(t *testing.T) {
+	ctx := DP3Context{ScheduleID: "s", ProgramID: "p", RegencyName: "Wajo", ProvinceName: "Sulawesi Selatan", ZoneName: "Zona 4", FiscalYear: 2026}
+	settings := ScheduleSettings{Training10Location: "Balai Desa", Training10RowCount: 51}
+	spec := training10Spec
+	spec.participants = participantsNone
+	// No distribution yet: the manual sheet still prints with blank rows.
+	snapshot, err := buildRakordaSnapshot(spec, ctx, settings, nil, "2026-11-20", nil)
+	if err != nil || snapshot.RowCount != 51 || snapshot.Participants != nil || snapshot.Location != "BALAI DESA" {
+		t.Fatalf("manual snapshot=%+v err=%v", snapshot, err)
+	}
+	snapshot.Logos = []LogoSnapshot{{AssetID: "logo-1", MimeType: "image/png", SortOrder: 1}}
+	if _, err := RenderTraining10(snapshot, map[string][]byte{"logo-1": testPNG(t)}); err != nil {
+		t.Fatal(err)
+	}
+}

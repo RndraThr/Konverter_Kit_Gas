@@ -54,6 +54,8 @@ func (h *Handler) handleRakordaPreview(w http.ResponseWriter, r *http.Request, r
 	var input struct {
 		ScheduleID string `json:"schedule_id"`
 		Date       string `json:"date"`
+		// Blank: Training printed with empty rows (manual, any date).
+		Blank bool `json:"blank"`
 	}
 	if !decodeJSON(w, r, &input) {
 		return
@@ -66,7 +68,11 @@ func (h *Handler) handleRakordaPreview(w http.ResponseWriter, r *http.Request, r
 	if !ok {
 		return
 	}
-	result, err := service.Preview(r.Context(), input.ScheduleID, input.Date, scope)
+	preview := service.Preview
+	if input.Blank {
+		preview = service.PreviewBlank
+	}
+	result, err := preview(r.Context(), input.ScheduleID, input.Date, scope)
 	if err != nil {
 		writeServiceError(w, err)
 		return

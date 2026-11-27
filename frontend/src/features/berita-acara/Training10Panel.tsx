@@ -9,6 +9,7 @@ const training10Config: TrainingConfig = {
   folder: '8. TRAINING 10%',
   filenamePrefix: 'BA-TRAINING-10%',
   participantRule: 'Satu dokumen per tanggal: 10% pertama (dibulatkan ke atas) dari daftar Training 100% hari itu, urut nomor bagi DP3. Tanda tangan peserta sementara dummy.',
+  manual: true,
 };
 
 type Props = { scheduleID: string; regencyName: string; programType: ProgramType; defaultDate: string };

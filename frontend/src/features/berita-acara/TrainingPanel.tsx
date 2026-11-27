@@ -26,6 +26,8 @@ export type TrainingConfig = {
   filenamePrefix: string;
   /** Penjelasan cara peserta dipilih untuk tanggal tersebut. */
   participantRule: string;
+  /** Boleh dicetak manual: daftar kosong untuk tanggal bebas (mis. sebelum distribusi), diisi dan ditandatangani basah. */
+  manual?: boolean;
 };
 
 type Props = { config: TrainingConfig; scheduleID: string; regencyName: string; programType: ProgramType };
@@ -40,6 +42,8 @@ export function TrainingPanel({ config, scheduleID, regencyName, programType }: 
   const [chosenDate, setChosenDate] = useState('');
   const [location, setLocation] = useState('');
   const [showSignatures, setShowSignatures] = useState(false);
+  const [manualChoice, setManualChoice] = useState<boolean | null>(null);
+  const [manualDate, setManualDate] = useState(() => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }));
   const apiBase = `/api/v1/bast/${config.apiPath}`;
   const enabled = programType === 'farmer';
 
@@ -48,13 +52,16 @@ export function TrainingPanel({ config, scheduleID, regencyName, programType }: 
   useEffect(() => setLocation(savedLocation), [savedLocation]);
   const dates = useQuery({ queryKey: ['bast', config.apiPath, 'dates', scheduleID], queryFn: () => apiRequest<DataResponse<TrainingDate[]>>(`${apiBase}/dates?schedule_id=${encodeURIComponent(scheduleID)}`), enabled });
   const dateItems = dates.data?.data ?? [];
-  const selectedDate = dateItems.some((item) => item.local_date === chosenDate) ? chosenDate : dateItems[0]?.local_date ?? '';
-  const selected = dateItems.find((item) => item.local_date === selectedDate);
+  // Manual: daftar kosong untuk tanggal bebas; bawaan bila belum ada distribusi selesai.
+  const manual = Boolean(config.manual) && (manualChoice ?? (dates.isSuccess && dateItems.length === 0));
+  const distributionDate = dateItems.some((item) => item.local_date === chosenDate) ? chosenDate : dateItems[0]?.local_date ?? '';
+  const selectedDate = manual ? manualDate : distributionDate;
+  const selected = manual ? undefined : dateItems.find((item) => item.local_date === selectedDate);
   // Lokasi boleh kosong: dicetak kosong.
-  const ready = selectedDate !== '';
+  const ready = /^\d{4}-\d{2}-\d{2}$/.test(selectedDate);
   const preview = useQuery({
-    queryKey: ['bast', config.apiPath, 'preview', scheduleID, selectedDate, savedLocation],
-    queryFn: () => apiBlobRequest(`${apiBase}/preview`, { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, date: selectedDate }) }),
+    queryKey: ['bast', config.apiPath, 'preview', scheduleID, selectedDate, savedLocation, manual],
+    queryFn: () => apiBlobRequest(`${apiBase}/preview`, { method: 'POST', body: JSON.stringify({ schedule_id: scheduleID, date: selectedDate, ...(manual ? { blank: true } : {}) }) }),
     enabled: enabled && ready,
   });
   const saveLocation = useMutation({
@@ -70,9 +77,10 @@ export function TrainingPanel({ config, scheduleID, regencyName, programType }: 
   if (programType === 'fisherman') return <DataState kind="empty" title={`${config.name} Nelayan belum tersedia`} description="Format daftar hadir saat ini mengikuti program Petani." />;
   if (dates.isPending || settings.isPending) return <DataState kind="loading" title={`Memuat ${config.name}`} description="Menyiapkan tanggal distribusi selesai." />;
   if (dates.isError || settings.isError) return <DataState kind="error" title={`${config.name} belum dapat dimuat`} description="Periksa koneksi lalu coba kembali." action={{ label: 'Coba lagi', onClick: () => { dates.refetch(); settings.refetch(); } }} />;
-  if (dateItems.length === 0) return <DataState kind="empty" title="Belum ada distribusi selesai" description={`Belum ditemukan distribusi selesai untuk ${regencyName}. Tanggal akan muncul otomatis setelah penyerahan diselesaikan.`} />;
+  if (dateItems.length === 0 && !config.manual) return <DataState kind="empty" title="Belum ada distribusi selesai" description={`Belum ditemukan distribusi selesai untuk ${regencyName}. Tanggal akan muncul otomatis setelah penyerahan diselesaikan.`} />;
 
-  const fileName = `${config.filenamePrefix}-${regencyName}-${selectedDate}.pdf`;
+  const fileName = `${config.filenamePrefix}${manual ? '-MANUAL' : ''}-${regencyName}-${selectedDate}.pdf`;
+  const rowCount = settings.data?.data.training_10_row_count;
   const downloadPreview = () => {
     if (!preview.data) return;
     const url = URL.createObjectURL(preview.data); const anchor = document.createElement('a'); anchor.href = url; anchor.download = fileName; anchor.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -88,20 +96,30 @@ export function TrainingPanel({ config, scheduleID, regencyName, programType }: 
 
     <div className="grid gap-5 xl:grid-cols-[19rem_minmax(0,1fr)]">
       <Card className="self-start">
-        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><CalendarDays className="size-4 text-primary" />Tanggal distribusi</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="flex items-center gap-2 text-base"><CalendarDays className="size-4 text-primary" />{manual ? 'Tanggal kegiatan' : 'Tanggal distribusi'}</CardTitle></CardHeader>
         <CardContent className="grid gap-2">
-          {dateItems.map((item) => <button key={item.local_date} type="button" aria-pressed={item.local_date === selectedDate} onClick={() => setChosenDate(item.local_date)}
+          {config.manual && <div role="group" aria-label="Cara cetak" className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1 text-sm">
+            <button type="button" aria-pressed={!manual} disabled={dateItems.length === 0} onClick={() => setManualChoice(false)} className="rounded-md px-2 py-1.5 font-medium text-muted-foreground disabled:opacity-50 aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-xs">Per distribusi</button>
+            <button type="button" aria-pressed={manual} onClick={() => setManualChoice(true)} className="rounded-md px-2 py-1.5 font-medium text-muted-foreground aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-xs">Manual (kosong)</button>
+          </div>}
+          {manual && <div className="grid gap-2">
+            <label className="grid gap-1.5 text-sm font-medium">Tanggal pelaksanaan
+              <Input type="date" aria-label="Tanggal pelaksanaan" value={manualDate} onChange={(e) => setManualDate(e.target.value)} />
+            </label>
+            <p className="text-xs leading-5 text-muted-foreground">Daftar hadir kosong{rowCount ? ` (${rowCount} baris, atur di Pengaturan BA)` : ''} untuk Training yang dilakukan sebelum distribusi. Cetak, isi dan tanda tangan basah, lalu unggah hasil scan di arsip di bawah dengan tanggal yang sama.</p>
+          </div>}
+          {!manual && dateItems.map((item) => <button key={item.local_date} type="button" aria-pressed={item.local_date === selectedDate} onClick={() => setChosenDate(item.local_date)}
             className="flex min-h-16 w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition-colors hover:bg-muted aria-pressed:border-primary aria-pressed:bg-primary/5">
             <span><strong className="block text-sm">{formatLocalDate(item.local_date)}</strong><span className="text-xs text-muted-foreground">{item.participant_count === item.recipient_count ? `${item.recipient_count} penerima` : `${item.participant_count} dari ${item.recipient_count} penerima`}</span></span>
             <Badge variant="secondary" className="shrink-0">{item.participant_count} peserta</Badge>
           </button>)}
-          <p className="pt-1 text-xs leading-5 text-muted-foreground">{config.participantRule}</p>
+          {!manual && <p className="pt-1 text-xs leading-5 text-muted-foreground">{config.participantRule}</p>}
         </CardContent>
       </Card>
 
       <div className="grid min-w-0 gap-4">
         <Card>
-          <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle>{selected ? formatLocalDate(selected.local_date) : config.documentTitle}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{config.documentTitle} · {regencyName} · disimpan ke {config.folder}</p></div><Badge variant="outline">{selected?.participant_count ?? 0} peserta</Badge></div></CardHeader>
+          <CardHeader className="border-b"><div className="flex flex-wrap items-center justify-between gap-3"><div><CardTitle>{ready ? formatLocalDate(selectedDate) : config.documentTitle}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{config.documentTitle}{manual ? ' manual' : ''} · {regencyName} · disimpan ke {config.folder}</p></div><Badge variant="outline">{manual ? 'Daftar kosong' : `${selected?.participant_count ?? 0} peserta`}</Badge></div></CardHeader>
           <CardContent className="grid gap-4 pt-5">
             <div className="flex flex-wrap items-end gap-2">
               <div className="grid min-w-64 flex-1 gap-1.5 sm:max-w-md">

@@ -99,6 +99,19 @@ func NewTraining100Service(repository rakordaRepository, storage media.Storage) 
 }
 
 func (s *RakordaService) Preview(ctx context.Context, scheduleID, documentDate string, scope auth.RegencyScope) (AggregatePreview, error) {
+	return s.preview(ctx, s.spec, scheduleID, documentDate, scope)
+}
+
+// PreviewBlank prints the sheet with blank numbered rows (row count and
+// location from the schedule settings), like Sosialisasi, for any date: a
+// Training held before distribution is signed fully by hand and uploaded.
+func (s *RakordaService) PreviewBlank(ctx context.Context, scheduleID, documentDate string, scope auth.RegencyScope) (AggregatePreview, error) {
+	spec := s.spec
+	spec.participants = participantsNone
+	return s.preview(ctx, spec, scheduleID, documentDate, scope)
+}
+
+func (s *RakordaService) preview(ctx context.Context, spec rakordaDocumentSpec, scheduleID, documentDate string, scope auth.RegencyScope) (AggregatePreview, error) {
 	ctxData, err := s.repository.GetDP3Context(ctx, strings.TrimSpace(scheduleID), scope)
 	if err != nil {
 		return AggregatePreview{}, err
@@ -115,22 +128,22 @@ func (s *RakordaService) Preview(ctx context.Context, scheduleID, documentDate s
 		return AggregatePreview{}, ErrBrandingNotConfigured
 	}
 	var participants []ActivityParticipant
-	if s.spec.participants != participantsNone {
+	if spec.participants != participantsNone {
 		if participants, err = s.repository.ListTrainingParticipants(ctx, ctxData.ScheduleID, strings.TrimSpace(documentDate), scope); err != nil {
 			return AggregatePreview{}, err
 		}
 	}
-	snapshot, err := buildRakordaSnapshot(s.spec, ctxData, settings, logos, documentDate, participants)
+	snapshot, err := buildRakordaSnapshot(spec, ctxData, settings, logos, documentDate, participants)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
-	marks, markImages, err := loadSignatoryMarks(ctx, s.repository, ctxData.ScheduleID, rakordaSignatureDocument(s.spec.kind))
+	marks, markImages, err := loadSignatoryMarks(ctx, s.repository, ctxData.ScheduleID, rakordaSignatureDocument(spec.kind))
 	if err != nil {
 		return AggregatePreview{}, err
 	}
 	snapshot.SignatureMarks = marks
 	var wetImages map[string][]byte
-	if documentKey := rakordaSignatureDocument(s.spec.kind); documentKey != "" {
+	if documentKey := rakordaSignatureDocument(spec.kind); documentKey != "" {
 		if snapshot.Wet, wetImages, err = loadWetSignature(ctx, s.repository, ctxData.ScheduleID, documentKey, snapshot.DocumentDate, snapshot); err != nil {
 			return AggregatePreview{}, err
 		}
@@ -148,11 +161,11 @@ func (s *RakordaService) Preview(ctx context.Context, scheduleID, documentDate s
 	if err := addRecipientSignatures(ctx, s.repository, logoBytes, slotIDs); err != nil {
 		return AggregatePreview{}, err
 	}
-	rendered, err := s.spec.render(snapshot, logoBytes)
+	rendered, err := spec.render(snapshot, logoBytes)
 	if err != nil {
 		return AggregatePreview{}, err
 	}
-	filename := fmt.Sprintf("%s-%s-%s.pdf", safeFilenamePart(s.spec.label), safeFilenamePart(ctxData.RegencyName), documentDate)
+	filename := fmt.Sprintf("%s-%s-%s.pdf", safeFilenamePart(spec.label), safeFilenamePart(ctxData.RegencyName), documentDate)
 	return AggregatePreview{PDF: rendered.PDF, Filename: filename, RecipientCount: len(snapshot.Participants), PageCount: rendered.PageCount}, nil
 }
 
