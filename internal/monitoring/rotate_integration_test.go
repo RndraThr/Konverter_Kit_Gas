@@ -75,7 +75,9 @@ func TestRotateSavesTheFile(t *testing.T) {
 	_, err = pool.Exec(ctx, `INSERT INTO bast_wet_signature_scans(schedule_id,document_key,document_date,content_code,image_png,byte_size,uploaded_by) VALUES($1,'dp3','2026-11-28','c1',$2,$3,$4)`,
 		f.scheduleID, page.Bytes(), page.Len(), f.uploader)
 	must(t, err)
-	t.Cleanup(func() { _, _ = pool.Exec(context.Background(), `DELETE FROM bast_wet_signature_scans WHERE schedule_id = $1`, f.scheduleID) })
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(), `DELETE FROM bast_wet_signature_scans WHERE schedule_id = $1`, f.scheduleID)
+	})
 	ba, err := service.Rotate(ctx, admin, RotateInput{ScheduleID: f.scheduleID, Kind: "ba", ID: "wet:dp3:2026-11-28", Degrees: -90}, all, auth.ClientMeta{})
 	must(t, err)
 	if !strings.Contains(ba.ContentURL, "v=1") {

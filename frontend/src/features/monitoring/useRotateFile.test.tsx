@@ -9,6 +9,7 @@ vi.mock('@/lib/api', () => ({ apiRequest: vi.fn() }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 beforeEach(() => {
+  vi.clearAllMocks()
   vi.useFakeTimers()
   vi.mocked(apiRequest).mockResolvedValue({ data: { content_url: '/x?v=1' } })
 })
