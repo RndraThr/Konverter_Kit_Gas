@@ -338,6 +338,13 @@ func (s *Service) UpdateRecipient(ctx context.Context, actor auth.Principal, inp
 	if !validPhoneNumber(input.PhoneNumber) {
 		return DistributionSlot{}, ErrPhoneInvalid
 	}
+	input.FullName = strings.Join(strings.Fields(textnorm.BusinessUpper(input.FullName)), " ")
+	if strings.TrimSpace(input.NIK) != "" {
+		input.NIK = stripNonDigits.ReplaceAllString(input.NIK, "")
+		if len(input.NIK) != 16 {
+			return DistributionSlot{}, ErrNIKInvalid
+		}
+	}
 	if s.posDokumenRecipient == nil {
 		return DistributionSlot{}, errors.New("distribution POS Dokumen is unavailable")
 	}

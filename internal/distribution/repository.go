@@ -1341,22 +1341,79 @@ func (r *Repository) UpdateRecipient(ctx context.Context, actor auth.Principal, 
 	if err != nil {
 		return DistributionSlot{}, fmt.Errorf("lock recipient slot: %w", err)
 	}
-	if status == "completed" {
-		return DistributionSlot{}, ErrAlreadyCompleted
-	}
-	if status != "linked" {
+	// A completed handover can still be corrected: its final BA then no
+	// longer matches and is marked to be made again.
+	if status != "linked" && status != "completed" {
 		return DistributionSlot{}, ErrRecipientNotLinked
+	}
+	var oldName, oldNIK string
+	if err := tx.QueryRow(ctx, `SELECT full_name, COALESCE(nik,'') FROM people WHERE id=$1 FOR UPDATE`, personID).Scan(&oldName, &oldNIK); err != nil {
+		return DistributionSlot{}, fmt.Errorf("lock recipient person: %w", err)
+	}
+	name, nik := oldName, oldNIK
+	if input.FullName != "" {
+		name = input.FullName
+	}
+	if input.NIK != "" {
+		nik = input.NIK
+	}
+	if name != oldName || nik != oldNIK {
+		if _, err := tx.Exec(ctx, `UPDATE people SET full_name=$2, nik=NULLIF($3,''), updated_at=now() WHERE id=$1`, personID, name, nik); err != nil {
+			if constraint, ok := uniqueViolationConstraint(err); ok && constraint == peopleNIKUniqueIndex {
+				return DistributionSlot{}, ErrNIKInUse
+			}
+			return DistributionSlot{}, fmt.Errorf("update recipient identity: %w", err)
+		}
 	}
 	if err := updateRecipientDetails(ctx, tx, personID, programType, input.Address, input.Village, input.District, input.PhoneNumber, input.SectorIdentifier); err != nil {
 		return DistributionSlot{}, err
 	}
-	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "distribution.recipient_updated", ResourceType: "distribution_slot", ResourceID: slotID, Metadata: map[string]any{"slot_number": input.SlotNumber, "person_id": personID}, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
+	if status == "completed" {
+		if err := staleSlotBA(ctx, tx, input.ScheduleID, slotID); err != nil {
+			return DistributionSlot{}, err
+		}
+	}
+	metadata := map[string]any{"slot_number": input.SlotNumber, "person_id": personID}
+	if name != oldName {
+		metadata["old_full_name"], metadata["full_name"] = oldName, name
+	}
+	if nik != oldNIK {
+		metadata["old_nik"], metadata["nik"] = oldNIK, nik
+	}
+	if err := audit.Record(ctx, tx, audit.Event{ActorUserID: actor.UserID, Action: "distribution.recipient_updated", ResourceType: "distribution_slot", ResourceID: slotID, Metadata: metadata, IPAddress: meta.IPAddress, UserAgent: meta.UserAgent}); err != nil {
 		return DistributionSlot{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return DistributionSlot{}, fmt.Errorf("commit recipient update: %w", err)
 	}
 	return r.getSlotByID(ctx, slotID)
+}
+
+// staleSlotBA marks the final BA that print a completed slot's recipient
+// (its BA Perorangan, the day's bundle, and the kabupaten documents) to be
+// made again after the recipient's data was corrected.
+func staleSlotBA(ctx context.Context, tx pgx.Tx, scheduleID, slotID string) error {
+	if _, err := tx.Exec(ctx, `
+		UPDATE bast_daily_bundles b SET status='stale',updated_at=now()
+		WHERE b.status='active' AND EXISTS (
+			SELECT 1 FROM bast_daily_bundle_items bi
+			JOIN bast_individual_documents d ON d.id=bi.individual_document_id
+			WHERE bi.bundle_id=b.id AND d.distribution_slot_id=$1 AND d.status='final'
+		)
+	`, slotID); err != nil {
+		return fmt.Errorf("invalidate daily BA bundle: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE bast_individual_documents SET status='stale' WHERE distribution_slot_id=$1 AND status='final'`, slotID); err != nil {
+		return fmt.Errorf("invalidate individual BA: %w", err)
+	}
+	// DP3 and Rekap Harian list the recipient on the slot's distribution date;
+	// the other kabupaten documents cover every recipient.
+	if _, err := tx.Exec(ctx, `UPDATE bast_aggregate_documents SET status='stale',updated_at=now()
+		WHERE schedule_id=$1 AND status='active' AND (document_type NOT IN ('dp3','daily_recap') OR document_date =
+			(SELECT COALESCE(distribution_date, (distributed_at AT TIME ZONE 'Asia/Jakarta')::date) FROM distribution_slots WHERE id=$2))`, scheduleID, slotID); err != nil {
+		return fmt.Errorf("invalidate aggregate BA: %w", err)
+	}
+	return nil
 }
 
 func (r *Repository) ReplaceRecipient(ctx context.Context, actor auth.Principal, input ReplaceRecipientInput, meta auth.ClientMeta, scope auth.RegencyScope) (DistributionSlot, error) {

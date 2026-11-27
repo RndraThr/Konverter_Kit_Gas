@@ -39,7 +39,8 @@ export type CreateSlotInput = {
 
 export type RevisionStage = 'mesin' | 'dokumen' | 'penyerahan';
 export type ReopenSlotInput = { schedule_id: string; slot_number: number; stage: RevisionStage; reason: string };
-export type UpdateRecipientInput = { schedule_id: string; slot_number: number; address: string; village: string; district: string; phone_number: string; sector_identifier: string };
+// full_name and nik correct the recipient's identity; left out, they stay as they are.
+export type UpdateRecipientInput = { schedule_id: string; slot_number: number; full_name?: string; nik?: string; address: string; village: string; district: string; phone_number: string; sector_identifier: string };
 export type ReplaceRecipientInput = UpdateRecipientInput & { nik: string; full_name: string; reason: string };
 
 // Mirrors distribution.CandidateLookup. "not_registered" is the only state that invites creating

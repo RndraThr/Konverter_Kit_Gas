@@ -42,6 +42,9 @@ export function BAReviewDialog({ scheduleId, type, regencyName, onClose }: { sch
 
   const list = items.data ?? [];
   const current = list[Math.min(index, Math.max(list.length - 1, 0))];
+  // Leaving a rotated file shows its rotated version when coming back.
+  const focusRotation = rotation.focus;
+  useEffect(() => focusRotation('ba', current?.key), [focusRotation, current?.key]);
   const fresh = list.filter((item) => !item.review);
   const refresh = () => void queryClient.invalidateQueries({ queryKey: [...monitoringKey] });
   const next = () => { const i = list.findIndex((item, j) => j !== index && !item.review); if (i >= 0) setIndex(i); };

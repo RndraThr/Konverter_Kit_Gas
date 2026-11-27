@@ -40,6 +40,9 @@ export function ActivityReviewDialog({ scheduleId, activity, onClose }: { schedu
 
   const photos = album.data?.photos ?? [];
   const current = photos[Math.min(index, Math.max(photos.length - 1, 0))];
+  // Leaving a rotated file shows its rotated version when coming back.
+  const focusRotation = rotation.focus;
+  useEffect(() => focusRotation('activity', current?.id), [focusRotation, current?.id]);
   const flagged = Object.keys(flags);
   const fresh = photos.filter((p) => checkable(p) && !p.review && flags[p.id] === undefined);
   const approved = photos.filter((p) => !checkable(p) || p.review?.status === 'approved').length;

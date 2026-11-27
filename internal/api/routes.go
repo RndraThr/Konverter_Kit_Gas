@@ -683,7 +683,7 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusConflict, "operation_rejected", err.Error())
 	case errors.Is(err, recipients.ErrAlreadyCancelled), errors.Is(err, recipients.ErrNotCancelled), errors.Is(err, recipients.ErrCancelNotAllowed):
 		writeError(w, http.StatusConflict, "operation_rejected", err.Error())
-	case errors.Is(err, recipients.ErrNIKInUse):
+	case errors.Is(err, recipients.ErrNIKInUse), errors.Is(err, distribution.ErrNIKInUse):
 		writeFieldError(w, http.StatusConflict, "conflict", err.Error(), map[string]string{"nik": err.Error()})
 	case errors.Is(err, profile.ErrFullNameInvalid), errors.Is(err, profile.ErrUsernameInvalid), errors.Is(err, profile.ErrEmailInvalid),
 		errors.Is(err, profile.ErrCurrentPassword), errors.Is(err, profile.ErrPasswordTooShort), errors.Is(err, profile.ErrPasswordUnchanged),

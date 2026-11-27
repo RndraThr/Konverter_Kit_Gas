@@ -73,6 +73,9 @@ export function ReviewDialog({ scheduleId, slot, onClose, onNext, onStep }: {
   const data = detail.data;
   const photos = useMemo(() => (data ? photosOf(data) : []), [data]);
   const current = photos[Math.min(index, Math.max(photos.length - 1, 0))];
+  // Leaving a rotated file shows its rotated version when coming back.
+  const focusRotation = rotation.focus;
+  useEffect(() => focusRotation('photo', current?.id), [focusRotation, current?.id]);
   const reviewOf = (id: string) => (id === 'ba' ? data?.ba?.review ?? undefined : data?.reviews[id]);
   const checkable = photos.filter((p) => p.id !== 'signature');
   const flagged = Object.keys(flags);
