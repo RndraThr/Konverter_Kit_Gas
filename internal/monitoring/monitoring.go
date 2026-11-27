@@ -167,10 +167,12 @@ type MediaReview struct {
 type SlotDetail struct {
 	Slot         distribution.DistributionSlot `json:"slot"`
 	ScheduleName string                        `json:"schedule_name"`
-	RegencyName  string                        `json:"regency_name"`
-	CompletedAt  *time.Time                    `json:"completed_at"`
-	CompletedBy  string                        `json:"completed_by"`
-	State        string                        `json:"state"`
+	// ProgramType: farmer (nomor kartu tani) or fisherman (nomor KUSUKA).
+	ProgramType string     `json:"program_type"`
+	RegencyName string     `json:"regency_name"`
+	CompletedAt *time.Time `json:"completed_at"`
+	CompletedBy string     `json:"completed_by"`
+	State       string     `json:"state"`
 	// Reviews holds the check of each current photo, by media id; a photo
 	// without an entry is not checked yet.
 	Reviews map[string]MediaReview `json:"reviews"`

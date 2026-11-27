@@ -117,11 +117,11 @@ export function ActivityReviewDialog({ scheduleId, activity, onClose }: { schedu
           <div className="flex min-h-0 flex-col bg-neutral-950">
             <div className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden">
               {current ? (pdf
-                ? <div className="relative size-full bg-neutral-100"><BADocument key={current.id} item={{ key: current.id, type: activity, label: current.slot || current.display_name, date: '', source: 'archive', content_url: current.content_url, mime_type: current.mime_type, uploaded_by: current.uploaded_by, uploaded_at: current.uploaded_at, review: null }} />
-                  {canRotate ? <RotateButtons angle={rotation.angle('activity', current.id)} saving={rotation.saving('activity', current.id)} onRotate={(delta) => rotation.rotate('activity', current.id, delta)} /> : null}</div>
+                ? <div className="relative size-full bg-neutral-100"><BADocument key={current.id} item={{ key: current.id, type: activity, label: current.slot || current.display_name, date: '', source: 'archive', content_url: rotation.src('activity', current.id, current.content_url), mime_type: current.mime_type, uploaded_by: current.uploaded_by, uploaded_at: current.uploaded_at, review: null }} />
+                  {canRotate ? <RotateButtons angle={rotation.angle('activity', current.id)} saving={rotation.saving('activity', current.id)} onRotate={(delta) => rotation.rotate('activity', current.id, delta, false)} /> : null}</div>
                 : video
                 ? <video key={current.id} src={current.content_url} controls className="max-h-full max-w-full" />
-                : <ZoomableImage ref={zoom} src={current.content_url} alt={current.display_name} rotation={rotation.angle('activity', current.id)}
+                : <ZoomableImage ref={zoom} src={rotation.src('activity', current.id, current.content_url)} alt={current.display_name} rotation={rotation.angle('activity', current.id)}
                   onRotate={canRotate ? (delta) => rotation.rotate('activity', current.id, delta) : undefined} rotating={rotation.saving('activity', current.id)} />) : null}
               {current ? <div className="pointer-events-none absolute top-3 left-3 flex items-center gap-2 rounded-md bg-black/60 px-2.5 py-1 text-xs text-white">
                 {index + 1}/{photos.length}

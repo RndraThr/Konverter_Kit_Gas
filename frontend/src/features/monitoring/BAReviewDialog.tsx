@@ -66,7 +66,7 @@ export function BAReviewDialog({ scheduleId, type, regencyName, onClose }: { sch
       if (event.key === 'ArrowDown' || event.key === 'ArrowRight') setIndex((i) => Math.min(i + 1, list.length - 1));
       else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') setIndex((i) => Math.max(i - 1, 0));
       else if ((event.key === 'a' || event.key === 'A') && canApprove && !busy) approve.mutate([current.key]);
-      else if ((event.key === 'r' || event.key === 'R') && canRotate) rotation.rotate('ba', current.key, event.shiftKey ? -90 : 90);
+      else if ((event.key === 'r' || event.key === 'R') && canRotate) rotation.rotate('ba', current.key, event.shiftKey ? -90 : 90, current.mime_type.startsWith('image/'));
       else return;
       event.preventDefault();
     };
@@ -93,8 +93,8 @@ export function BAReviewDialog({ scheduleId, type, regencyName, onClose }: { sch
             </li>)}
           </ul>
           <div className="relative flex min-h-0 bg-neutral-100 dark:bg-neutral-900">{current ? <>
-            <BADocument key={current.key} item={current} rotation={current.mime_type.startsWith('image/') ? rotation.angle('ba', current.key) : 0} />
-            {canRotate ? <RotateButtons angle={rotation.angle('ba', current.key)} saving={rotation.saving('ba', current.key)} onRotate={(delta) => rotation.rotate('ba', current.key, delta)} /> : null}
+            <BADocument key={current.key} item={{ ...current, content_url: rotation.src('ba', current.key, current.content_url) }} rotation={current.mime_type.startsWith('image/') ? rotation.angle('ba', current.key) : 0} />
+            {canRotate ? <RotateButtons angle={rotation.angle('ba', current.key)} saving={rotation.saving('ba', current.key)} onRotate={(delta) => rotation.rotate('ba', current.key, delta, current.mime_type.startsWith('image/'))} /> : null}
           </> : null}</div>
           <aside className="flex min-h-0 flex-col border-l">
             {current ? <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4 text-sm">

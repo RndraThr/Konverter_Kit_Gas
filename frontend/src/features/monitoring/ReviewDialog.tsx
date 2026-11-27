@@ -173,7 +173,7 @@ export function ReviewDialog({ scheduleId, slot, onClose, onNext, onStep }: {
               {current?.id === 'ba' && data.ba ? <BADocument key={data.ba.key + data.ba.uploaded_at} item={data.ba} />
                 : current ? (current.video
                 ? <video key={current.id} src={current.url} controls className="max-h-full max-w-full" />
-                : <ZoomableImage ref={zoom} src={current.url} alt={current.label} rotation={rotation.angle('photo', current.id)}
+                : <ZoomableImage ref={zoom} src={rotation.src('photo', current.id, current.url)} alt={current.label} rotation={rotation.angle('photo', current.id)}
                   onRotate={canRotate ? (delta) => rotation.rotate('photo', current.id, delta) : undefined} rotating={rotation.saving('photo', current.id)} />)
                 : <p className="text-sm text-neutral-400">Belum ada foto</p>}
               {current ? <div className="pointer-events-none absolute top-3 left-3 flex items-center gap-2 rounded-md bg-black/60 px-2.5 py-1 text-xs text-white">
@@ -237,6 +237,7 @@ export function ReviewDialog({ scheduleId, slot, onClose, onNext, onStep }: {
                 <dl>
                   <Info label="Nama">{s.full_name}</Info>
                   <Info label="NIK" mono>{s.nik}</Info>
+                  <Info label={data.program_type === 'fisherman' ? 'No. KUSUKA' : 'No. kartu tani'} mono>{s.sector_identifier}</Info>
                   <Info label="Nomor bagi">#{s.slot_number}</Info>
                   <Info label="Desa / Kec.">{[s.village, s.district].filter(Boolean).join(', ')}</Info>
                   <Info label="Alamat">{s.address}</Info>
