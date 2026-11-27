@@ -3,7 +3,7 @@ import { CalendarDays } from 'lucide-react';
 import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { ApiError, apiBlobRequest } from '@/lib/api';
+import { apiBlobRequest } from '@/lib/api';
 import { PdfPreview } from './PdfPreview';
 
 type Props = {
@@ -42,7 +42,7 @@ export function BlankDistributionPreview({ documentKey, label, regencyName, endp
     <Card>
       <CardHeader className="border-b"><CardTitle>{label} · format kosong</CardTitle></CardHeader>
       <CardContent className="pt-5">
-        {valid && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} errorDescription={preview.error instanceof ApiError || preview.error instanceof Error ? preview.error.message : undefined} label={label} />}
+        {valid && <PdfPreview blob={preview.data} isPending={preview.isPending} isError={preview.isError} errorDescription={preview.error instanceof Error ? preview.error.message : undefined} label={label} />}
       </CardContent>
     </Card>
   </div>;
