@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
 import { apiBlobRequest, apiRequest } from '../../lib/api';
@@ -32,6 +32,7 @@ afterEach(() => { vi.clearAllMocks(); localStorage.clear(); });
 
 test('the ink colour can be picked and is kept for the next signature', async () => {
   const first = render(<QueryClientProvider client={new QueryClient()}><RecipientSignature slot={slot} editable onChanged={vi.fn()} /></QueryClientProvider>);
+  await userEvent.click(screen.getByRole('button', { name: 'Pena & warna' }));
   expect(screen.getByRole('button', { name: 'Tinta Biru tua' })).toHaveAttribute('aria-pressed', 'true');
   await userEvent.click(screen.getByRole('button', { name: 'Tinta Merah' }));
   expect(screen.getByRole('button', { name: 'Tinta Merah' })).toHaveAttribute('aria-pressed', 'true');
@@ -39,6 +40,7 @@ test('the ink colour can be picked and is kept for the next signature', async ()
   first.unmount();
 
   renderSignature(slot);
+  await userEvent.click(screen.getByRole('button', { name: 'Pena & warna' }));
   expect(screen.getByRole('button', { name: 'Tinta Merah' })).toHaveAttribute('aria-pressed', 'true');
 });
 
@@ -98,6 +100,7 @@ test('read-only viewers cannot change the colour', () => {
 
 test('the pen type and size can be picked like on the phone and are kept', async () => {
   const first = render(<QueryClientProvider client={new QueryClient()}><RecipientSignature slot={slot} editable onChanged={vi.fn()} /></QueryClientProvider>);
+  await userEvent.click(screen.getByRole('button', { name: 'Pena & warna' }));
   expect(screen.getByRole('button', { name: 'Pena tinta' })).toHaveAttribute('aria-pressed', 'true');
   await userEvent.click(screen.getByRole('button', { name: 'Kaligrafi' }));
   expect(screen.getByRole('button', { name: 'Kaligrafi' })).toHaveAttribute('aria-pressed', 'true');
@@ -105,7 +108,34 @@ test('the pen type and size can be picked like on the phone and are kept', async
   first.unmount();
 
   renderSignature(slot);
+  await userEvent.click(screen.getByRole('button', { name: 'Pena & warna' }));
   expect(screen.getByRole('button', { name: 'Kaligrafi' })).toHaveAttribute('aria-pressed', 'true');
   expect(screen.getByRole('slider', { name: 'Tebal pena' })).toHaveValue('5');
   expect(screen.getByRole('button', { name: 'Batalkan coretan' })).toBeDisabled();
+});
+
+test('the pen and colour sit behind one compact button so the pad stays roomy', async () => {
+  renderSignature(slot);
+  const tools = screen.getByRole('button', { name: 'Pena & warna' });
+  expect(tools).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByRole('group', { name: 'Warna tinta' })).not.toBeInTheDocument();
+  await userEvent.click(tools);
+  expect(screen.getByRole('group', { name: 'Warna tinta' })).toBeVisible();
+  // Starting to sign closes the panel.
+  await userEvent.pointer({ keys: '[MouseLeft>]', target: screen.getByLabelText('Area tanda tangan penerima') });
+  expect(screen.queryByRole('group', { name: 'Warna tinta' })).not.toBeInTheDocument();
+});
+
+test('the pad opens full screen like the phone and Esc brings it back', async () => {
+  renderSignature(slot);
+  await userEvent.click(screen.getByRole('button', { name: 'Layar penuh' }));
+  const dialog = screen.getByRole('dialog', { name: 'Tanda tangan layar penuh' });
+  expect(within(dialog).getByLabelText('Area tanda tangan penerima')).toBeVisible();
+  expect(within(dialog).getByRole('button', { name: 'Simpan tanda tangan' })).toBeVisible();
+  expect(document.body.style.overflow).toBe('hidden');
+
+  await userEvent.keyboard('{Escape}');
+  expect(screen.queryByRole('dialog', { name: 'Tanda tangan layar penuh' })).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Area tanda tangan penerima')).toBeVisible();
+  expect(document.body.style.overflow).toBe('');
 });
