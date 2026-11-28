@@ -1,0 +1,20 @@
+name: Frontend dependencies
+description: Node 20 and frontend/node_modules, restored from cache when package-lock.json is unchanged (npm ci only on a miss).
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 20
+
+    - id: modules
+      uses: actions/cache@v4
+      with:
+        path: frontend/node_modules
+        key: node-modules-${{ runner.os }}-node20-${{ hashFiles('frontend/package-lock.json') }}
+
+    - if: steps.modules.outputs.cache-hit != 'true'
+      name: npm ci
+      shell: bash
+      working-directory: frontend
+      run: npm ci

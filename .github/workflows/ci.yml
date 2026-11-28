@@ -1,18 +1,64 @@
 name: CI
 
+# Pull requests run the fast checks that gate a merge: Go (vet, gofmt, unit and
+# integration tests) and the frontend (types, lint, unit tests in shards,
+# production build), each only when its side changed. Playwright E2E runs
+# after the merge on main (and on demand), so nobody waits for it; a failure
+# there is fixed in a follow-up. Caches (node_modules, the built bundle) are
+# filled on main and reused by every pull request.
+
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+# A newer push to the same pull request (or to main) cancels the run it makes obsolete.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # ── What changed ────────────────────────────────────────
+  changes:
+    name: What changed
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.diff.outputs.go }}
+      frontend: ${{ steps.diff.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: diff
+        name: Compare with the base branch
+        env:
+          BASE: ${{ github.base_ref }}
+        run: |
+          files=$(git diff --name-only "origin/$BASE...HEAD")
+          echo "$files"
+          go=false
+          frontend=false
+          # A CI change runs everything.
+          if echo "$files" | grep -q '^\.github/'; then go=true; frontend=true; fi
+          # Anything outside frontend/ and docs is the Go side (code, migrations, templates, go.mod).
+          if echo "$files" | grep -qvE '^(frontend/|\.github/|docs/)|\.md$'; then go=true; fi
+          if echo "$files" | grep -q '^frontend/'; then frontend=true; fi
+          echo "go=$go" >> "$GITHUB_OUTPUT"
+          echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
+
   # ── Backend: Go ─────────────────────────────────────────
   backend:
     name: Go vet, unit & integration tests
+    needs: changes
+    # The web package's tests serve the built bundle, so a frontend change runs them too.
+    if: needs.changes.outputs.go == 'true' || needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -38,22 +84,29 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - uses: actions/setup-node@v4
+      # web/static/app is not tracked in git; internal/web tests assert on the built
+      # bundle. It is reused from cache while the frontend sources are unchanged.
+      - id: bundle
+        uses: actions/cache@v4
         with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          path: web/static/app
+          # Keyed on the files the bundle is built from (node_modules excluded).
+          key: bundle-${{ hashFiles('frontend/src/**', 'frontend/public/**', 'frontend/index.html', 'frontend/package-lock.json', 'frontend/vite.config.ts', 'frontend/tsconfig*.json') }}
 
-      # web/static/app is no longer tracked in git, but internal/web tests serve and assert on
-      # the built bundle (e.g. the login carousel photos), so build it from source here.
-      - name: Build frontend bundle
+      - if: steps.bundle.outputs.cache-hit != 'true'
+        uses: ./.github/actions/frontend-deps
+
+      - if: steps.bundle.outputs.cache-hit != 'true'
+        name: Build frontend bundle
         working-directory: frontend
-        run: npm ci && npm run build
+        run: npm run build
 
-      - name: go vet
+      - if: needs.changes.outputs.go == 'true'
+        name: go vet
         run: go vet ./...
 
-      - name: Check Go formatting
+      - if: needs.changes.outputs.go == 'true'
+        name: Check Go formatting
         run: |
           UNFORMATTED=$(gofmt -l .)
           if [ -n "$UNFORMATTED" ]; then
@@ -63,17 +116,18 @@ jobs:
           fi
 
       - name: go test (unit and integration)
-        # -count=1 disables Go's test result cache. Integration tests depend on a side
-        # effect (migrations applied against a fresh, empty ephemeral Postgres service
-        # container) that Go's cache has no visibility into — TEST_DATABASE_URL is the
-        # same string every run, so a cached PASS from a prior run can make Go skip
-        # actually re-executing a package whose source didn't change, even though this
-        # run's database is brand new and still unmigrated.
-        run: go test -p 1 -count=1 ./...
+        # -count=1 disables Go's test result cache: integration tests depend on a fresh,
+        # empty Postgres service that the cache cannot see. -p 1 because the packages
+        # share that one database. A frontend-only change runs just the web package.
+        env:
+          PACKAGES: ${{ needs.changes.outputs.go == 'true' && './...' || './internal/web/...' }}
+        run: go test -p 1 -count=1 $PACKAGES
 
-  # ── Frontend: TypeScript + lint + unit test + build ─────
+  # ── Frontend: types, lint, build ────────────────────────
   frontend:
     name: Frontend checks
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -81,25 +135,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: npm ci
-        run: npm ci
+      - uses: ./.github/actions/frontend-deps
 
       - name: TypeScript type-check
         run: npm run typecheck
 
       - name: ESLint
         # max-warnings matches the current baseline in package.json.
-        # Lower this number as warnings are resolved.
         run: npm run lint
-
-      - name: Unit tests
-        run: npm test -- --run --maxWorkers=1
 
       - name: Production build
         run: npm run build
@@ -112,10 +155,33 @@ jobs:
             echo "::warning::Bundle JS terbesar ${SIZE} bytes (> 500 kB). Pertimbangkan lazy loading per route."
           fi
 
+  # ── Frontend: unit tests, split in shards that run side by side ──
+  frontend-tests:
+    name: Frontend unit tests (${{ matrix.shard }}/4)
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/frontend-deps
+
+      - name: Unit tests
+        # One worker per shard, as before (some tests share app-wide singletons).
+        run: npm test -- --run --maxWorkers=1 --shard=${{ matrix.shard }}/4
+
+  # ── After the merge: Playwright E2E ─────────────────────
   e2e:
     name: Playwright E2E
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    needs: [backend, frontend]
     services:
       postgres:
         image: postgis/postgis:17-3.5-alpine
@@ -138,11 +204,8 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+      # Fills the node_modules cache on main for the pull requests.
+      - uses: ./.github/actions/frontend-deps
 
       - name: Create E2E environment
         run: |
@@ -157,10 +220,6 @@ jobs:
           STORAGE_PATH=./.cache/e2e-storage
           EOF
 
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
-
       - name: Install Chrome for Playwright
         working-directory: frontend
         run: npm exec playwright install --with-deps chrome
@@ -168,6 +227,15 @@ jobs:
       - name: Run Playwright E2E
         working-directory: frontend
         run: npm run e2e
+
+      # The E2E setup builds the bundle; keep it for the pull requests' Go tests.
+      - name: Save the built bundle
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: web/static/app
+          # Keyed on the files the bundle is built from (node_modules excluded).
+          key: bundle-${{ hashFiles('frontend/src/**', 'frontend/public/**', 'frontend/index.html', 'frontend/package-lock.json', 'frontend/vite.config.ts', 'frontend/tsconfig*.json') }}
 
       - name: Upload Playwright traces
         if: failure()
