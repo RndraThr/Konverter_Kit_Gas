@@ -182,6 +182,19 @@ func TestFCMRequestHidesContentOnTheLockScreen(t *testing.T) {
 	if !strings.Contains(string(body), "konkit_finance") {
 		t.Fatalf("no channel: %s", body)
 	}
+	// A live progress update replaces the last one quietly.
+	quiet, err := fcmRequest(Push{Token: "t", Title: "Wonogiri: 45 selesai hari ini", Body: "+1 baru", ID: "n2", Tag: "progress-s1", Silent: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var q map[string]map[string]any
+	if err := json.Unmarshal(quiet, &q); err != nil {
+		t.Fatal(err)
+	}
+	n := q["message"]["android"].(map[string]any)["notification"].(map[string]any)
+	if n["tag"] != "progress-s1" || n["channel_id"] != "konkit_quiet" || n["default_sound"] != false || q["message"]["data"].(map[string]any)["tag"] != "progress-s1" {
+		t.Fatalf("quiet notification=%+v data=%+v", n, q["message"]["data"])
+	}
 	if !fcmTokenGone(404, nil) || !fcmTokenGone(400, []byte(`{"errorCode":"UNREGISTERED"}`)) || fcmTokenGone(503, nil) {
 		t.Fatal("token gone detection")
 	}

@@ -18,6 +18,9 @@ import (
 const (
 	fcmScope   = "https://www.googleapis.com/auth/firebase.messaging"
 	fcmChannel = "konkit_finance"
+	// fcmQuietChannel: low importance, no sound (made by the app 1.3.4+;
+	// older apps show it on their default channel).
+	fcmQuietChannel = "konkit_quiet"
 )
 
 // FCMSender sends through the Firebase Cloud Messaging HTTP v1 API with a
@@ -70,22 +73,34 @@ func (s *FCMSender) Send(ctx context.Context, push Push) error {
 }
 
 // fcmRequest builds the message: high priority wakes a sleeping phone, and
-// the notification block is shown by Android while the app is closed.
+// the notification block is shown by Android while the app is closed. A tag
+// replaces the earlier notification of the same tag; a silent one goes to
+// the quiet channel without a sound.
 func fcmRequest(push Push) ([]byte, error) {
+	channel, priority := fcmChannel, "PRIORITY_HIGH"
+	if push.Silent {
+		channel, priority = fcmQuietChannel, "PRIORITY_LOW"
+	}
+	notification := map[string]any{
+		"channel_id":              channel,
+		"notification_priority":   priority,
+		"visibility":              "PRIVATE",
+		"default_sound":           !push.Silent,
+		"default_vibrate_timings": !push.Silent,
+	}
+	data := map[string]string{"link": push.Link, "notification_id": push.ID}
+	if push.Tag != "" {
+		notification["tag"] = push.Tag
+		data["tag"] = push.Tag
+	}
+	if push.Silent {
+		data["silent"] = "1"
+	}
 	return json.Marshal(map[string]any{"message": map[string]any{
 		"token":        push.Token,
 		"notification": map[string]string{"title": push.Title, "body": push.Body},
-		"data":         map[string]string{"link": push.Link, "notification_id": push.ID},
-		"android": map[string]any{
-			"priority": "HIGH",
-			"notification": map[string]any{
-				"channel_id":              fcmChannel,
-				"notification_priority":   "PRIORITY_HIGH",
-				"visibility":              "PRIVATE",
-				"default_sound":           true,
-				"default_vibrate_timings": true,
-			},
-		},
+		"data":         data,
+		"android":      map[string]any{"priority": "HIGH", "notification": notification},
 	}})
 }
 

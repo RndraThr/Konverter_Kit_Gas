@@ -24,7 +24,7 @@ const (
 	// CategoryDistributionRevision: the central monitoring sent a recipient's
 	// documentation back to the field.
 	CategoryDistributionRevision = "distribution_revision"
-	// CategoryDistributionProgress: hourly, milestone and daily progress of
+	// CategoryDistributionProgress: live, milestone and daily progress of
 	// the kabupaten a phone watches (Mode Pusat).
 	CategoryDistributionProgress = "distribution_progress"
 )
@@ -62,15 +62,22 @@ type Message struct {
 	Body      string
 	Link      string
 	RegencyID string
+	// Tag: a newer message with the same tag replaces this one, on the phone
+	// and in the inbox (e.g. one live progress line per kabupaten).
+	Tag string
+	// Silent: shown without a sound or vibration.
+	Silent bool
 }
 
 // Push is what a Sender delivers to one device.
 type Push struct {
-	Token string
-	Title string
-	Body  string
-	Link  string
-	ID    string
+	Token  string
+	Title  string
+	Body   string
+	Link   string
+	ID     string
+	Tag    string
+	Silent bool
 }
 
 // PushStatus tells the app whether this server can push and how many phones
@@ -114,8 +121,14 @@ func Enqueue(ctx context.Context, tx pgx.Tx, userIDs []string, message Message) 
 			continue
 		}
 		seen[id] = true
-		if _, err := tx.Exec(ctx, `INSERT INTO notifications (user_id, category, title, body, link, regency_id) VALUES ($1::uuid, $2, $3, $4, $5, NULLIF($6, '')::uuid)`,
-			id, message.Category, message.Title, message.Body, message.Link, message.RegencyID); err != nil {
+		if message.Tag != "" {
+			// The inbox keeps only the latest message of a tag.
+			if _, err := tx.Exec(ctx, `DELETE FROM notifications WHERE user_id = $1::uuid AND push_tag = $2`, id, message.Tag); err != nil {
+				return fmt.Errorf("replace notification: %w", err)
+			}
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO notifications (user_id, category, title, body, link, regency_id, push_tag, push_silent) VALUES ($1::uuid, $2, $3, $4, $5, NULLIF($6, '')::uuid, $7, $8)`,
+			id, message.Category, message.Title, message.Body, message.Link, message.RegencyID, message.Tag, message.Silent); err != nil {
 			return fmt.Errorf("add notification: %w", err)
 		}
 	}
@@ -323,8 +336,9 @@ func (s *Service) RunPush(ctx context.Context) {
 }
 
 type pendingPush struct {
-	id, userID, category, title, body, link, regencyID string
-	attempts                                           int
+	id, userID, category, title, body, link, regencyID, tag string
+	silent                                                  bool
+	attempts                                                int
 }
 
 // pushBatch sends one batch; more is true when the batch was full.
@@ -333,14 +347,14 @@ func (s *Service) pushBatch(ctx context.Context) (bool, error) {
 		_, err := s.pool.Exec(ctx, `UPDATE notifications SET push_state = 'skipped' WHERE push_state = 'pending'`)
 		return false, err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT id::text, user_id::text, category, title, body, link, COALESCE(regency_id::text, ''), push_attempts
+	rows, err := s.pool.Query(ctx, `SELECT id::text, user_id::text, category, title, body, link, COALESCE(regency_id::text, ''), push_tag, push_silent, push_attempts
 		FROM notifications WHERE push_state = 'pending' AND next_push_at <= now() ORDER BY created_at LIMIT $1`, pushBatch)
 	if err != nil {
 		return false, fmt.Errorf("list pending pushes: %w", err)
 	}
 	batch, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (pendingPush, error) {
 		var p pendingPush
-		return p, row.Scan(&p.id, &p.userID, &p.category, &p.title, &p.body, &p.link, &p.regencyID, &p.attempts)
+		return p, row.Scan(&p.id, &p.userID, &p.category, &p.title, &p.body, &p.link, &p.regencyID, &p.tag, &p.silent, &p.attempts)
 	})
 	if err != nil {
 		return false, fmt.Errorf("list pending pushes: %w", err)
@@ -371,7 +385,7 @@ func (s *Service) deliver(ctx context.Context, item pendingPush) error {
 	}
 	delivered, failed := 0, 0
 	for _, token := range tokens {
-		sendErr := s.sender.Send(ctx, Push{Token: token, Title: item.title, Body: item.body, Link: item.link, ID: item.id})
+		sendErr := s.sender.Send(ctx, Push{Token: token, Title: item.title, Body: item.body, Link: item.link, ID: item.id, Tag: item.tag, Silent: item.silent})
 		switch {
 		case sendErr == nil:
 			delivered++
