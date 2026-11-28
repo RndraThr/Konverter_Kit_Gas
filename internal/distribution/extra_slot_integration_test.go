@@ -67,8 +67,10 @@ func TestIntegrationExtraSlotAddAndRemove(t *testing.T) {
 	if _, err := repo.RemoveExtraSlot(ctx, auth.Principal{}, input, auth.ClientMeta{}, scope); !errors.Is(err, ErrExtraSlotHasMedia) {
 		t.Fatalf("remove with media err=%v", err)
 	}
+	// Deleting the photo only marks it; the slot then counts as empty, as
+	// the officer sees it (0 photos).
 	must(t, func() error {
-		_, err := pool.Exec(ctx, `DELETE FROM media_files WHERE documentation_slot_id=$1`, extra.ID)
+		_, err := pool.Exec(ctx, `UPDATE media_files SET status='deleted' WHERE documentation_slot_id=$1`, extra.ID)
 		return err
 	}())
 
