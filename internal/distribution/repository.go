@@ -638,6 +638,11 @@ func (r *Repository) getSlotByID(ctx context.Context, id string) (DistributionSl
 	if slot.RevisionFlags, err = r.revisionFlags(ctx, id); err != nil {
 		return DistributionSlot{}, err
 	}
+	fields, err := r.fieldFlags(ctx, slot)
+	if err != nil {
+		return DistributionSlot{}, err
+	}
+	slot.RevisionFlags = append(slot.RevisionFlags, fields...)
 	slot.Documentation, err = r.listSlotDocumentation(ctx, id)
 	if err != nil {
 		return DistributionSlot{}, err

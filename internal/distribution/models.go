@@ -157,8 +157,11 @@ type DistributionSlot struct {
 }
 
 // RevisionFlag is one photo marked wrong by the central monitoring.
+// RevisionFlag is a photo (MediaID) or a piece of data (Field) the central
+// monitoring sent back for revision.
 type RevisionFlag struct {
 	MediaID  string `json:"media_id"`
+	Field    string `json:"field,omitempty"`
 	SlotCode string `json:"slot_code"`
 	Label    string `json:"label"`
 	Stage    string `json:"stage"`

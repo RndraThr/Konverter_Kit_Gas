@@ -368,3 +368,35 @@ func TestRevisionBeforeCompletionKeepsTheSlotOpen(t *testing.T) {
 		t.Fatalf("open slot revision = %s %+v", detail.State, detail.Slot)
 	}
 }
+
+func TestRevisionFlagsDataUntilItIsCorrected(t *testing.T) {
+	pool := testPool(t)
+	f := seed(t, pool)
+	ctx := context.Background()
+	repo := distribution.NewRepository(pool)
+	service := NewService(pool, repo, nil)
+	admin := auth.Principal{UserID: f.admin}
+	if _, err := service.RequestRevision(ctx, admin, f.scheduleID, 1, RevisionInput{Flags: []FlagInput{{Field: "favourite_colour"}}}, all, auth.ClientMeta{}); !errors.Is(err, ErrFlagUnknown) {
+		t.Fatalf("unknown field err = %v", err)
+	}
+	detail, err := service.RequestRevision(ctx, admin, f.scheduleID, 1, RevisionInput{
+		Flags: []FlagInput{{Field: "machine_serial_number", Reason: "Beda dengan foto"}, {Field: "full_name", Reason: "Salah ketik"}},
+	}, all, auth.ClientMeta{})
+	must(t, err)
+	slot := detail.Slot
+	// A serial number belongs to POS Mesin, the earliest stage flagged.
+	if slot.Status != "linked" || slot.ReopenedStage != "mesin" || len(slot.RevisionFlags) != 2 {
+		t.Fatalf("data revision slot = %+v", slot)
+	}
+	if slot.RevisionReason != "Nomor seri mesin: Beda dengan foto; Nama: Salah ketik" {
+		t.Fatalf("reason = %q", slot.RevisionReason)
+	}
+	// Correcting the serial clears its flag; the name stays flagged.
+	_, err = pool.Exec(ctx, `UPDATE distribution_slots SET machine_serial_number='SN-002' WHERE id=$1`, f.slotID)
+	must(t, err)
+	again, err := repo.SearchSlot(ctx, f.scheduleID, "1", all)
+	must(t, err)
+	if len(again.RevisionFlags) != 1 || again.RevisionFlags[0].Field != "full_name" || again.RevisionFlags[0].MediaID != "" || again.RevisionFlags[0].Reason != "Salah ketik" {
+		t.Fatalf("flags after correction = %+v", again.RevisionFlags)
+	}
+}

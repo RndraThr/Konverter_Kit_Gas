@@ -29,6 +29,7 @@ export type DistributionSlot = {
   documentation: SlotSummary[]; distributed_at?: string;
   needs_recompletion: boolean; reopened_at?: string; reopened_by?: string; reopened_stage?: RevisionStage; revision_reason?: string;
   recipient_signed_at?: string;
+  revision_flags?: RevisionFlag[];
   created_at: string; updated_at: string;
 };
 
@@ -40,6 +41,8 @@ export type CreateSlotInput = {
 export type RevisionStage = 'mesin' | 'dokumen' | 'penyerahan';
 export type ReopenSlotInput = { schedule_id: string; slot_number: number; stage: RevisionStage; reason: string };
 // full_name and nik correct the recipient's identity; left out, they stay as they are.
+// A photo (media_id) or a piece of data (field) the central monitoring sent back.
+export type RevisionFlag = { media_id: string; field?: string; slot_code: string; label: string; stage: string; reason: string };
 export type UpdateRecipientInput = { schedule_id: string; slot_number: number; full_name?: string; nik?: string; address: string; village: string; district: string; phone_number: string; sector_identifier: string };
 export type ReplaceRecipientInput = UpdateRecipientInput & { nik: string; full_name: string; reason: string };
 

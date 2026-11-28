@@ -44,7 +44,8 @@ export function useSlotDetail(scheduleId: string, slot: number | null) {
 export const approvePhotos = (scheduleId: string, slot: number, mediaIds: string[] = []) =>
   apiRequest<DataResponse<SlotDetail>>(`/api/v1/monitoring/slots/${slot}/approve?schedule_id=${scheduleId}`, { method: 'POST', body: JSON.stringify({ media_ids: mediaIds }) }).then((r) => r.data);
 
-export const requestRevision = (scheduleId: string, slot: number, body: { flags: { media_id: string; reason: string }[]; note: string }) =>
+/** A flag marks a photo (media_id) or a piece of the handover's data (field). */
+export const requestRevision = (scheduleId: string, slot: number, body: { flags: { media_id?: string; field?: string; reason: string }[]; note: string }) =>
   apiRequest<DataResponse<SlotDetail>>(`/api/v1/monitoring/slots/${slot}/revision?schedule_id=${scheduleId}`, { method: 'POST', body: JSON.stringify(body) }).then((r) => r.data);
 
 export const saveCalendar = (body: { program_id: string; rows: { schedule_id: string; days: PhaseDay[] }[]; rakornas?: string[] }) =>

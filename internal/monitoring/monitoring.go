@@ -60,7 +60,7 @@ var (
 	ErrInvalidUser       = errors.New("assigned user is invalid")
 	ErrNothingToApprove  = errors.New("no photo to approve")
 	ErrRevisionEmpty     = errors.New("a revision needs at least one marked photo")
-	ErrFlagUnknown       = errors.New("marked photo does not belong to this recipient")
+	ErrFlagUnknown       = errors.New("marked photo or data does not belong to this recipient")
 )
 
 type Person struct {
@@ -198,8 +198,12 @@ type AssignmentInput struct {
 	Leaders    []string `json:"leaders"`
 }
 
+// FlagInput marks a photo (media_id) or a piece of the handover's data
+// (field: full_name, nik, sector_identifier, phone_number, address, village,
+// district, machine_serial_number, converter_serial_number) as wrong.
 type FlagInput struct {
 	MediaID string `json:"media_id"`
+	Field   string `json:"field,omitempty"`
 	Reason  string `json:"reason"`
 }
 
