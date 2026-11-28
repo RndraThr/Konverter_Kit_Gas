@@ -14,12 +14,12 @@ import (
 )
 
 // Progress notifications tell the phones that watch a kabupaten (Mode Pusat)
-// how its distribution goes: an hourly digest while recipients are completed,
-// once at 50% and 100% of the quota, and a recap of the day in the evening.
+// how its distribution goes: one live line per kabupaten, updated within
+// seconds as recipients are completed (the day's first update rings, later
+// ones replace it silently), once at 50% and 100% of the quota, and a recap
+// of the day in the evening.
 const (
-	progressInterval  = 5 * time.Minute
-	progressFirstHour = 7
-	progressLastHour  = 21
+	progressInterval  = 15 * time.Second
 	progressRecapHour = 20
 )
 
@@ -44,6 +44,8 @@ type progressState struct {
 	hourlyCompleted    int
 	halfSent, fullSent bool
 	dailyOn            *time.Time
+	liveCompleted      *int
+	liveOn             *time.Time
 }
 
 // SendProgress sends what is due at now for every kabupaten with recipients
@@ -79,11 +81,11 @@ func (s *Service) SendProgress(ctx context.Context, now time.Time) error {
 	for _, v := range list {
 		err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 			var st progressState
-			err := tx.QueryRow(ctx, `SELECT hourly_at, hourly_completed, half_sent, full_sent, daily_on FROM distribution_progress_notices
-				WHERE schedule_id = $1::uuid FOR UPDATE`, v.id).Scan(&st.hourlyAt, &st.hourlyCompleted, &st.halfSent, &st.fullSent, &st.dailyOn)
+			err := tx.QueryRow(ctx, `SELECT hourly_at, hourly_completed, half_sent, full_sent, daily_on, live_completed, live_on FROM distribution_progress_notices
+				WHERE schedule_id = $1::uuid FOR UPDATE`, v.id).Scan(&st.hourlyAt, &st.hourlyCompleted, &st.halfSent, &st.fullSent, &st.dailyOn, &st.liveCompleted, &st.liveOn)
 			if errors.Is(err, pgx.ErrNoRows) {
-				_, err = tx.Exec(ctx, `INSERT INTO distribution_progress_notices (schedule_id, hourly_at, hourly_completed, half_sent, full_sent)
-					VALUES ($1::uuid, $2, $3, $4, $5) ON CONFLICT (schedule_id) DO NOTHING`,
+				_, err = tx.Exec(ctx, `INSERT INTO distribution_progress_notices (schedule_id, hourly_at, hourly_completed, half_sent, full_sent, live_completed)
+					VALUES ($1::uuid, $2, $3, $4, $5, $3) ON CONFLICT (schedule_id) DO NOTHING`,
 					v.id, now, v.completed, v.quota > 0 && v.completed*2 >= v.quota, v.quota > 0 && v.completed >= v.quota)
 				return err
 			}
@@ -96,9 +98,31 @@ func (s *Service) SendProgress(ctx context.Context, now time.Time) error {
 				totals = "Total " + thousands(v.completed)
 			}
 			var messages []notifications.Message
+			link := "/monitoring-distribusi?schedule=" + v.id
 			add := func(title, body string) {
 				messages = append(messages, notifications.Message{Category: notifications.CategoryDistributionProgress, Title: title, Body: body,
-					Link: "/monitoring-distribusi?schedule=" + v.id, RegencyID: v.regencyID})
+					Link: link, RegencyID: v.regencyID})
+			}
+			// Live: what was completed since the last update, as one line per
+			// kabupaten; the first update of the day rings, the rest are silent.
+			if st.liveCompleted == nil {
+				known := st.hourlyCompleted
+				st.liveCompleted = &known
+			}
+			if v.completed > *st.liveCompleted {
+				firstToday := st.liveOn == nil || st.liveOn.Format(dateLayout) != today
+				messages = append(messages, notifications.Message{Category: notifications.CategoryDistributionProgress,
+					Title: fmt.Sprintf("%s: %s selesai hari ini", name, thousands(v.today)),
+					Body:  fmt.Sprintf("+%s baru. %s.", thousands(v.completed-*st.liveCompleted), totals),
+					Link:  link, RegencyID: v.regencyID, Tag: "progress-" + v.id, Silent: !firstToday})
+				done := v.completed
+				st.liveCompleted = &done
+				day, _ := time.Parse(dateLayout, today)
+				st.liveOn = &day
+			} else if v.completed < *st.liveCompleted {
+				// A handover reopened for revision: count from here.
+				done := v.completed
+				st.liveCompleted = &done
 			}
 			switch {
 			case v.quota > 0 && !st.fullSent && v.completed >= v.quota:
@@ -109,15 +133,7 @@ func (s *Service) SendProgress(ctx context.Context, now time.Time) error {
 				st.halfSent = true
 			}
 			hour := local.Hour()
-			if now.Sub(st.hourlyAt) >= time.Hour && v.completed > st.hourlyCompleted && hour >= progressFirstHour && hour <= progressLastHour {
-				since := "1 jam terakhir"
-				if now.Sub(st.hourlyAt) > 90*time.Minute {
-					since = "Sejak " + st.hourlyAt.In(jakarta).Format("15.04")
-				}
-				add(fmt.Sprintf("%s +%s selesai", name, thousands(v.completed-st.hourlyCompleted)),
-					fmt.Sprintf("%s. %s, hari ini %s.", since, totals, thousands(v.today)))
-				st.hourlyAt, st.hourlyCompleted = now, v.completed
-			}
+			st.hourlyAt, st.hourlyCompleted = now, v.completed
 			if hour >= progressRecapHour && (st.dailyOn == nil || st.dailyOn.Format(dateLayout) != today) {
 				add("Rekap hari ini "+name, fmt.Sprintf("%s penerima selesai hari ini. %s.", thousands(v.today), totals))
 				day, _ := time.Parse(dateLayout, today)
@@ -135,8 +151,8 @@ func (s *Service) SendProgress(ctx context.Context, now time.Time) error {
 				}
 				sent = sent || len(users) > 0
 			}
-			_, err = tx.Exec(ctx, `UPDATE distribution_progress_notices SET hourly_at = $2, hourly_completed = $3, half_sent = $4, full_sent = $5, daily_on = $6
-				WHERE schedule_id = $1::uuid`, v.id, st.hourlyAt, st.hourlyCompleted, st.halfSent, st.fullSent, st.dailyOn)
+			_, err = tx.Exec(ctx, `UPDATE distribution_progress_notices SET hourly_at = $2, hourly_completed = $3, half_sent = $4, full_sent = $5, daily_on = $6,
+				live_completed = $7, live_on = $8 WHERE schedule_id = $1::uuid`, v.id, st.hourlyAt, st.hourlyCompleted, st.halfSent, st.fullSent, st.dailyOn, st.liveCompleted, st.liveOn)
 			return err
 		})
 		if err != nil {
