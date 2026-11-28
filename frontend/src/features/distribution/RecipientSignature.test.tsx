@@ -2,13 +2,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test, vi } from 'vitest';
-import { apiRequest } from '../../lib/api';
+import { apiBlobRequest, apiRequest } from '../../lib/api';
+import { recolorSignature } from '@/components/SignaturePad';
 import { RecipientSignature } from './RecipientSignature';
 import type { DistributionSlot } from './types';
 
 vi.mock('../../lib/api', async () => {
   const actual = await vi.importActual<typeof import('../../lib/api')>('../../lib/api');
-  return { ...actual, apiRequest: vi.fn() };
+  return { ...actual, apiRequest: vi.fn(), apiBlobRequest: vi.fn() };
+});
+vi.mock('@/components/SignaturePad', async () => {
+  const actual = await vi.importActual<typeof import('@/components/SignaturePad')>('@/components/SignaturePad');
+  return { ...actual, recolorSignature: vi.fn() };
 });
 
 const slot: DistributionSlot = {
@@ -23,7 +28,19 @@ function renderSignature(value: DistributionSlot, editable = true) {
   return { onChanged };
 }
 
-afterEach(() => vi.clearAllMocks());
+afterEach(() => { vi.clearAllMocks(); localStorage.clear(); });
+
+test('the ink colour can be picked and is kept for the next signature', async () => {
+  const first = render(<QueryClientProvider client={new QueryClient()}><RecipientSignature slot={slot} editable onChanged={vi.fn()} /></QueryClientProvider>);
+  expect(screen.getByRole('button', { name: 'Tinta Biru tua' })).toHaveAttribute('aria-pressed', 'true');
+  await userEvent.click(screen.getByRole('button', { name: 'Tinta Merah' }));
+  expect(screen.getByRole('button', { name: 'Tinta Merah' })).toHaveAttribute('aria-pressed', 'true');
+  expect(localStorage.getItem('konkit.signature.ink')).toBe('#d32f2f');
+  first.unmount();
+
+  renderSignature(slot);
+  expect(screen.getByRole('button', { name: 'Tinta Merah' })).toHaveAttribute('aria-pressed', 'true');
+});
 
 test('an unsigned slot opens the pad; saving waits for a stroke', () => {
   renderSignature(slot);
@@ -50,4 +67,45 @@ test('deleting reopens the pad', async () => {
 test('read-only viewers without a signature see a note', () => {
   renderSignature(slot, false);
   expect(screen.getByText('Belum ada tanda tangan.')).toBeVisible();
+});
+
+test('a saved signature can change colour without signing again', async () => {
+  const signed = { ...slot, recipient_signed_at: '2026-10-20T08:00:00Z' };
+  const stored = new Blob(['png'], { type: 'image/png' });
+  vi.mocked(apiBlobRequest).mockResolvedValueOnce(stored);
+  vi.mocked(recolorSignature).mockResolvedValueOnce('VElOVEVE');
+  vi.mocked(apiRequest).mockResolvedValueOnce({ data: signed });
+  const { onChanged } = renderSignature(signed);
+
+  await userEvent.click(screen.getByRole('button', { name: 'Ganti warna' }));
+  expect(apiBlobRequest).toHaveBeenCalledWith('/api/v1/distribution/slots/7/signature?schedule_id=schedule-1');
+  const saveColor = await screen.findByRole('button', { name: 'Simpan warna' });
+  expect(saveColor).toBeDisabled();
+  await userEvent.click(screen.getByRole('button', { name: 'Tinta Biru' }));
+  expect(recolorSignature).toHaveBeenCalledWith(stored, '#1e5bd8');
+  await waitFor(() => expect(screen.getByRole('img', { name: 'Tanda tangan Siti Aminah' })).toHaveAttribute('src', 'data:image/png;base64,VElOVEVE'));
+
+  await userEvent.click(saveColor);
+  await waitFor(() => expect(onChanged).toHaveBeenCalledWith(signed));
+  expect(apiRequest).toHaveBeenCalledWith('/api/v1/distribution/slots/7/signature?schedule_id=schedule-1', { method: 'PUT', body: JSON.stringify({ image_png: 'VElOVEVE' }) });
+  expect(screen.queryByRole('button', { name: 'Simpan warna' })).not.toBeInTheDocument();
+});
+
+test('read-only viewers cannot change the colour', () => {
+  renderSignature({ ...slot, recipient_signed_at: '2026-10-20T08:00:00Z' }, false);
+  expect(screen.queryByRole('button', { name: 'Ganti warna' })).not.toBeInTheDocument();
+});
+
+test('the pen type and size can be picked like on the phone and are kept', async () => {
+  const first = render(<QueryClientProvider client={new QueryClient()}><RecipientSignature slot={slot} editable onChanged={vi.fn()} /></QueryClientProvider>);
+  expect(screen.getByRole('button', { name: 'Pena tinta' })).toHaveAttribute('aria-pressed', 'true');
+  await userEvent.click(screen.getByRole('button', { name: 'Kaligrafi' }));
+  expect(screen.getByRole('button', { name: 'Kaligrafi' })).toHaveAttribute('aria-pressed', 'true');
+  expect(localStorage.getItem('konkit.signature.pen')).toBe('kaligrafi');
+  first.unmount();
+
+  renderSignature(slot);
+  expect(screen.getByRole('button', { name: 'Kaligrafi' })).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByRole('slider', { name: 'Tebal pena' })).toHaveValue('5');
+  expect(screen.getByRole('button', { name: 'Batalkan coretan' })).toBeDisabled();
 });
