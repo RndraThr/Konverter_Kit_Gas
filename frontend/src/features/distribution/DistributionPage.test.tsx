@@ -45,7 +45,24 @@ function renderPage(permissions = ['distribution.view', 'distribution.pos_mesin'
   return render(<QueryClientProvider client={client}><PermissionsProvider permissions={permissions}><DistributionPage /></PermissionsProvider></QueryClientProvider>);
 }
 
-afterEach(() => vi.clearAllMocks());
+afterEach(() => { vi.clearAllMocks(); localStorage.clear(); });
+
+test('keeps the chosen schedule when the page is opened again', async () => {
+  const first = renderPage();
+  await chooseSchedule(/Wajo Tahap 1/);
+  expect(localStorage.getItem('konkit.distribution.schedule')).toBe('schedule-1');
+  first.unmount();
+
+  renderPage();
+  expect(await screen.findByRole('button', { name: /Nomor 1 - Terbuka/ })).toBeVisible();
+});
+
+test('forgets a remembered schedule that is no longer active', async () => {
+  localStorage.setItem('konkit.distribution.schedule', 'schedule-closed');
+  renderPage();
+  await waitFor(() => expect(localStorage.getItem('konkit.distribution.schedule')).toBeNull());
+  expect(screen.queryByLabelText('Katalog nomor bagi')).not.toBeInTheDocument();
+});
 
 test('clicking an existing catalog number shows the 3 POS sections', async () => {
   renderPage();
