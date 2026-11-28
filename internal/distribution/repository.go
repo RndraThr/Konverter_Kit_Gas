@@ -793,10 +793,12 @@ func (r *Repository) RemoveExtraSlot(ctx context.Context, actor auth.Principal, 
 	if err != nil {
 		return DistributionSlot{}, err
 	}
+	// Only photos the officer sees count: deleted ones are kept as marked
+	// rows and go with the slot (ON DELETE CASCADE).
 	var hasMedia bool
 	if err := tx.QueryRow(ctx, `
 		SELECT EXISTS(SELECT 1 FROM media_files m JOIN documentation_slots s ON s.id=m.documentation_slot_id
-			WHERE s.distribution_slot_id=$1 AND s.slot_code=$2)
+			WHERE s.distribution_slot_id=$1 AND s.slot_code=$2 AND m.status='accepted')
 	`, slotID, input.Code).Scan(&hasMedia); err != nil {
 		return DistributionSlot{}, fmt.Errorf("check extra slot media: %w", err)
 	}
