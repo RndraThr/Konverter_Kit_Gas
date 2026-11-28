@@ -47,6 +47,48 @@ function Info({ label, children, mono }: { label: string; children: ReactNode; m
   </div>;
 }
 
+/** The handover's data that can be sent back, with the POS that holds it (flag key: "field:<name>"). */
+const dataFields: Record<string, { label: string; stage: string }> = {
+  full_name: { label: 'Nama', stage: 'dokumen' },
+  nik: { label: 'NIK', stage: 'dokumen' },
+  sector_identifier: { label: 'No. kartu tani / KUSUKA', stage: 'dokumen' },
+  phone_number: { label: 'No. HP', stage: 'dokumen' },
+  address: { label: 'Alamat', stage: 'dokumen' },
+  village: { label: 'Desa', stage: 'dokumen' },
+  district: { label: 'Kecamatan', stage: 'dokumen' },
+  machine_serial_number: { label: 'No. mesin', stage: 'mesin' },
+  converter_serial_number: { label: 'No. konkit', stage: 'mesin' },
+};
+const fieldKey = (field: string) => `field:${field}`;
+const fieldOf = (key: string) => (key.startsWith('field:') ? key.slice(6) : null);
+
+/**
+ * A piece of the recipient's data with a flag: marked wrong, it goes back to
+ * the field with the photos; one still flagged (not corrected yet) shows so.
+ */
+function FlagInfo({ label, value, mono, flagKey, flags, setFlags, active, canFlag }: {
+  label: string; value?: string | null; mono?: boolean; flagKey: string; flags: Record<string, string>;
+  setFlags: (update: (value: Record<string, string>) => Record<string, string>) => void; active?: string; canFlag: boolean;
+}) {
+  const marked = flags[flagKey] !== undefined;
+  return <div className={cn('-mx-2 rounded-md px-2', (marked || active !== undefined) && 'bg-destructive/5')}>
+    <div className="grid grid-cols-[7.5rem_minmax(0,1fr)_auto] items-start gap-2 py-1 text-sm">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className={cn('break-words', mono && 'font-mono text-xs leading-5')}>
+        {value || '-'}
+        {active !== undefined && !marked ? <span className="mt-0.5 block text-xs text-destructive">Masih direvisi{active ? `: ${active}` : ''}</span> : null}
+      </dd>
+      {canFlag ? <button type="button" title={marked ? 'Batal tandai' : 'Tandai salah, minta diperbaiki'} aria-label={`${marked ? 'Batal tandai' : 'Tandai salah'} ${label}`} aria-pressed={marked}
+        className={cn('rounded p-0.5 text-muted-foreground hover:text-destructive', marked && 'text-destructive')}
+        onClick={() => setFlags((current) => { const next = { ...current }; if (marked) delete next[flagKey]; else next[flagKey] = active ?? ''; return next; })}>
+        <Flag className={cn('size-3.5', marked && 'fill-destructive')} />
+      </button> : null}
+    </div>
+    {marked ? <Input autoFocus className="mb-1.5 h-8 text-xs" value={flags[flagKey]} maxLength={300} placeholder={`Alasan, mis. ${label} salah ketik`} aria-label={`Alasan revisi ${label}`}
+      onChange={(e) => { const reason = e.target.value; setFlags((current) => ({ ...current, [flagKey]: reason })); }} /> : null}
+  </div>;
+}
+
 /**
  * Review of one recipient, photo by photo: a carousel (arrow keys, zoom,
  * thumbnails) on the left, the recipient's data and the photo checks on the
@@ -106,9 +148,12 @@ export function ReviewDialog({ scheduleId, slot, onClose, onNext, onStep }: {
   const revise = useMutation({
     mutationFn: async () => {
       if (flags.ba !== undefined && data?.ba) await requestBARevision(scheduleId, [{ key: data.ba.key, reason: flags.ba.trim() }], note.trim());
-      const photoFlags = flagged.filter((id) => id !== 'ba');
-      return photoFlags.length
-        ? requestRevision(scheduleId, slot!, { flags: photoFlags.map((media_id) => ({ media_id, reason: flags[media_id].trim() })), note: note.trim() })
+      const marks = flagged.filter((id) => id !== 'ba').map((id) => {
+        const field = fieldOf(id);
+        return field ? { field, reason: flags[id].trim() } : { media_id: id, reason: flags[id].trim() };
+      });
+      return marks.length
+        ? requestRevision(scheduleId, slot!, { flags: marks, note: note.trim() })
         : loadSlot(scheduleId, slot!);
     },
     onSuccess: (result) => {
@@ -116,7 +161,7 @@ export function ReviewDialog({ scheduleId, slot, onClose, onNext, onStep }: {
       setFlags({}); setNote(''); setConfirming(false);
       queryClient.setQueryData(slotKey(scheduleId, slot!), result);
       void queryClient.invalidateQueries({ queryKey: monitoringKey });
-      toast.success(`${count} foto dikirim untuk revisi`);
+      toast.success(`${count} item dikirim untuk revisi`);
       if (!photosOf(result).some((p) => p.id !== 'signature' && !(p.id === 'ba' ? result.ba?.review : result.reviews[p.id]))) onNext(slot!);
     },
     onError: (e) => toast.error(e.message),
@@ -153,8 +198,13 @@ export function ReviewDialog({ scheduleId, slot, onClose, onNext, onStep }: {
     if (on) next[id] = next[id] ?? reviewOf(id)?.reason ?? ''; else delete next[id];
     return next;
   });
-  const earliest = stageOrder.find((stage) => photos.some((p) => flags[p.id] !== undefined && p.stage === stage)) ?? 'dokumen';
+  const earliest = stageOrder.find((stage) => photos.some((p) => flags[p.id] !== undefined && p.stage === stage)
+    || flagged.some((key) => dataFields[fieldOf(key) ?? '']?.stage === stage)) ?? 'dokumen';
   const s = data?.slot;
+  // Data still flagged from an earlier revision (not corrected yet), by field.
+  const activeData = Object.fromEntries((s?.revision_flags ?? []).filter((f) => f.field).map((f) => [f.field!, f.reason]));
+  const dataRow = (field: string, value?: string | null, mono?: boolean, label = dataFields[field].label) =>
+    <FlagInfo key={field} label={label} value={value} mono={mono} flagKey={fieldKey(field)} flags={flags} setFlags={setFlags} active={activeData[field]} canFlag={canReview} />;
   const currentReview = current ? reviewOf(current.id) : undefined;
 
   return <Dialog open={slot !== null} onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -227,31 +277,33 @@ export function ReviewDialog({ scheduleId, slot, onClose, onNext, onStep }: {
                 </div> : null}
               </section> : null}
               {flagged.length > 0 ? <section>
-                <h3 className="mb-1 text-xs font-semibold text-destructive uppercase">Foto ditandai ({flagged.length})</h3>
+                <h3 className="mb-1 text-xs font-semibold text-destructive uppercase">Ditandai ({flagged.length})</h3>
                 <ul className="space-y-1">{flagged.map((id) => {
-                  const photo = photos.find((p) => p.id === id);
-                  return <li key={id}><button type="button" className="w-full rounded-md bg-destructive/5 px-2 py-1 text-left text-xs hover:bg-destructive/10" onClick={() => setIndex(photos.findIndex((p) => p.id === id))}>
-                    <span className="font-medium">{photo?.label}</span>{flags[id] ? `: ${flags[id]}` : ''}
+                  const field = fieldOf(id);
+                  const photo = field ? undefined : photos.find((p) => p.id === id);
+                  return <li key={id}><button type="button" className="w-full rounded-md bg-destructive/5 px-2 py-1 text-left text-xs hover:bg-destructive/10" onClick={() => { if (!field) setIndex(photos.findIndex((p) => p.id === id)); }}>
+                    <span className="font-medium">{field ? `Data · ${dataFields[field]?.label ?? field}` : photo?.label}</span>{flags[id] ? `: ${flags[id]}` : ''}
                   </button></li>;
                 })}</ul>
               </section> : null}
               <section>
                 <h3 className="mb-1 text-xs font-semibold text-muted-foreground uppercase">Pelanggan</h3>
                 <dl>
-                  <Info label="Nama">{s.full_name}</Info>
-                  <Info label="NIK" mono>{s.nik}</Info>
-                  <Info label={data.program_type === 'fisherman' ? 'No. KUSUKA' : 'No. kartu tani'} mono>{s.sector_identifier}</Info>
+                  {dataRow('full_name', s.full_name)}
+                  {dataRow('nik', s.nik, true)}
+                  {dataRow('sector_identifier', s.sector_identifier, true, data.program_type === 'fisherman' ? 'No. KUSUKA' : 'No. kartu tani')}
                   <Info label="Nomor bagi">#{s.slot_number}</Info>
-                  <Info label="Desa / Kec.">{[s.village, s.district].filter(Boolean).join(', ')}</Info>
-                  <Info label="Alamat">{s.address}</Info>
-                  <Info label="No. HP">{s.phone_number}</Info>
+                  {dataRow('village', s.village)}
+                  {dataRow('district', s.district)}
+                  {dataRow('address', s.address)}
+                  {dataRow('phone_number', s.phone_number)}
                 </dl>
               </section>
               <section>
                 <h3 className="mb-1 text-xs font-semibold text-muted-foreground uppercase">Peralatan</h3>
                 <dl>
-                  <Info label="No. mesin" mono>{s.machine_serial_number}</Info>
-                  <Info label="Konverter" mono>{s.converter_serial_number}</Info>
+                  {dataRow('machine_serial_number', s.machine_serial_number, true)}
+                  {dataRow('converter_serial_number', s.converter_serial_number, true, 'Konverter')}
                   <Info label="Selang" mono>{s.hose_serial_number}</Info>
                 </dl>
               </section>
@@ -270,7 +322,7 @@ export function ReviewDialog({ scheduleId, slot, onClose, onNext, onStep }: {
               {confirming ? <div className="space-y-2 rounded-lg bg-destructive/5 p-2.5 text-xs">
                 <p>{s.status === 'completed' && flagged.some((id) => id !== 'ba')
                   ? <>Nomor bagi dibuka lagi di <b>{stageLabels[earliest]}</b> dan BA yang sudah dibuat perlu dibuat ulang. </>
-                  : null}Petugas dan leader kabupaten mendapat notifikasi untuk mengganti {flagged.length} foto.</p>
+                  : null}Petugas dan leader kabupaten mendapat notifikasi untuk memperbaiki {flagged.length} item.</p>
                 <div className="flex gap-2">
                   <Button variant="outline" size="sm" className="flex-1" onClick={() => setConfirming(false)} disabled={busy}>Batal</Button>
                   <Button variant="destructive" size="sm" className="flex-1" onClick={() => revise.mutate()} disabled={busy}><RotateCcw />Kirim revisi</Button>

@@ -547,13 +547,27 @@ func (s *Service) RequestRevision(ctx context.Context, actor auth.Principal, sch
 	if err != nil {
 		return SlotDetail{}, err
 	}
-	flags, uploaders, err := s.resolveFlags(ctx, m.id, input.Flags)
+	slot, err := s.slots.SearchSlot(ctx, scheduleID, strconv.Itoa(slotNumber), scope)
+	if err != nil {
+		return SlotDetail{}, err
+	}
+	flags, uploaders, err := s.resolveFlags(ctx, slot, input.Flags)
 	if err != nil {
 		return SlotDetail{}, err
 	}
 	reason := revisionReason(flags, input.Note)
 	record := func(ctx context.Context, tx pgx.Tx) error {
 		for _, f := range flags {
+			if f.Field != "" {
+				// Data: flagged with the value marked; correcting it clears the flag.
+				if _, err := tx.Exec(ctx, `
+					INSERT INTO slot_field_reviews (distribution_slot_id, field, value_snapshot, reason, reviewed_by, reviewed_at) VALUES ($1::uuid, $2, $3, $4, NULLIF($5, '')::uuid, now())
+					ON CONFLICT (distribution_slot_id, field) DO UPDATE SET value_snapshot = EXCLUDED.value_snapshot, reason = EXCLUDED.reason, reviewed_by = EXCLUDED.reviewed_by, reviewed_at = now()`,
+					m.id, f.Field, slot.FieldValue(f.Field), f.Reason, actor.UserID); err != nil {
+					return fmt.Errorf("flag data: %w", err)
+				}
+				continue
+			}
 			if _, err := tx.Exec(ctx, `
 				INSERT INTO media_reviews (media_id, status, reason, reviewed_by, reviewed_at) VALUES ($1::uuid, 'rejected', $2, NULLIF($3, '')::uuid, now())
 				ON CONFLICT (media_id) DO UPDATE SET status = 'rejected', reason = EXCLUDED.reason, reviewed_by = EXCLUDED.reviewed_by, reviewed_at = now()`,
@@ -596,12 +610,28 @@ func (s *Service) RequestRevision(ctx context.Context, actor auth.Principal, sch
 	return s.Slot(ctx, scheduleID, slotNumber, scope)
 }
 
-// resolveFlags turns marked media into flags with their slot and stage, and
-// lists who uploaded them. Every media must be a current photo of the slot.
-func (s *Service) resolveFlags(ctx context.Context, slotID string, inputs []FlagInput) ([]distribution.RevisionFlag, []string, error) {
+// resolveFlags turns marked media and data into flags with their slot and
+// stage, and lists who uploaded the photos. Every media must be a current
+// photo of the slot; every field a known one.
+func (s *Service) resolveFlags(ctx context.Context, slot distribution.DistributionSlot, inputs []FlagInput) ([]distribution.RevisionFlag, []string, error) {
+	slotID := slot.ID
 	flags := []distribution.RevisionFlag{}
 	uploaders := []string{}
 	for _, in := range inputs {
+		if field := strings.TrimSpace(in.Field); field != "" {
+			def, known := distribution.ReviewableFields[field]
+			if !known {
+				return nil, nil, ErrFlagUnknown
+			}
+			reason := strings.TrimSpace(in.Reason)
+			if len(reason) > 300 {
+				reason = reason[:300]
+			}
+			if !slices.ContainsFunc(flags, func(x distribution.RevisionFlag) bool { return x.Field == field }) {
+				flags = append(flags, distribution.RevisionFlag{Field: field, SlotCode: field, Label: def.Label, Stage: def.Stage, Reason: reason})
+			}
+			continue
+		}
 		var f distribution.RevisionFlag
 		var uploader string
 		err := s.pool.QueryRow(ctx, `
@@ -619,7 +649,7 @@ func (s *Service) resolveFlags(ctx context.Context, slotID string, inputs []Flag
 		if len(f.Reason) > 300 {
 			f.Reason = f.Reason[:300]
 		}
-		if !slices.ContainsFunc(flags, func(x distribution.RevisionFlag) bool { return x.MediaID == f.MediaID }) {
+		if !slices.ContainsFunc(flags, func(x distribution.RevisionFlag) bool { return x.Field == "" && x.MediaID == f.MediaID }) {
 			flags = append(flags, f)
 		}
 		uploaders = append(uploaders, uploader)
