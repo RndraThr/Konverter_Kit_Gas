@@ -1,5 +1,6 @@
 import { type PointerEvent, useCallback, useEffect, useRef, useState } from 'react';
-import { Brush, Eraser, Feather, Highlighter, type LucideIcon, Palette, Pen, Pencil, PenTool, Redo2, Undo2 } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Brush, ChevronDown, Eraser, Feather, Highlighter, type LucideIcon, Maximize2, Minimize2, Palette, Pen, Pencil, PenTool, Redo2, Undo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { isSignaturePen, paintStroke, signaturePens, strokesBounds, type SignaturePen, type SignatureStroke } from './signaturePens';
@@ -151,15 +152,33 @@ export function useSignatureCanvas(height: number, onStroke?: () => void, option
     show();
   }, [show]);
 
-  // Backing store at device resolution so strokes stay sharp.
+  // Backing store at device resolution so strokes stay sharp, refitted when
+  // the box changes size (full screen, a turned phone). Strokes are kept in
+  // CSS px, so they are redrawn in place; a new canvas element (moved to the
+  // full-screen layer) is picked up through the callback ref.
+  const [canvasElement, setCanvasElement] = useState<HTMLCanvasElement | null>(null);
+  const attach = useCallback((element: HTMLCanvasElement | null) => {
+    canvasRef.current = element;
+    setCanvasElement(element);
+  }, []);
   useEffect(() => {
-    const canvas = canvasRef.current;
+    const canvas = canvasElement;
     if (!canvas) return;
-    const scale = Math.max(window.devicePixelRatio || 1, resolution);
-    canvas.width = Math.round(canvas.clientWidth * scale);
-    canvas.height = Math.round(height * scale);
-    rebuild();
-  }, [height, resolution, rebuild]);
+    const fit = () => {
+      const scale = Math.max(window.devicePixelRatio || 1, resolution);
+      const width = Math.round(canvas.clientWidth * scale);
+      const nextHeight = Math.round((canvas.clientHeight || height) * scale);
+      if (canvas.width === width && canvas.height === nextHeight && committed.current) return;
+      canvas.width = width;
+      canvas.height = nextHeight;
+      rebuild();
+    };
+    fit();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(fit);
+    observer.observe(canvas);
+    return () => observer.disconnect();
+  }, [canvasElement, height, resolution, rebuild]);
 
   const point = (event: { clientX: number; clientY: number }, rect: DOMRect) => ({ x: event.clientX - rect.left, y: event.clientY - rect.top });
   const onPointerDown = (event: PointerEvent<HTMLCanvasElement>) => {
@@ -263,7 +282,7 @@ export function useSignatureCanvas(height: number, onStroke?: () => void, option
     clear,
     exportPNG,
     exportCrop,
-    canvasProps: { ref: canvasRef, onPointerDown, onPointerMove, onPointerUp: end, onPointerCancel: end, onPointerLeave: end },
+    canvasProps: { ref: attach, onPointerDown, onPointerMove, onPointerUp: end, onPointerCancel: end, onPointerLeave: end },
   };
 }
 
@@ -329,13 +348,15 @@ function Swatch({ color, label, selected, onPick }: { color: string; label: stri
 export function InkPicker({ value, onChange }: { value: string; onChange: (color: string) => void }) {
   const known = [...signatureInks, ...basicInks].find((ink) => ink.color === value);
   return <div className="space-y-2" role="group" aria-label="Warna tinta">
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
       <span className="w-full text-xs text-muted-foreground sm:w-28">Tinta tanda tangan</span>
       {signatureInks.map((ink) => <Swatch key={ink.color} {...ink} selected={ink.color === value} onPick={onChange} />)}
     </div>
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
       <span className="w-full text-xs text-muted-foreground sm:w-28">Warna dasar</span>
       {basicInks.map((ink) => <Swatch key={ink.color} {...ink} selected={ink.color === value} onPick={onChange} />)}
+    </div>
+    <div className="flex items-center gap-2 sm:pl-30">
       <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground" title="Warna sendiri">
         <Palette className="size-4" aria-hidden="true" />
         <input type="color" aria-label="Warna sendiri" className="size-7 cursor-pointer rounded border-0 bg-transparent p-0" value={value} onChange={(event) => onChange(event.target.value.toLowerCase())} />
@@ -354,49 +375,98 @@ const penIcons: Record<SignaturePen, LucideIcon> = {
   spidol: Highlighter,
 };
 
+
 /** Jenis pena dan tebalnya, seperti toolbar pena di HP. */
 export function PenPicker({ pen, size, onChange }: { pen: SignaturePen; size: number; onChange: (pen: SignaturePen, size: number) => void }) {
-  return <div className="flex flex-wrap items-center gap-2">
-    <span className="w-full text-xs text-muted-foreground sm:w-28">Jenis pena</span>
-    <div className="flex flex-wrap gap-1" role="group" aria-label="Jenis pena">
+  return <div className="space-y-2">
+    <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6" role="group" aria-label="Jenis pena">
       {signaturePens.map((item) => {
         const Icon = penIcons[item.pen];
-        return <Button key={item.pen} type="button" size="sm" variant={item.pen === pen ? 'default' : 'outline'} aria-pressed={item.pen === pen} onClick={() => onChange(item.pen, size)}>
-          <Icon aria-hidden="true" />{item.label}
-        </Button>;
+        const selected = item.pen === pen;
+        return <button
+          key={item.pen}
+          type="button"
+          aria-label={item.label}
+          aria-pressed={selected}
+          className={cn('flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-md border px-1 text-xs leading-tight transition-colors', selected ? 'border-primary bg-primary text-primary-foreground' : 'bg-background hover:bg-muted')}
+          onClick={() => onChange(item.pen, size)}
+        >
+          <Icon className="size-4" aria-hidden="true" /><span className="truncate">{item.label}</span>
+        </button>;
       })}
     </div>
-    <label className="flex min-w-44 flex-1 items-center gap-2 text-xs text-muted-foreground">
+    <label className="flex items-center gap-2 text-xs text-muted-foreground">
       Tebal
-      <input type="range" aria-label="Tebal pena" className="flex-1 accent-primary" min={minPenSize} max={maxPenSize} step={0.5} value={size} onChange={(event) => onChange(pen, Number(event.target.value))} />
-      <span className="w-6 tabular-nums">{size}</span>
+      <input type="range" aria-label="Tebal pena" className="h-6 flex-1 accent-primary" min={minPenSize} max={maxPenSize} step={0.5} value={size} onChange={(event) => onChange(pen, Number(event.target.value))} />
+      <span className="w-6 text-right tabular-nums">{size}</span>
     </label>
   </div>;
 }
 
-/** Pad tanda tangan berdiri sendiri dengan tombol Simpan/Ulangi (POS Dokumen). */
+/**
+ * Pad tanda tangan berdiri sendiri dengan tombol Simpan/Ulangi (POS Dokumen).
+ * Satu baris alat yang ringkas agar kotak coretan tetap lega di HP; pena dan
+ * warna dibuka bila perlu, dan pad bisa dibuat layar penuh seperti di HP.
+ */
 export function SignaturePad({ saving, onSave, onCancel, label = 'Area tanda tangan penerima', hint = 'Minta penerima menandatangani di kotak putih.', height = 220 }: Props) {
   const [ink, setInk] = useState(readInk);
   const [penStyle, setPenStyle] = useState(readPen);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
   const pickInk = (color: string) => { setInk(color); rememberInk(color); };
   const pickPen = (pen: SignaturePen, size: number) => { setPenStyle({ pen, size }); rememberPen(pen, size); };
   const pad = useSignatureCanvas(height, undefined, { color: ink, pen: penStyle.pen, lineWidth: penStyle.size });
-  return <div className="space-y-2">
-    <PenPicker pen={penStyle.pen} size={penStyle.size} onChange={pickPen} />
-    <InkPicker value={ink} onChange={pickInk} />
+  const penLabel = signaturePens.find((item) => item.pen === penStyle.pen)?.label ?? '';
+  const PenIcon = penIcons[penStyle.pen];
+
+  // Layar penuh: halaman di belakang tidak ikut bergulir, Esc menutup.
+  useEffect(() => {
+    if (!fullscreen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') setFullscreen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => { document.body.style.overflow = previous; window.removeEventListener('keydown', onKey); };
+  }, [fullscreen]);
+
+  const save = () => { onSave(pad.exportPNG()); setFullscreen(false); };
+  const content = <>
+    {fullscreen && <h2 className="text-base font-semibold [@media(max-height:500px)]:hidden">Tanda tangan penerima</h2>}
+    <div className="flex items-center gap-1.5">
+      <Button type="button" variant="outline" className="min-w-0 flex-1 justify-start gap-1.5 px-3 sm:flex-none" aria-label="Pena & warna" aria-expanded={toolsOpen} onClick={() => setToolsOpen((open) => !open)}>
+        <PenIcon aria-hidden="true" />
+        <span className="truncate text-sm">{penLabel}</span>
+        <span className="size-4 shrink-0 rounded-full border border-black/15" style={{ backgroundColor: ink }} aria-hidden="true" />
+        <ChevronDown className={cn('transition-transform max-[400px]:hidden', toolsOpen && 'rotate-180')} aria-hidden="true" />
+      </Button>
+      <div className="flex shrink-0 gap-1 sm:ml-auto">
+        <Button type="button" variant="outline" size="icon" aria-label="Batalkan coretan" title="Batalkan coretan" disabled={!pad.canUndo || saving} onClick={pad.undo}><Undo2 aria-hidden="true" /></Button>
+        <Button type="button" variant="outline" size="icon" aria-label="Kembalikan coretan" title="Kembalikan coretan" disabled={!pad.canRedo || saving} onClick={pad.redo}><Redo2 aria-hidden="true" /></Button>
+        {fullscreen
+          ? <Button type="button" variant="outline" size="icon" aria-label="Keluar layar penuh" title="Keluar layar penuh" onClick={() => setFullscreen(false)}><Minimize2 aria-hidden="true" /></Button>
+          : <Button type="button" variant="outline" size="icon" aria-label="Layar penuh" title="Layar penuh" onClick={() => { setFullscreen(true); setToolsOpen(false); }}><Maximize2 aria-hidden="true" /></Button>}
+      </div>
+    </div>
+    {toolsOpen && <div className={cn('space-y-3 rounded-md border bg-muted/30 p-3', fullscreen && 'max-h-[45dvh] overflow-y-auto')}>
+      <PenPicker pen={penStyle.pen} size={penStyle.size} onChange={pickPen} />
+      <InkPicker value={ink} onChange={pickInk} />
+    </div>}
     <canvas
       {...pad.canvasProps}
+      onPointerDown={(event) => { setToolsOpen(false); pad.canvasProps.onPointerDown(event); }}
       aria-label={label}
-      className="block w-full touch-none rounded-md border border-dashed bg-white"
-      style={{ height }}
+      className={cn('block w-full touch-none rounded-md border border-dashed bg-white', fullscreen && 'min-h-0 flex-1')}
+      style={fullscreen ? undefined : { height }}
     />
-    <p className="text-xs text-muted-foreground">{hint}</p>
-    <div className="flex flex-wrap gap-2">
-      <Button type="button" disabled={pad.empty || saving} onClick={() => onSave(pad.exportPNG())}>{saving ? 'Menyimpan...' : 'Simpan tanda tangan'}</Button>
-      <Button type="button" variant="outline" size="icon" aria-label="Batalkan coretan" title="Batalkan coretan" disabled={!pad.canUndo || saving} onClick={pad.undo}><Undo2 aria-hidden="true" /></Button>
-      <Button type="button" variant="outline" size="icon" aria-label="Kembalikan coretan" title="Kembalikan coretan" disabled={!pad.canRedo || saving} onClick={pad.redo}><Redo2 aria-hidden="true" /></Button>
-      <Button type="button" variant="outline" disabled={pad.empty || saving} onClick={pad.clear}><Eraser aria-hidden="true" />Ulangi</Button>
-      {onCancel && <Button type="button" variant="ghost" disabled={saving} onClick={onCancel}>Batal</Button>}
+    <p className="text-xs text-muted-foreground [@media(max-height:500px)]:hidden">{fullscreen ? 'Putar HP ke samping untuk kotak yang lebih lebar.' : hint}</p>
+    <div className="flex gap-2">
+      <Button type="button" className="flex-1 sm:flex-none" disabled={pad.empty || saving} onClick={save}>{saving ? 'Menyimpan...' : 'Simpan tanda tangan'}</Button>
+      <Button type="button" variant="outline" aria-label="Ulangi" title="Hapus semua coretan" disabled={pad.empty || saving} onClick={pad.clear}><Eraser aria-hidden="true" /><span className="max-sm:hidden">Ulangi</span></Button>
+      {onCancel && <Button type="button" variant="ghost" disabled={saving} onClick={() => { setFullscreen(false); onCancel(); }}>Batal</Button>}
     </div>
-  </div>;
+  </>;
+
+  return fullscreen
+    ? createPortal(<div role="dialog" aria-modal="true" aria-label="Tanda tangan layar penuh" className="fixed inset-0 z-50 flex flex-col gap-2 bg-background p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">{content}</div>, document.body)
+    : <div className="space-y-2">{content}</div>;
 }
