@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { MapPin } from 'lucide-react';
+import { History, MapPin } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,17 +42,23 @@ export function similarLocation(name: string, locations: HandoverLocation[]) {
 
 const lastKey = (scheduleID: string) => `konkit.handover.last.${scheduleID}`;
 
-function readLast(scheduleID: string) {
+/** The last location saved on this browser for the schedule (older copies kept only the name). */
+export function readLast(scheduleID: string): { id?: string; name: string } | null {
   try {
-    return window.localStorage.getItem(lastKey(scheduleID)) ?? '';
+    const raw = window.localStorage.getItem(lastKey(scheduleID)) ?? '';
+    if (raw.startsWith('{')) {
+      const value = JSON.parse(raw) as { id?: unknown; name?: unknown };
+      return typeof value.name === 'string' && placeKey(value.name) !== '' ? { id: typeof value.id === 'string' ? value.id : undefined, name: value.name } : null;
+    }
+    return placeKey(raw) !== '' ? { name: raw } : null;
   } catch {
-    return '';
+    return null;
   }
 }
 
-function rememberLast(scheduleID: string, name: string) {
+function rememberLast(scheduleID: string, location: { id?: string; name: string }) {
   try {
-    window.localStorage.setItem(lastKey(scheduleID), name);
+    window.localStorage.setItem(lastKey(scheduleID), JSON.stringify(location));
   } catch {
     // Only a convenience: the field still works without it.
   }
@@ -62,7 +68,7 @@ function rememberLast(scheduleID: string, name: string) {
  * Titik serah of a slot in POS Dokumen, beside the distribution date. The
  * list is shared by the whole regency; a new name creates a location, and a
  * name close to an existing one asks first. The last choice fills the next
- * slot of the same schedule.
+ * slot of the same schedule in one click, like the phone.
  */
 export function HandoverLocationField({ slot, editable, correctable = false, onSaved }: {
   slot: DistributionSlot;
@@ -80,12 +86,12 @@ export function HandoverLocationField({ slot, editable, correctable = false, onS
     queryFn: () => apiRequest<DataResponse<HandoverLocation[]>>(`/api/v1/distribution/handover-locations?schedule_id=${encodeURIComponent(slot.schedule_id)}`),
   });
   const items = (Array.isArray(locations.data?.data) ? locations.data.data : []).filter((item) => typeof item.name === 'string');
-  const [name, setName] = useState(() => slot.handover_location_name || (editable ? readLast(slot.schedule_id) : ''));
+  const [name, setName] = useState(slot.handover_location_name ?? '');
   const [confirmedNew, setConfirmedNew] = useState(false);
   useEffect(() => {
-    setName(slot.handover_location_name || (editable ? readLast(slot.schedule_id) : ''));
+    setName(slot.handover_location_name ?? '');
     setConfirmedNew(false);
-  }, [slot.id, slot.handover_location_name, slot.schedule_id, editable]);
+  }, [slot.id, slot.handover_location_name]);
 
   const existing = items.find((item) => placeKey(item.name) === placeKey(name));
   const similar = existing ? undefined : similarLocation(name, items);
@@ -95,7 +101,7 @@ export function HandoverLocationField({ slot, editable, correctable = false, onS
       { method: 'PATCH', body: JSON.stringify({ handover_location_id: choice.id ?? '', handover_location_name: choice.name }) },
     ),
     onSuccess: ({ data }) => {
-      rememberLast(slot.schedule_id, data.handover_location_name ?? '');
+      if (data.handover_location_name) rememberLast(slot.schedule_id, { id: data.handover_location_id ?? undefined, name: data.handover_location_name });
       void locations.refetch();
       onSaved(data);
     },
@@ -109,6 +115,10 @@ export function HandoverLocationField({ slot, editable, correctable = false, onS
   });
   const saved = Boolean(slot.handover_location_id) && placeKey(slot.handover_location_name ?? '') === placeKey(name);
   const submit = () => save.mutate(existing ? { id: existing.id, name: existing.name } : { name });
+  // One click for the place of the previous slot, matched to the current list
+  // so a renamed or merged place is saved by its id.
+  const lastSaved = editable && !slot.handover_location_id ? readLast(slot.schedule_id) : null;
+  const lastChoice = lastSaved && (items.find((item) => item.id === lastSaved.id) ?? items.find((item) => placeKey(item.name) === placeKey(lastSaved.name)) ?? (locations.isSuccess ? undefined : lastSaved));
   const failure = save.error ?? correct.error;
 
   return <section aria-label="Titik serah" className="space-y-3 rounded-lg border p-4">
@@ -122,6 +132,12 @@ export function HandoverLocationField({ slot, editable, correctable = false, onS
       {editable && <Button type="button" variant="outline" disabled={placeKey(name) === '' || saved || save.isPending || (Boolean(similar) && !confirmedNew)} onClick={submit}>{existing || saved ? 'Simpan titik serah' : 'Tambah & simpan titik serah'}</Button>}
       {correcting && <Button type="button" variant="outline" disabled={!existing || saved || correct.isPending} onClick={() => existing && correct.mutate(existing)}>Koreksi titik serah</Button>}
     </div>
+    {lastChoice && <div className="space-y-1">
+      <Button type="button" variant="secondary" className="max-w-full" disabled={save.isPending} onClick={() => { setName(lastChoice.name); save.mutate({ id: lastChoice.id, name: lastChoice.name }); }}>
+        <History aria-hidden="true" /><span className="truncate">Pakai: {lastChoice.name}</span>
+      </Button>
+      <p className="text-xs text-muted-foreground">Titik serah terakhir di perangkat ini. Pilih lain bila penyerahan di lokasi berbeda.</p>
+    </div>}
     {correcting && <p className="text-xs text-muted-foreground">Distribusi sudah selesai: koreksi hanya ke titik serah yang ada di daftar. BA Serah Terima final akan ditandai perlu dibuat ulang.</p>}
     {editable && similar && !confirmedNew && <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300/60 bg-amber-50 p-2 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">
       <span>Mungkin maksudnya <strong>{similar.name}</strong>?</span>
