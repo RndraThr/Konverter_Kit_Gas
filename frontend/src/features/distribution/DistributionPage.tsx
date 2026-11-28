@@ -40,10 +40,30 @@ import { SearchableSelect } from '@/components/SearchableSelect';
 import type { PackageTemplate } from '../programs/types';
 import { WatermarkProgramProvider } from '../camera/WatermarkProgramContext';
 
+const lastScheduleKey = 'konkit.distribution.schedule';
+
+/** The schedule (kabupaten) last chosen on this browser, kept across back, other pages and reloads. */
+export function readLastSchedule() {
+  try {
+    return window.localStorage.getItem(lastScheduleKey) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function rememberSchedule(scheduleID: string) {
+  try {
+    if (scheduleID) window.localStorage.setItem(lastScheduleKey, scheduleID);
+    else window.localStorage.removeItem(lastScheduleKey);
+  } catch {
+    // Only a convenience: the page still works without it.
+  }
+}
+
 export function DistributionPage() {
   const queryClient = useQueryClient();
   const canCreateSlot = useCan('distribution.pos_mesin');
-  const [scheduleID, setScheduleID] = useState('');
+  const [scheduleID, setScheduleID] = useState(readLastSchedule);
   const [slot, setSlot] = useState<DistributionSlot | null>(null);
   const [creating, setCreating] = useState<number | null>(null);
   const [selectedNumber, setSelectedNumber] = useState<number | null>(null);
@@ -110,7 +130,13 @@ export function DistributionPage() {
     onError: (error) => toast.error(error instanceof ApiError ? error.message : 'Gagal membuat Excel.'),
   });
 
-  const changeSchedule = (value: string) => { setScheduleID(value); setSlot(null); setCreating(null); setSelectedNumber(null); setPicked(null); };
+  const changeSchedule = (value: string) => { setScheduleID(value); rememberSchedule(value); setSlot(null); setCreating(null); setSelectedNumber(null); setPicked(null); };
+  // A remembered schedule that was closed or is out of this account's scope is forgotten.
+  const scheduleList = schedules.data?.data;
+  useEffect(() => {
+    if (!scheduleList || !scheduleID) return;
+    if (!scheduleList.some((schedule) => schedule.id === scheduleID && schedule.status === 'active')) { setScheduleID(''); rememberSchedule(''); }
+  }, [scheduleList, scheduleID]);
   const selectExisting = (slotNumber: number) => { setSlot(null); setCreating(null); setSelectedNumber(slotNumber); search.mutate(slotNumber); };
   const startCreate = (slotNumber: number) => { setSlot(null); setCreating(slotNumber); setSelectedNumber(slotNumber); };
   const onSlotChanged = (next: DistributionSlot) => { setSlot(next); void queryClient.invalidateQueries({ queryKey: ['distribution', 'slot-catalog', scheduleID] }); };
