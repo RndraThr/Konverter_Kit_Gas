@@ -239,3 +239,25 @@ test('Logo and Waktu toggles are persisted', async () => {
   expect(waktu).toHaveAttribute('aria-pressed', 'false')
   expect(JSON.parse(localStorage.getItem('konkit.watermark.v1')!).showTimestamp).toBe(false)
 })
+
+test('no flash button when the camera has no torch', async () => {
+  renderCamera()
+  await ready()
+  expect(screen.queryByRole('button', { name: 'Flash' })).not.toBeInTheDocument()
+})
+
+test('the flash lights the torch for the shot and turns it off after', async () => {
+  const applyConstraints = vi.fn().mockResolvedValue(undefined)
+  Object.assign(current.tracks[0], { getCapabilities: () => ({ torch: true }), applyConstraints })
+  renderCamera()
+  await ready()
+
+  const flash = screen.getByRole('button', { name: 'Flash' })
+  expect(flash).toHaveAttribute('aria-pressed', 'false')
+  fireEvent.click(flash)
+  expect(flash).toHaveAttribute('aria-pressed', 'true')
+  fireEvent.click(screen.getByRole('button', { name: 'Ambil foto' }))
+
+  await waitFor(() => expect(screen.getByRole('img', { name: 'Pratinjau foto' })).toBeInTheDocument(), { timeout: 3000 })
+  expect(applyConstraints.mock.calls.map(([c]) => c)).toEqual([{ advanced: [{ torch: true }] }, { advanced: [{ torch: false }] }])
+})

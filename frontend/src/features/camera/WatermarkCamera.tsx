@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Camera, Check, LoaderCircle, RefreshCw, RotateCcw, Settings, SwitchCamera, X } from 'lucide-react'
+import { Camera, Check, LoaderCircle, RefreshCw, RotateCcw, Settings, SwitchCamera, X, Zap, ZapOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { cameraErrorMessage } from '@/lib/cameraErrors'
@@ -19,6 +19,21 @@ const RESOLUTION = { width: { ideal: 1920 }, height: { ideal: 1080 } }
 const FIX_REFRESH_MS = 15_000
 // Intermediate encode of the composed frame before the quality preset re-encodes it.
 const COMPOSE_JPEG_QUALITY = 0.98
+// Browsers have no capture flash: the torch is lit for the shot and given time
+// for the exposure to settle before the frame is taken.
+export const FLASH_SETTLE_MS = 600
+
+type TorchCapabilities = MediaTrackCapabilities & { torch?: boolean }
+
+function videoTrack(stream: MediaStream | null) {
+  return stream?.getVideoTracks()[0]
+}
+
+function setTorch(stream: MediaStream | null, on: boolean) {
+  const track = videoTrack(stream)
+  if (!track?.applyConstraints) return Promise.resolve()
+  return track.applyConstraints({ advanced: [{ torch: on } as MediaTrackConstraintSet] }).catch(() => {})
+}
 
 type Review = { file: File; url: string; capturedAt: Date; fix: Fix | null }
 
@@ -74,6 +89,9 @@ export default function WatermarkCamera({ title, programId, onCapture, onClose }
   const [busy, setBusy] = useState(false)
   const [review, setReview] = useState<Review | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // Flash of the phone app: only offered when the active camera has a torch.
+  const [torchSupported, setTorchSupported] = useState(false)
+  const [flashOn, setFlashOn] = useState(false)
   const layoutRef = useRef<WatermarkLayout | null>(null)
 
   const logo = useWatermarkLogo(programId, settings.customLogo, programId ? settings.tenderLogos[programId] : undefined)
@@ -85,6 +103,7 @@ export default function WatermarkCamera({ title, programId, onCapture, onClose }
     let stopped = false
     setError(null)
     setStarting(true)
+    setTorchSupported(false)
     navigator.mediaDevices.getUserMedia(videoConstraints(deviceId))
       .then((stream) => {
         if (stopped) { stopStream(stream); return }
@@ -95,6 +114,7 @@ export default function WatermarkCamera({ title, programId, onCapture, onClose }
         const trackSettings = track?.getSettings?.()
         setMirror(trackSettings?.facingMode ? trackSettings.facingMode !== 'environment' : true)
         if (trackSettings?.deviceId) setActiveDeviceId(trackSettings.deviceId)
+        setTorchSupported(Boolean((track?.getCapabilities?.() as TorchCapabilities | undefined)?.torch))
         navigator.mediaDevices.enumerateDevices?.()
           .then((list) => { if (!stopped) setDevices(list.filter((device) => device.kind === 'videoinput')) })
           .catch(() => {})
@@ -219,7 +239,12 @@ export default function WatermarkCamera({ title, programId, onCapture, onClose }
   const shoot = async () => {
     if (!video || busy) return
     setBusy(true)
+    const flash = flashOn && torchSupported
     try {
+      if (flash) {
+        await setTorch(streamRef.current, true)
+        await new Promise((resolve) => setTimeout(resolve, FLASH_SETTLE_MS))
+      }
       const capturedAt = new Date()
       const shotFix = fixRef.current
       const current = settingsRef.current
@@ -240,12 +265,14 @@ export default function WatermarkCamera({ title, programId, onCapture, onClose }
       }
       ctx.drawImage(video, crop.x, crop.y, crop.width, crop.height, 0, 0, canvas.width, canvas.height)
       ctx.setTransform(1, 0, 0, 1, 0, 0)
+      if (flash) void setTorch(streamRef.current, false)
       const shotLines = watermarkLines(capturedAt, current, tracker.current(), shotFix ? formatCoordinates(shotFix) : null)
       paintWatermark(ctx, canvas.width, canvas.height, current, shotLines, logo)
       const composed = await canvasToBlob(canvas, 'image/jpeg', COMPOSE_JPEG_QUALITY)
       const file = await resizeImage(composed, current.photoQuality)
       setReview({ file, url: URL.createObjectURL(file), capturedAt, fix: shotFix })
     } catch {
+      if (flash) void setTorch(streamRef.current, false)
       setError('Foto gagal diproses. Coba ambil ulang.')
     } finally {
       setBusy(false)
@@ -347,7 +374,10 @@ export default function WatermarkCamera({ title, programId, onCapture, onClose }
           >
             {busy ? <LoaderCircle className="size-6 animate-spin" aria-hidden="true" /> : <Camera className="size-6" aria-hidden="true" />}
           </Button>
-          <div className="flex w-30 justify-end">
+          <div className="flex w-30 justify-end gap-1">
+            {torchSupported && <Button type="button" variant="ghost" size="icon" className={cn('text-white hover:bg-white/10', flashOn && 'text-yellow-300')} aria-label="Flash" aria-pressed={flashOn} title={flashOn ? 'Flash menyala saat foto diambil' : 'Flash mati'} onClick={() => setFlashOn((on) => !on)}>
+              {flashOn ? <Zap aria-hidden="true" /> : <ZapOff aria-hidden="true" />}
+            </Button>}
             {devices.length > 1 && <Button type="button" variant="ghost" size="icon" className="text-white hover:bg-white/10" aria-label="Ganti kamera" onClick={switchCamera}>
               <SwitchCamera aria-hidden="true" />
             </Button>}
